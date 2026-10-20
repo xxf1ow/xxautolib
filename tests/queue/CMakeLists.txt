@@ -1,0 +1,20 @@
+cmake_minimum_required(VERSION 3.20)
+project(queue_install_check CXX)
+
+if(NOT IS_ABSOLUTE "${QUEUE_INSTALL_PREFIX}")
+    message(FATAL_ERROR "QUEUE_INSTALL_PREFIX must be an absolute installation path")
+endif()
+foreach(header atomicops.h readerwriterqueue.h readerwritercircularbuffer.h
+               concurrentqueue.h lightweightsemaphore.h blockingconcurrentqueue.h)
+    if(NOT EXISTS "${QUEUE_INSTALL_PREFIX}/include/queue/${header}")
+        message(FATAL_ERROR "Missing installed queue header: ${QUEUE_INSTALL_PREFIX}/include/queue/${header}")
+    endif()
+endforeach()
+
+find_package(Threads REQUIRED)
+add_executable(queue_smoke smoke.cpp)
+target_compile_features(queue_smoke PRIVATE cxx_std_17)
+target_include_directories(queue_smoke PRIVATE "${QUEUE_INSTALL_PREFIX}/include")
+target_link_libraries(queue_smoke PRIVATE Threads::Threads)
+enable_testing()
+add_test(NAME queue_install COMMAND queue_smoke)

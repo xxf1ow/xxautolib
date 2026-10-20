@@ -1,5 +1,6 @@
 import os
 import shutil
+import time
 import unittest
 
 from test_cmake import PipelineCase, ROOT
@@ -68,20 +69,24 @@ install(FILES "${CMAKE_BINARY_DIR}/value.txt" DESTINATION include)
         self.build()
         installed = self.source / "3rdparty/demo/include/value.txt"
         self.assertEqual(installed.read_text(), "one")
+        # 快速 fixture 修改跨过构建工具的时间戳分辨率，不把输入设到未来。
+        time.sleep(1.1)
         module.path.write_text(module.path.read_text().replace('VALUE="one"', 'VALUE="two"'))
         self.build()
         self.assertEqual(installed.read_text(), "two")
         generated = self.context.build_root / "generated/demo.cmake"
         before = generated.stat().st_mtime_ns
         helper = self.source / "src/build_system/cmake.py"
+        time.sleep(1.1)
         helper.write_text(helper.read_text(encoding="utf-8").replace(
             'args = [_cache_argument(key, value) for key, value in cache.items()]',
             'cache["VALUE"] = "helper"\n        args = [_cache_argument(key, value) for key, value in cache.items()]'),
             encoding="utf-8")
-        self.build()
-        self.assertEqual(installed.read_text(), "helper")
+        result = self.build()
+        self.assertEqual(installed.read_text(), "helper", result.stdout + result.stderr)
         self.assertNotEqual(generated.stat().st_mtime_ns, before)
         before = generated.stat().st_mtime_ns
+        time.sleep(1.1)
         helper.write_text(helper.read_text(encoding="utf-8") + "\n# no output change\n", encoding="utf-8")
         result = self.build()
         self.assertIn("Building Summary", result.stdout)
