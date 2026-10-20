@@ -74,7 +74,8 @@ def render_module(module: ModuleDefinition, context: BuildContext) -> str:
 
     for name, source in module.resources.items():
         options = _directories(prefix / "res" / name, install)
-        options += [(key, [value]) for key, value in source.items()]
+        options += [(key, value if isinstance(value, list) else [value])
+                    for key, value in source.items()]
         options += [("LIST_SEPARATOR", [separator]), ("UPDATE_COMMAND", [""]),
                     ("CONFIGURE_COMMAND", [""]), ("BUILD_COMMAND", [""]),
                     ("INSTALL_COMMAND", [""])]
@@ -83,7 +84,8 @@ def render_module(module: ModuleDefinition, context: BuildContext) -> str:
     options = _directories(prefix, install)
     options += [("LIST_SEPARATOR", [separator]), ("UPDATE_COMMAND", [""])]
     if module.source:
-        options += [(key, [value]) for key, value in module.source.items()]
+        options += [(key, value if isinstance(value, list) else [value])
+                    for key, value in module.source.items()]
     else:
         options.append(("DOWNLOAD_COMMAND", [""]))
     if module.resources:

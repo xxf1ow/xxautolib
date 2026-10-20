@@ -28,6 +28,54 @@ class DefinitionTests(unittest.TestCase):
         self.path.write_text(header + body, encoding="utf-8")
         return load_definition(self.path, system)
 
+    def test_accepts_archive_sources_and_resources(self):
+        source = '''URL = ["https://one.invalid/a.tar.xz", "https://two.invalid/a.tar.xz"]
+URL_HASH = "SHA256=''' + "a" * 64 + '''"
+'''
+        module = self.load('[source]\n' + source + '[resources.extra]\n' + source +
+                           'DOWNLOAD_NAME="extra.tar.xz"\n')
+        self.assertEqual(module.source, {
+            "URL": ["https://one.invalid/a.tar.xz", "https://two.invalid/a.tar.xz"],
+            "URL_HASH": "SHA256=" + "a" * 64})
+        self.assertEqual(module.resources["extra"], {**module.source, "DOWNLOAD_NAME": "extra.tar.xz"})
+        single = self.load('[source]\nURL=["https://one.invalid/a.tar.xz"]\n'
+                           'URL_HASH="SHA256=' + "A" * 64 + '"\n')
+        self.assertEqual(single.source["URL"], ["https://one.invalid/a.tar.xz"])
+        self.assertEqual(single.source["URL_HASH"], "SHA256=" + "A" * 64)
+        self.assertNotIn("DOWNLOAD_NAME", single.source)
+
+    def test_rejects_invalid_archive_sources(self):
+        valid = 'URL=["https://one.invalid/a.tar.xz"]\nURL_HASH="SHA256=' + "a" * 64 + '"\n'
+        cases = [
+            (valid.replace('URL=["https://one.invalid/a.tar.xz"]', 'URL="https://one.invalid/a.tar.xz"'), "URL"),
+            (valid.replace('["https://one.invalid/a.tar.xz"]', '[]'), "URL"),
+            (valid.replace('["https://one.invalid/a.tar.xz"]', '[""]'), "URL"),
+            (valid.replace('["https://one.invalid/a.tar.xz"]', '[1]'), "URL"),
+            (valid.splitlines()[0] + '\n', "URL_HASH"),
+            (valid.splitlines()[1] + '\n', "URL"),
+            (valid.replace('"SHA256=' + "a" * 64 + '"', '1'), "URL_HASH"),
+            (valid.replace('SHA256=', 'MD5='), "URL_HASH"),
+            (valid.replace("a" * 64, "a" * 63), "URL_HASH"),
+            (valid.replace("a" * 64, "g" * 64), "URL_HASH"),
+            (valid + 'GIT_REPOSITORY="repo"\n', "source"),
+            (valid + 'GIT_TAG="fixed"\n', "source"),
+            (valid + 'UNKNOWN="value"\n', "UNKNOWN"),
+            ('GIT_REPOSITORY="repo"\n', "GIT_TAG"),
+            ('GIT_TAG="fixed"\n', "GIT_REPOSITORY"),
+        ]
+        for filename in ('""', '1', '"dir/file.tar.xz"', "'dir\\file.tar.xz'", '"."', '".."', '"C:file.tar.xz"'):
+            cases.append((valid + f'DOWNLOAD_NAME={filename}\n', "DOWNLOAD_NAME"))
+        for table in ("source", "resources.extra"):
+            for body, field in cases:
+                with self.subTest(table=table, body=body):
+                    declaration = f'[{table}]\n' + body
+                    if table.startswith("resources"):
+                        declaration += '\n[[copy]]\nresource="extra"\nfiles=["x.h"]\ndestination="include"\n'
+                    with self.assertRaises(ValueError) as error:
+                        self.load(declaration, header='name="demo"\ntype="copy"\n')
+                    self.assertIn(str(self.path), str(error.exception))
+                    self.assertIn(field, str(error.exception))
+
     def test_selects_platform_cache_and_steps(self):
         body = SOURCE + '''
 [cmake.cache]

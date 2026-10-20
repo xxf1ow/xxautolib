@@ -75,6 +75,31 @@ class PipelineCase(unittest.TestCase):
 
 
 class CMakeTests(PipelineCase):
+    def test_archive_parameters_reach_native_targets(self):
+        source = 'URL=["https://one.invalid/a.tar.xz", "https://two.invalid/a.tar.xz"]\n' + \
+                 'URL_HASH="SHA256=' + "a" * 64 + '"\nDOWNLOAD_NAME="archive.tar.xz"\n'
+        module = self.definition('[source]\n' + source + '[resources.extra]\n' + source)
+        suffix = '''
+foreach(target demo _al_resource_4_demo_extra)
+    foreach(key URL URL_HASH DOWNLOAD_NAME)
+        get_property(value TARGET ${target} PROPERTY _EP_${key})
+        file(WRITE "${CMAKE_BINARY_DIR}/${target}-${key}.txt" "${value}")
+    endforeach()
+endforeach()
+'''
+        self.project(module, suffix)
+        for target in ("demo", "_al_resource_4_demo_extra"):
+            for key, expected in (("URL", "https://one.invalid/a.tar.xz;https://two.invalid/a.tar.xz"),
+                                  ("URL_HASH", "SHA256=" + "a" * 64),
+                                  ("DOWNLOAD_NAME", "archive.tar.xz")):
+                self.assertEqual((self.context.build_root / f"{target}-{key}.txt").read_text(), expected)
+        self.assertFalse(any((self.context.build_root / "ep/demo/dl").iterdir()))
+        module.source["URL"] = ["https://one.invalid/a.tar.xz"]
+        del module.source["DOWNLOAD_NAME"]
+        self.project(module, suffix)
+        self.assertEqual((self.context.build_root / "demo-URL.txt").read_text(), "https://one.invalid/a.tar.xz")
+        self.assertEqual((self.context.build_root / "demo-DOWNLOAD_NAME.txt").read_text(), "")
+
     def test_preserves_generator_and_configuration_identity(self):
         module = self.definition('[source]\nGIT_REPOSITORY="not-downloaded"\nGIT_TAG="fixed"\n')
         context = replace(self.context, system_name="Windows", generator="Visual Studio 17 2022",
