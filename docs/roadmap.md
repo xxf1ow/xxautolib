@@ -1,0 +1,46 @@
+# 路线图
+
+本仓库按能力分批接入模块，先完成本地构建安装，再建立下游导入、二进制交付和 CI。本文维护阶段目标与迁移范围；各阶段的理由和约束由链接的 Agent Note 拥有，具体实现开始前再确认该批设计。
+
+## 状态与依据
+
+截至 2026-10-20，本仓库已验收 TOML 纯数据定义、Python 通用生成引擎、原生 ExternalProject 执行、固定 Git 来源、多资源、文件补丁、自定义步骤、平台选项及 uv 根环境。zlib 静态构建和 queue 双资源头文件安装已通过 Windows x64、Linux aarch64 验证。v142 实机一致性保留人工验收，不阻塞当前开发。当前能力见[架构](architecture.md)，证据见[流水线记录](agent-notes/implemented/architecture/2026-10-19-toml-externalproject-zlib.md)。
+
+“参考已实现”指参考实现中存在对应代码或模块，并有相关决定；不表示本仓库支持，也不表示本轮重新验证了参考实现的全部模块。“参考待实施”指已有方向但尚未落地。迁移不导入历史提交、旧发布数据或所有辅助机制。
+
+## 建议接入顺序
+
+以下为依赖顺序，不是一次实施授权或工期承诺；无需等全部模块迁完才接入下游验证。
+
+| 阶段 | 参考状态 | 本仓库待做与完成标志 |
+| --- | --- | --- |
+| 本地获取与安装扩展 | 已实现 | 按首个实际模块补 URL 归档、摘要校验、平台/架构来源选择、文件布局及必要的源码子目录能力；代表模块完成构建或复制安装，不预建完整 Schema。 |
+| 本地输入与安装复用 | 已实现 | 持久 Git 目录、哈希归档复用和安装 sentinel 短路尚未接入；跨 build 复用前确认保存位置及安装有效性规则，不把目录存在当成版本校验。 |
+| 模块依赖 | 已实现 | 选择 lz4 → flann 等小依赖链，支持依赖发现、排序和安装前缀/包位置传递；再接 Boost、PCL 对 zlib 的依赖。仅请求叶子也能得到所需构建输入，不能误用系统库。 |
+| 复杂模块与专用文件 | 已实现 | 按需接 OpenCV contrib、oneTBB HWLOC、ImGui 专用 CMakeLists；资源就绪、原生步骤位置、安装内容和工具链身份可核对。 |
+| 下游导入与可搬迁包 | 已实现 | 模块显式提供包内 adapter；用少量代表包完成搬迁后真实链接，打包不改原安装树；本地构建资格与发布资格分离。 |
+| 固定槽交付与缓存 | 已实现 | 按名称消费、严格 manifest、摘要校验、生产端内部 build ID、GitHub 发布和 Gitee 镜像逐项接入；先用本地 fixture 验证，远端地址与写操作另行授权。 |
+| 三平台原生 CI | 基础流水线已实现，单 job 优化待实施 | 接入 Windows x86_64、Linux x86_64/aarch64；以原生单 job 分层、统一环境与并行预算为目标，不先复制多 job 传完整包的结构再重写。 |
+| 平台无关头文件槽位 | 待实施 | 仅对显式声明且安装内容确实平台无关的包启用 any/any；规划、导入、缓存、manifest、镜像共同支持，并通过三平台消费。 |
+
+本地能力的既有决定见[模块扩展](agent-notes/proposed/architecture/2026-10-20-module-expansion.md)；导入、打包和固定槽见[二进制交付](agent-notes/proposed/architecture/2026-10-20-name-only-artifact-delivery.md)；环境、ABI、并行和通用槽位见[三平台 CI](agent-notes/proposed/process/2026-10-20-native-platform-ci.md)。
+
+## 模块迁移候选
+
+下表覆盖参考仓库的 36 个模块定义。分组用于选择有代表性的下一批，不表示组内模块复杂度相同或全部平台已验证；不把参考版本号和选项表复制为另一份维护清单。
+
+| 分组 | 模块 | 本仓库状态或接入重点 |
+| --- | --- | --- |
+| 已验收 | zlib、queue | 保持本批范围，不追加下游交付要求。 |
+| 基础构建与头文件 | asio、clipper2、cpp-httplib、eigen、expected、ftxui、gtest、libzmq、lz4、nativefiledialog-extended、nlohmann、portaudio、pybind11、sdl3、spdlog、taskflow、websocketpp、yaml-cpp | 待迁移；按需挑选，覆盖归档、源码子目录、系统依赖和安装布局；不是要求一次迁移整组。 |
+| 依赖链 | boost、flann、freetype、harfbuzz、pcl | 待迁移；本仓库产物的显式依赖与标准查找通道。 |
+| 多资源及专用构建 | opencv、oneTBB、imgui、gtsam | 待迁移；附属编译输入、专用文件、补丁与依赖，不把库逻辑塞进引擎。 |
+| 预编译输入 | onnxruntime、mysql | 待迁移；按平台选择已登记归档及摘要，核对复制布局与独立运行要求。 |
+| 专项模块 | sherpa-onnx、lastools、logo | 待按实际需求确定批次；分别涉及私有依赖参数、平台限制或资源产物。 |
+| 暂缓 | fastdeploy、nndeploy | 初版不做；不因参考实现存在便引入硬编码 SDK 路径或自动后端探测。 |
+
+参考实现的可搬迁导入适配覆盖 eigen、onnxruntime、portaudio、lz4、flann、pcl、boost、zlib；它们是后续代表集，不意味着其他模块不可本地构建，也不要求新仓库首批同时发布八包。
+
+## 保留的范围限制
+
+不新增源码原地自动升级、补丁自动回滚、独立构建状态数据库、通用恢复服务、交叉编译或硬件自动探测。根 CMake 保持已确认的参考骨架；未来扩展只作该批必要适配。README 暂缓，历史发布资产不自动迁移或删除。每一批按实际风险验证，不为每库强制新增专用测试工程。

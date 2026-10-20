@@ -36,6 +36,8 @@ cmake --build build --config Release
 
 补丁无法正向或反向检查时，构建明确失败，需人工重新准备该模块的干净源码；不会自动还原或清空源码。不要把修改补丁等同于自动替换已应用的旧补丁。
 
+主来源和附属资源不自动 update。更换来源地址或固定提交时，仅修改 TOML 并重新 configure 不能视为升级完成。维护者须先保留需要的本地修改，再人工重新准备受影响模块的 `build/ep/<模块名>/`（含资源、构建和 stamp）及 `3rdparty/<模块名>/`；可移到备份位置，不清空整个 build 或其他模块。重新获取后核对源码提交与安装产物。普通配置选项和执行输入的增量跟踪不等于源码版本迁移，理由见[流水线决定](agent-notes/implemented/architecture/2026-10-19-toml-externalproject-zlib.md)。
+
 ## 日常修改
 
 修改带注释的 module.toml 或同目录专用文件，不手改 `build/generated/`。TOML、实际引擎 helper 变化会触发重新 configure；补丁与声明为 DEPENDS 的脚本由原生步骤依赖跟踪。目录职责见[架构](architecture.md)，验证命令见[测试](testing.md)。不提交或传输 `.venv/`、`build/`、`3rdparty/`、`.git/` 与忽略的 `.superpowers/`；不为获取干净结果清空已有目录。
