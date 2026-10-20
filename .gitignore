@@ -1,0 +1,7 @@
+/.*/
+!/.github/
+!/.agents/
+/3rdparty/
+/build/
+/git/
+/dist/
