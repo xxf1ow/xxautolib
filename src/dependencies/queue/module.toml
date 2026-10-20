@@ -1,0 +1,34 @@
+# queue：组合 SPSC 与 MPMC 队列，仅安装头文件。
+# 无主来源；两个上游作为本模块的附属资源。
+name = "queue"
+type = "copy"
+
+# SPSC 队列；固定提交，升级时检查头文件清单。
+[resources.readerwriterqueue]
+GIT_REPOSITORY = "https://github.com/cameron314/readerwriterqueue.git"
+GIT_TAG = "6867b56452352acf077fccd5f6cc7e3a8cfde0fb"
+
+# MPMC 队列；与 SPSC 资源独立获取和固定版本。
+[resources.concurrentqueue]
+GIT_REPOSITORY = "https://github.com/cameron314/concurrentqueue.git"
+GIT_TAG = "683b9e31ea15eb69f1b81cc1defc7850d5f20b71"
+
+# 安装 SPSC 公开头文件及其同目录依赖，保留相对 include 关系。
+[[copy]]
+resource = "readerwriterqueue"
+files = [
+    "atomicops.h",
+    "readerwriterqueue.h",
+    "readerwritercircularbuffer.h",
+]
+destination = "include/queue"
+
+# 安装 MPMC 与阻塞队列头文件及其信号量依赖。
+[[copy]]
+resource = "concurrentqueue"
+files = [
+    "concurrentqueue.h",
+    "lightweightsemaphore.h",
+    "blockingconcurrentqueue.h",
+]
+destination = "include/queue"
