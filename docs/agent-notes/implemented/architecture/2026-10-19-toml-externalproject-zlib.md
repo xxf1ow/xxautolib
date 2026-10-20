@@ -91,7 +91,9 @@ ExternalProject 使用紧凑的显式目录：`PREFIX` 为 `build/ep/<模块名>
 
 模块顶层使用 `name`、`type` 和可选的 `version`。name 与模块目录名一致，type 为 cmake 或 copy；version 是供维护者阅读的版本标识，不代替来源中的固定提交。包含不同上游的聚合模块不要求编造统一版本号。
 
-主来源放在 `[source]`，附属资源放在 `[resources.<资源名>]`；当前来源只接受原生 Git 字段 `GIT_REPOSITORY`、`GIT_TAG`，三个上游均固定完整提交。Python 只把来源声明生成为 ExternalProject 参数，不自行获取源码。固定提交不启用不适用的浅克隆，也不引入自动跟随分支的更新策略。
+主来源放在 `[source]`，附属资源放在 `[resources.<资源名>]`，两者适用相同来源规则。Git 使用成对的 `GIT_REPOSITORY`、`GIT_TAG`，现有 Git 上游均固定完整提交；归档使用有序非空 `URL` 数组、必填 `URL_HASH="SHA256=<64位十六进制摘要>"` 和可选单文件名 `DOWNLOAD_NAME`。Git 与归档字段互斥。Python 只把来源声明生成为 ExternalProject 参数，不自行获取源码。固定提交不启用不适用的浅克隆，也不引入自动跟随分支的更新策略。
+
+URL 列表按声明顺序交给原生下载步骤；网络失败与摘要不符均可继续下一候选，所有候选失败则构建失败，未经校验的归档不进入解压。原生解压剥离唯一顶层目录，源码根直接位于 SOURCE_DIR；不增加 SOURCE_SUBDIR 或自建下载重试。FreeType 的归档提供该路径的真实集成验证。
 
 主来源和附属资源均使用 `UPDATE_COMMAND ""`。固定提交约束新准备的源码，不表示对已有工作目录持续校准版本；修改仓库地址或 `GIT_TAG` 后重新 configure，不保证已有源码切换，也不证明安装树已经更新。已有源码及其人工修改不由引擎自动 fetch、checkout、reset 或还原。该选择保留本地工作状态，放弃原地自动升级；更换来源由维护者确认并重新准备受影响模块的源码、构建状态和安装结果。
 
@@ -128,7 +130,7 @@ COMMAND = ["cmake", "-E", "echo", "Linux-only step"]
 
 通用引擎区分两种生成类型：`cmake` 负责常规 CMake 配置、编译和安装；`copy` 负责获取输入并按映射复制安装，不执行配置或编译。头文件库和预编译包可以使用 copy，不为每个库新增类型。
 
-模块可以声明主来源及多个附属资源。资源分别声明 Git 仓库与固定提交，使用独立目录，并通过原生目标依赖在主流水线执行前准备好。OpenCV contrib、oneTBB 所需的 HWLOC 属于编译输入，接入时不要求拆成独立公开库模块。
+模块可以声明主来源及多个附属资源。资源分别声明 Git 固定提交或带摘要的归档，使用独立目录，并通过原生目标依赖在主流水线执行前准备好。OpenCV contrib、oneTBB 所需的 HWLOC 属于编译输入，接入时不要求拆成独立公开库模块。
 
 copy 模块允许没有主来源。queue 保持一个模块和一个对外目标，把 readerwriterqueue 与 concurrentqueue 作为两个附属资源，分别复制所需文件到同一安装前缀，不拆成两个库模块。辅助资源的内部获取目标由引擎按实际执行需要生成，不改变模块的维护归属。
 
@@ -208,11 +210,11 @@ queue 目标完成意味着两个资源均已准备好且所有映射文件安�
 
 ### 能力范围
 
-通用引擎同时接入 zlib 与 queue，分别覆盖 cmake、copy 和多资源流程。BUILD_LIST 可以分别选择 zlib、queue 或二者；默认发现两者，不因选择其中一个而获取或安装另一个。
+通用引擎接入 zlib、queue 与 FreeType，覆盖 cmake、copy、多资源和归档流程。BUILD_LIST 按模块名选择，默认发现三者，不因选择其中一个而获取或安装另一个。
 
 当前不提供下游接入脚本、公开 Imported Target、包发现适配器、打包发布或 CI。安装结果验证是仓库内部测试，zlib 使用安装树的头文件和静态库绝对路径，不使用无路径库名或 `-lz`，不允许系统 zlib 替代本次安装；queue 使用安装头文件，不从源码目录或系统头文件补齐缺失输入。下游导入文件接入时可与模块同目录维护，不因此预建接口。README 暂不创建，已验证能力记录在现有架构、开发和测试文档。
 
-除 zlib 与 queue 外不迁移其他库；FastDeploy、nndeploy 不在初版范围内。不实现硬件自动探测、后端自动选择、交叉编译、源码或二进制缓存框架、旧配置兼容、自动恢复或独立构建状态数据库。
+FreeType 接入范围由[模块扩展决定](../../proposed/architecture/2026-10-20-module-expansion.md)拥有；其他模块不因引擎能力可用而自动迁入。FastDeploy、nndeploy 不在初版范围内。不实现硬件自动探测、后端自动选择、交叉编译、源码或二进制缓存框架、旧配置兼容、自动恢复或独立构建状态数据库。
 
 ### 测试边界与后续模块接入
 
@@ -243,6 +245,10 @@ zlib 与 queue 是两条真实集成路径。zlib 的最小链接运行验证检
 Windows x64 使用 Visual Studio 2022、`v143,host=x64`、MSVC 19.42、CMake 4.2.3、uv 管理的 Python 3.12.13；授权 Linux aarch64 设备使用 GCC 9.4、CMake 3.31.9、uv 管理的 Python 3.12.15。两端均从不含环境、构建产物和安装树的含空格源码副本，经根 CMake 入口完成两个模块的获取和安装。Windows 安装 `zlibstatic.lib`，Linux 安装 `libz.a`，构建与安装树不产生 zlib 动态库；两端六个 queue 头文件齐全，资源源码目录独立。无修改重复构建复用已完成步骤。
 
 两端公共测试各通过 24 项，覆盖声明校验、平台选择、参数实际接收值、生成身份、双资源复制、原生命令和依赖、补丁应用与冲突、输入变化后的重新配置及产物更新、生成防抖和失败隔离。模块选择隔离由本地固定 Git fixture 验证，不为不同 BUILD_LIST 组合重复下载真实上游。
+
+FreeType 2.13.2 经公共 configure/build presets 在同两端完成真实归档下载、摘要校验、单顶层目录展开、编译与安装。Windows 安装 `lib/freetype.lib`，Linux 安装 `lib/libfreetype.a`；两端公开头文件、三份 CMake 包文件和 `freetype2.pc` 齐全。归档与 preset 回归纳入后，两端公共全集各通过 35 项；Windows 观察到缺少 preset 的回归失败，加入公共环境后旧 policy 子项目完成安装，无逐库 policy 参数。
+
+Windows 未发现 ZLIB、BZip2、PNG、HarfBuzz、BrotliDec，FreeType 导出无这些外部链接依赖。Linux 发现 ZLIB 1.2.11 与 PNG 1.6.37，CMake 导出实际包含 `/usr/lib/aarch64-linux-gnu/libz.so`、`/usr/lib/aarch64-linux-gnu/libpng.so`，解析后的文件确认为 aarch64 动态库；pkg-config 的 Requires 为 `zlib, libpng`。Linux 未发现 BZip2、HarfBuzz、BrotliDec。两端 `.pc` 均保留各自安装前缀；这些结果不构成依赖隔离、自包含或可搬迁保证，模块维持参考的可选依赖默认探测。
 
 两端 zlib、queue 的内部安装检查各通过 1 项 CTest，分别验证静态库绝对路径链接后的压缩往返与六头文件编译后的简单队列操作。不完整安装前缀缺少静态库或指定头文件时 configure 失败，不由系统安装补齐。上游头文件中的许可证与归属保留，不迁入上游构建和测试框架。
 

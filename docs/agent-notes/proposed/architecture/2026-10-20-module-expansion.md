@@ -55,6 +55,12 @@ FreeType 的库特定构建行为保持参考基线，不新增依赖声明，�
 
 [FreeType 2.13.2 的 CMake 配置](https://github.com/freetype/freetype/blob/VER-2-13-2/CMakeLists.txt)默认探测 ZLIB、BZip2、PNG、HarfBuzz 和 BrotliDec；参考基线未设置 `FT_DISABLE_ZLIB`、`FT_DISABLE_BZIP2`、`FT_DISABLE_PNG`、`FT_DISABLE_HARFBUZZ` 或 `FT_DISABLE_BROTLI`。本批不额外启用这些关闭开关，因为它们会改变参考构建的依赖或功能。发现的外部库可能为静态或动态库，静态 FreeType 也不等于依赖自包含；导出的 CMake 配置可能含外部路径，pkg-config 文件可能记录依赖名或链接参数。双平台验收核对 configure/cache 与导出配置，记录实际依赖，不将静态归档的 `ldd` 输出作为自包含证据；隔离依赖与可搬迁包不属于本批承诺。
 
+### 公共 CMake policy 配置
+
+本地构建沿用参考仓库 `CMakePresets.json` 的公共 policy 环境设置：隐藏的 `base` configure preset 设置 `CMAKE_POLICY_VERSION_MINIMUM=3.5`，Windows x64 与 Linux preset 继承它，使用各自既有生成器与 `build/`。对应 build preset 通过 `inheritConfigureEnvironment: true` 继承同一环境，保证在 build 阶段启动的 ExternalProject 子项目也获得该设置。正式开发命令同时使用 configure preset 和 build preset，不把仅在父 configure 中设置普通变量视为对子进程的传递。
+
+该环境设置解决 CMake 4.x 对旧第三方 policy 声明的兼容问题，不在 FreeType 或其他模块中重复添加 `CMAKE_POLICY_VERSION_MINIMUM`，不修改上游源码，不改变项目显式要求的更高 policy 或 CMake 版本。最低 CMake 仍为 3.20；不使用 preset 的原生入口仍可用，但不自动获得 preset 环境。不迁入参考 CI、`build-defaults.cmake` toolchain 或固定安装库目录设置。公共回归通过真实 preset 配置与构建小型旧 policy 子项目，核对父 configure 与子项目 build 环境均为 `3.5`。
+
 ### 新增模块技能的必要适配
 
 技能放在本仓库 `.agents/skills/add-third-party-module/SKILL.md`，保持参考技能的用途与触发范围：新增、迁移、集成或升级第三方模块时使用；已安装库的运行时用法、纯环境排错、公共引擎改动和发布操作不因此变成模块接入任务。技能可以在新增模块同时需要扩展引擎时提供模块规则，但不替代该扩展的设计。
@@ -113,6 +119,7 @@ ImGui 的专用 CMakeLists、sed 修改和安装期修正继续放在模块目�
 - 首批公共回归证明多个 URL 按声明顺序尝试，首地址 404 或内容摘要不匹配后，备用地址提供正确归档时可完成获取；全部地址失败或所有候选内容均不匹配摘要时不产生安装结果。单顶层目录归档直接提供源码根，主来源与附属资源的归档参数均正确生成，既有 Git 流程保持通过，HTTP fixture 在失败路径也完成清理。
 - 新增模块技能使用当前 TOML 接口，元数据与采用的本地引用有效，保留模块接入和核对规则，不包含旧 helper 模板或未实施能力的操作指令。
 - 首批不新增自定义下载器、跨 build 缓存、安装 sentinel、模块依赖、发布接口或每库强制专用测试工程；完成后有公共回归、双平台真实构建及文档和技能检查证据。
+- 公共 configure/build presets 传递参考 policy 环境，旧 policy 子项目可从真实入口构建安装；模块不逐个重复添加 policy 兼容参数。
 
 以下标准属于后续批次，不是首批额外验收要求：
 

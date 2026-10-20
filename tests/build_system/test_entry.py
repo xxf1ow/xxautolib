@@ -11,6 +11,8 @@ class EntryTests(PipelineCase):
         super().setUp()
         for name in ("CMakeLists.txt", "pyproject.toml", "uv.lock", ".python-version"):
             shutil.copy2(ROOT / name, self.source / name)
+        if (ROOT / "CMakePresets.json").is_file():
+            shutil.copy2(ROOT / "CMakePresets.json", self.source / "CMakePresets.json")
         shutil.copytree(ROOT / "src/build_system", self.source / "src/build_system")
         self.environment = {**os.environ, "UV_OFFLINE": "true"}
 
@@ -23,6 +25,27 @@ class EntryTests(PipelineCase):
         repo = self.repository(name, {"x.h": name})
         return self.definition('[source]\n' + repo + '\n[[copy]]\nfiles=["x.h"]\n'
                                'destination="include"\n', kind="copy", name=name)
+
+    def test_presets_propagate_policy_to_external_projects(self):
+        repo = self.repository("legacy", {"CMakeLists.txt": '''cmake_minimum_required(VERSION 3.0)
+project(child NONE)
+file(WRITE "${CMAKE_BINARY_DIR}/policy.txt" "$ENV{CMAKE_POLICY_VERSION_MINIMUM}")
+install(FILES "${CMAKE_BINARY_DIR}/policy.txt" DESTINATION include)
+'''})
+        self.definition('[source]\n' + repo)
+        entry = self.source / "CMakeLists.txt"
+        entry.write_text(entry.read_text(encoding="utf-8") + '\n'
+                         'file(WRITE "${CMAKE_BINARY_DIR}/policy.txt" "$ENV{CMAKE_POLICY_VERSION_MINIMUM}")\n',
+                         encoding="utf-8")
+        environment = dict(self.environment)
+        environment.pop("CMAKE_POLICY_VERSION_MINIMUM", None)
+        preset = "windows-x64" if os.name == "nt" else "linux"
+        self.run_command("cmake", "--preset", preset, "-DBUILD_LIST=demo",
+                         cwd=self.source, env=environment)
+        self.assertEqual((self.context.build_root / "policy.txt").read_text(), "3.5")
+        self.run_command("cmake", "--build", "--preset", preset,
+                         cwd=self.source, env=environment)
+        self.assertEqual((self.source / "3rdparty/demo/include/policy.txt").read_text(), "3.5")
 
     def test_default_discovery_and_build_list_isolation(self):
         self.copy_module("first")
