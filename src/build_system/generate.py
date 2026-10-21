@@ -4,8 +4,41 @@ import argparse
 from pathlib import Path
 import sys
 
-from definition import load_definition
+from definition import ModuleDefinition, _name, load_definition
 from cmake import BuildContext, cmake_argument, render_module
+
+
+def load_module_closure(source_root: Path, names: list[str], system_name: str,
+                        architecture: str = "") -> list[ModuleDefinition]:
+    """返回稳定依赖先序闭包；非法声明、缺失或环以含声明路径及链的 ValueError 失败。"""
+    result, complete, stack = [], set(), []
+
+    def visit(name):
+        path = source_root / "src/dependencies" / name / "module.toml"
+        chain = " -> ".join([*stack, name])
+        if name in stack:
+            raise ValueError(f"{path}: dependency cycle: {chain}")
+        if name in complete:
+            return
+        try:
+            _name(name, "module name")
+            module = load_definition(path, system_name, architecture)
+        except ValueError as error:
+            raise ValueError(f"{error}; dependency chain: {chain}") from error
+        stack.append(name)
+        try:
+            for dependency in module.depends:
+                visit(dependency)
+        except ValueError as error:
+            raise ValueError(f"{module.path}: {error}") from error
+        finally:
+            stack.pop()
+        complete.add(name)
+        result.append(module)
+
+    for name in names:
+        visit(name)
+    return result
 
 
 def write_if_changed(path: Path, content: str) -> bool:
@@ -36,13 +69,16 @@ def main(argv: list[str] | None = None) -> int:
         toolset=args.toolset, instance=args.instance, multi_config=args.multi_config == "ON",
         msvc_runtime_library=args.msvc_runtime_library,
         cmake_command=args.cmake_command, git_executable=args.git_executable,
-        cmake_defaults=dict(value.split("=", 1) for value in args.cmake_default))
+        cmake_defaults=dict(value.split("=", 1) for value in args.cmake_default),
+        python_executable=Path(sys.executable))
     try:
-        definitions = [load_definition(context.source_root / "src/dependencies" / name / "module.toml",
-                                       context.system_name, args.architecture) for name in args.module]
+        definitions = load_module_closure(context.source_root, args.module,
+                                          context.system_name, args.architecture)
         outputs = {}
+        by_name = {module.name: module for module in definitions}
         for module in definitions:
-            outputs[context.build_root / "generated" / f"{module.name}.cmake"] = render_module(module, context)
+            outputs[context.build_root / "generated" / f"{module.name}.cmake"] = render_module(
+                module, context, tuple(by_name[name] for name in module.depends))
         engine = Path(__file__).resolve().parent
         inputs = {Path(__file__).resolve(), *[module.path for module in definitions]}
         inputs.update(Path(module.__file__).resolve() for module in tuple(sys.modules.values())

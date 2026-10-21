@@ -1,15 +1,13 @@
 # ONNX Runtime：模型推理运行库，完整复制官方 CPU 预编译归档。
 name = "onnxruntime"
 type = "copy"
-version = "1.24.4"
+version = "1.24.4" # 升级时同步核对三种目标归档、SHA256 和安装内容；按平台与架构选择，不回退到其他架构。
 sentinel = "include/onnxruntime_c_api.h"
 
-# 保留头文件、库、运行文件、版本和许可证；不执行源码配置或构建。
-[[copy]]
+[[copy]] # 保留头文件、库、运行文件、版本和许可证；仅解压后复制，不执行源码配置或构建。
 directories = ["."]
 destination = "."
 
-# 升级时同步核对三种目标归档、SHA256 和安装内容，不回退到其他架构。
 [platforms.windows.architectures.x86_64.source]
 URL = ["https://github.com/microsoft/onnxruntime/releases/download/v1.24.4/onnxruntime-win-x64-1.24.4.zip"]
 URL_HASH = "SHA256=d2319fddfb6ea4db99ccc4b60c85c517bcd855721f5daa6a06d40d7cb2ee2357"

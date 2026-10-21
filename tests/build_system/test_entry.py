@@ -8,6 +8,44 @@ from test_cmake import PipelineCase, ROOT
 
 
 class EntryTests(PipelineCase):
+    def test_dependency_toml_reconfigures_leaf_build(self):
+        repo = self.repository("dep", {"CMakeLists.txt": '''cmake_minimum_required(VERSION 3.20)
+project(child NONE)
+file(WRITE "${CMAKE_BINARY_DIR}/value.txt" "${VALUE}")
+install(FILES "${CMAKE_BINARY_DIR}/value.txt" DESTINATION include)
+'''})
+        dependency = self.definition('[source]\n' + repo + '[cmake.cache]\nVALUE="one"\n', name="dep")
+        leaf = self.copy_module("leaf")
+        leaf.path.write_text(leaf.path.read_text().replace('type="copy"', 'type="copy"\ndepends=["dep"]'))
+        self.copy_module("unused")
+        self.configure("-DBUILD_LIST=leaf")
+        self.build()
+        installed = self.source / "3rdparty/dep/include/value.txt"
+        self.assertEqual(installed.read_text(), "one")
+        time.sleep(1.1)
+        dependency.path.write_text(dependency.path.read_text().replace('VALUE="one"', 'VALUE="two"'))
+        result = self.build()
+        self.assertIn("Building Summary", result.stdout)
+        self.assertEqual(installed.read_text(), "two")
+        self.assertFalse((self.source / "git/unused").exists())
+
+    def test_dependency_preserves_root_project_include(self):
+        self.copy_module("dep")
+        repo = self.repository("leaf", {"CMakeLists.txt": '''cmake_minimum_required(VERSION 3.20)
+project(child NONE)
+if(NOT CALLER_MARKER)
+message(FATAL_ERROR "caller project include lost")
+endif()
+file(WRITE "${CMAKE_BINARY_DIR}/marker" "${CALLER_MARKER}")
+install(FILES "${CMAKE_BINARY_DIR}/marker" DESTINATION .)
+'''})
+        self.definition('depends=["dep"]\n[source]\n' + repo, name="leaf")
+        caller = self.source / "caller.cmake"
+        caller.write_text('set(CALLER_MARKER "caller preserved")\n')
+        self.configure("-DBUILD_LIST=leaf", f"-DCMAKE_PROJECT_INCLUDE={caller.as_posix()}")
+        self.build()
+        self.assertEqual((self.source / "3rdparty/leaf/marker").read_text(), "caller preserved")
+
     def setUp(self):
         super().setUp()
         for name in ("CMakeLists.txt", "pyproject.toml", "uv.lock", ".python-version"):

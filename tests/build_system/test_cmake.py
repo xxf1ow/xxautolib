@@ -9,7 +9,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src/build_system"))
-from definition import load_definition
+from definition import PatchDefinition, load_definition
 from cmake import BuildContext, cmake_argument, render_module
 
 
@@ -75,6 +75,43 @@ class PipelineCase(unittest.TestCase):
 
 
 class CMakeTests(PipelineCase):
+    def test_python_reference_requires_interpreter_context(self):
+        module = self.definition('[source]\nGIT_REPOSITORY="unused"\nGIT_TAG="fixed"\n'
+                                 '[cmake.cache]\nPython3_EXECUTABLE="<PYTHON_EXECUTABLE>"\n')
+        with self.assertRaisesRegex(ValueError, "PYTHON_EXECUTABLE.*context"):
+            render_module(module, self.context)
+
+    def test_resource_source_paths_resolve_selected_git_and_archive(self):
+        module = self.definition('''[source]
+GIT_REPOSITORY="unused"
+GIT_TAG="fixed"
+[resources.extra]
+GIT_REPOSITORY="unused"
+GIT_TAG="fixed"
+[resources.archive]
+URL=["https://example.invalid/a.zip"]
+URL_HASH="SHA256=''' + "a" * 64 + '''"
+[platforms.windows.resources.extra]
+URL=["https://example.invalid/windows.zip"]
+URL_HASH="SHA256=''' + "b" * 64 + '''"
+[cmake.cache]
+ONE="<RESOURCE_SOURCE_DIR:extra>/modules"
+MANY=["<RESOURCE_SOURCE_DIR:archive>", "<RESOURCE_SOURCE_DIR:extra>/tail"]
+''')
+        suffix = '''get_property(args TARGET demo PROPERTY _EP_CMAKE_ARGS)
+get_property(separator TARGET demo PROPERTY _EP_LIST_SEPARATOR)
+string(REPLACE "${separator}" ";" args "${args}")
+file(WRITE "${CMAKE_BINARY_DIR}/received" "${args}")
+'''
+        self.project(module, suffix)
+        received = (self.context.build_root / "received").read_text()
+        extra = (self.context.build_root / "ep/demo/res/extra/src" if os.name == "nt" else
+                 self.source / "git/_resources/demo/extra").as_posix()
+        archive = (self.context.build_root / "ep/demo/res/archive/src").as_posix()
+        self.assertIn(f"-DONE:STRING={extra}/modules", received)
+        self.assertIn(f"-DMANY:STRING={archive};{extra}/tail", received)
+        self.assertNotIn("<RESOURCE_SOURCE_DIR:", received)
+
     def test_new_build_reuses_modified_primary_and_resource_git(self):
         main = self.repository("main", {"main.h": "original"})
         resource = self.repository("extra", {"extra.h": "extra"})
@@ -167,7 +204,7 @@ destination="include"
         sentinel = self.source / "3rdparty/demo/include/x.h"
         sentinel.parent.mkdir(parents=True)
         sentinel.write_text("cached header")
-        module.patches.append(self.source / "must-not-apply.patch")
+        module.patches.append(PatchDefinition(self.source / "must-not-apply.patch"))
         module.steps.append({"name": "must_not_run", "DEPENDEES": ["build"],
                              "DEPENDERS": ["install"], "COMMAND": ["unavailable-command"]})
         self.project(module, '''

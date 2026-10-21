@@ -5,7 +5,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src/build_system"))
-from definition import load_definition
+from definition import PatchDefinition, load_definition
 
 
 SOURCE = '''
@@ -16,6 +16,67 @@ GIT_TAG = "0123456789012345678901234567890123456789"
 
 
 class DefinitionTests(unittest.TestCase):
+    def test_resource_patch_and_cache_reference_validation(self):
+        (self.path.parent / "change.patch").write_text("patch input")
+        body = SOURCE + '''[resources.extra]
+GIT_REPOSITORY="unused"
+GIT_TAG="fixed"
+[cmake.cache]
+EXTRA="<RESOURCE_SOURCE_DIR:extra>/modules"
+MANY=["<RESOURCE_SOURCE_DIR:extra>", "suffix"]
+[[patches]]
+file="change.patch"
+resource="extra"
+'''
+        module = self.load(body)
+        self.assertEqual(module.patches[0].file, self.path.parent / "change.patch")
+        self.assertEqual(module.patches[0].resource, "extra")
+        for changed, field in ((body.replace('resource="extra"', 'resource="missing"'), "patches.resource"),
+                               (body.replace('file="change.patch"', 'file="change.patch"\nunknown=true'), "unknown"),
+                               (body.replace('<RESOURCE_SOURCE_DIR:extra>/modules', '<RESOURCE_SOURCE_DIR:missing>/modules'), "EXTRA"),
+                               (body.replace('["<RESOURCE_SOURCE_DIR:extra>"', '["<RESOURCE_SOURCE_DIR:missing>"'), "MANY")):
+            with self.subTest(field=field), self.assertRaises(ValueError) as error:
+                self.load(changed)
+            self.assertIn(field, str(error.exception))
+            self.assertIn(str(self.path), str(error.exception))
+            if field != "unknown":
+                self.assertIn("missing", str(error.exception))
+
+    def test_dependency_metadata_and_platform_overrides(self):
+        body = '''depends=["lz4","lz4"]
+config_dir="lib/cmake/demo"
+pkgconfig_dir="lib/pkgconfig"
+package_name="Demo"
+sentinel="include/demo.h"
+''' + SOURCE + '''[platforms.windows]
+config_dir="lib"
+package_name="WinDemo"
+sentinel="lib/DemoConfig.cmake"
+[platforms.linux]
+config_dir="lib/cmake/demo"
+'''
+        linux = self.load(body)
+        self.assertEqual(linux.depends, ["lz4"])
+        self.assertEqual((linux.config_dir, linux.pkgconfig_dir, linux.package_name),
+                         ("lib/cmake/demo", "lib/pkgconfig", "Demo"))
+        windows = self.load(body, "Windows")
+        self.assertEqual((windows.config_dir, windows.package_name, windows.sentinel),
+                         ("lib", "WinDemo", "lib/DemoConfig.cmake"))
+        cases = [('depends=[1]\n', "depends"), ('depends=[""]\n', "depends"),
+                 ('depends=["../escape"]\n', "depends"),
+                 ('config_dir="/absolute"\n', "config_dir"),
+                 ('pkgconfig_dir="C:/absolute"\n', "pkgconfig_dir"),
+                 ('package_name="Demo"\n', "package_name")]
+        for prefix, field in cases:
+            with self.subTest(prefix=prefix), self.assertRaises(ValueError) as error:
+                self.load(prefix + SOURCE)
+            self.assertIn(str(self.path), str(error.exception))
+            self.assertIn(field, str(error.exception))
+        with self.assertRaisesRegex(ValueError, "platforms.windows.config_dir"):
+            self.load(SOURCE + '[platforms.windows]\nconfig_dir="../escape"\n')
+        with self.assertRaisesRegex(ValueError, "package_name"):
+            self.load(SOURCE + '[platforms.windows]\npackage_name="Demo"\n')
+
     def setUp(self):
         directory = ROOT / "build/tests"
         directory.mkdir(parents=True, exist_ok=True)
@@ -238,7 +299,7 @@ DEPENDS = ["change.cmake"]
 WORKING_DIRECTORY = "<SOURCE_DIR>"
 COMMAND = ["cmake", "-P", "change.cmake"]
 ''')
-        self.assertEqual(module.patches, [patch])
+        self.assertEqual(module.patches, [PatchDefinition(patch)])
         self.assertEqual(module.steps[0]["DEPENDS"], [script.as_posix()])
         self.assertEqual(module.steps[0]["WORKING_DIRECTORY"], "<SOURCE_DIR>")
         patch.unlink()
