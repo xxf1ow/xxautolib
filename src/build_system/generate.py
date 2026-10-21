@@ -74,8 +74,10 @@ def main(argv: list[str] | None = None) -> int:
         definitions = load_module_closure(context.source_root, args.module,
                                           context.system_name, args.architecture)
         outputs = {}
+        by_name = {module.name: module for module in definitions}
         for module in definitions:
-            outputs[context.build_root / "generated" / f"{module.name}.cmake"] = render_module(module, context)
+            outputs[context.build_root / "generated" / f"{module.name}.cmake"] = render_module(
+                module, context, tuple(by_name[name] for name in module.depends))
         engine = Path(__file__).resolve().parent
         inputs = {Path(__file__).resolve(), *[module.path for module in definitions]}
         inputs.update(Path(module.__file__).resolve() for module in tuple(sys.modules.values())
