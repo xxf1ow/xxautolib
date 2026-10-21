@@ -25,6 +25,8 @@
 
 本地能力的既有决定见[模块扩展](agent-notes/proposed/architecture/2026-10-20-module-expansion.md)，本批方案见[本地复用与平台输入设计](agent-notes/implemented/architecture/2026-10-20-local-reuse-and-platform-inputs.md)；导入、打包和固定槽见[二进制交付](agent-notes/proposed/architecture/2026-10-20-name-only-artifact-delivery.md)；环境、ABI、并行和通用槽位见[三平台 CI](agent-notes/proposed/process/2026-10-20-native-platform-ci.md)。
 
+下一批拟接入 FLANN、HarfBuzz 与 OpenCV 4.14.0，同时验证模块依赖和复杂资源；具体方案与验收范围见[依赖与复杂资源设计](agent-notes/proposed/architecture/2026-10-20-flann-opencv-dependencies.md)，不表示已实现。
+
 ## 模块迁移候选
 
 下表覆盖参考仓库的 36 个模块定义。分组用于选择有代表性的下一批，不表示组内模块复杂度相同或全部平台已验证；不把参考版本号和选项表复制为另一份维护清单。
