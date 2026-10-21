@@ -27,6 +27,10 @@ function(xxautolib_generate_modules)
         set(multi_config OFF)
     endif()
     set(runtime_argument)
+    set(architecture "${CMAKE_SYSTEM_PROCESSOR}")
+    if(CMAKE_GENERATOR MATCHES "^Visual Studio" AND CMAKE_GENERATOR_PLATFORM)
+        string(REGEX REPLACE ",.*$" "" architecture "${CMAKE_GENERATOR_PLATFORM}")
+    endif()
     if(DEFINED CMAKE_MSVC_RUNTIME_LIBRARY)
         list(APPEND runtime_argument "--msvc-runtime-library=${CMAKE_MSVC_RUNTIME_LIBRARY}")
     endif()
@@ -45,6 +49,7 @@ function(xxautolib_generate_modules)
             "--source-root=${CMAKE_CURRENT_SOURCE_DIR}"
             "--build-root=${CMAKE_BINARY_DIR}"
             "--system-name=${CMAKE_SYSTEM_NAME}"
+            "--architecture=${architecture}"
             "--generator=${CMAKE_GENERATOR}"
             "--platform=${CMAKE_GENERATOR_PLATFORM}"
             "--toolset=${CMAKE_GENERATOR_TOOLSET}"
