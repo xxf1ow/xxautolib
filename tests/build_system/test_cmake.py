@@ -75,6 +75,12 @@ class PipelineCase(unittest.TestCase):
 
 
 class CMakeTests(PipelineCase):
+    def test_python_reference_requires_interpreter_context(self):
+        module = self.definition('[source]\nGIT_REPOSITORY="unused"\nGIT_TAG="fixed"\n'
+                                 '[cmake.cache]\nPython3_EXECUTABLE="<PYTHON_EXECUTABLE>"\n')
+        with self.assertRaisesRegex(ValueError, "PYTHON_EXECUTABLE.*context"):
+            render_module(module, self.context)
+
     def test_resource_source_paths_resolve_selected_git_and_archive(self):
         module = self.definition('''[source]
 GIT_REPOSITORY="unused"

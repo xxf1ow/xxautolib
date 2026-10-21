@@ -1,4 +1,5 @@
 from pathlib import Path
+import sys
 import unittest
 
 from test_cmake import PipelineCase, ROOT
@@ -7,6 +8,31 @@ import generate
 
 
 class GenerateTests(PipelineCase):
+    def test_uv_python_reference_reaches_child(self):
+        repo = self.repository("python-child", {"CMakeLists.txt": '''
+cmake_minimum_required(VERSION 3.20)
+project(child NONE)
+execute_process(COMMAND "${PYTHON_FOR_GENERATION}" -c "import sys; print(sys.executable)"
+                OUTPUT_VARIABLE received OUTPUT_STRIP_TRAILING_WHITESPACE RESULT_VARIABLE result)
+if(NOT result EQUAL 0)
+  message(FATAL_ERROR "configured Python could not execute: ${result}")
+endif()
+file(WRITE "${CMAKE_BINARY_DIR}/python.txt" "${received}")
+install(FILES "${CMAKE_BINARY_DIR}/python.txt" DESTINATION .)
+'''})
+        self.definition('[source]\n' + repo +
+                        '[cmake.cache]\nPYTHON_FOR_GENERATION="<PYTHON_EXECUTABLE>"\n')
+        self.assertEqual(main(self.arguments("demo")), 0)
+        (self.source / "CMakeLists.txt").write_text(
+            'cmake_minimum_required(VERSION 3.20)\nproject(fixture NONE)\ninclude(ExternalProject)\n'
+            'include("${CMAKE_BINARY_DIR}/generated/demo.cmake")\n')
+        args = ["cmake", "-S", self.source, "-B", self.context.build_root, "-G", self.context.generator]
+        if self.context.platform:
+            args += ["-A", self.context.platform, "-T", self.context.toolset]
+        self.run_command(*args)
+        self.build()
+        self.assertEqual(Path((self.source / "3rdparty/demo/python.txt").read_text()), Path(sys.executable))
+
     def dependency_fixture(self, name, dependencies=()):
         import json
         return self.definition('depends=' + json.dumps(list(dependencies)) + '\n'

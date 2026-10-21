@@ -1,0 +1,19 @@
+# HarfBuzz：文本整形引擎，构建并安装库，供 OpenCV freetype 使用。
+name = "harfbuzz"
+type = "cmake"
+version = "8.5.0"
+depends = ["freetype"]
+pkgconfig_dir = "lib/pkgconfig"
+sentinel = "include/harfbuzz/hb.h"
+
+# 保留参考版本与归档摘要；升级时重新验证 FreeType 接线及安装布局。
+[source]
+URL = ["https://github.com/harfbuzz/harfbuzz/archive/refs/tags/8.5.0.zip"]
+URL_HASH = "SHA256=734985456b60c198da41f4c85280963795b9baa6fb6f3b91c6b85026da837933"
+DOWNLOAD_NAME = "harfbuzz-8.5.0.zip"
+
+# 保留参考 FreeType 集成，其余组件沿用上游默认值。
+[cmake.cache]
+HB_HAVE_FREETYPE = true
+# 上游查找 Python 解释器；使用根 uv 环境，不从系统另选解释器。
+Python3_EXECUTABLE = "<PYTHON_EXECUTABLE>"

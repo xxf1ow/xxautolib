@@ -17,6 +17,22 @@ PATCH = '''diff --git a/value.c b/value.c
 
 
 class PatchTests(PipelineCase):
+    def test_archive_patch_is_not_skipped_inside_an_outer_repository(self):
+        self.repository("outer", {"archive/value.c": "int value(void) { return 1; }\n",
+                                  "value.c": "outer content\n"})
+        outer = self.source / "upstream/outer"
+        source = outer / "archive"
+        patch = self.patch_file()
+        self.apply(source, patch)
+        self.assertEqual((source / "value.c").read_text(), "int value(void) { return 2; }\n")
+        self.assertEqual((outer / "value.c").read_text(), "outer content\n")
+        self.assertIn("already applied", self.apply(source, patch).stdout)
+        (source / "value.c").write_text("manual content\n")
+        result = self.apply(source, patch, success=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("source mismatch", result.stdout + result.stderr)
+        self.assertEqual((source / "value.c").read_text(), "manual content\n")
+
     def resource_fixture(self):
         patch = self.patch_file()
         extra = self.repository("extra", {"value.c": "int value(void) { return 1; }\n"})

@@ -1,0 +1,80 @@
+# OpenCV：图像处理与计算机视觉库，构建含 contrib 和文字绘制的 world 库。
+name = "opencv"
+type = "cmake"
+version = "4.14.0"
+depends = ["freetype", "harfbuzz"]
+package_name = "OpenCV"
+config_dir = "lib/cmake/opencv4"
+sentinel = "lib/cmake/opencv4/OpenCVConfig.cmake"
+
+# 主库与 contrib 必须保持同版本；摘要来自各自实际归档，不复用旧版本。
+[source]
+URL = ["https://github.com/opencv/opencv/archive/refs/tags/4.14.0.zip"]
+URL_HASH = "SHA256=831375584ff7a680cbb4efbb242cf949d14a37a3c37cb029c503672fe035abb6"
+DOWNLOAD_NAME = "opencv-4.14.0.zip"
+
+[resources.opencv_contrib]
+URL = ["https://github.com/opencv/opencv_contrib/archive/refs/tags/4.14.0.zip"]
+URL_HASH = "SHA256=50b41019c1739eec8a94b162fad9a6378c743d16bdd58f41fea006dae58e12e7"
+DOWNLOAD_NAME = "opencv_contrib-4.14.0.zip"
+
+# 保留参考 PkgConfig 探测修正；资源完成补丁后主库才配置。
+[[patches]]
+file = "freetype-pkgconfig.patch"
+resource = "opencv_contrib"
+
+[platforms.windows]
+# 保留上游 Windows 原生布局：根配置负责选择 x64/vc17 下的实际库。
+config_dir = "."
+sentinel = "OpenCVConfig.cmake"
+
+# 保留参考功能取舍，并禁用 4.14 新增的 signal；未列模块由上游依赖决定。
+# 不设置 OpenCV BUILD_LIST，不覆盖 KleidiCV 平台默认值。
+[cmake.cache]
+OPENCV_EXTRA_MODULES_PATH = "<RESOURCE_SOURCE_DIR:opencv_contrib>/modules"
+# Python 探测与代码生成均绑定根 uv；不启用 Python 绑定。
+PYTHON3_EXECUTABLE = "<PYTHON_EXECUTABLE>"
+PYTHON_DEFAULT_EXECUTABLE = "<PYTHON_EXECUTABLE>"
+OPENCV_ENABLE_NONFREE = true
+BUILD_opencv_world = true
+BUILD_opencv_freetype = true
+WITH_FFMPEG = true
+WITH_GSTREAMER = false
+WITH_PROTOBUF = false
+BUILD_opencv_signal = false
+BUILD_DOCS = false
+BUILD_EXAMPLES = false
+BUILD_PACKAGE = false
+BUILD_TESTS = false
+BUILD_PERF_TESTS = false
+BUILD_opencv_apps = false
+BUILD_JAVA = false
+BUILD_opencv_java_bindings_generator = false
+BUILD_opencv_js = false
+BUILD_opencv_js_bindings_generator = false
+BUILD_opencv_python2 = false
+BUILD_opencv_python3 = false
+BUILD_opencv_python_bindings_generator = false
+BUILD_opencv_python_tests = false
+BUILD_opencv_objc_bindings_generator = false
+BUILD_opencv_ts = false
+BUILD_opencv_ml = false
+BUILD_opencv_dnn = false
+BUILD_opencv_objdetect = false
+BUILD_opencv_gapi = false
+BUILD_opencv_bgsegm = false
+BUILD_opencv_optflow = false
+BUILD_opencv_stereo = false
+BUILD_opencv_superres = false
+BUILD_opencv_tracking = false
+BUILD_opencv_videostab = false
+BUILD_opencv_datasets = false
+BUILD_opencv_phase_unwrapping = false
+BUILD_opencv_bioinspired = false
+BUILD_opencv_hfs = false
+BUILD_opencv_saliency = false
+BUILD_opencv_rapid = false
+BUILD_opencv_rgbd = false
+BUILD_opencv_surface_matching = false
+BUILD_opencv_structured_light = false
+BUILD_opencv_ccalib = false

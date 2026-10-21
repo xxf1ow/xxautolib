@@ -55,7 +55,9 @@ sentinel 不改变依赖图：声明仍完整解析，所选闭包的目标仍�
 | freetype | `lib/cmake/freetype` | `lib/pkgconfig` | 保留 `include/freetype2/ft2build.h`。 |
 | flann | `lib/cmake/flann` | `lib/pkgconfig` | `include/flann/flann.hpp`。 |
 | harfbuzz | 不预设 CMake 包目录 | `lib/pkgconfig` | `include/harfbuzz/hb.h`。 |
-| opencv | Windows 为 `lib`，Linux 为 `lib/cmake/opencv4`；包名为 `OpenCV` | 不新增参考未声明的目录 | 对应包目录下的 `OpenCVConfig.cmake`。 |
+| opencv | Windows 为 `.`，Linux 为 `lib/cmake/opencv4`；包名为 `OpenCV` | 不新增参考未声明的目录 | Windows 为 `OpenCVConfig.cmake`，Linux 为 `lib/cmake/opencv4/OpenCVConfig.cmake`。 |
+
+OpenCV 保留上游原生安装布局。Windows 根配置选择 `x64/vc17/` 下的实际库；不为匹配参考的 `lib` 假设添加安装重布局选项。包查找元数据与安装检查均使用安装根配置，Linux 规则不变。
 
 使用方 configure 只接收其直接依赖的查找位置，不把全部所选模块或兄弟模块安装树混在一起。标准接线包括：安装前缀加入 `CMAKE_PREFIX_PATH`，声明的 CMake 包目录生成 `<package_name>_DIR`，声明的 `.pc` 目录加入 `PKG_CONFIG_PATH`；沿用参考通过 `CMAKE_PROJECT_INCLUDE` 注入依赖 include 目录的逻辑，不将其改造成上游源码重写。包名大小写按声明保留。
 

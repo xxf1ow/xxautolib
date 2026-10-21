@@ -69,7 +69,8 @@ def main(argv: list[str] | None = None) -> int:
         toolset=args.toolset, instance=args.instance, multi_config=args.multi_config == "ON",
         msvc_runtime_library=args.msvc_runtime_library,
         cmake_command=args.cmake_command, git_executable=args.git_executable,
-        cmake_defaults=dict(value.split("=", 1) for value in args.cmake_default))
+        cmake_defaults=dict(value.split("=", 1) for value in args.cmake_default),
+        python_executable=Path(sys.executable))
     try:
         definitions = load_module_closure(context.source_root, args.module,
                                           context.system_name, args.architecture)

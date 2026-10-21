@@ -3,6 +3,8 @@ name = "freetype"
 type = "cmake"
 version = "2.13.2"
 sentinel = "include/freetype2/ft2build.h"
+config_dir = "lib/cmake/freetype"
+pkgconfig_dir = "lib/pkgconfig"
 
 # 升级版本时同时核对三个镜像与归档 SHA256；候选必须提供字节相同的内容。
 # 保留参考地址顺序，统一下载文件名以兼容带 /download 的镜像入口。

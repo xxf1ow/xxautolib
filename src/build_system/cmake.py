@@ -20,6 +20,7 @@ class BuildContext:
     cmake_command: Path
     git_executable: Path
     cmake_defaults: dict[str, str] = field(default_factory=dict)
+    python_executable: Path | None = None
 
 
 def cmake_argument(value: str) -> str:
@@ -164,6 +165,10 @@ def render_module(module: ModuleDefinition, context: BuildContext,
                 return [resolve_reference(item) for item in value]
             if not isinstance(value, str):
                 return value
+            if "<PYTHON_EXECUTABLE>" in value:
+                if context.python_executable is None:
+                    raise ValueError(f"{module.path}: PYTHON_EXECUTABLE requires interpreter context")
+                value = value.replace("<PYTHON_EXECUTABLE>", context.python_executable.as_posix())
             return RESOURCE_REFERENCE.sub(lambda match: source_directory(
                 module.resources[match[1]], persistent / "_resources" / module.name / match[1],
                 prefix / "res" / match[1]).as_posix(), value)

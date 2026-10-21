@@ -5,15 +5,19 @@ foreach(input GIT_EXECUTABLE SOURCE_DIR PATCH_FILE)
     endif()
 endforeach()
 
+# 归档目录没有自己的 .git；禁止 Git 向上发现宿主仓库并静默跳过补丁。
+get_filename_component(source_parent "${SOURCE_DIR}" DIRECTORY)
+set(patch_git "${CMAKE_COMMAND}" -E env "GIT_CEILING_DIRECTORIES=${source_parent}" "${GIT_EXECUTABLE}")
+
 execute_process(
-    COMMAND "${GIT_EXECUTABLE}" apply --check "${PATCH_FILE}"
+    COMMAND ${patch_git} apply --check "${PATCH_FILE}"
     WORKING_DIRECTORY "${SOURCE_DIR}"
     RESULT_VARIABLE check_result
     OUTPUT_VARIABLE check_output
     ERROR_VARIABLE check_error)
 if(check_result STREQUAL "0")
     execute_process(
-        COMMAND "${GIT_EXECUTABLE}" apply --whitespace=nowarn "${PATCH_FILE}"
+        COMMAND ${patch_git} apply --whitespace=nowarn "${PATCH_FILE}"
         WORKING_DIRECTORY "${SOURCE_DIR}"
         RESULT_VARIABLE apply_result
         OUTPUT_VARIABLE apply_output
@@ -27,7 +31,7 @@ if(check_result STREQUAL "0")
 endif()
 
 execute_process(
-    COMMAND "${GIT_EXECUTABLE}" apply --reverse --check "${PATCH_FILE}"
+    COMMAND ${patch_git} apply --reverse --check "${PATCH_FILE}"
     WORKING_DIRECTORY "${SOURCE_DIR}"
     RESULT_VARIABLE reverse_result
     OUTPUT_VARIABLE reverse_output
