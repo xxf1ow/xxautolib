@@ -6,13 +6,11 @@ sentinel = "include/freetype2/ft2build.h"
 config_dir = "lib/cmake/freetype"
 pkgconfig_dir = "lib/pkgconfig"
 
-# 升级版本时同时核对三个镜像与归档 SHA256；候选必须提供字节相同的内容。
-# 保留参考地址顺序，统一下载文件名以兼容带 /download 的镜像入口。
-[source]
+[source] # 升级版本时同时核对三个镜像与归档 SHA256；候选必须提供字节相同的内容。
 URL = [
     "https://download.savannah.gnu.org/releases/freetype/freetype-2.13.2.tar.xz",
     "https://download-mirror.savannah.gnu.org/releases/freetype/freetype-2.13.2.tar.xz",
     "https://sourceforge.net/projects/freetype/files/freetype2/2.13.2/freetype-2.13.2.tar.xz/download",
 ]
 URL_HASH = "SHA256=12991c4e55c506dd7f9b765933e62fd2be2e06d421505d7950a132e4f1bb484d"
-DOWNLOAD_NAME = "freetype-2.13.2.tar.xz"
+DOWNLOAD_NAME = "freetype-2.13.2.tar.xz" # 保持 URL 候选顺序，统一文件名以兼容带 /download 的镜像入口。

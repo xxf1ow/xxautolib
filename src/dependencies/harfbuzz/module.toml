@@ -6,14 +6,11 @@ depends = ["freetype"]
 pkgconfig_dir = "lib/pkgconfig"
 sentinel = "include/harfbuzz/hb.h"
 
-# 保留参考版本与归档摘要；升级时重新验证 FreeType 接线及安装布局。
-[source]
+[source] # 版本与归档摘要须配套；升级时重新验证 FreeType 接线及安装布局。
 URL = ["https://github.com/harfbuzz/harfbuzz/archive/refs/tags/8.5.0.zip"]
 URL_HASH = "SHA256=734985456b60c198da41f4c85280963795b9baa6fb6f3b91c6b85026da837933"
 DOWNLOAD_NAME = "harfbuzz-8.5.0.zip"
 
-# 保留参考 FreeType 集成，其余组件沿用上游默认值。
-[cmake.cache]
-HB_HAVE_FREETYPE = true
-# 上游查找 Python 解释器；使用根 uv 环境，不从系统另选解释器。
-Python3_EXECUTABLE = "<PYTHON_EXECUTABLE>"
+[cmake.cache]                              # 其余组件沿用上游默认值。
+HB_HAVE_FREETYPE = true                    # 启用 FreeType 集成，由 depends 引入本仓库 freetype。
+Python3_EXECUTABLE = "<PYTHON_EXECUTABLE>" # 上游查找 Python 时绑定根 uv 环境，不从系统另选解释器。

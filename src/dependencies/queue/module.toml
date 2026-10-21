@@ -1,21 +1,17 @@
 # queue：组合 SPSC 与 MPMC 队列，仅安装头文件。
-# 无主来源；两个上游作为本模块的附属资源。
 name = "queue"
-type = "copy"
+type = "copy" # 无主来源；两个上游作为附属资源，合并安装到 include/queue，不生成 CMake/pkg-config 包或运行库。
 sentinel = "include/queue/readerwriterqueue.h"
 
-# SPSC 队列；固定提交，升级时检查头文件清单。
-[resources.readerwriterqueue]
+[resources.readerwriterqueue] # SPSC（单生产者单消费者）队列；固定提交，升级时检查头文件清单。
 GIT_REPOSITORY = "https://github.com/cameron314/readerwriterqueue.git"
 GIT_TAG = "6867b56452352acf077fccd5f6cc7e3a8cfde0fb"
 
-# MPMC 队列；与 SPSC 资源独立获取和固定版本。
-[resources.concurrentqueue]
+[resources.concurrentqueue]   # MPMC（多生产者多消费者）队列；与 SPSC 资源独立获取和固定版本。
 GIT_REPOSITORY = "https://github.com/cameron314/concurrentqueue.git"
 GIT_TAG = "683b9e31ea15eb69f1b81cc1defc7850d5f20b71"
 
-# 安装 SPSC 公开头文件及其同目录依赖，保留相对 include 关系。
-[[copy]]
+[[copy]] # 安装 SPSC 公开头文件及其同目录依赖，保留相对 include 关系。
 resource = "readerwriterqueue"
 files = [
     "atomicops.h",
@@ -24,8 +20,7 @@ files = [
 ]
 destination = "include/queue"
 
-# 安装 MPMC 与阻塞队列头文件及其信号量依赖。
-[[copy]]
+[[copy]] # 安装 MPMC 与阻塞队列头文件及其信号量依赖。
 resource = "concurrentqueue"
 files = [
     "concurrentqueue.h",

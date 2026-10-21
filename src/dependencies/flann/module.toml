@@ -1,25 +1,23 @@
 # FLANN：近似最近邻搜索库，构建并安装 C/C++ 库；压缩依赖复用本仓库 lz4。
 name = "flann"
 type = "cmake"
-version = "f9caaf609d8b8cb2b7104a85cf59eb92c275a25d"
+version = "f9caaf609d8b8cb2b7104a85cf59eb92c275a25d" # 固定提交而非 release tag；升级时重新验证 lz4 探测及安装布局。
 depends = ["lz4"]
 config_dir = "lib/cmake/flann"
 pkgconfig_dir = "lib/pkgconfig"
 sentinel = "include/flann/flann.hpp"
 
-# 固定参考提交；版本更新需重新验证 lz4 探测及安装布局。
 [source]
 GIT_REPOSITORY = "https://github.com/flann-lib/flann.git"
 GIT_TAG = "f9caaf609d8b8cb2b7104a85cf59eb92c275a25d"
 
-# 保留参考 C 接口与 OpenMP，不构建其他语言绑定、GPU、示例、测试或文档。
 [cmake.cache]
-BUILD_C_BINDINGS = true
-BUILD_PYTHON_BINDINGS = false
-BUILD_MATLAB_BINDINGS = false
-BUILD_CUDA_LIB = false
-BUILD_EXAMPLES = false
-BUILD_TESTS = false
-BUILD_DOC = false
-USE_OPENMP = true
-USE_MPI = false
+BUILD_C_BINDINGS = true        # 启用 C 接口，保留 C/C++ 库。
+BUILD_PYTHON_BINDINGS = false  # 禁用 Python 绑定。
+BUILD_MATLAB_BINDINGS = false  # 禁用 MATLAB 绑定。
+BUILD_CUDA_LIB = false         # 禁用 CUDA GPU 库。
+BUILD_EXAMPLES = false         # 禁用示例程序。
+BUILD_TESTS = false            # 禁用测试。
+BUILD_DOC = false              # 禁用文档生成。
+USE_OPENMP = true              # 启用 OpenMP 多线程并行。
+USE_MPI = false                # 禁用 MPI 分布式并行。

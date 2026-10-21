@@ -7,74 +7,69 @@ package_name = "OpenCV"
 config_dir = "lib/cmake/opencv4"
 sentinel = "lib/cmake/opencv4/OpenCVConfig.cmake"
 
-# 主库与 contrib 必须保持同版本；摘要来自各自实际归档，不复用旧版本。
-[source]
+[source] # 主库与 contrib 必须保持同版本；SHA256 来自各自实际归档，升级时须重新校验。
 URL = ["https://github.com/opencv/opencv/archive/refs/tags/4.14.0.zip"]
 URL_HASH = "SHA256=831375584ff7a680cbb4efbb242cf949d14a37a3c37cb029c503672fe035abb6"
 DOWNLOAD_NAME = "opencv-4.14.0.zip"
 
-[resources.opencv_contrib]
+[resources.opencv_contrib] # contrib 扩展源码，仅作本模块附属资源，不构成独立对外模块。
 URL = ["https://github.com/opencv/opencv_contrib/archive/refs/tags/4.14.0.zip"]
 URL_HASH = "SHA256=50b41019c1739eec8a94b162fad9a6378c743d16bdd58f41fea006dae58e12e7"
 DOWNLOAD_NAME = "opencv_contrib-4.14.0.zip"
 
-# 保留参考 PkgConfig 探测修正；资源完成补丁后主库才配置。
-[[patches]]
-file = "freetype-pkgconfig.patch"
-resource = "opencv_contrib"
+[[patches]]                        # MSVC 根配置可能跳过 PkgConfig 探测；需在 freetype 的 ocv_check_modules 前显式查找。
+file = "freetype-pkgconfig.patch"  # freetype2/harfbuzz 经 pkg-config 探测；PKG_CONFIG_PATH 由直接依赖接线提供。
+resource = "opencv_contrib"        # 在 contrib 上完成补丁后，主库才能配置，避免 freetype 因依赖未检出而被禁用。
 
 [platforms.windows]
-# 保留上游 Windows 原生布局：根配置负责选择 x64/vc17 下的实际库。
-config_dir = "."
+config_dir = "." # 上游 Windows 原生布局：根配置负责选择 x64/vc17 下的实际库。
 sentinel = "OpenCVConfig.cmake"
 
-# 保留参考功能取舍，并禁用 4.14 新增的 signal；未列模块由上游依赖决定。
-# 不设置 OpenCV BUILD_LIST，不覆盖 KleidiCV 平台默认值。
-[cmake.cache]
-OPENCV_EXTRA_MODULES_PATH = "<RESOURCE_SOURCE_DIR:opencv_contrib>/modules"
-# Python 探测与代码生成均绑定根 uv；不启用 Python 绑定。
-PYTHON3_EXECUTABLE = "<PYTHON_EXECUTABLE>"
-PYTHON_DEFAULT_EXECUTABLE = "<PYTHON_EXECUTABLE>"
-OPENCV_ENABLE_NONFREE = true
-BUILD_opencv_world = true
-BUILD_opencv_freetype = true
-WITH_FFMPEG = true
-WITH_GSTREAMER = false
-WITH_PROTOBUF = false
-BUILD_opencv_signal = false
-BUILD_DOCS = false
-BUILD_EXAMPLES = false
-BUILD_PACKAGE = false
-BUILD_TESTS = false
-BUILD_PERF_TESTS = false
-BUILD_opencv_apps = false
-BUILD_JAVA = false
-BUILD_opencv_java_bindings_generator = false
-BUILD_opencv_js = false
-BUILD_opencv_js_bindings_generator = false
-BUILD_opencv_python2 = false
-BUILD_opencv_python3 = false
-BUILD_opencv_python_bindings_generator = false
-BUILD_opencv_python_tests = false
-BUILD_opencv_objc_bindings_generator = false
-BUILD_opencv_ts = false
-BUILD_opencv_ml = false
-BUILD_opencv_dnn = false
-BUILD_opencv_objdetect = false
-BUILD_opencv_gapi = false
-BUILD_opencv_bgsegm = false
-BUILD_opencv_optflow = false
-BUILD_opencv_stereo = false
-BUILD_opencv_superres = false
-BUILD_opencv_tracking = false
-BUILD_opencv_videostab = false
-BUILD_opencv_datasets = false
-BUILD_opencv_phase_unwrapping = false
-BUILD_opencv_bioinspired = false
-BUILD_opencv_hfs = false
-BUILD_opencv_saliency = false
-BUILD_opencv_rapid = false
-BUILD_opencv_rgbd = false
-BUILD_opencv_surface_matching = false
-BUILD_opencv_structured_light = false
-BUILD_opencv_ccalib = false
+[cmake.cache] # 不设置 OpenCV BUILD_LIST；未列模块按上游默认值与依赖选择，KleidiCV 保持平台默认值。
+OPENCV_EXTRA_MODULES_PATH = "<RESOURCE_SOURCE_DIR:opencv_contrib>/modules" # 加载 contrib 扩展模块源码。
+
+PYTHON3_EXECUTABLE = "<PYTHON_EXECUTABLE>"        # Python 探测绑定根 uv 环境，不启用 Python 绑定。
+PYTHON_DEFAULT_EXECUTABLE = "<PYTHON_EXECUTABLE>" # 代码生成使用同一根 uv 解释器。
+OPENCV_ENABLE_NONFREE = true                      # 允许构建受额外许可限制的算法，使用时仍须遵守各算法许可。
+BUILD_opencv_world = true                         # 将支持 world 聚合的已启用模块合并构建。
+BUILD_opencv_freetype = true                      # 启用字体加载和文字绘制，支持中文。
+WITH_FFMPEG = true                                # 启用 FFmpeg 后端，供 videoio 读写视频及打开 RTSP 流。
+WITH_GSTREAMER = false                            # 禁用 GStreamer 后端。
+WITH_PROTOBUF = false                             # 禁用 Protobuf 支持，用于深度学习模型的序列化。
+BUILD_opencv_signal = false                       # 禁用 4.14 新增的一维信号处理、重采样模块。
+BUILD_DOCS = false                                # 禁用用户手册和参考指南生成。
+BUILD_EXAMPLES = false                            # 禁用 samples 目录中的示例程序编译。
+BUILD_PACKAGE = false                             # 禁用 ZIP、TGZ 等安装包生成。
+BUILD_TESTS = false                               # 禁用用于验证算法正确性的准确性测试。
+BUILD_PERF_TESTS = false                          # 禁用用于评估算法性能的性能测试。
+BUILD_opencv_apps = false                         # 禁用命令行工具和示例应用程序。
+BUILD_JAVA = false                                # 禁用 Java 支持。
+BUILD_opencv_java_bindings_generator = false      # 禁用 Java 绑定生成器。
+BUILD_opencv_js = false                           # 禁用 JavaScript 支持。
+BUILD_opencv_js_bindings_generator = false        # 禁用 JavaScript 绑定生成器。
+BUILD_opencv_python2 = false                      # 禁用 Python 2 绑定。
+BUILD_opencv_python3 = false                      # 禁用 Python 3 绑定。
+BUILD_opencv_python_bindings_generator = false    # 禁用 Python 绑定生成器。
+BUILD_opencv_python_tests = false                 # 禁用 Python 测试。
+BUILD_opencv_objc_bindings_generator = false      # 禁用苹果平台的 Objective-C 绑定生成器。
+BUILD_opencv_ts = false                           # 禁用测试支持模块。
+BUILD_opencv_ml = false                           # 禁用机器学习模块，包括 SVM、决策树等。
+BUILD_opencv_dnn = false                          # 禁用用于加载和运行深度学习模型的 DNN 模块。
+BUILD_opencv_objdetect = false                    # 禁用目标检测模块，包括级联分类器、二维码和条形码检测。
+BUILD_opencv_gapi = false                         # 禁用用于组织图像处理流水线的图计算 API。
+BUILD_opencv_bgsegm = false                       # 禁用背景与前景分割扩展算法。
+BUILD_opencv_optflow = false                      # 禁用估计相邻帧像素运动的扩展光流算法。
+BUILD_opencv_stereo = false                       # 禁用 contrib 立体匹配扩展；不禁用 calib3d 的 StereoBM/StereoSGBM。
+BUILD_opencv_superres = false                     # 禁用图像超分辨率算法。
+BUILD_opencv_tracking = false                     # 禁用目标跟踪扩展算法。
+BUILD_opencv_videostab = false                    # 禁用视频稳像算法。
+BUILD_opencv_datasets = false                     # 禁用数据集加载、算法评估和基准辅助功能。
+BUILD_opencv_phase_unwrapping = false             # 禁用二维相位展开 API。
+BUILD_opencv_bioinspired = false                  # 禁用生物视觉启发的模型及衍生工具。
+BUILD_opencv_hfs = false                          # 禁用基于分层特征选择的图像分割算法。
+BUILD_opencv_saliency = false                     # 禁用图像显著区域检测算法。
+BUILD_opencv_rapid = false                        # 禁用基于轮廓的三维目标位姿跟踪。
+BUILD_opencv_rgbd = false                         # 禁用 RGB-D 处理扩展，包括深度图处理、里程计和 ICP 配准。
+BUILD_opencv_surface_matching = false             # 禁用基于三维特征的曲面匹配与点云配准。
+BUILD_opencv_structured_light = false             # 禁用用于三维重建的结构光算法。
+BUILD_opencv_ccalib = false                       # 禁用自定义标定模式和三维重建扩展。
