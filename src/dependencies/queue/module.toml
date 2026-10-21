@@ -2,6 +2,7 @@
 # 无主来源；两个上游作为本模块的附属资源。
 name = "queue"
 type = "copy"
+sentinel = "include/queue/readerwriterqueue.h"
 
 # SPSC 队列；固定提交，升级时检查头文件清单。
 [resources.readerwriterqueue]

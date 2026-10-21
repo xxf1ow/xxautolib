@@ -73,9 +73,9 @@ build/
 
 每份工作副本统一使用根 `.venv/`、`build/` 和 `3rdparty/`。Python 环境准备、生成器、测试及开发脚本全部经 uv 执行，使用受跟踪的 `.python-version`、`pyproject.toml` 与 `uv.lock`，不创建 build 专属环境，不回退到系统 Python 或 pip。构建中间产物放在 `build/`，不提供多构建目录管理或交叉编译支持，同一个 build 不混用 Windows 与 Linux 产物。
 
-ExternalProject 使用紧凑的显式目录：`PREFIX` 为 `build/ep/<模块名>/`，其下 `src/`、`bin/`、`stamp/`、`tmp/`、`dl/` 分别对应 SOURCE_DIR、BINARY_DIR、STAMP_DIR、TMP_DIR、DOWNLOAD_DIR。最终安装仍使用 `3rdparty/<模块名>/`，生成声明仍使用 `build/generated/`。此布局减少路径嵌套，不保证任意深度工作区都能构建；Windows 长路径能力仍取决于系统及工具，不自动修改系统设置。
+ExternalProject 的 `PREFIX` 为 `build/ep/<模块名>/`，其下保留归档解压的 `src/`、编译的 `bin/`、步骤的 `stamp/` 和临时 `tmp/`。Git 来源与归档下载使用根 `git/`，具体布局及验收状态由[本地复用设计](2026-10-20-local-reuse-and-platform-inputs.md)拥有。最终安装使用 `3rdparty/<模块名>/`，生成声明使用 `build/generated/`。此布局不保证任意深度工作区都能构建；Windows 长路径能力仍取决于系统及工具，不自动修改系统设置。
 
-附属资源使用模块内的独立工作目录，例如 `build/ep/queue/res/readerwriterqueue/`，不与主来源或其他资源共用源码、stamp 和临时文件。资源目录与内部目标名由模块名及资源名确定，不能因不同模块使用相同资源名而冲突。
+附属资源使用模块内的独立工作目录，例如 `build/ep/queue/res/readerwriterqueue/`，不与主来源或其他资源共用 stamp 和临时文件；Git 资源持久目录同时保留模块名与资源名。资源目录与内部目标名不能因不同模块使用相同资源名而冲突。
 
 ### 根入口与模块发现
 
@@ -99,7 +99,7 @@ URL 列表按声明顺序交给原生下载步骤；网络失败与摘要不符�
 
 文件补丁使用 `[[patches]]` 的 `file` 字段，路径相对于 module.toml 所在目录。引擎将文件列表生成原生 PATCH_COMMAND，按声明顺序执行应用检查、应用和反向检查，文件内容作为步骤输入。其他时机或其他工具的源码修改仍使用原生 steps，不受文件补丁格式限制。
 
-copy 类型以 `[[copy]]` 声明安装映射：resource 指定本模块的附属资源，files 是相对于该资源源码目录的文件列表，destination 是相对于模块安装前缀的目标目录。未指定 resource 时使用主来源；两者都不存在则解析失败，来源文件缺失则安装失败。files 和 destination 不接受绝对路径或越出声明目录的 `..`。复制按明确文件列表执行，不增加通配匹配、目录同步或删除目标文件的语义。
+copy 类型以 `[[copy]]` 声明安装映射：resource 指定本模块资源，未指定则使用主来源；两者都不存在则解析失败。files 或 directories 二选一，路径相对来源；destination 相对模块安装前缀，均不允许绝对路径或 `..` 越界。来源内容缺失在安装时失败；复制不包含通配匹配、目录同步或删除目标文件语义。完整目录复制由[本地复用设计](2026-10-20-local-reuse-and-platform-inputs.md)拥有，queue 保留明确文件列表。
 
 所有库的 module.toml 必须有中文维护注释。文件开头说明用途和交付类型；固定版本、非默认选项、补丁及自定义步骤说明需要维护者知道的约束或理由。使用 TOML 的 `#` 注释，不要求逐行复述字段名，不增加注释解析机制。公共的生成器、CRT、Release 和路径策略不在每库重复配置。
 
@@ -107,7 +107,7 @@ copy 类型以 `[[copy]]` 声明安装映射：resource 指定本模块的附属
 
 公共 CMake cache 选项放在 `[cmake.cache]`，公共自定义步骤放在 `[[steps]]`。平台差异只使用固定的 `platforms.windows`、`platforms.linux` 表，由 CMake 传入的 CMAKE_SYSTEM_NAME 分别以 Windows、Linux 精确选择，不从宿主环境猜测，不支持条件表达式、通配匹配或 targets 过滤语法。
 
-平台表只支持 `cmake.cache` 与 `steps`：选中平台的 cache 按键覆盖公共同名值，其余公共值保留；平台 steps 追加到公共 steps 列表，但步骤执行次序仍只由原生依赖字段决定。未选中平台的配置不参与生成，未知平台键报错。不提供任意字段的通用递归合并规则。
+选中平台的 cmake.cache 按键覆盖公共同名值，其余公共值保留；平台 steps 追加到公共列表，但执行次序仍由原生依赖字段决定。平台 source、resources 及 architectures 的来源选择由[本地复用设计](2026-10-20-local-reuse-and-platform-inputs.md)拥有；未选中分支仍校验，不参与生成，未知键报错。不提供任意字段的通用递归合并规则。
 
 平台专用数据使用以下格式；示例不属于任何库的必要构建操作：
 

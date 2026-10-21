@@ -14,8 +14,8 @@
 
 | 阶段 | 参考状态 | 本仓库待做与完成标志 |
 | --- | --- | --- |
-| 本地获取与安装扩展 | 已实现 | FreeType 已验证 URL/SHA256/原生镜像回退；平台/架构来源、其他文件布局及必要的 SOURCE_SUBDIR 仍按实际模块接入，不预建完整 Schema，整阶段尚未完成。 |
-| 本地输入与安装复用 | 已实现 | 持久 Git 目录、哈希归档复用和安装 sentinel 短路尚未接入；跨 build 复用前确认保存位置及安装有效性规则，不把目录存在当成版本校验。 |
+| 本地获取与安装扩展 | 已实现 | 已验证：URL/SHA256/原生镜像回退、平台/架构来源、SOURCE_SUBDIR 和目录复制；lz4、ONNX Runtime 在 Windows x64、Linux aarch64 完成真实安装。Linux x86_64 仅验证声明选择。 |
+| 本地输入与安装复用 | 已实现 | 已验证：持久 Git、哈希归档复用和 sentinel 短路，公共回归双端通过；五模块登记 sentinel，不把存在性当版本校验。 |
 | 模块依赖 | 已实现 | 选择 lz4 → flann 等小依赖链，支持依赖发现、排序和安装前缀/包位置传递；再接 Boost、PCL 对 zlib 的依赖。仅请求叶子也能得到所需构建输入，不能误用系统库。 |
 | 复杂模块与专用文件 | 已实现 | 按需接 OpenCV contrib、oneTBB HWLOC、ImGui 专用 CMakeLists；资源就绪、原生步骤位置、安装内容和工具链身份可核对。 |
 | 下游导入与可搬迁包 | 已实现 | 模块显式提供包内 adapter；用少量代表包完成搬迁后真实链接，打包不改原安装树；本地构建资格与发布资格分离。 |
@@ -23,7 +23,7 @@
 | 三平台原生 CI | 基础流水线已实现，单 job 优化待实施 | 接入 Windows x86_64、Linux x86_64/aarch64；以原生单 job 分层、统一环境与并行预算为目标，不先复制多 job 传完整包的结构再重写。 |
 | 平台无关头文件槽位 | 待实施 | 仅对显式声明且安装内容确实平台无关的包启用 any/any；规划、导入、缓存、manifest、镜像共同支持，并通过三平台消费。 |
 
-本地能力的既有决定见[模块扩展](agent-notes/proposed/architecture/2026-10-20-module-expansion.md)，本批方案见[本地复用与平台输入设计](agent-notes/proposed/architecture/2026-10-20-local-reuse-and-platform-inputs.md)；导入、打包和固定槽见[二进制交付](agent-notes/proposed/architecture/2026-10-20-name-only-artifact-delivery.md)；环境、ABI、并行和通用槽位见[三平台 CI](agent-notes/proposed/process/2026-10-20-native-platform-ci.md)。
+本地能力的既有决定见[模块扩展](agent-notes/proposed/architecture/2026-10-20-module-expansion.md)，本批方案见[本地复用与平台输入设计](agent-notes/implemented/architecture/2026-10-20-local-reuse-and-platform-inputs.md)；导入、打包和固定槽见[二进制交付](agent-notes/proposed/architecture/2026-10-20-name-only-artifact-delivery.md)；环境、ABI、并行和通用槽位见[三平台 CI](agent-notes/proposed/process/2026-10-20-native-platform-ci.md)。
 
 ## 模块迁移候选
 
@@ -31,11 +31,11 @@
 
 | 分组 | 模块 | 本仓库状态或接入重点 |
 | --- | --- | --- |
-| 已验证 | zlib、queue、freetype | 本地构建安装通过，不追加下游交付要求；FreeType 沿用参考的系统可选依赖探测。 |
-| 基础构建与头文件 | asio、clipper2、cpp-httplib、eigen、expected、ftxui、gtest、libzmq、lz4、nativefiledialog-extended、nlohmann、portaudio、pybind11、sdl3、spdlog、taskflow、websocketpp、yaml-cpp | 待迁移；按需挑选，覆盖归档、源码子目录、系统依赖和安装布局；不是要求一次迁移整组。 |
+| 已验证 | zlib、queue、freetype、lz4、onnxruntime | Windows x64、Linux aarch64 本地构建或复制安装通过，不追加下游交付要求；FreeType 沿用参考的系统可选依赖探测。 |
+| 基础构建与头文件 | asio、clipper2、cpp-httplib、eigen、expected、ftxui、gtest、libzmq、nativefiledialog-extended、nlohmann、portaudio、pybind11、sdl3、spdlog、taskflow、websocketpp、yaml-cpp | 待迁移；按需挑选，覆盖归档、源码子目录、系统依赖和安装布局；不是要求一次迁移整组。 |
 | 依赖链 | boost、flann、harfbuzz、pcl | 待迁移；本仓库产物的显式依赖与标准查找通道。 |
 | 多资源及专用构建 | opencv、oneTBB、imgui、gtsam | 待迁移；附属编译输入、专用文件、补丁与依赖，不把库逻辑塞进引擎。 |
-| 预编译输入 | onnxruntime、mysql | 待迁移；按平台选择已登记归档及摘要，核对复制布局与独立运行要求。 |
+| 预编译输入 | mysql | 待迁移；按平台选择已登记归档及摘要，核对复制布局与独立运行要求。 |
 | 专项模块 | sherpa-onnx、lastools、logo | 待按实际需求确定批次；分别涉及私有依赖参数、平台限制或资源产物。 |
 | 暂缓 | fastdeploy、nndeploy | 初版不做；不因参考实现存在便引入硬编码 SDK 路径或自动后端探测。 |
 

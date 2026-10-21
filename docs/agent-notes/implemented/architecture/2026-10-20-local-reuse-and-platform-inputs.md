@@ -1,14 +1,20 @@
 # Agent Note: 本地复用与平台输入的参考迁入设计
 
-Status: proposed
+Status: implemented
 
 ## 问题
 
 现有流水线已验证 zlib、queue 和 FreeType 的本地构建安装，但 Git 输入和下载归档仍随 build 保存，安装结果没有 sentinel 短路，模块也不能声明源码子目录或按平台、架构选择来源。接入参考仓库的 lz4 和 ONNX Runtime 需要这些能力；应沿用已存在的参考行为，不同时引入新的缓存或恢复系统。
 
-## 方案
+## 决定
 
-本记录独立拥有本批的接口、模块范围、验证要求与风险；总体迁入约束和其他模块方向见[模块扩展与依赖接线的沿用决定](2026-10-20-module-expansion.md)。以下均为待实施设计，不表示当前仓库已经支持。
+本记录拥有本地输入复用、安装 sentinel、源码子目录、平台/架构来源选择及两个模块接入的决定与限制；总体迁入约束和其他模块方向见[模块扩展与依赖接线的沿用决定](../../proposed/architecture/2026-10-20-module-expansion.md)。
+
+### 当前验证结果
+
+Windows x64 与 Linux aarch64 公共全集均通过 49 项。Windows 两个真实模块完成获取、安装及产物检查，默认发现五个模块后重新 configure/build 均命中 sentinel。Windows 沿用已有 VS2022 build 的空工具集字符串，实际编译器为 MSVC 19.42（v143），没有切换缓存身份；该实机结果不代替显式工具集组合验证。
+
+Linux aarch64 的 lz4 完成真实克隆、编译与安装，固定提交及四个参考选项均匹配。ONNX Runtime 使用同一官方 aarch64 归档，经 Windows 获取并核对原 SHA256 后传入授权目录；原生 ExternalProject 再次验证摘要并解压安装。安装内容与解压来源一致，主库为 aarch64 ELF，共享库名称可解析，ldd 无缺失依赖；重新 configure/build 后两个模块均命中 cached。Linux x86_64 实机与 v142 的既有缺口保持不变。
 
 ### 目标与参考对应
 
@@ -54,7 +60,7 @@ Git 来源沿用参考的本地优先判断：已有 `.git` 文件或目录时�
 
 ### 源码子目录与平台来源声明
 
-以下字段是本批拟新增接口，不是当前已支持的操作示例。`[cmake]` 增加可选 `SOURCE_SUBDIR` 相对路径，默认使用源码根；声明必须留在来源目录内，copy 类型不能使用。该字段直接生成原生 `SOURCE_SUBDIR`，不修改 `SOURCE_DIR`、补丁根或安装位置，也不在 configure 时检查尚未获取的子目录。
+`[cmake]` 的可选 `SOURCE_SUBDIR` 是相对路径，默认使用源码根；声明必须留在来源目录内，copy 类型不能使用。该字段直接生成原生 `SOURCE_SUBDIR`，不修改 `SOURCE_DIR`、补丁根或安装位置，也不在 configure 时检查尚未获取的子目录。
 
 平台数据沿用现有 `platforms.windows`、`platforms.linux`。平台表增加 `source`、`resources` 和 `architectures`；架构表键使用 `x86_64`、`aarch64`，其内容仅增加本批需要的 `source` 与 `resources`，不扩展架构专用 cache、steps、copy 或任意条件表达式。例如 ONNX Runtime 的三个来源分别登记在 `platforms.windows.architectures.x86_64.source`、`platforms.linux.architectures.x86_64.source` 和 `platforms.linux.architectures.aarch64.source`。
 
@@ -86,7 +92,7 @@ ONNX Runtime 新增 `src/dependencies/onnxruntime/module.toml`，类型为 `copy
 
 两个真实模块均从普通根 CMake 入口选择构建安装。Windows x64 与既有授权的 Linux aarch64 设备 `lxx@192.168.0.127`、目录 `/home/lxx/xxautolib` 核对 lz4 编译安装和 ONNX Runtime 下载复制安装，再核对输入复用及 sentinel 命中；不以 fixture 或 configure 成功代替真实模块结果。为区分输入复用与安装短路，公共测试使用隔离的新 build 和安装状态，不删除真实工作副本产物。Linux x86_64 本批只验证声明选择，实机获取安装仍是明确缺口；不以另两端成功替代。v142 实机一致性继续保留人工验收。
 
-传输和已有数据保护遵守[基础设施与验证授权](../../implemented/process/2026-10-19-repository-foundation.md)。该授权不扩展到其他机器、目录、推送、发布或远端 CI；本批不操作托管平台。实现完成时更新[架构](../../../architecture.md)、[开发指南](../../../development.md)、[测试指南](../../../testing.md)、[路线图](../../../roadmap.md)和[新增模块技能](../../../../.agents/skills/add-third-party-module/SKILL.md)中受影响的事实，不将本批未涉及的路线图项目标成完成。
+传输和已有数据保护遵守[基础设施与验证授权](../process/2026-10-19-repository-foundation.md)。该授权不扩展到其他机器、目录、推送、发布或远端 CI；本批不操作托管平台。当前接口、操作及验证入口分别由[架构](../../../architecture.md)、[开发指南](../../../development.md)、[测试指南](../../../testing.md)和[新增模块技能](../../../../.agents/skills/add-third-party-module/SKILL.md)拥有；[路线图](../../../roadmap.md)保留未实施范围。
 
 ## 备选方案
 
@@ -94,17 +100,15 @@ ONNX Runtime 新增 `src/dependencies/onnxruntime/module.toml`，类型为 `copy
 
 **把 ONNX Runtime 直接解压到安装树。** 参考使用这种布局；本仓库已经将来源准备与 copy 安装分开，因此只作先解压、再完整目录复制的必要适配，避免为单库新增绕过安装阶段的专用类型。库内容与选中的原生归档保持一致，不重写其构建或发布逻辑。
 
-## 验收标准
+## 验证
 
-- lz4 `1.10.0` 和 onnxruntime `1.24.4` 在 Windows x64、Linux aarch64 从根入口完成真实构建或复制安装，来源、参考选项及实际产物可核对；Linux x86_64 仅有声明选择证据，不宣称实机通过。
-- 干净的新 build 能复用持久 Git 输入和通过摘要校验的归档；本地源码修改保留，非空异常目录失败且不被清理；没有源码自动迁移、更新或回滚。
-- 五个模块显式登记参考 sentinel；命中时只有同名空目标，不执行模块资源、获取、构建、安装或自定义步骤，重新 configure 后的状态可核对；不承诺版本和安装完整性校验。
-- 源码子目录、完整来源替换、三种平台组合、缺失来源失败及完整目录复制有公共回归；旧 queue 文件复制和既有公共参数规则保持有效。
-- 本批只有必要的 TOML、通用生成与原生执行适配，不重构根 CMake，不引入独立缓存数据库、通用恢复、模块依赖、下游导入、打包或 CI；公共测试与文档、技能检查通过。
+Windows x64、Linux aarch64 的公共全集均为 49/49。真实模块安装证据见当前验证结果；Linux x86_64 仅有声明选择证据，不宣称实机通过。
 
-## 风险
+公共回归验证新 build 复用持久 Git 和匹配摘要的归档、本地修改保留、隐藏文件异常目录保护、sentinel 全流程短路、源码子目录、完整来源替换、缺失来源失败及目录复制。queue 文件复制和既有公共参数仍有回归；五模块 sentinel 路径与模块声明一致。
 
-当前平台覆盖表仅支持 cache 和 steps；平台/架构来源和目录复制是本批拟新增接口，不能提前当成已实现能力。模块依赖及复杂资源消费仍由后续真实模块确定。库的系统包、编译要求和预编译 ABI 各异，参考模块存在不等于新环境构建成功。首次迁移先保持参考配置并形成基线，必要优化另行判断。
+## 影响
+
+平台/架构来源和目录复制有公共回归，真实模块验收以本记录的当前验证结果为准。模块依赖及复杂资源消费仍由后续真实模块确定。库的系统包、编译要求和预编译 ABI 各异，参考模块存在不等于新环境构建成功。首次迁移先保持参考配置并形成基线，必要优化另行判断。
 
 sentinel 可能让旧版本或残缺安装被当作可复用，这是参考存在性判断的已知限制，不用新增数据库消除。持久 Git 来源会保留补丁和人工修改，不能因新 build 而假定源码干净；来源与选项变化需要人工准备。ONNX Runtime 是预编译运行库，复制成功不等于本机所有运行时依赖均满足；本批核对安装内容和实际库依赖，不承诺重新编译、自包含或模型推理功能。
 
