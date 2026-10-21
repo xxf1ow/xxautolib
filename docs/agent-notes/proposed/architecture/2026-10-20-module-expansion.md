@@ -10,6 +10,8 @@ zlib 和 queue 能验证本地基础流水线，但不能代表 URL 归档、预
 
 沿用已有模块的职责划分和依赖决定，按真实接入需求扩展 TOML；本记录是本仓库的后续约束，不代表以下能力已经实现。当前字段与执行规则仍由[流水线决定](../../implemented/architecture/2026-10-19-toml-externalproject-zlib.md)拥有，阶段顺序由[路线图](../../../roadmap.md)拥有。
 
+本地输入复用、安装 sentinel、源码子目录、平台/架构来源选择及 lz4、onnxruntime 接入由独立的[本地复用与平台输入设计](../../implemented/architecture/2026-10-20-local-reuse-and-platform-inputs.md)拥有。本文保留 FreeType 基线和后续模块扩展的总体约束，不重复该批实施方案。
+
 ### 首批目标与范围
 
 首批以 FreeType 2.13.2 验证 URL 归档获取、摘要校验、多地址顺序回退及真实构建安装，同时适配参考仓库的新增模块技能。使用者通过现有根 CMake 入口选择 freetype，获得本仓库安装树中的头文件、静态库和安装配置；不要求下游导入或二进制交付。首批完成后即可独立验收，不以其他模块迁移为完成条件。
@@ -30,7 +32,7 @@ zlib 和 queue 能验证本地基础流水线，但不能代表 URL 归档、预
 
 Python 只解析声明并生成原生参数，不访问网络、下载文件、校验归档或执行解压。CMake 的 ExternalProject 在 build 阶段完成下载、摘要校验与解压；首个地址下载失败时继续尝试后续地址，全部失败则获取步骤失败，未经摘要校验的归档不得进入解压和构建。回退、内部重试及错误输出全部沿用 [CMake 3.20 ExternalProject 的原生 URL 能力](https://cmake.org/cmake/help/v3.20/module/ExternalProject.html#download-step-options)，不新增下载脚本、自定义 `DOWNLOAD_COMMAND`、Python 重试循环或地址健康状态。摘要不匹配不等于立即终止：原生下载脚本会移除不匹配的文件并继续尝试，候选与内部重试均耗尽后才失败；不承诺具体重试次数或间隔，依据见 [CMake 3.20.6 下载脚本](https://github.com/Kitware/CMake/blob/v3.20.6/Modules/ExternalProject-download.cmake.in)。
 
-目录保持现有 `build/ep/<模块名>/` 布局，归档使用该目标的 `dl/`，解压使用 `src/`；附属资源保持各自独立的既有目录。ExternalProject 自己在下载目录中依据摘要复用归档的行为保留，但不新增跨 build 缓存目录、缓存数据库或安装存在性短路。来源变更仍适用[开发指南](../../../development.md)的人工准备规则，不能借此次扩展覆盖已有源码修改或清空其他模块。
+归档解压保留 `build/ep/<模块名>/src/`，资源保留模块内独立解压目录；下载和 Git 持久输入位置由[本地复用设计](../../implemented/architecture/2026-10-20-local-reuse-and-platform-inputs.md)拥有。不增加缓存数据库；来源变更仍适用[开发指南](../../../development.md)的人工准备规则，不能覆盖已有源码修改或清空其他模块。
 
 单顶层目录归档沿用原生展开规则：[CMake 3.20.6 的解压实现](https://github.com/Kitware/CMake/blob/v3.20.6/Modules/ExternalProject.cmake#L1445)将唯一顶层目录的内容作为 `SOURCE_DIR`，因此 FreeType 归档中的 `freetype-2.13.2/` 不会额外嵌套在 `src/` 下，根入口位于 `src/CMakeLists.txt`。这不需要新增 `SOURCE_SUBDIR`。`.tar.xz` 由 CMake 原生解压，Windows 实际构建验证该环境的格式支持，不为假设中的精简 CMake 另加探测或解压工具。
 
@@ -91,7 +93,7 @@ FreeType 从真实根入口选择单模块，先在 Windows x64 实际下载、�
 
 Git 固定来源和 URL 归档是不同输入方式。归档必须配登记的内容摘要；换版本须同时核对地址、摘要和安装布局，不能只改展示版本。预编译输入不执行虚假的 configure/build，沿用获取后复制安装的类型。平台或架构决定不同归档时，必须声明具体数据，不靠宿主硬件自动选择后端。
 
-参考实现具有持久源码目录、本地归档复用和安装 sentinel 短路。本仓库尚未接入跨 build 的输入和安装复用；该能力落地前需确认存放位置、清理范围及如何依据已有安装判断是否需要构建，不立即改变已确认的 build 布局或复制旧 helper API。主来源与资源不自动升级的维护边界继续生效，不能把旧安装树存在视为新版本已安装。
+跨 build 的输入和安装复用见[本地复用与平台输入设计](../../implemented/architecture/2026-10-20-local-reuse-and-platform-inputs.md)。主来源与资源不自动升级的维护边界继续生效，不能把旧安装树存在视为新版本已安装。
 
 ### 模块依赖与资源
 
@@ -136,6 +138,6 @@ ImGui 的专用 CMakeLists、sed 修改和安装期修正继续放在模块目�
 
 ## 风险
 
-当前平台覆盖表仅支持 cache 和 steps；首批只补上述 URL 归档字段，平台/架构来源、资源引用和模块依赖仍需按后续模块确定具体 Schema。库的系统包、编译要求和预编译 ABI 各异，参考模块存在不等于新环境构建成功。首次迁移先保持参考配置并形成基线，必要优化另行判断。
+平台/架构来源和目录复制的实现与验收状态见[本地复用与平台输入设计](../../implemented/architecture/2026-10-20-local-reuse-and-platform-inputs.md)。模块依赖及复杂资源消费仍由后续真实模块确定。库的系统包、编译要求和预编译 ABI 各异，参考模块存在不等于新环境构建成功。首次迁移先保持参考配置并形成基线，必要优化另行判断。
 
 上游地址可能超时、重定向或失效，依次尝试备用地址不保证公网下载一定成功；本批不承诺额外重试次数、恢复服务或所有地址的持续健康。FreeType 的可选依赖和生成 metadata 可能受机器环境影响，双平台验收核对实际结果，但不由本批提供隔离依赖或可搬迁包保证。技能只对照已实现接口维护，不能把参考范例的构建成功当成本仓库的验证证据。

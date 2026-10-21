@@ -24,9 +24,76 @@ class DefinitionTests(unittest.TestCase):
         self.path = Path(temporary.name) / "demo/module.toml"
         self.path.parent.mkdir()
 
-    def load(self, body, system="Linux", header='name = "demo"\ntype = "cmake"\n'):
+    def load(self, body, system="Linux", header='name = "demo"\ntype = "cmake"\n', architecture=""):
         self.path.write_text(header + body, encoding="utf-8")
-        return load_definition(self.path, system)
+        return load_definition(self.path, system, architecture)
+
+    def test_selects_whole_platform_and_architecture_sources(self):
+        body = SOURCE + '''
+[resources.extra]
+GIT_REPOSITORY="common"
+GIT_TAG="common"
+[platforms.linux.source]
+URL=["https://example.invalid/linux.tgz"]
+URL_HASH="SHA256=''' + "a" * 64 + '''"
+[platforms.linux.resources.extra]
+URL=["https://example.invalid/extra.tgz"]
+URL_HASH="SHA256=''' + "b" * 64 + '''"
+[platforms.linux.architectures.aarch64.source]
+GIT_REPOSITORY="arm"
+GIT_TAG="arm"
+[platforms.linux.architectures.aarch64.resources.extra]
+GIT_REPOSITORY="arm-extra"
+GIT_TAG="arm-extra"
+'''
+        linux = self.load(body, architecture="AMD64")
+        self.assertEqual(linux.source, {"URL": ["https://example.invalid/linux.tgz"],
+                                      "URL_HASH": "SHA256=" + "a" * 64})
+        self.assertEqual(linux.resources["extra"]["URL"], ["https://example.invalid/extra.tgz"])
+        for arch in ("ARM64", "arm64", "aarch64"):
+            arm = self.load(body, architecture=arch)
+            self.assertEqual(arm.source, {"GIT_REPOSITORY": "arm", "GIT_TAG": "arm"})
+            self.assertEqual(arm.resources["extra"], {"GIT_REPOSITORY": "arm-extra", "GIT_TAG": "arm-extra"})
+        windows = self.load(body, system="Windows", architecture="x64")
+        self.assertEqual(windows.source["GIT_REPOSITORY"], "https://example.invalid/library.git")
+
+    def test_architecture_only_source_is_required_for_current_target(self):
+        body = '''[platforms.windows.architectures.x86_64.source]
+GIT_REPOSITORY="windows"
+GIT_TAG="fixed"
+'''
+        for arch in ("x64", "AMD64", "x86_64"):
+            self.assertEqual(self.load(body, system="Windows", architecture=arch).source["GIT_REPOSITORY"], "windows")
+        for system, arch in (("Windows", "ARM64"), ("Linux", "x86_64"), ("Windows", "")):
+            with self.subTest(system=system, arch=arch), self.assertRaisesRegex(ValueError, "source"):
+                self.load(body, system=system, architecture=arch)
+        with self.assertRaisesRegex(ValueError, "GIT_TAG"):
+            self.load(SOURCE + '[platforms.windows.architectures.x86_64.source]\nGIT_REPOSITORY="bad"\n')
+        for extra in ('[platforms.linux.architectures.mips]\n',
+                      '[platforms.linux.architectures.aarch64]\ncache={}\n'):
+            with self.assertRaises(ValueError):
+                self.load(SOURCE + extra)
+
+    def test_validates_sentinel_source_subdir_and_copy_directories(self):
+        module = self.load('sentinel="include/demo.h"\n' + SOURCE + '[cmake]\nSOURCE_SUBDIR="build/cmake"\n')
+        self.assertEqual(module.sentinel, "include/demo.h")
+        self.assertEqual(module.source_subdir, "build/cmake")
+        copy = self.load(SOURCE + '[[copy]]\ndirectories=["."]\ndestination="."\n',
+                         header='name="demo"\ntype="copy"\n')
+        self.assertEqual(copy.copies[0]["directories"], ["."])
+        for path in ('../escape', '/absolute', 'C:drive', 'a/../../b', '\\root'):
+            for field in ('sentinel', 'SOURCE_SUBDIR'):
+                body = f"sentinel='{path}'\n" + SOURCE if field == 'sentinel' else SOURCE + f"[cmake]\nSOURCE_SUBDIR='{path}'\n"
+                with self.subTest(field=field, path=path), self.assertRaisesRegex(ValueError, field):
+                    self.load(body)
+        for mapping in ('files=["x"]\ndirectories=["."]', 'directories=[]',
+                        'directories=["../escape"]', 'directories=["C:drive"]'):
+            with self.assertRaisesRegex(ValueError, "copy"):
+                self.load(SOURCE + '[[copy]]\n' + mapping + '\ndestination="."\n',
+                          header='name="demo"\ntype="copy"\n')
+        with self.assertRaisesRegex(ValueError, "SOURCE_SUBDIR"):
+            self.load(SOURCE + '[cmake]\nSOURCE_SUBDIR="sub"\n[[copy]]\nfiles=["x"]\ndestination="."\n',
+                      header='name="demo"\ntype="copy"\n')
 
     def test_accepts_archive_sources_and_resources(self):
         source = '''URL = ["https://one.invalid/a.tar.xz", "https://two.invalid/a.tar.xz"]

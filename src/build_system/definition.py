@@ -18,6 +18,8 @@ class ModuleDefinition:
     patches: list[Path]
     steps: list[dict[str, object]]
     copies: list[dict[str, object]]
+    sentinel: str | None = None
+    source_subdir: str | None = None
 
 
 def _table(value, allowed, where):
@@ -72,8 +74,8 @@ def _source(value: object, where: str) -> dict[str, str | list[str]]:
     return result
 
 
-def _cache(value, where):
-    _table(value, {"cache"}, where)
+def _cache(value, where, source_subdir=False):
+    _table(value, {"cache", "SOURCE_SUBDIR"} if source_subdir else {"cache"}, where)
     cache = value.get("cache", {})
     if not isinstance(cache, dict):
         raise ValueError(f"{where}.cache: expected a table")
@@ -129,14 +131,29 @@ def _relative(value, where):
     return value
 
 
-def load_definition(path: Path, system_name: str) -> ModuleDefinition:
+def _sources(value, where):
+    source = _source(value["source"], f"{where}.source") if "source" in value else None
+    resources = value.get("resources", {})
+    if not isinstance(resources, dict):
+        raise ValueError(f"{where}.resources: expected a table")
+    return source, {_name(key, f"{where}.resources"): _source(item, f"{where}.resources.{key}")
+                    for key, item in resources.items()}
+
+
+def normalize_architecture(value: str) -> str:
+    """规范化已支持的目标别名；未知架构保留原值，不推测其他目标。"""
+    return {"x64": "x86_64", "amd64": "x86_64", "x86_64": "x86_64",
+            "arm64": "aarch64", "aarch64": "aarch64"}.get(value.lower(), value)
+
+
+def load_definition(path: Path, system_name: str, architecture: str = "") -> ModuleDefinition:
     """读取并选择平台数据；失败携带声明路径，绝不访问未下载的来源。"""
     path = path.resolve()
     try:
         with path.open("rb") as stream:
             data = tomllib.load(stream)
         _table(data, {"name", "type", "version", "source", "resources", "cmake",
-                      "patches", "steps", "copy", "platforms"}, "module")
+                      "patches", "steps", "copy", "platforms", "sentinel"}, "module")
         name = _name(data.get("name"), "name")
         if name != path.parent.name:
             raise ValueError("name: must match the module directory name")
@@ -144,25 +161,37 @@ def load_definition(path: Path, system_name: str) -> ModuleDefinition:
         if kind not in ("cmake", "copy"):
             raise ValueError("type: expected cmake or copy")
         version = _text(data["version"], "version") if "version" in data else None
-        source = _source(data["source"], "source") if "source" in data else None
-        if kind == "cmake" and source is None:
-            raise ValueError("source: cmake modules require a primary source")
-        resources = data.get("resources", {})
-        if not isinstance(resources, dict):
-            raise ValueError("resources: expected a table")
-        resources = {_name(key, "resources"): _source(value, f"resources.{key}")
-                     for key, value in resources.items()}
-        cache = dict(_cache(data.get("cmake", {}), "cmake"))
+        sentinel = _relative(data["sentinel"], "sentinel") if "sentinel" in data else None
+        source, resources = _sources(data, "module")
+        cmake = data.get("cmake", {})
+        cache = dict(_cache(cmake, "cmake", source_subdir=True))
+        subdir = _relative(cmake["SOURCE_SUBDIR"], "cmake.SOURCE_SUBDIR") if "SOURCE_SUBDIR" in cmake else None
+        if kind != "cmake" and subdir is not None:
+            raise ValueError("cmake.SOURCE_SUBDIR: requires type=cmake")
         steps = _steps(data.get("steps", []), path.parent, "steps")
         platforms = _table(data.get("platforms", {}), {"windows", "linux"}, "platforms")
         for platform, options in platforms.items():
             at = f"platforms.{platform}"
-            _table(options, {"cmake", "steps"}, at)
+            _table(options, {"cmake", "steps", "source", "resources", "architectures"}, at)
             platform_cache = _cache(options.get("cmake", {}), f"{at}.cmake")
             platform_steps = _steps(options.get("steps", []), path.parent, f"{at}.steps")
-            if {"Windows": "windows", "Linux": "linux"}.get(system_name) == platform:
+            platform_source, platform_resources = _sources(options, at)
+            selected = {"Windows": "windows", "Linux": "linux"}.get(system_name) == platform
+            if selected:
                 cache.update(platform_cache)
                 steps.extend(platform_steps)
+                source = platform_source if platform_source is not None else source
+                resources.update(platform_resources)
+            architectures = _table(options.get("architectures", {}), {"x86_64", "aarch64"}, f"{at}.architectures")
+            for arch, inputs in architectures.items():
+                arch_at = f"{at}.architectures.{arch}"
+                _table(inputs, {"source", "resources"}, arch_at)
+                arch_source, arch_resources = _sources(inputs, arch_at)
+                if selected and normalize_architecture(architecture) == arch:
+                    source = arch_source if arch_source is not None else source
+                    resources.update(arch_resources)
+        if kind == "cmake" and source is None:
+            raise ValueError(f"source: no primary source for {system_name}/{architecture}")
         names = [step["name"] for step in steps]
         if len(names) != len(set(names)):
             raise ValueError("steps.name: duplicate step names")
@@ -181,19 +210,22 @@ def load_definition(path: Path, system_name: str) -> ModuleDefinition:
         if kind == "cmake" and copies:
             raise ValueError("copy: installation mappings require type=copy")
         for item in copies:
-            _table(item, {"resource", "files", "destination"}, "copy")
+            _table(item, {"resource", "files", "directories", "destination"}, "copy")
             resource = item.get("resource")
             if resource is not None and (not isinstance(resource, str) or resource not in resources):
                 raise ValueError(f"copy.resource: unknown resource {resource!r}")
             if resource is None and source is None:
                 raise ValueError("copy: mapping requires a source or resource")
-            files = _strings(item.get("files"), "copy.files")
-            if not files:
-                raise ValueError("copy.files: expected at least one file")
-            for file in files:
-                _relative(file, "copy.files")
+            if ("files" in item) == ("directories" in item):
+                raise ValueError("copy: specify either files or directories")
+            key = "files" if "files" in item else "directories"
+            entries = _strings(item[key], f"copy.{key}")
+            if not entries:
+                raise ValueError(f"copy.{key}: expected at least one path")
+            for entry in entries:
+                _relative(entry, f"copy.{key}")
             _relative(item.get("destination"), "copy.destination")
         return ModuleDefinition(path, name, kind, version, source, resources,
-                                cache, patches, steps, copies)
+                                cache, patches, steps, copies, sentinel, subdir)
     except (OSError, ValueError) as error:
         raise ValueError(f"{path}: {error}") from error

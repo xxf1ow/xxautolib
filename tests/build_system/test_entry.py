@@ -1,4 +1,5 @@
 import os
+import platform
 import shutil
 import time
 import unittest
@@ -24,6 +25,23 @@ class EntryTests(PipelineCase):
         repo = self.repository(name, {"x.h": name})
         return self.definition('[source]\n' + repo + '\n[[copy]]\nfiles=["x.h"]\n'
                                'destination="include"\n', kind="copy", name=name)
+
+    def test_root_entry_selects_target_architecture(self):
+        x64 = self.repository("x64", {"x.h": "x86_64"})
+        arm = self.repository("arm", {"x.h": "aarch64"})
+        name = "windows" if os.name == "nt" else "linux"
+        path = self.source / "src/dependencies/demo/module.toml"
+        path.parent.mkdir(parents=True)
+        path.write_text('name="demo"\ntype="copy"\n[[copy]]\nfiles=["x.h"]\ndestination="include"\n'
+                        f'[platforms.{name}.architectures.x86_64.source]\n' + x64 +
+                        f'[platforms.{name}.architectures.aarch64.source]\n' + arm)
+        arguments = ["-DBUILD_LIST=demo"]
+        if os.name == "nt":
+            arguments += ["-A", "x64", "-DCMAKE_SYSTEM_PROCESSOR=ARM64"]
+        self.configure(*arguments)
+        self.build()
+        expected = "aarch64" if os.name != "nt" and platform.machine().lower() in ("aarch64", "arm64") else "x86_64"
+        self.assertEqual((self.source / "3rdparty/demo/include/x.h").read_text(), expected)
 
     def test_plain_entry_propagates_cmake_defaults(self):
         for name, minimum, policy in (("legacy", "3.0", "CMP0054"),
@@ -102,7 +120,7 @@ CMAKE_POSITION_INDEPENDENT_CODE=true
         self.assertNotIn("second", targets)
         self.run_command("cmake", "--build", self.context.build_root, "--config", "Release")
         self.assertEqual((self.source / "3rdparty/first/include/x.h").read_text(), "first")
-        self.assertFalse((self.context.build_root / "ep/second/src/.git").exists())
+        self.assertFalse((self.source / "git/second/.git").exists())
         # 初次默认 configure 会由 ExternalProject 创建空安装目录，不代表发生安装。
         self.assertFalse(any((self.source / "3rdparty/second").rglob("*")))
         result = self.configure("-DBUILD_LIST=missing", success=False)

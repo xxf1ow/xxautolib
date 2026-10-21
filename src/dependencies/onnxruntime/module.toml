@@ -1,0 +1,26 @@
+# ONNX Runtime：模型推理运行库，完整复制官方 CPU 预编译归档。
+name = "onnxruntime"
+type = "copy"
+version = "1.24.4"
+sentinel = "include/onnxruntime_c_api.h"
+
+# 保留头文件、库、运行文件、版本和许可证；不执行源码配置或构建。
+[[copy]]
+directories = ["."]
+destination = "."
+
+# 升级时同步核对三种目标归档、SHA256 和安装内容，不回退到其他架构。
+[platforms.windows.architectures.x86_64.source]
+URL = ["https://github.com/microsoft/onnxruntime/releases/download/v1.24.4/onnxruntime-win-x64-1.24.4.zip"]
+URL_HASH = "SHA256=d2319fddfb6ea4db99ccc4b60c85c517bcd855721f5daa6a06d40d7cb2ee2357"
+DOWNLOAD_NAME = "onnxruntime-win-x64-1.24.4.zip"
+
+[platforms.linux.architectures.x86_64.source]
+URL = ["https://github.com/microsoft/onnxruntime/releases/download/v1.24.4/onnxruntime-linux-x64-1.24.4.tgz"]
+URL_HASH = "SHA256=3a211fbea252c1e66290658f1b735b772056149f28321e71c308942cdb54b747"
+DOWNLOAD_NAME = "onnxruntime-linux-x64-1.24.4.tgz"
+
+[platforms.linux.architectures.aarch64.source]
+URL = ["https://github.com/microsoft/onnxruntime/releases/download/v1.24.4/onnxruntime-linux-aarch64-1.24.4.tgz"]
+URL_HASH = "SHA256=866109a9248d057671a039b9d725be4bd86888e3754140e6701ec621be9d4d7e"
+DOWNLOAD_NAME = "onnxruntime-linux-aarch64-1.24.4.tgz"

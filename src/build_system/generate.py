@@ -26,6 +26,7 @@ def main(argv: list[str] | None = None) -> int:
     for key in ("system-name", "generator", "platform", "toolset", "instance"):
         parser.add_argument(f"--{key}", required=True)
     parser.add_argument("--multi-config", choices=("ON", "OFF"), required=True)
+    parser.add_argument("--architecture", default="")
     parser.add_argument("--msvc-runtime-library")
     parser.add_argument("--cmake-default", action="append", default=[])
     args = parser.parse_args(argv)
@@ -38,7 +39,7 @@ def main(argv: list[str] | None = None) -> int:
         cmake_defaults=dict(value.split("=", 1) for value in args.cmake_default))
     try:
         definitions = [load_definition(context.source_root / "src/dependencies" / name / "module.toml",
-                                       context.system_name) for name in args.module]
+                                       context.system_name, args.architecture) for name in args.module]
         outputs = {}
         for module in definitions:
             outputs[context.build_root / "generated" / f"{module.name}.cmake"] = render_module(module, context)

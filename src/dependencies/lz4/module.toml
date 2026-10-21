@@ -1,0 +1,20 @@
+# lz4：高速无损压缩库，构建并安装静态库。
+name = "lz4"
+type = "cmake"
+version = "1.10.0"
+sentinel = "include/lz4.h"
+
+# 固定参考 v1.10.0；升级时核对 CMake 子目录和静态安装布局。
+[source]
+GIT_REPOSITORY = "https://github.com/lz4/lz4.git"
+GIT_TAG = "ebb370ca83af193212df4dcbadcc5d87bc0de2f0"
+
+[cmake]
+SOURCE_SUBDIR = "build/cmake"
+
+# 沿用参考静态库配置，不构建命令行工具和旧版工具。
+[cmake.cache]
+BUILD_SHARED_LIBS = false
+BUILD_STATIC_LIBS = true
+LZ4_BUILD_CLI = false
+LZ4_BUILD_LEGACY_LZ4C = false
