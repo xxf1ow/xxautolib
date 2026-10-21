@@ -4,7 +4,7 @@
 
 ## 状态与依据
 
-截至 2026-10-20，本仓库已验证 TOML 纯数据定义、Python 通用生成引擎、原生 ExternalProject 执行、固定 Git 来源、多资源、文件补丁、自定义步骤、平台选项及 uv 根环境。zlib 静态构建、queue 双资源头文件安装与 FreeType 2.13.2 归档构建均通过 Windows x64、Linux aarch64 验证；URL/SHA256、原生镜像回退和单顶层目录展开有公共回归，普通根入口统一传递 policy、PIC 和 C++ 标准。新增模块流程由[模块技能](../.agents/skills/add-third-party-module/SKILL.md)维护。v142 实机一致性保留人工验收。当前能力见[架构](architecture.md)，证据及 FreeType 系统依赖边界见[流水线记录](agent-notes/implemented/architecture/2026-10-19-toml-externalproject-zlib.md)。
+本仓库支持 TOML 定义、Python 生成、原生 ExternalProject、固定来源、多资源、补丁、自定义步骤、平台输入、依赖闭包及 uv 根环境。下表已验证模块均通过 Windows x64、Linux aarch64 本地安装；v142、Linux x86_64 实机仍待验收。流程由[模块技能](../.agents/skills/add-third-party-module/SKILL.md)维护；当前职责见[架构](architecture.md)，验证入口见[测试](testing.md)。
 
 “参考已实现”指参考实现中存在对应代码或模块，并有相关决定；不表示本仓库支持，也不表示本轮重新验证了参考实现的全部模块。“参考待实施”指已有方向但尚未落地。迁移不导入历史提交、旧发布数据或所有辅助机制。
 
@@ -15,9 +15,9 @@
 | 阶段 | 参考状态 | 本仓库待做与完成标志 |
 | --- | --- | --- |
 | 本地获取与安装扩展 | 已实现 | 已验证：URL/SHA256/原生镜像回退、平台/架构来源、SOURCE_SUBDIR 和目录复制；lz4、ONNX Runtime 在 Windows x64、Linux aarch64 完成真实安装。Linux x86_64 仅验证声明选择。 |
-| 本地输入与安装复用 | 已实现 | 已验证：持久 Git、哈希归档复用和 sentinel 短路，公共回归双端通过；五模块登记 sentinel，不把存在性当版本校验。 |
-| 模块依赖 | 已实现 | 选择 lz4 → flann 等小依赖链，支持依赖发现、排序和安装前缀/包位置传递；再接 Boost、PCL 对 zlib 的依赖。仅请求叶子也能得到所需构建输入，不能误用系统库。 |
-| 复杂模块与专用文件 | 已实现 | 按需接 OpenCV contrib、oneTBB HWLOC、ImGui 专用 CMakeLists；资源就绪、原生步骤位置、安装内容和工具链身份可核对。 |
+| 本地输入与安装复用 | 已实现 | 已验证：持久 Git、哈希归档复用和 sentinel 短路，公共回归双端通过；已接入模块登记 sentinel，不把存在性当版本校验。 |
+| 模块依赖 | 已实现 | 已验证 FLANN → lz4、HarfBuzz → FreeType、OpenCV → FreeType/HarfBuzz；叶子请求得到稳定闭包，显式依赖实际来自本仓库。Boost、PCL 待接入。 |
+| 复杂模块与专用文件 | 已实现 | 已验证 OpenCV 4.14.0 contrib 路径引用、资源补丁、平台安装布局与链接运行；oneTBB HWLOC、ImGui 专用文件仍待接入。 |
 | 下游导入与可搬迁包 | 已实现 | 模块显式提供包内 adapter；用少量代表包完成搬迁后真实链接，打包不改原安装树；本地构建资格与发布资格分离。 |
 | 固定槽交付与缓存 | 已实现 | 按名称消费、严格 manifest、摘要校验、生产端内部 build ID、GitHub 发布和 Gitee 镜像逐项接入；先用本地 fixture 验证，远端地址与写操作另行授权。 |
 | 三平台原生 CI | 基础流水线已实现，单 job 优化待实施 | 接入 Windows x86_64、Linux x86_64/aarch64；以原生单 job 分层、统一环境与并行预算为目标，不先复制多 job 传完整包的结构再重写。 |
@@ -25,7 +25,7 @@
 
 本地能力的既有决定见[模块扩展](agent-notes/proposed/architecture/2026-10-20-module-expansion.md)，本批方案见[本地复用与平台输入设计](agent-notes/implemented/architecture/2026-10-20-local-reuse-and-platform-inputs.md)；导入、打包和固定槽见[二进制交付](agent-notes/proposed/architecture/2026-10-20-name-only-artifact-delivery.md)；环境、ABI、并行和通用槽位见[三平台 CI](agent-notes/proposed/process/2026-10-20-native-platform-ci.md)。
 
-下一批拟接入 FLANN、HarfBuzz 与 OpenCV 4.14.0，同时验证模块依赖和复杂资源；具体方案与验收范围见[依赖与复杂资源设计](agent-notes/proposed/architecture/2026-10-20-flann-opencv-dependencies.md)，不表示已实现。
+FLANN、HarfBuzz 与 OpenCV 4.14.0 的具体取舍和双平台证据见[依赖与复杂资源决定](agent-notes/implemented/architecture/2026-10-20-flann-opencv-dependencies.md)；这不表示其他复杂模块或二进制交付已经完成。
 
 ## 模块迁移候选
 
@@ -33,10 +33,10 @@
 
 | 分组 | 模块 | 本仓库状态或接入重点 |
 | --- | --- | --- |
-| 已验证 | zlib、queue、freetype、lz4、onnxruntime | Windows x64、Linux aarch64 本地构建或复制安装通过，不追加下游交付要求；FreeType 沿用参考的系统可选依赖探测。 |
+| 已验证 | zlib、queue、freetype、lz4、onnxruntime、flann、harfbuzz、opencv | Windows x64、Linux aarch64 本地构建或复制安装通过，不追加下游交付要求；保留系统可选依赖边界。 |
 | 基础构建与头文件 | asio、clipper2、cpp-httplib、eigen、expected、ftxui、gtest、libzmq、nativefiledialog-extended、nlohmann、portaudio、pybind11、sdl3、spdlog、taskflow、websocketpp、yaml-cpp | 待迁移；按需挑选，覆盖归档、源码子目录、系统依赖和安装布局；不是要求一次迁移整组。 |
-| 依赖链 | boost、flann、harfbuzz、pcl | 待迁移；本仓库产物的显式依赖与标准查找通道。 |
-| 多资源及专用构建 | opencv、oneTBB、imgui、gtsam | 待迁移；附属编译输入、专用文件、补丁与依赖，不把库逻辑塞进引擎。 |
+| 依赖链 | boost、pcl | 待迁移；本仓库产物的显式依赖与标准查找通道。 |
+| 多资源及专用构建 | oneTBB、imgui、gtsam | 待迁移；附属编译输入、专用文件、补丁与依赖，不把库逻辑塞进引擎。 |
 | 预编译输入 | mysql | 待迁移；按平台选择已登记归档及摘要，核对复制布局与独立运行要求。 |
 | 专项模块 | sherpa-onnx、lastools、logo | 待按实际需求确定批次；分别涉及私有依赖参数、平台限制或资源产物。 |
 | 暂缓 | fastdeploy、nndeploy | 初版不做；不因参考实现存在便引入硬编码 SDK 路径或自动后端探测。 |

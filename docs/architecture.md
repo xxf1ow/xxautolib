@@ -6,11 +6,13 @@
 
 模块定义与流水线引擎分为两层。`src/dependencies/<模块名>/module.toml` 只声明数据，中文注释说明维护约束；补丁与专用执行文件放在同一模块目录。默认发现全部 module.toml，`BUILD_LIST` 使用逗号分隔模块名并去重，缺少声明时报错。
 
-`src/build_system/` 中 definition.py 解析与校验 TOML，cmake.py 输出原生 ExternalProject 声明，generate.py 组织生成并登记实际读取的 Python/TOML 输入。CMake 负责自动重配置；生成内容不变时保留时间戳。ExternalProject 负责下载、补丁、构建、安装及原生自定义步骤；apply_patch.cmake 检查并应用文件补丁，不自动恢复冲突源码。
+`src/build_system/` 中 definition.py 校验 TOML，generate.py 展开稳定依赖闭包并登记实际 Python/TOML 输入，cmake.py 输出原生 ExternalProject。CMake 负责自动重配置；生成内容不变时保留时间戳。ExternalProject 执行获取、补丁、构建、安装和自定义步骤；apply_patch.cmake 支持主源码或资源补丁，不自动恢复冲突源码。
 
-zlib 使用 cmake 类型和静态专用补丁；queue 使用两个资源和明确文件复制；FreeType 使用多 URL 归档；lz4 从源码子目录构建静态库；ONNX Runtime 按目标平台、架构选归档并完整复制安装。Git 与归档由 ExternalProject 获取，不自建下载器。子项目沿用父生成器身份、显式 CRT，固定 Release；模块 cache 优先于父级值，再采用引擎 policy、PIC、C++ 标准兜底值，不向父级 cache 写默认值。本项目不提供模块依赖闭包或下游导入接口。
+模块使用 cmake 构建或 copy 安装。独立依赖用 `depends` 声明，contrib 等附属输入归消费模块。原生目标等待直接依赖安装及资源补丁；配置代理只为当前子配置注入直接依赖的前缀、包、pkg-config 和 include 位置，保留调用方 include。窄引用提供资源源码根和 uv 解释器；规则见[依赖接线决定](agent-notes/implemented/architecture/2026-10-20-flann-opencv-dependencies.md)。
 
-各工作副本的 `.venv/`、`git/`、`build/` 和 `3rdparty/` 不提交或跨平台传输。主 Git 位于 `git/<模块>/`，Git 资源位于 `git/_resources/<模块>/<资源>/`，归档下载共用根 `git/`；归档解压、编译和步骤目录留在 `build/ep/`，可读生成结果留在 `build/generated/`。生成 CMake 在 configure 时判断本地 `.git` 与安装 sentinel；命中 sentinel 只保留同名空目标，声明校验仍执行。复用限制与验收状态见[本地复用设计](agent-notes/implemented/architecture/2026-10-20-local-reuse-and-platform-inputs.md)。`tests/build_system/` 验证公共引擎，库专用测试验证安装产物。
+子项目沿用父生成器身份、显式 CRT，固定 Release；模块 cache 优先于父级值，再采用引擎 policy、PIC、C++ 标准兜底值，不向父级 cache 写默认值。本项目不提供下游导入接口。
+
+各工作副本独立维护 `.venv/`、`git/`、`build/` 和 `3rdparty/`，不整体跨平台传输。主 Git 位于 `git/<模块>/`，Git 资源位于 `git/_resources/<模块>/<资源>/`，归档下载共用根 `git/`；解压、编译和步骤留在 `build/ep/`，生成结果留在 `build/generated/`。configure 检查本地 `.git` 与安装 sentinel；命中 sentinel 保留空目标及依赖顺序，声明校验仍执行。复用限制见[本地复用设计](agent-notes/implemented/architecture/2026-10-20-local-reuse-and-platform-inputs.md)。`tests/build_system/` 验证公共引擎，库专用测试验证安装产物。
 
 ## 文档职责
 
