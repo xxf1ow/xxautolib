@@ -49,17 +49,21 @@ URL_HASH = "SHA256=12991c4e55c506dd7f9b765933e62fd2be2e06d421505d7950a132e4f1bb4
 DOWNLOAD_NAME = "freetype-2.13.2.tar.xz"
 ```
 
-定义使用中文维护注释说明用途、版本与摘要的关联，以及地址顺序和统一归档名；不复述公共参数。参考中的位置无关代码与 C++17 设置通过 `[cmake.cache]` 保留。生成、构建和安装复用现有 `cmake` 类型，由公共引擎传递父生成器、平台、完整工具集、instance、CRT 和固定 Release，不在模块中重复维护这些公共设置。安装前缀为 `3rdparty/freetype/`，核对 `include/freetype2/ft2build.h`、FreeType 公开头文件、平台对应的静态库，以及参考声明的 CMake 包配置与 pkg-config 文件。
+定义使用中文维护注释说明用途、版本与摘要的关联，以及地址顺序和统一归档名；不复述公共参数。参考中的位置无关代码与 C++17 设置由项目公共默认值保留，不在模块中重复声明。生成、构建和安装复用现有 `cmake` 类型，由公共引擎传递父生成器、平台、完整工具集、instance、CRT 和固定 Release。安装前缀为 `3rdparty/freetype/`，核对 `include/freetype2/ft2build.h`、FreeType 公开头文件、平台对应的静态库，以及参考声明的 CMake 包配置与 pkg-config 文件。
 
 FreeType 的库特定构建行为保持参考基线，不新增依赖声明，不把可选外部依赖接成仓库依赖链，也不为本批增加依赖查找或后端探测机制。实际构建应记录发现的可选依赖与产物；若必须改变参考选项或引入其他模块才能完成目标，先确认受影响的设计，不自行扩大范围。
 
 [FreeType 2.13.2 的 CMake 配置](https://github.com/freetype/freetype/blob/VER-2-13-2/CMakeLists.txt)默认探测 ZLIB、BZip2、PNG、HarfBuzz 和 BrotliDec；参考基线未设置 `FT_DISABLE_ZLIB`、`FT_DISABLE_BZIP2`、`FT_DISABLE_PNG`、`FT_DISABLE_HARFBUZZ` 或 `FT_DISABLE_BROTLI`。本批不额外启用这些关闭开关，因为它们会改变参考构建的依赖或功能。发现的外部库可能为静态或动态库，静态 FreeType 也不等于依赖自包含；导出的 CMake 配置可能含外部路径，pkg-config 文件可能记录依赖名或链接参数。双平台验收核对 configure/cache 与导出配置，记录实际依赖，不将静态归档的 `ldd` 输出作为自包含证据；隔离依赖与可搬迁包不属于本批承诺。
 
-### 公共 CMake policy 配置
+### 公共 CMake 默认值
 
-本地构建沿用参考仓库 `CMakePresets.json` 的公共 policy 环境设置：隐藏的 `base` configure preset 设置 `CMAKE_POLICY_VERSION_MINIMUM=3.5`，Windows x64 与 Linux preset 继承它，使用各自既有生成器与 `build/`。对应 build preset 通过 `inheritConfigureEnvironment: true` 继承同一环境，保证在 build 阶段启动的 ExternalProject 子项目也获得该设置。正式开发命令同时使用 configure preset 和 build preset，不把仅在父 configure 中设置普通变量视为对子进程的传递。
+`src/build_system/cmake.py` 在 CMake 类型子项目参数组装处提供三个兜底值：`CMAKE_POLICY_VERSION_MINIMUM=3.5`、`CMAKE_POSITION_INDEPENDENT_CODE=ON`、`CMAKE_CXX_STANDARD=17`。`index.cmake` 只转发父级已经定义的同名值，不写入默认值；根 `CMakeLists.txt` 不维护这三个子项目默认项。合并优先级为模块 `[cmake.cache]` 显式值 > 父级已定义值 > 引擎兜底值，最终通过原生 `CMAKE_ARGS` 传给子项目；copy 类型及只取源资源不应用这些默认项。根入口 `-D`、toolchain 或已有 cache 可提供父级值；已有 cache 不自动清理。FreeType 与 zlib 共用公共默认项。
 
-该环境设置解决 CMake 4.x 对旧第三方 policy 声明的兼容问题，不在 FreeType 或其他模块中重复添加 `CMAKE_POLICY_VERSION_MINIMUM`，不修改上游源码，不改变项目显式要求的更高 policy 或 CMake 版本。最低 CMake 仍为 3.20；不使用 preset 的原生入口仍可用，但不自动获得 preset 环境。不迁入参考 CI、`build-defaults.cmake` toolchain 或固定安装库目录设置。公共回归通过真实 preset 配置与构建小型旧 policy 子项目，核对父 configure 与子项目 build 环境均为 `3.5`。
+ExternalProject 的子配置不隐式继承父级变量；在子 configure 命令中传入 `-D`，可确保这些值在子项目的 `cmake_minimum_required()` 和目标创建之前可用。默认值不写入父级 cache，避免自动默认项持久化后与用户配置混淆；只把根文件中的 `set(... CACHE ...)` 移到公共入口不能消除这种影响。
+
+policy 参数仅提供下限：上游较高的 policy 声明不降低，低于 3.5 的声明则使用至少 3.5 的行为，须通过实际构建验证兼容性，不保证任意旧库自动兼容。CMake 4.0+ 支持该变量；环境变量只能初始化新构建树中的同名缓存，显式 `-D` 设置则不依赖启动进程环境，也能更新已有子项目的配置。最低 CMake 仍为 3.20，不修改上游源码或其实际 CMake 版本要求。
+
+普通 `cmake -S . -B build` 与 CMake Tools Kit/Variant 使用同一公共入口；仓库不提供会触发 CMake Tools 自动切换模式的根 `CMakePresets.json`，也不依赖 `.vscode/settings.json`、全局环境变量或包装命令。公共回归通过无 preset、无 policy 环境变量的真实入口构建旧 policy 与较高 policy 子项目，并验证公共值、模块覆盖及重新配置后的值。参考 CI、`build-defaults.cmake` toolchain 和固定安装库目录设置不在本批范围。
 
 ### 新增模块技能的必要适配
 
@@ -70,6 +74,8 @@ FreeType 的库特定构建行为保持参考基线，不新增依赖声明，�
 不复制依赖旧 `tp_meta`、`tp_setup`、`tp_source` 接口的 CMake 模板，不将 sentinel、持久 `git/` 目录、依赖注入、版本覆盖或发布 adapter 描述为本仓库已支持的能力。原版与实际实现不一致的取源说明不沿用。示例直接引用本仓库的 zlib、queue 和本批 FreeType 定义，不维护同一份完整模块的拷贝；产品规则链接[架构](../../../architecture.md)、[开发指南](../../../development.md)、[测试指南](../../../testing.md)及本记录，不复制成另一份接口规范。后续能力接入时，技能随其实际接口更新，而不提前给出不可执行模板。
 
 技能以说明和既有实例引用为主，不增加安装器、生成器、下载脚本、插件或独立评测框架。验收检查技能元数据、全部采用的本地链接，以及新增源码库、复制安装库和库运行时问题的触发范围；不把措辞匹配测试当成行为正确性的证明。
+
+原版 skill 元数据校验器所需 PyYAML 放入根 uv 的 `dev` 开发依赖组并锁定版本，重复校验使用根环境，不逐次用临时 `--with` 补依赖；生成流水线本身不引入 PyYAML 运行时依赖。
 
 ### 首批验证与交接
 
@@ -119,7 +125,7 @@ ImGui 的专用 CMakeLists、sed 修改和安装期修正继续放在模块目�
 - 首批公共回归证明多个 URL 按声明顺序尝试，首地址 404 或内容摘要不匹配后，备用地址提供正确归档时可完成获取；全部地址失败或所有候选内容均不匹配摘要时不产生安装结果。单顶层目录归档直接提供源码根，主来源与附属资源的归档参数均正确生成，既有 Git 流程保持通过，HTTP fixture 在失败路径也完成清理。
 - 新增模块技能使用当前 TOML 接口，元数据与采用的本地引用有效，保留模块接入和核对规则，不包含旧 helper 模板或未实施能力的操作指令。
 - 首批不新增自定义下载器、跨 build 缓存、安装 sentinel、模块依赖、发布接口或每库强制专用测试工程；完成后有公共回归、双平台真实构建及文档和技能检查证据。
-- 公共 configure/build presets 传递参考 policy 环境，旧 policy 子项目可从真实入口构建安装；模块不逐个重复添加 policy 兼容参数。
+- 引擎独立提供 policy、PIC 与 C++ 标准兜底值，普通根入口不向父级 cache 写这些默认项；旧 policy 子项目可构建安装，较高 policy 声明不降低。模块值优先于父级值，父级值优先于引擎兜底值；重新配置更新父级值或移除覆盖后，子项目收到对应有效值，不要求 preset、IDE 设置或逐库重复声明。
 
 以下标准属于后续批次，不是首批额外验收要求：
 

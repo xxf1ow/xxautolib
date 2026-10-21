@@ -4,7 +4,7 @@
 
 ## 状态与依据
 
-截至 2026-10-20，本仓库已验证 TOML 纯数据定义、Python 通用生成引擎、原生 ExternalProject 执行、固定 Git 来源、多资源、文件补丁、自定义步骤、平台选项及 uv 根环境。zlib 静态构建、queue 双资源头文件安装与 FreeType 2.13.2 归档构建均通过 Windows x64、Linux aarch64 验证；URL/SHA256、原生镜像回退和单顶层目录展开有公共回归，公共 presets 传递 policy 环境。新增模块流程由[模块技能](../.agents/skills/add-third-party-module/SKILL.md)维护。v142 实机一致性保留人工验收。当前能力见[架构](architecture.md)，证据及 FreeType 系统依赖边界见[流水线记录](agent-notes/implemented/architecture/2026-10-19-toml-externalproject-zlib.md)。
+截至 2026-10-20，本仓库已验证 TOML 纯数据定义、Python 通用生成引擎、原生 ExternalProject 执行、固定 Git 来源、多资源、文件补丁、自定义步骤、平台选项及 uv 根环境。zlib 静态构建、queue 双资源头文件安装与 FreeType 2.13.2 归档构建均通过 Windows x64、Linux aarch64 验证；URL/SHA256、原生镜像回退和单顶层目录展开有公共回归，普通根入口统一传递 policy、PIC 和 C++ 标准。新增模块流程由[模块技能](../.agents/skills/add-third-party-module/SKILL.md)维护。v142 实机一致性保留人工验收。当前能力见[架构](architecture.md)，证据及 FreeType 系统依赖边界见[流水线记录](agent-notes/implemented/architecture/2026-10-19-toml-externalproject-zlib.md)。
 
 “参考已实现”指参考实现中存在对应代码或模块，并有相关决定；不表示本仓库支持，也不表示本轮重新验证了参考实现的全部模块。“参考待实施”指已有方向但尚未落地。迁移不导入历史提交、旧发布数据或所有辅助机制。
 

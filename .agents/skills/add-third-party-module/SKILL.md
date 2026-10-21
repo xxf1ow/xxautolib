@@ -2,7 +2,7 @@
 name: add-third-party-module
 description: >-
   Add, migrate, integrate, standardize, or upgrade a third-party C++ module under
-  src/dependencies/<name>/module.toml in xxautolib, including source builds and copy-only
+  src/dependencies/{name}/module.toml in xxautolib, including source builds and copy-only
   installations. Use even when an integration request only names the library. Do not use
   for runtime use of an installed library, pure environment or PATH troubleshooting,
   downstream CMake projects, shared build-engine or root orchestration changes, or
@@ -29,10 +29,10 @@ description: >-
 
 1. 在 `src/dependencies/<name>/module.toml` 填写 `name`、`type` 及适用的 `version`。名称与目录大小写完全一致；聚合多个独立上游时不编造统一版本号。文件开头用中文说明库用途和交付类型。
 2. 为主来源或 `[resources.<资源名>]` 选择一种来源：Git 仓库与完整固定提交成对；归档使用有序非空 `URL` 数组和 `URL_HASH="SHA256=..."`。需要统一镜像文件名时填写 `DOWNLOAD_NAME`；升级同时核对版本、地址、摘要与安装布局。各资源独立固定版本。
-3. 只保留实际需要的库特定 cache、patches、steps 或 copy 数据。非默认选项、固定版本、补丁与专用步骤写明中文维护约束；公共生成器、工具集、instance、CRT、Release、路径和 policy 设置由引擎与 presets 拥有，不逐库重复。
+3. 只保留实际需要的库特定 cache、patches、steps 或 copy 数据。非默认选项、固定版本、补丁与专用步骤写明中文维护约束；公共生成器、工具集、instance、CRT、Release 和路径由公共入口与引擎拥有，policy/PIC/C++ 标准兜底值由引擎的 CMake 子项目参数组装处提供，不逐库重复。模块 cache 优先于父级已定义值，父级值优先于引擎兜底值；具体规则见开发指南。
 4. 补丁、专用 CMakeLists 和执行文件放在同一模块目录。文件补丁使用 `[[patches]]`；其他时机的修改使用原生 `[[steps]]`，按 DEPENDEES、DEPENDERS 排序，需要输入跟踪时声明 DEPENDS。显式 shell 命令才依赖 bash/sed，不假设 Windows 自带这些工具。
 5. `copy` 使用相对来源的明确文件列表和相对安装前缀的 destination，核对同目录 include、库和运行文件是否完整。附属资源在 build 时才准备，不以 configure 时路径尚未存在判断失败。
-6. 按[开发指南](../../../docs/development.md)通过根入口选择模块，configure/build 均使用平台 preset，再按[测试指南](../../../docs/testing.md)完成实际构建安装与产物检查。configure 成功只证明发现和目标生成，不替代构建安装。
+6. 按[开发指南](../../../docs/development.md)通过普通根 CMake 入口选择模块并 configure/build，不要求 preset 或 IDE 设置；再按[测试指南](../../../docs/testing.md)完成实际构建安装与产物检查。configure 成功只证明发现和目标生成，不替代构建安装。
 
 已有来源更换前，先保护本地修改并按开发指南重新准备受影响模块；不清空整个 build 或其他模块，不把重新 configure 或旧安装文件存在当成升级完成。
 

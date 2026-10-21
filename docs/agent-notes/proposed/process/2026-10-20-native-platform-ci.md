@@ -32,7 +32,7 @@ Windows x86_64、Linux x86_64 和 Linux aarch64 各使用一个原生构建 job�
 
 工具从官方来源取得并校验，版本更新须显式修改，不动态选择 latest。Python 环境和执行仍统一由根 uv 环境及锁文件管理。Linux 系统依赖只维护 APT，Windows 保留 Chocolatey；不为只支持一个 Linux 发行版的目标复制 YUM/DNF 准备。各模块声明自己的系统依赖，不靠其他模块缓存未命中时偶然安装。
 
-后续公共配置沿用 `CMAKE_INSTALL_LIBDIR=lib` 与 `CMAKE_POLICY_VERSION_MINIMUM=3.5`，后者只提供低版本 policy 下限，不覆盖上游更高要求；接入时验证子项目实际接收。当前引擎尚未提供这两项公共设置。Linux 源码构建产物的 glibc 需求不得高于 2.31；C++ 运行需求独立记录 GLIBCXX、CXXABI、libgcc 符号，不用 glibc 版本代替 C++ ABI 判断。静态归档须经实际下游链接验证，预编译输入单独记录兼容要求，不能因默认 GCC 9.4 就视为同基线源码产物。
+后续公共配置沿用 `CMAKE_INSTALL_LIBDIR=lib` 与 `CMAKE_POLICY_VERSION_MINIMUM=3.5`，后者只提供低版本 policy 下限，不覆盖上游更高要求。policy 已由普通根入口传入子项目，机制见[模块扩展决定](../architecture/2026-10-20-module-expansion.md)；固定安装库目录仍待接入。Linux 源码构建产物的 glibc 需求不得高于 2.31；C++ 运行需求独立记录 GLIBCXX、CXXABI、libgcc 符号，不用 glibc 版本代替 C++ ABI 判断。静态归档须经实际下游链接验证，预编译输入单独记录兼容要求，不能因默认 GCC 9.4 就视为同基线源码产物。
 
 正式构建记录工具版本、来源和实际发行版包修订，Windows 记录 runner image、cl、MSBuild、SDK 与 CMake 实际版本。容器内只对实际 checkout 设置必要的 Git 信任，不修改用户机器的全局信任列表。镜像更换不等于现有 build ID 自动失效；新仓库不复用旧发布集合，不为此预建通用工具链状态管理。
 

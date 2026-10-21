@@ -4,7 +4,7 @@
 
 ## 准备与配置
 
-在仓库根目录准备环境，然后选择平台配置：
+在仓库根目录准备开发环境，再选择平台生成器；`dev` 组包含技能校验所需的 PyYAML，版本由 uv.lock 锁定：
 
 ```text
 uv sync --locked
@@ -13,18 +13,18 @@ uv sync --locked
 Windows x64、Visual Studio 2022：
 
 ```text
-cmake --preset windows-x64 -T "v143,host=x64"
-cmake --build --preset windows-x64
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -T "v143,host=x64"
+cmake --build build --config Release
 ```
 
 Linux、GCC：
 
 ```text
-cmake --preset linux -DCMAKE_BUILD_TYPE=Release
-cmake --build --preset linux
+cmake -S . -B build -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release
 ```
 
-configure 和 build 均使用对应 preset，让公共 `CMAKE_POLICY_VERSION_MINIMUM=3.5` 环境传入 ExternalProject 子进程，避免逐库设置旧 policy 兼容值；只使用 configure preset 不足以保证 build 阶段继承该环境。
+引擎为 CMake 子项目提供 policy 下限 `3.5`、PIC `ON`、C++ 标准 `17` 的兜底值，通过原生 `CMAKE_ARGS` 传入，不向父级 cache 写默认值；不依赖 preset、IDE 设置或环境变量。根 configure 的 `-D` 或 toolchain 中已定义的值可覆盖兜底值，模块显式 cache 优先于父级值；修改公共值后重新 configure/build。已有 cache 条目保留为父级输入，不自动删除。policy 下限不降低上游较高声明，旧声明被提高后的兼容性仍须实际验证。CMake Tools 可沿用 Kit/Variant，选择已有编译器和配置。
 
 默认构建 zlib、queue、freetype，分别安装到 `3rdparty/<模块名>/`。只选部分模块时在 configure 命令追加 `-DBUILD_LIST=freetype` 或 `-DBUILD_LIST=zlib,queue`。configure 输出工具链、安装目录与模块摘要；源码获取和安装在 build 阶段执行。
 

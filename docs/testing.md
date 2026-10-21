@@ -1,6 +1,6 @@
 # 测试
 
-公共测试验证 TOML 校验、CMake 参数传递、生成器身份、补丁、步骤依赖、增量构建及真实根入口。Git 与 tar.xz fixture 在本地创建，不下载真实依赖；需要 uv 缓存与可用 C/C++ 工具链。本地 HTTP 服务使用动态端口，退出和异常时释放线程及套接字，覆盖首地址成功、404/摘要错误回退、候选全部失败、资源归档和单顶层目录展开。preset 回归检查公共 policy 环境到达父 configure 与 ExternalProject 子项目。
+公共测试验证 TOML 校验、CMake 参数传递、生成器身份、补丁、步骤依赖、增量构建及真实根入口。Git 与 tar.xz fixture 在本地创建，不下载真实依赖；需要 uv 缓存与可用 C/C++ 工具链。本地 HTTP 服务使用动态端口，退出和异常时释放线程及套接字，覆盖首地址成功、404/摘要错误回退、候选全部失败、资源归档和单顶层目录展开。独立后端与普通入口回归验证 policy、PIC、C++ 标准到达子项目，默认值不写入父级 cache，以及模块覆盖、父级值更新和移除后恢复兜底值。
 
 ## 执行
 
@@ -10,7 +10,7 @@
 uv run --locked python -B -m unittest discover -s tests/build_system -v
 ```
 
-应收集并通过 35 项测试。测试在 `build/tests/` 创建含空格的隔离副本，结束时仅清理自身临时目录。基础入口测试使用离线 uv 缓存，首次执行前须完成环境准备。定向验证可追加 `-p test_definition.py` 等文件过滤参数；修改公共入口或跨文件接线时运行全集。
+应收集并通过 37 项测试。测试在 `build/tests/` 创建含空格的隔离副本，结束时仅清理自身临时目录。基础入口测试使用离线 uv 缓存，首次执行前须完成环境准备。定向验证可追加 `-p test_definition.py` 等文件过滤参数；修改公共入口或跨文件接线时运行全集。
 
 仅修改文档时使用 doc-standards、agent-notes 技能校验链接、归属和 `scripts/doc-budgets.manifest.json` 预算；校验器不是构建依赖。仓库没有自动 Git hook、CI 或覆盖率门槛。
 

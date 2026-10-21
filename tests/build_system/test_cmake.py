@@ -75,6 +75,19 @@ class PipelineCase(unittest.TestCase):
 
 
 class CMakeTests(PipelineCase):
+    def test_backend_defaults_reach_child_without_root_entry(self):
+        repo = self.repository("defaults", {"CMakeLists.txt": '''cmake_minimum_required(VERSION 3.20)
+project(child NONE)
+file(WRITE "${CMAKE_BINARY_DIR}/settings.txt"
+    "${CMAKE_POLICY_VERSION_MINIMUM}|${CMAKE_CXX_STANDARD}|${CMAKE_POSITION_INDEPENDENT_CODE}")
+install(FILES "${CMAKE_BINARY_DIR}/settings.txt" DESTINATION include)
+'''})
+        module = self.definition('[source]\n' + repo)
+        self.project(module)
+        self.build()
+        installed = self.source / "3rdparty/demo/include/settings.txt"
+        self.assertEqual(installed.read_text(), "3.5|17|ON")
+
     def test_archive_parameters_reach_native_targets(self):
         source = 'URL=["https://one.invalid/a.tar.xz", "https://two.invalid/a.tar.xz"]\n' + \
                  'URL_HASH="SHA256=' + "a" * 64 + '"\nDOWNLOAD_NAME="archive.tar.xz"\n'

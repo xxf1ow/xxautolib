@@ -166,6 +166,8 @@ COMMAND = [
 
 ### 配置身份与 Release
 
+cmake.py 在 CMake 子项目参数组装处提供 policy、PIC 和 C++ 标准的兜底值；入口只转发父级已定义值，不向父级 cache 写默认项。模块显式 cache 优先于父级值，父级值优先于引擎兜底值，合并结果通过原生 CMAKE_ARGS 传给子项目。默认值与命令见[开发指南](../../../development.md)，兼容下限与覆盖规则见[模块扩展决定](../../proposed/architecture/2026-10-20-module-expansion.md#公共-cmake-默认值)。公共值不依赖 presets 或 IDE，避免普通命令遗漏配置，也避免根 presets 使 CMake Tools 自动切换出 Kit/Variant 模式。
+
 子项目强制沿用父项目的生成器，以及适用且非空的平台、完整工具集和 Visual Studio instance。通过 ExternalProject 的原生 CMake 生成器选项传递，不依靠父 cache 的隐式继承，不擅自切换 Ninja 或平台默认工具集。
 
 父项目选择 `v142,host=x64` 时，子项目保留完整值，不能截断后缀或改用默认 v143；指定工具集不可用时由 CMake 报错。v142 实机一致性留待后续人工验收，不安装工具集、不阻塞开发，也不以 v143 成功替代它。
@@ -246,7 +248,7 @@ Windows x64 使用 Visual Studio 2022、`v143,host=x64`、MSVC 19.42、CMake 4.2
 
 两端公共测试各通过 24 项，覆盖声明校验、平台选择、参数实际接收值、生成身份、双资源复制、原生命令和依赖、补丁应用与冲突、输入变化后的重新配置及产物更新、生成防抖和失败隔离。模块选择隔离由本地固定 Git fixture 验证，不为不同 BUILD_LIST 组合重复下载真实上游。
 
-FreeType 2.13.2 经公共 configure/build presets 在同两端完成真实归档下载、摘要校验、单顶层目录展开、编译与安装。Windows 安装 `lib/freetype.lib`，Linux 安装 `lib/libfreetype.a`；两端公开头文件、三份 CMake 包文件和 `freetype2.pc` 齐全。归档与 preset 回归纳入后，两端公共全集各通过 35 项；Windows 观察到缺少 preset 的回归失败，加入公共环境后旧 policy 子项目完成安装，无逐库 policy 参数。
+FreeType 2.13.2 在同两端完成真实归档下载、摘要校验、单顶层目录展开、编译与安装，并经无 preset 的普通根入口重新配置、构建和安装。Windows 安装 `lib/freetype.lib`，Linux 安装 `lib/libfreetype.a`；两端公开头文件、三份 CMake 包文件和 `freetype2.pc` 齐全。两端公共全集各通过 36 项，验证根入口传递的 policy、PIC、C++ 标准、模块覆盖与公共值更新；Windows 缺少公共参数时旧 policy 子项目配置失败、C++17 fixture 编译失败，加入统一参数后均完成安装。较高 policy 子项目保持 NEW 行为。Linux CMake 3.31.9 接收同名 cache，但提示 policy 下限变量未使用；该变量自 CMake 4.0 起生效，不将参数到达等同于旧版 CMake 已改变 policy。
 
 Windows 未发现 ZLIB、BZip2、PNG、HarfBuzz、BrotliDec，FreeType 导出无这些外部链接依赖。Linux 发现 ZLIB 1.2.11 与 PNG 1.6.37，CMake 导出实际包含 `/usr/lib/aarch64-linux-gnu/libz.so`、`/usr/lib/aarch64-linux-gnu/libpng.so`，解析后的文件确认为 aarch64 动态库；pkg-config 的 Requires 为 `zlib, libpng`。Linux 未发现 BZip2、HarfBuzz、BrotliDec。两端 `.pc` 均保留各自安装前缀；这些结果不构成依赖隔离、自包含或可搬迁保证，模块维持参考的可选依赖默认探测。
 

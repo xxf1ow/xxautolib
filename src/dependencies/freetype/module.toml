@@ -13,9 +13,3 @@ URL = [
 ]
 URL_HASH = "SHA256=12991c4e55c506dd7f9b765933e62fd2be2e06d421505d7950a132e4f1bb484d"
 DOWNLOAD_NAME = "freetype-2.13.2.tar.xz"
-
-[cmake.cache]
-# 保留参考设置，使静态库可链接进共享库。
-CMAKE_POSITION_INDEPENDENT_CODE = true
-# 沿用参考配置要求的 C++ 标准。
-CMAKE_CXX_STANDARD = 17
