@@ -12,7 +12,7 @@ Status: proposed
 
 ### 原生分层与并行
 
-Windows x86_64、Linux x86_64 和 Linux aarch64 各使用一个原生构建 job，平台间可以并行。不使用交叉编译、Zig 或 QEMU。Linux 每个平台共用一个 Actions 原生 container job；Windows 保留 Visual Studio/MSBuild，不传 Linux Make 参数。规划和最终汇总可保留独立辅助 job。
+Windows x86_64、Linux x86_64 和 Linux aarch64 各使用一个原生构建 job，平台间可以并行。C++ 库不使用交叉编译、Zig 或 QEMU；Go importer 的交叉编译与逐宿主运行验证由 [Go 工具层设计](../architecture/2026-10-21-go-tooling-and-offline-import.md)拥有。Linux 每个平台共用一个 Actions 原生 container job；Windows 保留 Visual Studio/MSBuild，不传 Linux Make 参数。规划和最终汇总可保留独立辅助 job。
 
 每平台按具名步骤执行环境准备、依赖层、OpenCV、后续层、消费验证和汇总；OpenCV 与后续层顺序执行，不增加后台调度器。空层可跳过，非空前置层失败时不继续依赖构建或报告成功。后续实际模块较少时，不为形式完整创建空层。
 
@@ -30,7 +30,7 @@ Windows x86_64、Linux x86_64 和 Linux aarch64 各使用一个原生构建 job�
 | CI CMake | Kitware 官方 CMake 3.31.12，显式固定补丁版 | 版本更新须修改配置并验证；项目最低版本仍为 3.20。 |
 | Windows | windows-2022 原生 VS 2022 x64、Release、普通模块默认 v143 | 保留完整父生成器身份和显式 CRT；不全局降为 v142，不承诺 runner 的 MSVC/SDK 补丁固定。 |
 
-工具从官方来源取得并校验，版本更新须显式修改，不动态选择 latest。Python 环境和执行仍统一由根 uv 环境及锁文件管理。Linux 系统依赖只维护 APT，Windows 保留 Chocolatey；不为只支持一个 Linux 发行版的目标复制 YUM/DNF 准备。各模块声明自己的系统依赖，不靠其他模块缓存未命中时偶然安装。
+工具从官方来源取得并校验，版本更新须显式修改，不动态选择 latest。自有工具环境按 Go 工具层设计切换，落地前的 Python 环境仍由根 uv 环境管理；不在 CI 中维护第二套生成器环境。Linux 系统依赖只维护 APT，Windows 保留 Chocolatey；不为只支持一个 Linux 发行版的目标复制 YUM/DNF 准备。各模块声明自己的系统依赖，不靠其他模块缓存未命中时偶然安装。
 
 后续公共配置沿用 `CMAKE_INSTALL_LIBDIR=lib` 与 `CMAKE_POLICY_VERSION_MINIMUM=3.5`，后者只提供低版本 policy 下限，不覆盖上游更高要求。policy 已由普通根入口传入子项目，机制见[模块扩展决定](../architecture/2026-10-20-module-expansion.md)；固定安装库目录仍待接入。Linux 源码构建产物的 glibc 需求不得高于 2.31；C++ 运行需求独立记录 GLIBCXX、CXXABI、libgcc 符号，不用 glibc 版本代替 C++ ABI 判断。静态归档须经实际下游链接验证，预编译输入单独记录兼容要求，不能因默认 GCC 9.4 就视为同基线源码产物。
 

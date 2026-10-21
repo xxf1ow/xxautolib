@@ -2,6 +2,8 @@
 
 本仓库按能力分批接入模块，先完成本地构建安装，再建立下游导入、二进制交付和 CI。本文维护阶段目标与迁移范围；各阶段的理由和约束由链接的 Agent Note 拥有，具体实现开始前再确认该批设计。
 
+工具层重建及导入链路按 [Go 工具层与离线导入设计](agent-notes/proposed/architecture/2026-10-21-go-tooling-and-offline-import.md)分阶段推进：保留 TOML 和原生构建契约，分为 Go 生成器替换、本地二进制闭环、联网引导与工具发行三个验收阶段，不表示这些能力已实现。
+
 ## 状态与依据
 
 本仓库支持 TOML 定义、Python 生成、原生 ExternalProject、固定来源、多资源、补丁、自定义步骤、平台输入、依赖闭包及 uv 根环境。下表已验证模块均通过 Windows x64、Linux aarch64 本地安装；v142、Linux x86_64 实机仍待验收。流程由[模块技能](../.agents/skills/add-third-party-module/SKILL.md)维护；当前职责见[架构](architecture.md)，验证入口见[测试](testing.md)。
