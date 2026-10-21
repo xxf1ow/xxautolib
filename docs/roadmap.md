@@ -23,7 +23,7 @@
 | 三平台原生 CI | 基础流水线已实现，单 job 优化待实施 | 接入 Windows x86_64、Linux x86_64/aarch64；以原生单 job 分层、统一环境与并行预算为目标，不先复制多 job 传完整包的结构再重写。 |
 | 平台无关头文件槽位 | 待实施 | 仅对显式声明且安装内容确实平台无关的包启用 any/any；规划、导入、缓存、manifest、镜像共同支持，并通过三平台消费。 |
 
-本地能力的既有决定见[模块扩展](agent-notes/proposed/architecture/2026-10-20-module-expansion.md)；导入、打包和固定槽见[二进制交付](agent-notes/proposed/architecture/2026-10-20-name-only-artifact-delivery.md)；环境、ABI、并行和通用槽位见[三平台 CI](agent-notes/proposed/process/2026-10-20-native-platform-ci.md)。
+本地能力的既有决定见[模块扩展](agent-notes/proposed/architecture/2026-10-20-module-expansion.md)，本批方案见[本地复用与平台输入设计](agent-notes/proposed/architecture/2026-10-20-local-reuse-and-platform-inputs.md)；导入、打包和固定槽见[二进制交付](agent-notes/proposed/architecture/2026-10-20-name-only-artifact-delivery.md)；环境、ABI、并行和通用槽位见[三平台 CI](agent-notes/proposed/process/2026-10-20-native-platform-ci.md)。
 
 ## 模块迁移候选
 
