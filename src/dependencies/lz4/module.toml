@@ -3,6 +3,8 @@ name = "lz4"
 type = "cmake"
 version = "1.10.0"
 sentinel = "include/lz4.h"
+config_dir = "lib/cmake/lz4"
+pkgconfig_dir = "lib/pkgconfig"
 
 # 固定参考 v1.10.0；升级时核对 CMake 子目录和静态安装布局。
 [source]

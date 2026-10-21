@@ -1,0 +1,25 @@
+# FLANN：近似最近邻搜索库，构建并安装 C/C++ 库；压缩依赖复用本仓库 lz4。
+name = "flann"
+type = "cmake"
+version = "f9caaf609d8b8cb2b7104a85cf59eb92c275a25d"
+depends = ["lz4"]
+config_dir = "lib/cmake/flann"
+pkgconfig_dir = "lib/pkgconfig"
+sentinel = "include/flann/flann.hpp"
+
+# 固定参考提交；版本更新需重新验证 lz4 探测及安装布局。
+[source]
+GIT_REPOSITORY = "https://github.com/flann-lib/flann.git"
+GIT_TAG = "f9caaf609d8b8cb2b7104a85cf59eb92c275a25d"
+
+# 保留参考 C 接口与 OpenMP，不构建其他语言绑定、GPU、示例、测试或文档。
+[cmake.cache]
+BUILD_C_BINDINGS = true
+BUILD_PYTHON_BINDINGS = false
+BUILD_MATLAB_BINDINGS = false
+BUILD_CUDA_LIB = false
+BUILD_EXAMPLES = false
+BUILD_TESTS = false
+BUILD_DOC = false
+USE_OPENMP = true
+USE_MPI = false

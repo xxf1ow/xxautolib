@@ -145,7 +145,7 @@ contrib 4.9.0 与 4.14.0 的模块目录对照结果仅新增 fastcv、signal，
 
 各模块自行说明实际前置工具及系统开发包，不依赖同批兄弟模块碰巧安装它们，也不新增 apt/choco 安装器。pkg-config 用于 FLANN 与文字库探测，保留必要的 OpenMP 和所选 FFmpeg 后端环境要求；配置摘要记录哪些可选项实际可用。若上游配置或生成步骤需要 Python，使用根 uv 环境中的解释器，不回退到系统 Python，不因禁用 Python 绑定就假定完全不需要解释器。
 
-OpenCV 内部的 IPP、Windows FFmpeg、KleidiCV 或其他附属下载沿用 4.14 原生机制；两份主归档的摘要不代表这些下载均已固定或离线可用。不导入 4.9 专用缓存，不为下载问题新增通用下载器、镜像健康状态或恢复服务。
+所有包按[基础设施取源规则](../../implemented/process/2026-10-19-repository-foundation.md#验证授权)先在 Windows 下载、校验，再传到 ARM；Git 来源可使用仅含对应上游历史的 bundle，接收后核对固定提交。OpenCV 内部的 IPP、Windows FFmpeg、KleidiCV 或其他附属下载仍沿用 4.14 原生缓存及校验机制，ARM 所需缓存同样先在 Windows 准备，不在 ARM 反复联网重试。两份主归档的摘要不代表内部下载均已固定或离线可用；不导入 4.9 专用缓存，不新增通用下载器、镜像健康状态或恢复服务。
 
 实施前检查并保护直接受影响的本地源码、构建状态和安装树。持久 Git、归档及 sentinel 的语义不变；更换版本不得用重新 configure 或文件已存在冒充升级成功。按[开发指南](../../../development.md)只准备受影响路径，不清空 build、git、3rdparty 根目录，不删除或搬迁其他模块及用户修改。若需要偏离参考选项或本设计才能完成构建，暂停受影响工作，说明具体影响并取得人工决定。
 
@@ -153,7 +153,7 @@ OpenCV 内部的 IPP、Windows FFmpeg、KleidiCV 或其他附属下载沿用 4.1
 
 新增公共行为在 `tests/build_system/` 用现有 unittest 与隔离 fixture 验证，不新建测试框架：叶子请求发现闭包、去重与顺序，缺失及环诊断，依赖 TOML 触发重配置，原生目标顺序、实际收到的包/前缀/环境路径，资源引用及选定目标的补丁，以及 sentinel 命中仍可作为依赖且不执行资源。含空格路径、列表和平台环境分隔符围绕新增接线定向覆盖，不穷举模块开关组合。
 
-先在 Windows x64 使用现有 VS2022/v143 环境完成真实根入口构建，再在 `lxx@192.168.0.127` 的 `/home/lxx/xxautolib` 完成 Linux aarch64 验证。源码传输和数据保护遵守[基础设施授权](../../implemented/process/2026-10-19-repository-foundation.md)，不传输 `.git/`、`.venv/`、`git/`、`build/`、`3rdparty/` 或凭据。该授权不包含其他机器、目录、托管平台写操作或远端 CI。
+先在 Windows x64 使用现有 VS2022/v143 环境完成真实根入口构建，再在 `lxx@192.168.0.127` 的 `/home/lxx/xxautolib` 完成 Linux aarch64 验证。源码传输和数据保护遵守[基础设施授权](../../implemented/process/2026-10-19-repository-foundation.md)，仅传任务源码及已校验的第三方输入，不传本仓库 `.git/`、`.venv/`、Windows 构建安装产物或凭据；第三方输入单独传输，不整体复制 `git/`、`build/`、`3rdparty/`。该授权不包含其他机器、目录、托管平台写操作或远端 CI。
 
 两端分别只请求 flann，确认得到 lz4 与 flann；只请求 opencv，确认得到 freetype、harfbuzz 与 opencv，不引入独立 flann。已有安装可按 sentinel 复用，但新增三库必须有真实编译安装证据，资源修改必须有实际执行证据，不能全部由旧安装命中替代。
 
