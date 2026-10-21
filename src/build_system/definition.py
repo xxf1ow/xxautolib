@@ -12,8 +12,8 @@ class ModuleDefinition:
     name: str
     kind: str
     version: str | None
-    source: dict[str, str] | None
-    resources: dict[str, dict[str, str]]
+    source: dict[str, str | list[str]] | None
+    resources: dict[str, dict[str, str | list[str]]]
     cache: dict[str, object]
     patches: list[Path]
     steps: list[dict[str, object]]
@@ -48,10 +48,28 @@ def _name(value, where):
     return value
 
 
-def _source(value, where):
-    _table(value, {"GIT_REPOSITORY", "GIT_TAG"}, where)
-    return {key: _text(value.get(key), f"{where}.{key}")
-            for key in ("GIT_REPOSITORY", "GIT_TAG")}
+def _source(value: object, where: str) -> dict[str, str | list[str]]:
+    git = {"GIT_REPOSITORY", "GIT_TAG"}
+    archive = {"URL", "URL_HASH", "DOWNLOAD_NAME"}
+    _table(value, git | archive, where)
+    if value.keys() & git and value.keys() & archive:
+        raise ValueError(f"{where}: Git and URL archive fields are mutually exclusive")
+    if not value.keys() & archive:
+        return {key: _text(value.get(key), f"{where}.{key}")
+                for key in ("GIT_REPOSITORY", "GIT_TAG")}
+    urls = _strings(value.get("URL"), f"{where}.URL")
+    if not urls or any(not url for url in urls):
+        raise ValueError(f"{where}.URL: expected a nonempty array of nonempty strings")
+    digest = _text(value.get("URL_HASH"), f"{where}.URL_HASH")
+    if not re.fullmatch(r"SHA256=[0-9a-fA-F]{64}", digest):
+        raise ValueError(f"{where}.URL_HASH: expected SHA256=<64 hexadecimal digits>")
+    result = {"URL": urls, "URL_HASH": digest}
+    if "DOWNLOAD_NAME" in value:
+        name = _text(value["DOWNLOAD_NAME"], f"{where}.DOWNLOAD_NAME")
+        if name in (".", "..") or "/" in name or "\\" in name or PureWindowsPath(name).drive:
+            raise ValueError(f"{where}.DOWNLOAD_NAME: expected a single filename")
+        result["DOWNLOAD_NAME"] = name
+    return result
 
 
 def _cache(value, where):

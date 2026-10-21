@@ -52,11 +52,22 @@ class FoundationTests(unittest.TestCase):
 
     def test_stale_lock_fails_configure(self):
         project = self.source / "pyproject.toml"
-        project.write_text(project.read_text(encoding="utf-8").replace(
-            'version = "0.1.0"', 'version = "0.2.0"'), encoding="utf-8")
+        # 无外部依赖的过期元数据使离线解析不遮住 --locked 校验。
+        project.write_text('''[project]
+name = "xxautolib"
+version = "0.2.0"
+requires-python = ">=3.12"
+dependencies = []
+
+[tool.uv]
+package = false
+''', encoding="utf-8")
+        lock = self.source / "uv.lock"
+        before = lock.read_bytes()
         result = self.configure()
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("locked", result.stdout + result.stderr)
+        self.assertEqual(lock.read_bytes(), before)
 
     def test_reference_entry_reports_build_settings(self):
         result = self.configure()

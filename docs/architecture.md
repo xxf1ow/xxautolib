@@ -8,7 +8,7 @@
 
 `src/build_system/` 中 definition.py 解析与校验 TOML，cmake.py 输出原生 ExternalProject 声明，generate.py 组织生成并登记实际读取的 Python/TOML 输入。CMake 负责自动重配置；生成内容不变时保留时间戳。ExternalProject 负责下载、补丁、构建、安装及原生自定义步骤；apply_patch.cmake 检查并应用文件补丁，不自动恢复冲突源码。
 
-zlib 使用 cmake 类型和静态专用补丁；queue 使用无主来源的 copy 类型，获取两个独立资源并安装六个头文件。子项目沿用父生成器身份、显式 CRT，固定 Release；本项目不提供模块依赖闭包或下游导入接口。
+zlib 使用 cmake 类型和静态专用补丁；queue 使用无主来源的 copy 类型，获取两个独立资源并安装六个头文件；FreeType 使用带 SHA256 的多 URL 归档。Git 与归档来源均交给 ExternalProject 获取，镜像按原生规则回退，不自建下载器。子项目沿用父生成器身份、显式 CRT，固定 Release。cmake.py 在 CMake 子项目参数组装处提供 policy、PIC 与 C++ 标准的兜底值，公共入口只转发父级已定义值；模块显式 cache 优先于父级值，父级值优先于引擎兜底值。合并结果通过原生 CMAKE_ARGS 传给子项目，不向父级 cache 写默认值，不依赖 presets 或 IDE。本项目不提供模块依赖闭包或下游导入接口。
 
 各工作副本仅使用根 `.venv/`、`build/` 和 `3rdparty/<模块名>/`，均不提交或跨平台传输。`build/generated/` 保存可检查的生成 CMake，`build/ep/` 保存独立的来源、编译及步骤目录。`tests/build_system/` 验证公共引擎，`tests/zlib/`、`tests/queue/` 验证安装产物。
 

@@ -4,7 +4,7 @@
 
 ## 状态与依据
 
-截至 2026-10-20，本仓库已验收 TOML 纯数据定义、Python 通用生成引擎、原生 ExternalProject 执行、固定 Git 来源、多资源、文件补丁、自定义步骤、平台选项及 uv 根环境。zlib 静态构建和 queue 双资源头文件安装已通过 Windows x64、Linux aarch64 验证。v142 实机一致性保留人工验收，不阻塞当前开发。当前能力见[架构](architecture.md)，证据见[流水线记录](agent-notes/implemented/architecture/2026-10-19-toml-externalproject-zlib.md)。
+截至 2026-10-20，本仓库已验证 TOML 纯数据定义、Python 通用生成引擎、原生 ExternalProject 执行、固定 Git 来源、多资源、文件补丁、自定义步骤、平台选项及 uv 根环境。zlib 静态构建、queue 双资源头文件安装与 FreeType 2.13.2 归档构建均通过 Windows x64、Linux aarch64 验证；URL/SHA256、原生镜像回退和单顶层目录展开有公共回归，普通根入口统一传递 policy、PIC 和 C++ 标准。新增模块流程由[模块技能](../.agents/skills/add-third-party-module/SKILL.md)维护。v142 实机一致性保留人工验收。当前能力见[架构](architecture.md)，证据及 FreeType 系统依赖边界见[流水线记录](agent-notes/implemented/architecture/2026-10-19-toml-externalproject-zlib.md)。
 
 “参考已实现”指参考实现中存在对应代码或模块，并有相关决定；不表示本仓库支持，也不表示本轮重新验证了参考实现的全部模块。“参考待实施”指已有方向但尚未落地。迁移不导入历史提交、旧发布数据或所有辅助机制。
 
@@ -14,7 +14,7 @@
 
 | 阶段 | 参考状态 | 本仓库待做与完成标志 |
 | --- | --- | --- |
-| 本地获取与安装扩展 | 已实现 | 按首个实际模块补 URL 归档、摘要校验、平台/架构来源选择、文件布局及必要的源码子目录能力；代表模块完成构建或复制安装，不预建完整 Schema。 |
+| 本地获取与安装扩展 | 已实现 | FreeType 已验证 URL/SHA256/原生镜像回退；平台/架构来源、其他文件布局及必要的 SOURCE_SUBDIR 仍按实际模块接入，不预建完整 Schema，整阶段尚未完成。 |
 | 本地输入与安装复用 | 已实现 | 持久 Git 目录、哈希归档复用和安装 sentinel 短路尚未接入；跨 build 复用前确认保存位置及安装有效性规则，不把目录存在当成版本校验。 |
 | 模块依赖 | 已实现 | 选择 lz4 → flann 等小依赖链，支持依赖发现、排序和安装前缀/包位置传递；再接 Boost、PCL 对 zlib 的依赖。仅请求叶子也能得到所需构建输入，不能误用系统库。 |
 | 复杂模块与专用文件 | 已实现 | 按需接 OpenCV contrib、oneTBB HWLOC、ImGui 专用 CMakeLists；资源就绪、原生步骤位置、安装内容和工具链身份可核对。 |
@@ -31,9 +31,9 @@
 
 | 分组 | 模块 | 本仓库状态或接入重点 |
 | --- | --- | --- |
-| 已验收 | zlib、queue | 保持本批范围，不追加下游交付要求。 |
+| 已验证 | zlib、queue、freetype | 本地构建安装通过，不追加下游交付要求；FreeType 沿用参考的系统可选依赖探测。 |
 | 基础构建与头文件 | asio、clipper2、cpp-httplib、eigen、expected、ftxui、gtest、libzmq、lz4、nativefiledialog-extended、nlohmann、portaudio、pybind11、sdl3、spdlog、taskflow、websocketpp、yaml-cpp | 待迁移；按需挑选，覆盖归档、源码子目录、系统依赖和安装布局；不是要求一次迁移整组。 |
-| 依赖链 | boost、flann、freetype、harfbuzz、pcl | 待迁移；本仓库产物的显式依赖与标准查找通道。 |
+| 依赖链 | boost、flann、harfbuzz、pcl | 待迁移；本仓库产物的显式依赖与标准查找通道。 |
 | 多资源及专用构建 | opencv、oneTBB、imgui、gtsam | 待迁移；附属编译输入、专用文件、补丁与依赖，不把库逻辑塞进引擎。 |
 | 预编译输入 | onnxruntime、mysql | 待迁移；按平台选择已登记归档及摘要，核对复制布局与独立运行要求。 |
 | 专项模块 | sherpa-onnx、lastools、logo | 待按实际需求确定批次；分别涉及私有依赖参数、平台限制或资源产物。 |

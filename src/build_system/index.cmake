@@ -30,6 +30,12 @@ function(xxautolib_generate_modules)
     if(DEFINED CMAKE_MSVC_RUNTIME_LIBRARY)
         list(APPEND runtime_argument "--msvc-runtime-library=${CMAKE_MSVC_RUNTIME_LIBRARY}")
     endif()
+    set(cmake_defaults)
+    foreach(key CMAKE_POLICY_VERSION_MINIMUM CMAKE_POSITION_INDEPENDENT_CODE CMAKE_CXX_STANDARD)
+        if(DEFINED ${key})
+            list(APPEND cmake_defaults "--cmake-default=${key}=${${key}}")
+        endif()
+    endforeach()
     execute_process(
         COMMAND "${CMAKE_COMMAND}" -E env
             "UV_PROJECT_ENVIRONMENT=${CMAKE_CURRENT_SOURCE_DIR}/.venv"
@@ -45,6 +51,7 @@ function(xxautolib_generate_modules)
             "--instance=${CMAKE_GENERATOR_INSTANCE}"
             "--multi-config=${multi_config}"
             ${runtime_argument}
+            ${cmake_defaults}
             "--cmake-command=${CMAKE_COMMAND}"
             "--git-executable=${GIT_EXECUTABLE}"
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"

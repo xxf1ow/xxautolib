@@ -1,6 +1,6 @@
 """将已校验声明生成可直接阅读的原生 ExternalProject 调用。"""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from definition import ModuleDefinition
@@ -19,6 +19,7 @@ class BuildContext:
     msvc_runtime_library: str | None
     cmake_command: Path
     git_executable: Path
+    cmake_defaults: dict[str, str] = field(default_factory=dict)
 
 
 def cmake_argument(value: str) -> str:
@@ -74,7 +75,8 @@ def render_module(module: ModuleDefinition, context: BuildContext) -> str:
 
     for name, source in module.resources.items():
         options = _directories(prefix / "res" / name, install)
-        options += [(key, [value]) for key, value in source.items()]
+        options += [(key, value if isinstance(value, list) else [value])
+                    for key, value in source.items()]
         options += [("LIST_SEPARATOR", [separator]), ("UPDATE_COMMAND", [""]),
                     ("CONFIGURE_COMMAND", [""]), ("BUILD_COMMAND", [""]),
                     ("INSTALL_COMMAND", [""])]
@@ -83,7 +85,8 @@ def render_module(module: ModuleDefinition, context: BuildContext) -> str:
     options = _directories(prefix, install)
     options += [("LIST_SEPARATOR", [separator]), ("UPDATE_COMMAND", [""])]
     if module.source:
-        options += [(key, [value]) for key, value in module.source.items()]
+        options += [(key, value if isinstance(value, list) else [value])
+                    for key, value in module.source.items()]
     else:
         options.append(("DOWNLOAD_COMMAND", [""]))
     if module.resources:
@@ -97,7 +100,10 @@ def render_module(module: ModuleDefinition, context: BuildContext) -> str:
                            ("CMAKE_GENERATOR_INSTANCE", context.instance)):
             if value:
                 options.append((key, [value]))
-        cache = dict(module.cache)
+        cache = {"CMAKE_POLICY_VERSION_MINIMUM": "3.5",
+                 "CMAKE_POSITION_INDEPENDENT_CODE": True,
+                 "CMAKE_CXX_STANDARD": "17",
+                 **context.cmake_defaults, **module.cache}
         # 配置身份与安装位置由公共入口拥有，不让模块选项覆盖。
         for key in ("CMAKE_INSTALL_PREFIX", "CMAKE_BUILD_TYPE", "CMAKE_MSVC_RUNTIME_LIBRARY",
                     "CMAKE_GENERATOR", "CMAKE_GENERATOR_PLATFORM", "CMAKE_GENERATOR_TOOLSET",

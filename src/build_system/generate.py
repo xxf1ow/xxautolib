@@ -27,13 +27,15 @@ def main(argv: list[str] | None = None) -> int:
         parser.add_argument(f"--{key}", required=True)
     parser.add_argument("--multi-config", choices=("ON", "OFF"), required=True)
     parser.add_argument("--msvc-runtime-library")
+    parser.add_argument("--cmake-default", action="append", default=[])
     args = parser.parse_args(argv)
     context = BuildContext(
         source_root=args.source_root.resolve(), build_root=args.build_root.resolve(),
         system_name=args.system_name, generator=args.generator, platform=args.platform,
         toolset=args.toolset, instance=args.instance, multi_config=args.multi_config == "ON",
         msvc_runtime_library=args.msvc_runtime_library,
-        cmake_command=args.cmake_command, git_executable=args.git_executable)
+        cmake_command=args.cmake_command, git_executable=args.git_executable,
+        cmake_defaults=dict(value.split("=", 1) for value in args.cmake_default))
     try:
         definitions = [load_definition(context.source_root / "src/dependencies" / name / "module.toml",
                                        context.system_name) for name in args.module]

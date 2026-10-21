@@ -13,6 +13,7 @@ class EntryTests(PipelineCase):
             shutil.copy2(ROOT / name, self.source / name)
         shutil.copytree(ROOT / "src/build_system", self.source / "src/build_system")
         self.environment = {**os.environ, "UV_OFFLINE": "true"}
+        self.environment.pop("CMAKE_POLICY_VERSION_MINIMUM", None)
 
     def configure(self, *args, success=True):
         return self.run_command("cmake", "-S", self.source, "-B", self.context.build_root,
@@ -23,6 +24,67 @@ class EntryTests(PipelineCase):
         repo = self.repository(name, {"x.h": name})
         return self.definition('[source]\n' + repo + '\n[[copy]]\nfiles=["x.h"]\n'
                                'destination="include"\n', kind="copy", name=name)
+
+    def test_plain_entry_propagates_cmake_defaults(self):
+        for name, minimum, policy in (("legacy", "3.0", "CMP0054"),
+                                       ("modern", "3.20", "CMP0077")):
+            repo = self.repository(name, {"CMakeLists.txt": f'''cmake_minimum_required(VERSION {minimum})
+project(child CXX)
+add_library(child STATIC child.cpp)
+cmake_policy(GET {policy} behavior)
+get_target_property(pic child POSITION_INDEPENDENT_CODE)
+file(WRITE "${{CMAKE_BINARY_DIR}}/settings.txt"
+    "${{CMAKE_POLICY_VERSION_MINIMUM}}|${{CMAKE_CXX_STANDARD}}|${{pic}}|${{behavior}}")
+install(TARGETS child ARCHIVE DESTINATION lib)
+install(FILES "${{CMAKE_BINARY_DIR}}/settings.txt" DESTINATION include)
+''', "child.cpp": '''#include <optional>
+int value() { return std::optional<int>(17).value(); }
+'''})
+            self.definition('[source]\n' + repo, name=name)
+        self.configure()
+        parent_cache = (self.context.build_root / "CMakeCache.txt").read_text(encoding="utf-8")
+        for key in ("CMAKE_POLICY_VERSION_MINIMUM", "CMAKE_POSITION_INDEPENDENT_CODE", "CMAKE_CXX_STANDARD"):
+            self.assertFalse(any(line.startswith(key + ":") for line in parent_cache.splitlines()), key)
+        self.build()
+        cmake_major = int(self.run_command("cmake", "--version").stdout.split()[2].split(".")[0])
+        for name in ("legacy", "modern"):
+            installed = self.source / f"3rdparty/{name}"
+            # policy 下限变量自 CMake 4.0 生效；3.x 保留旧声明的 policy 状态。
+            behavior = "" if name == "legacy" and cmake_major < 4 else "NEW"
+            self.assertEqual((installed / "include/settings.txt").read_text(), f"3.5|17|ON|{behavior}")
+            self.assertTrue(any((installed / "lib").iterdir()))
+
+    def test_common_cache_and_module_overrides_reach_children(self):
+        repo = self.repository("cache", {"CMakeLists.txt": '''cmake_minimum_required(VERSION 3.20)
+project(child NONE)
+file(WRITE "${CMAKE_BINARY_DIR}/settings.txt"
+    "${CMAKE_POLICY_VERSION_MINIMUM}|${CMAKE_CXX_STANDARD}|${CMAKE_POSITION_INDEPENDENT_CODE}")
+install(FILES "${CMAKE_BINARY_DIR}/settings.txt" DESTINATION include)
+'''})
+        self.definition('[source]\n' + repo, name="common")
+        self.definition('[source]\n' + repo + '''[cmake.cache]
+CMAKE_POLICY_VERSION_MINIMUM="3.10"
+CMAKE_CXX_STANDARD=17
+CMAKE_POSITION_INDEPENDENT_CODE=true
+''', name="specific")
+        self.configure("-DCMAKE_POLICY_VERSION_MINIMUM=3.6",
+                       "-DCMAKE_CXX_STANDARD=20", "-DCMAKE_POSITION_INDEPENDENT_CODE=OFF")
+        self.build()
+        common = self.source / "3rdparty/common/include/settings.txt"
+        specific = self.source / "3rdparty/specific/include/settings.txt"
+        self.assertEqual(common.read_text(), "3.6|20|OFF")
+        self.assertEqual(specific.read_text(), "3.10|17|ON")
+        self.configure("-DCMAKE_CXX_STANDARD=23")
+        self.build()
+        self.assertEqual(common.read_text(), "3.6|23|OFF")
+        self.assertEqual(specific.read_text(), "3.10|17|ON")
+        # CMake 安装按秒级时间戳和大小判断文件是否更新。
+        time.sleep(1.1)
+        self.configure("-UCMAKE_POLICY_VERSION_MINIMUM", "-UCMAKE_CXX_STANDARD",
+                       "-UCMAKE_POSITION_INDEPENDENT_CODE")
+        self.build()
+        self.assertEqual(common.read_text(), "3.5|17|ON")
+        self.assertEqual(specific.read_text(), "3.10|17|ON")
 
     def test_default_discovery_and_build_list_isolation(self):
         self.copy_module("first")
