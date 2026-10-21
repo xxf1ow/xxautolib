@@ -120,7 +120,7 @@ CMAKE_POSITION_INDEPENDENT_CODE=true
         self.assertNotIn("second", targets)
         self.run_command("cmake", "--build", self.context.build_root, "--config", "Release")
         self.assertEqual((self.source / "3rdparty/first/include/x.h").read_text(), "first")
-        self.assertFalse((self.context.build_root / "ep/second/src/.git").exists())
+        self.assertFalse((self.source / "git/second/.git").exists())
         # 初次默认 configure 会由 ExternalProject 创建空安装目录，不代表发生安装。
         self.assertFalse(any((self.source / "3rdparty/second").rglob("*")))
         result = self.configure("-DBUILD_LIST=missing", success=False)

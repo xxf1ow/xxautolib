@@ -35,13 +35,13 @@ def _resource_target(module, resource):
     return f"_al_resource_{len(module)}_{module}_{resource}"
 
 
-def _directories(prefix, install):
+def _directories(prefix, install, source, download):
     return [("PREFIX", [prefix.as_posix()]),
-            ("SOURCE_DIR", [(prefix / "src").as_posix()]),
+            ("SOURCE_DIR", [source.as_posix()]),
             ("BINARY_DIR", [(prefix / "bin").as_posix()]),
             ("STAMP_DIR", [(prefix / "stamp").as_posix()]),
             ("TMP_DIR", [(prefix / "tmp").as_posix()]),
-            ("DOWNLOAD_DIR", [(prefix / "dl").as_posix()]),
+            ("DOWNLOAD_DIR", [download.as_posix()]),
             ("INSTALL_DIR", [install.as_posix()])]
 
 
@@ -63,37 +63,71 @@ def render_module(module: ModuleDefinition, context: BuildContext) -> str:
     while separator in values:
         separator += "_"
     lines = [f"# Generated from {module.path.name}; do not edit.", ""]
+    if module.sentinel:
+        lines += [f"if(EXISTS {cmake_argument((install / module.sentinel).as_posix())})",
+                  f"    message(STATUS {cmake_argument(f'  [Info] [{module.name}] cached')})",
+                  f"    add_custom_target({cmake_argument(module.name)} ALL)", "else()"]
 
     def emit(command, positional, options):
         lines.append(f"{command}(")
         lines.extend(f"    {cmake_argument(str(value))}" for value in positional)
         for key, args in options:
+            if key == "_SOURCE_ARGS":
+                lines.append("    ${_al_source_args}")
+                continue
             lines.append(f"    {key}")
             lines.extend("        " + cmake_argument(str(value).replace(";", separator))
                          for value in args)
         lines.extend([")", ""])
 
+    persistent = context.source_root / "git"
+
+    def source_directory(source, local, prefix):
+        return local if source and "GIT_REPOSITORY" in source else prefix / "src"
+
+    def source_options(source, local):
+        if not source:
+            return [("DOWNLOAD_COMMAND", [""])]
+        options = [(key, value if isinstance(value, list) else [value])
+                   for key, value in source.items()]
+        if "GIT_REPOSITORY" not in source:
+            return options
+        location = cmake_argument(local.as_posix())
+        lines.extend([f"if(EXISTS {cmake_argument((local / '.git').as_posix())})",
+                      '    set(_al_source_args DOWNLOAD_COMMAND "")', "else()",
+                      f"    if(EXISTS {location})",
+                      f"        if(NOT IS_DIRECTORY {location})",
+                      f"            message(FATAL_ERROR {cmake_argument(f'{local.as_posix()}: expected a Git directory')})",
+                      "        endif()",
+                      f"        file(GLOB _al_entries LIST_DIRECTORIES TRUE {cmake_argument(local.as_posix() + '/*')})",
+                      "        if(_al_entries)",
+                      f"            message(FATAL_ERROR {cmake_argument(f'{local.as_posix()}: nonempty directory without .git; preserve or complete it manually')})",
+                      "        endif()", "    endif()"])
+        emit("set", ["_al_source_args"], options)
+        lines.append("endif()")
+        return [("_SOURCE_ARGS", [])]
+
     for name, source in module.resources.items():
-        options = _directories(prefix / "res" / name, install)
-        options += [(key, value if isinstance(value, list) else [value])
-                    for key, value in source.items()]
+        resource_prefix = prefix / "res" / name
+        local = persistent / "_resources" / module.name / name
+        options = _directories(resource_prefix, install, source_directory(source, local, resource_prefix), persistent)
+        options += source_options(source, local)
         options += [("LIST_SEPARATOR", [separator]), ("UPDATE_COMMAND", [""]),
                     ("CONFIGURE_COMMAND", [""]), ("BUILD_COMMAND", [""]),
                     ("INSTALL_COMMAND", [""])]
         emit("ExternalProject_Add", [_resource_target(module.name, name)], options)
 
-    options = _directories(prefix, install)
+    local = persistent / module.name
+    options = _directories(prefix, install, source_directory(module.source, local, prefix), persistent)
     options += [("LIST_SEPARATOR", [separator]), ("UPDATE_COMMAND", [""])]
-    if module.source:
-        options += [(key, value if isinstance(value, list) else [value])
-                    for key, value in module.source.items()]
-    else:
-        options.append(("DOWNLOAD_COMMAND", [""]))
+    options += source_options(module.source, local)
     if module.resources:
         options.append(("DEPENDS", [_resource_target(module.name, name)
                                     for name in module.resources]))
 
     if module.kind == "cmake":
+        if module.source_subdir is not None:
+            options.append(("SOURCE_SUBDIR", [module.source_subdir]))
         options += [("CMAKE_COMMAND", [cmake]), ("CMAKE_GENERATOR", [context.generator])]
         for key, value in (("CMAKE_GENERATOR_PLATFORM", context.platform),
                            ("CMAKE_GENERATOR_TOOLSET", context.toolset),
@@ -125,11 +159,13 @@ def render_module(module: ModuleDefinition, context: BuildContext) -> str:
         for mapping in module.copies:
             destination = (install / mapping["destination"]).as_posix()
             resource = mapping.get("resource")
-            source = prefix / "res" / resource / "src" if resource else prefix / "src"
+            source = source_directory(module.resources[resource], persistent / "_resources" / module.name / resource,
+                                      prefix / "res" / resource) if resource else source_directory(module.source, local, prefix)
             options.append(("INSTALL_COMMAND" if first else "COMMAND",
                             [cmake, "-E", "make_directory", destination]))
-            options.append(("COMMAND", [cmake, "-E", "copy",
-                                       *[(source / file).as_posix() for file in mapping["files"]],
+            key = "files" if "files" in mapping else "directories"
+            options.append(("COMMAND", [cmake, "-E", "copy" if key == "files" else "copy_directory",
+                                       *[(source / entry).as_posix() for entry in mapping[key]],
                                        destination]))
             first = False
 
@@ -156,4 +192,6 @@ def render_module(module: ModuleDefinition, context: BuildContext) -> str:
             commands = [commands]
         options.extend(("COMMAND", argv) for argv in commands)
         emit("ExternalProject_Add_Step", [module.name, step["name"]], options)
+    if module.sentinel:
+        lines.append("endif()")
     return "\n".join(lines)

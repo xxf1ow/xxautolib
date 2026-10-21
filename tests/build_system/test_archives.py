@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+from dataclasses import replace
 import hashlib
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import io
@@ -49,6 +50,30 @@ def archive_source(urls: list[str], payload: bytes) -> str:
 
 
 class ArchiveTests(PipelineCase):
+    def test_cached_archives_reuse_across_builds_and_copy_complete_directories(self):
+        payload = self.archive({"include/x.h": "header", "lib/runtime.bin": "runtime", "LICENSE": "license"})
+        with _http({"/package.tar.xz": payload}) as (base, requests, thread):
+            module = self.definition('[source]\n' + archive_source([base + "/package.tar.xz"], payload) +
+                'DOWNLOAD_NAME="package.tar.xz"\n[[copy]]\ndirectories=["."]\ndestination="."\n', kind="copy")
+            self.project(module)
+            self.build()
+            self.assertEqual(requests, ["/package.tar.xz"])
+            cached = self.source / "git/package.tar.xz"
+            self.assertEqual(cached.read_bytes(), payload)
+            requests.clear()
+            self.context = replace(self.context, build_root=self.source / "fresh build")
+            self.project(module)
+            self.build()
+            self.assertEqual(requests, [])
+            for path, expected in (("include/x.h", "header"), ("lib/runtime.bin", "runtime"), ("LICENSE", "license")):
+                self.assertEqual((self.source / "3rdparty/demo" / path).read_text(), expected)
+            cached.write_bytes(b"wrong digest")
+            self.context = replace(self.context, build_root=self.source / "third build")
+            self.project(module)
+            self.build()
+            self.assertEqual(requests, ["/package.tar.xz"])
+            self.assertEqual(cached.read_bytes(), payload)
+
     def archive(self, files: dict[str, str]) -> bytes:
         output = io.BytesIO()
         with tarfile.open(fileobj=output, mode="w:xz") as archive:

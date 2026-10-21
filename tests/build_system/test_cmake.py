@@ -75,6 +75,132 @@ class PipelineCase(unittest.TestCase):
 
 
 class CMakeTests(PipelineCase):
+    def test_new_build_reuses_modified_primary_and_resource_git(self):
+        main = self.repository("main", {"main.h": "original"})
+        resource = self.repository("extra", {"extra.h": "extra"})
+        module = self.definition('[source]\n' + main + '[resources.extra]\n' + resource + '''
+[[copy]]
+files=["main.h"]
+destination="first"
+[[copy]]
+resource="extra"
+files=["extra.h"]
+destination="second"
+''', kind="copy")
+        self.project(module)
+        self.build()
+        primary = self.source / "git/demo"
+        extra = self.source / "git/_resources/demo/extra"
+        self.assertTrue((primary / ".git").exists())
+        self.assertTrue((extra / ".git").exists())
+        (primary / "main.h").write_text("manual edit")
+        (extra / "extra.h").write_text("resource edit")
+        self.context = replace(self.context, build_root=self.source / "fresh build")
+        module.copies[0]["destination"] = "fresh"
+        module.copies[1]["destination"] = "fresh"
+        # 错误提交保证本地复用没有执行 checkout 或验证版本。
+        module.source["GIT_TAG"] = "does-not-exist"
+        module.resources["extra"]["GIT_TAG"] = "does-not-exist"
+        self.project(module)
+        self.build()
+        self.assertEqual((self.source / "3rdparty/demo/fresh/main.h").read_text(), "manual edit")
+        self.assertEqual((self.source / "3rdparty/demo/fresh/extra.h").read_text(), "resource edit")
+        self.assertEqual((primary / "main.h").read_text(), "manual edit")
+
+    def test_git_file_is_reused_without_git_commands(self):
+        module = self.definition('[source]\nGIT_REPOSITORY="unavailable"\nGIT_TAG="unavailable"\n'
+                                 '[[copy]]\nfiles=["x.h"]\ndestination="include"\n', kind="copy")
+        local = self.source / "git/demo"
+        local.mkdir(parents=True)
+        (local / ".git").write_text("gitdir: unavailable")
+        (local / "x.h").write_text("local worktree")
+        self.project(module)
+        self.build()
+        self.assertEqual((self.source / "3rdparty/demo/include/x.h").read_text(), "local worktree")
+
+    def test_nonempty_git_directories_are_preserved_including_hidden_files(self):
+        for resource in (False, True):
+            with self.subTest(resource=resource):
+                name = "resource" if resource else "primary"
+                body = '[resources.extra]\n' if resource else '[source]\n'
+                body += 'GIT_REPOSITORY="unavailable"\nGIT_TAG="fixed"\n[[copy]]\n'
+                body += 'resource="extra"\n' if resource else ''
+                module = self.definition(body + 'files=["x.h"]\ndestination="include"\n', kind="copy", name=name)
+                local = self.source / (f"git/_resources/{name}/extra" if resource else f"git/{name}")
+                local.mkdir(parents=True)
+                marker = local / ".manual"
+                marker.write_text("preserve me")
+                self.context = replace(self.context, build_root=self.source / f"build-{name}")
+                generated = self.source / "module.cmake"
+                generated.write_text(render_module(module, self.context), encoding="utf-8")
+                (self.source / "CMakeLists.txt").write_text('cmake_minimum_required(VERSION 3.20)\n'
+                    'project(fixture NONE)\ninclude(ExternalProject)\ninclude(module.cmake)\n')
+                result = self.run_command("cmake", "-S", self.source, "-B", self.context.build_root, success=False)
+                self.assertNotEqual(result.returncode, 0)
+                diagnostic = " ".join((result.stdout + result.stderr).replace("\\", "/").split())
+                self.assertIn(local.as_posix(), diagnostic)
+                self.assertEqual(marker.read_text(), "preserve me")
+
+    def test_source_subdirectory_installs_from_an_initially_empty_git_directory(self):
+        repo = self.repository("subdir", {"public.h": "subdir header", "build/cmake/CMakeLists.txt": '''
+cmake_minimum_required(VERSION 3.20)
+project(child NONE)
+install(FILES ../../public.h DESTINATION include)
+'''})
+        module = self.definition('[source]\n' + repo + '[cmake]\nSOURCE_SUBDIR="build/cmake"\n')
+        (self.source / "git/demo").mkdir(parents=True)
+        self.project(module)
+        self.build()
+        self.assertEqual((self.source / "3rdparty/demo/include/public.h").read_text(), "subdir header")
+        self.assertTrue((self.source / "git/demo/.git").exists())
+
+    def test_same_generated_cmake_checks_sentinel_before_all_module_work(self):
+        repo = self.repository("sentinel", {"x.h": "installed"})
+        module = self.definition('sentinel="include/x.h"\n[source]\n' + repo + '''
+[resources.extra]
+GIT_REPOSITORY="unavailable"
+GIT_TAG="unavailable"
+[[copy]]
+files=["x.h"]
+destination="include"
+''', kind="copy")
+        sentinel = self.source / "3rdparty/demo/include/x.h"
+        sentinel.parent.mkdir(parents=True)
+        sentinel.write_text("cached header")
+        module.patches.append(self.source / "must-not-apply.patch")
+        module.steps.append({"name": "must_not_run", "DEPENDEES": ["build"],
+                             "DEPENDERS": ["install"], "COMMAND": ["unavailable-command"]})
+        self.project(module, '''
+if(TARGET _al_resource_4_demo_extra OR TARGET demo-must_not_run)
+    message(FATAL_ERROR "cached module contains work targets")
+endif()
+get_property(external TARGET demo PROPERTY _EP_IS_EXTERNAL_PROJECT)
+if(external)
+    message(FATAL_ERROR "cached module is an ExternalProject")
+endif()
+''')
+        self.build()
+        self.assertEqual(sentinel.read_text(), "cached header")
+        self.assertFalse((self.source / "git").exists())
+        # 不重新生成 Python 输出，改变文件状态后只重配原生 CMake。
+        sentinel.unlink()
+        result = self.run_command("cmake", "-S", self.source, "-B", self.context.build_root, success=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("cached module contains work targets", result.stdout + result.stderr)
+
+    def test_install_then_reconfigure_switches_to_empty_target(self):
+        repo = self.repository("install", {"x.h": "installed"})
+        module = self.definition('sentinel="include/x.h"\n[source]\n' + repo +
+                                 '[[copy]]\nfiles=["x.h"]\ndestination="include"\n', kind="copy")
+        self.project(module)
+        self.build()
+        generated = (self.source / "module.cmake").read_text()
+        result = self.run_command("cmake", "-S", self.source, "-B", self.context.build_root)
+        self.assertIn("cached", result.stdout)
+        self.build()
+        self.assertEqual((self.source / "module.cmake").read_text(), generated)
+        self.assertEqual((self.source / "3rdparty/demo/include/x.h").read_text(), "installed")
+
     def test_backend_defaults_reach_child_without_root_entry(self):
         repo = self.repository("defaults", {"CMakeLists.txt": '''cmake_minimum_required(VERSION 3.20)
 project(child NONE)
@@ -106,7 +232,7 @@ endforeach()
                                   ("URL_HASH", "SHA256=" + "a" * 64),
                                   ("DOWNLOAD_NAME", "archive.tar.xz")):
                 self.assertEqual((self.context.build_root / f"{target}-{key}.txt").read_text(), expected)
-        self.assertFalse(any((self.context.build_root / "ep/demo/dl").iterdir()))
+        self.assertFalse(any((self.source / "git").iterdir()))
         module.source["URL"] = ["https://one.invalid/a.tar.xz"]
         del module.source["DOWNLOAD_NAME"]
         self.project(module, suffix)
@@ -180,12 +306,12 @@ destination="include/demo"
 ''', kind="copy")
         self.project(module)
         self.assertFalse((self.source / "3rdparty/demo/include/demo/first.h").exists())
-        self.assertFalse((self.context.build_root / "ep/demo/res/first/src/.git").exists())
+        self.assertFalse((self.source / "git/_resources/demo/first/.git").exists())
         self.build()
         self.assertEqual((self.source / "3rdparty/demo/include/demo/first.h").read_text(), "first")
         self.assertEqual((self.source / "3rdparty/demo/include/demo/second.h").read_text(), "second")
         for resource in ("first", "second"):
-            directory = self.context.build_root / f"ep/demo/res/{resource}/src"
+            directory = self.source / f"git/_resources/demo/{resource}"
             self.assertTrue((directory / ".git").exists())
         module.copies[1]["files"] = ["missing.h"]
         self.project(module)
