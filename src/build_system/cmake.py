@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from definition import ModuleDefinition
+from definition import ModuleDefinition, RESOURCE_REFERENCE
 
 
 @dataclass
@@ -86,6 +86,19 @@ def render_module(module: ModuleDefinition, context: BuildContext,
         lines.extend([")", ""])
 
     persistent = context.source_root / "git"
+    driver = Path(__file__).with_name("apply_patch.cmake").resolve()
+
+    def patch_options(resource=None):
+        return [("PATCH_COMMAND" if index == 0 else "COMMAND",
+                 [cmake, f"-DGIT_EXECUTABLE={context.git_executable.as_posix()}",
+                  "-DSOURCE_DIR=<SOURCE_DIR>", f"-DPATCH_FILE={patch.file.as_posix()}",
+                  "-P", driver.as_posix()])
+                for index, patch in enumerate(p for p in module.patches if p.resource == resource)]
+
+    def patch_dependencies(target, resource=None):
+        files = [p.file.as_posix() for p in module.patches if p.resource == resource]
+        if files:
+            emit("ExternalProject_Add_StepDependencies", [target, "patch", *files, driver.as_posix()], [])
 
     def source_directory(source, local, prefix):
         return local if source and "GIT_REPOSITORY" in source else prefix / "src"
@@ -120,7 +133,9 @@ def render_module(module: ModuleDefinition, context: BuildContext,
         options += [("LIST_SEPARATOR", [separator]), ("UPDATE_COMMAND", [""]),
                     ("CONFIGURE_COMMAND", [""]), ("BUILD_COMMAND", [""]),
                     ("INSTALL_COMMAND", [""])]
+        options += patch_options(name)
         emit("ExternalProject_Add", [_resource_target(module.name, name)], options)
+        patch_dependencies(_resource_target(module.name, name), name)
 
     local = persistent / module.name
     options = _directories(prefix, install, source_directory(module.source, local, prefix), persistent)
@@ -144,6 +159,15 @@ def render_module(module: ModuleDefinition, context: BuildContext,
                  "CMAKE_POSITION_INDEPENDENT_CODE": True,
                  "CMAKE_CXX_STANDARD": "17",
                  **context.cmake_defaults, **module.cache}
+        def resolve_reference(value):
+            if isinstance(value, list):
+                return [resolve_reference(item) for item in value]
+            if not isinstance(value, str):
+                return value
+            return RESOURCE_REFERENCE.sub(lambda match: source_directory(
+                module.resources[match[1]], persistent / "_resources" / module.name / match[1],
+                prefix / "res" / match[1]).as_posix(), value)
+        cache = {key: resolve_reference(value) for key, value in cache.items()}
         # 配置身份与安装位置由公共入口拥有，不让模块选项覆盖。
         for key in ("CMAKE_INSTALL_PREFIX", "CMAKE_BUILD_TYPE", "CMAKE_MSVC_RUNTIME_LIBRARY",
                     "CMAKE_GENERATOR", "CMAKE_GENERATOR_PLATFORM", "CMAKE_GENERATOR_TOOLSET",
@@ -218,18 +242,11 @@ def render_module(module: ModuleDefinition, context: BuildContext,
                                        destination]))
             first = False
 
-    driver = Path(__file__).with_name("apply_patch.cmake").resolve()
-    for index, patch in enumerate(module.patches):
-        options.append(("PATCH_COMMAND" if index == 0 else "COMMAND",
-                        [cmake, f"-DGIT_EXECUTABLE={context.git_executable.as_posix()}",
-                         "-DSOURCE_DIR=<SOURCE_DIR>", f"-DPATCH_FILE={patch.as_posix()}",
-                         "-P", driver.as_posix()]))
+    options += patch_options()
     emit("ExternalProject_Add", [module.name], options)
     if dependencies and module.kind == "cmake":
         emit("ExternalProject_Add_StepDependencies", [module.name, "configure", setup_path.as_posix(), proxy.as_posix()], [])
-    if module.patches:
-        emit("ExternalProject_Add_StepDependencies",
-             [module.name, "patch", *[p.as_posix() for p in module.patches], driver.as_posix()], [])
+    patch_dependencies(module.name)
 
     for step in module.steps:
         options = []

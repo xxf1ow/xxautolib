@@ -4,6 +4,7 @@ import time
 import unittest
 
 from test_cmake import PipelineCase, ROOT
+from definition import PatchDefinition
 
 
 PATCH = '''diff --git a/value.c b/value.c
@@ -16,6 +17,55 @@ PATCH = '''diff --git a/value.c b/value.c
 
 
 class PatchTests(PipelineCase):
+    def resource_fixture(self):
+        patch = self.patch_file()
+        extra = self.repository("extra", {"value.c": "int value(void) { return 1; }\n"})
+        main = self.repository("main", {"value.c": "int value(void) { return 1; }\n", "CMakeLists.txt": '''cmake_minimum_required(VERSION 3.20)
+project(child NONE)
+file(READ "${EXTRA}/value.c" value)
+if(NOT value MATCHES "return 2")
+message(FATAL_ERROR "resource not patched")
+endif()
+file(APPEND "${CMAKE_INSTALL_PREFIX}/configures" "configured\\n")
+install(FILES value.c DESTINATION .)
+'''})
+        module = self.definition('[source]\n' + main + '[resources.extra]\n' + extra +
+            '[cmake.cache]\nEXTRA="<RESOURCE_SOURCE_DIR:extra>"\n[[patches]]\n'
+            f'file="{patch.as_posix()}"\nresource="extra"\n')
+        return module, patch
+
+    def test_resource_patch_precedes_main_configure(self):
+        module, patch = self.resource_fixture()
+        self.project(module)
+        self.build()
+        self.assertEqual((self.source / "git/demo/value.c").read_text(), "int value(void) { return 1; }\n")
+        resource = self.source / "git/_resources/demo/extra/value.c"
+        self.assertEqual(resource.read_text(), "int value(void) { return 2; }\n")
+        self.build()
+        self.project(module)
+        self.build()
+        self.assertEqual(resource.read_text(), "int value(void) { return 2; }\n")
+
+    def test_resource_patch_input_invalidates_main_configure(self):
+        module, patch = self.resource_fixture()
+        self.project(module)
+        self.build()
+        log = self.source / "3rdparty/demo/configures"
+        before = log.read_text().splitlines()
+        time.sleep(1.1)
+        patch.touch()
+        result = self.build()
+        self.assertIn("already applied", result.stdout)
+        self.assertGreater(len(log.read_text().splitlines()), len(before))
+        resource = self.source / "git/_resources/demo/extra/value.c"
+        resource.write_text("manual content\n")
+        time.sleep(1.1)
+        patch.touch()
+        result = self.build(success=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("source mismatch", result.stdout + result.stderr)
+        self.assertEqual(resource.read_text(), "manual content\n")
+
     def patch_file(self):
         path = self.source / "change.patch"
         path.write_text(PATCH, encoding="utf-8")
@@ -66,7 +116,7 @@ install(CODE [[file(APPEND "{log}" "install\\n")]])
 '''})
         module = self.definition("[source]\n" + repo)
         patch = self.patch_file()
-        module.patches.append(patch)
+        module.patches.append(PatchDefinition(patch))
         self.project(module)
         first = self.build()
         executable = self.source / "3rdparty/demo/bin" / ("probe.exe" if os.name == "nt" else "probe")

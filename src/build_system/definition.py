@@ -7,6 +7,15 @@ import tomllib
 
 
 @dataclass
+class PatchDefinition:
+    file: Path
+    resource: str | None = None
+
+
+RESOURCE_REFERENCE = re.compile(r"<RESOURCE_SOURCE_DIR:([^>]*)>")
+
+
+@dataclass
 class ModuleDefinition:
     path: Path
     name: str
@@ -15,7 +24,7 @@ class ModuleDefinition:
     source: dict[str, str | list[str]] | None
     resources: dict[str, dict[str, str | list[str]]]
     cache: dict[str, object]
-    patches: list[Path]
+    patches: list[PatchDefinition]
     steps: list[dict[str, object]]
     copies: list[dict[str, object]]
     sentinel: str | None = None
@@ -214,6 +223,12 @@ def load_definition(path: Path, system_name: str, architecture: str = "") -> Mod
                     resources.update(arch_resources)
         if kind == "cmake" and source is None:
             raise ValueError(f"source: no primary source for {system_name}/{architecture}")
+        for key, value in cache.items():
+            for text in value if isinstance(value, list) else [value]:
+                if isinstance(text, str):
+                    for reference in RESOURCE_REFERENCE.findall(text):
+                        if reference not in resources:
+                            raise ValueError(f"cmake.cache.{key}: unknown resource {reference!r}")
         names = [step["name"] for step in steps]
         if len(names) != len(set(names)):
             raise ValueError("steps.name: duplicate step names")
@@ -221,11 +236,14 @@ def load_definition(path: Path, system_name: str, architecture: str = "") -> Mod
         if not isinstance(data.get("patches", []), list):
             raise ValueError("patches: expected an array of tables")
         for item in data.get("patches", []):
-            _table(item, {"file"}, "patches")
+            _table(item, {"file", "resource"}, "patches")
+            resource = item.get("resource")
+            if resource is not None and (not isinstance(resource, str) or resource not in resources):
+                raise ValueError(f"patches.resource: unknown resource {resource!r}")
             patch = (path.parent / _text(item.get("file"), "patches.file")).resolve()
             if not patch.is_file():
                 raise ValueError(f"patches.file: file not found: {patch}")
-            patches.append(patch)
+            patches.append(PatchDefinition(patch, resource))
         copies = data.get("copy", [])
         if not isinstance(copies, list) or kind == "copy" and not copies:
             raise ValueError("copy: expected nonempty installation mappings for copy modules")
