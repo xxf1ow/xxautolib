@@ -3,9 +3,52 @@ import unittest
 
 from test_cmake import PipelineCase, ROOT
 from generate import main, write_if_changed
+import generate
 
 
 class GenerateTests(PipelineCase):
+    def dependency_fixture(self, name, dependencies=()):
+        import json
+        return self.definition('depends=' + json.dumps(list(dependencies)) + '\n'
+                               '[source]\nGIT_REPOSITORY="unused"\nGIT_TAG="fixed"\n', name=name)
+
+    def test_leaf_closure_is_stable_and_deduplicated(self):
+        for name, dependencies in (("shared", []), ("left", ["shared"]),
+                                   ("right", ["shared"]), ("leaf", ["left", "right"]),
+                                   ("unused", [])):
+            self.dependency_fixture(name, dependencies)
+        modules = generate.load_module_closure(self.source, ["leaf", "leaf"], self.context.system_name)
+        self.assertEqual([module.name for module in modules], ["shared", "left", "right", "leaf"])
+        self.assertEqual(len({module.path for module in modules}), 4)
+
+    def test_dependency_errors_include_chain(self):
+        for graph, chain in (({"left": ["missing"]}, ["left", "missing"]),
+                             ({"left": ["left"]}, ["left", "left"]),
+                             ({"left": ["right"], "right": ["left"]}, ["left", "right", "left"])):
+            for name, dependencies in graph.items():
+                module = self.dependency_fixture(name, dependencies)
+            with self.subTest(graph=graph), self.assertRaises(ValueError) as error:
+                generate.load_module_closure(self.source, ["left"], self.context.system_name)
+            self.assertIn(" -> ".join(chain), str(error.exception))
+            self.assertIn(str(module.path.parent.parent), str(error.exception))
+
+    def test_dependency_inputs_are_registered(self):
+        dependency = self.dependency_fixture("dependency")
+        leaf = self.dependency_fixture("leaf", ["dependency"])
+        unused = self.dependency_fixture("unused")
+        self.assertEqual(main(self.arguments("leaf")), 0)
+        manifest = self.context.build_root / "generated/inputs.cmake"
+        content, before = manifest.read_text(), manifest.stat().st_mtime_ns
+        for module in (dependency, leaf):
+            self.assertIn(module.path.as_posix(), content)
+        self.assertNotIn(unused.path.as_posix(), content)
+        self.assertEqual(main(self.arguments("leaf")), 0)
+        self.assertEqual(manifest.stat().st_mtime_ns, before)
+        leaf.path.write_text(leaf.path.read_text().replace('["dependency"]', '["missing"]'))
+        self.assertEqual(main(self.arguments("leaf")), 1)
+        self.assertEqual(manifest.read_text(), content)
+        self.assertEqual(manifest.stat().st_mtime_ns, before)
+
     def arguments(self, *modules):
         context = self.context
         args = [f"--module={name}" for name in modules]

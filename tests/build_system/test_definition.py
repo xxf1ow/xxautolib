@@ -16,6 +16,41 @@ GIT_TAG = "0123456789012345678901234567890123456789"
 
 
 class DefinitionTests(unittest.TestCase):
+    def test_dependency_metadata_and_platform_overrides(self):
+        body = '''depends=["lz4","lz4"]
+config_dir="lib/cmake/demo"
+pkgconfig_dir="lib/pkgconfig"
+package_name="Demo"
+sentinel="include/demo.h"
+''' + SOURCE + '''[platforms.windows]
+config_dir="lib"
+package_name="WinDemo"
+sentinel="lib/DemoConfig.cmake"
+[platforms.linux]
+config_dir="lib/cmake/demo"
+'''
+        linux = self.load(body)
+        self.assertEqual(linux.depends, ["lz4"])
+        self.assertEqual((linux.config_dir, linux.pkgconfig_dir, linux.package_name),
+                         ("lib/cmake/demo", "lib/pkgconfig", "Demo"))
+        windows = self.load(body, "Windows")
+        self.assertEqual((windows.config_dir, windows.package_name, windows.sentinel),
+                         ("lib", "WinDemo", "lib/DemoConfig.cmake"))
+        cases = [('depends=[1]\n', "depends"), ('depends=[""]\n', "depends"),
+                 ('depends=["../escape"]\n', "depends"),
+                 ('config_dir="/absolute"\n', "config_dir"),
+                 ('pkgconfig_dir="C:/absolute"\n', "pkgconfig_dir"),
+                 ('package_name="Demo"\n', "package_name")]
+        for prefix, field in cases:
+            with self.subTest(prefix=prefix), self.assertRaises(ValueError) as error:
+                self.load(prefix + SOURCE)
+            self.assertIn(str(self.path), str(error.exception))
+            self.assertIn(field, str(error.exception))
+        with self.assertRaisesRegex(ValueError, "platforms.windows.config_dir"):
+            self.load(SOURCE + '[platforms.windows]\nconfig_dir="../escape"\n')
+        with self.assertRaisesRegex(ValueError, "package_name"):
+            self.load(SOURCE + '[platforms.windows]\npackage_name="Demo"\n')
+
     def setUp(self):
         directory = ROOT / "build/tests"
         directory.mkdir(parents=True, exist_ok=True)

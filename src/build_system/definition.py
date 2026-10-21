@@ -1,6 +1,6 @@
 """读取纯数据模块声明；执行与 CMake 生成由其他文件负责。"""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path, PureWindowsPath
 import re
 import tomllib
@@ -20,6 +20,10 @@ class ModuleDefinition:
     copies: list[dict[str, object]]
     sentinel: str | None = None
     source_subdir: str | None = None
+    depends: list[str] = field(default_factory=list)
+    config_dir: str | None = None
+    pkgconfig_dir: str | None = None
+    package_name: str | None = None
 
 
 def _table(value, allowed, where):
@@ -140,6 +144,17 @@ def _sources(value, where):
                     for key, item in resources.items()}
 
 
+def _metadata(value, where, base=None):
+    result = dict(base or {})
+    for key in ("config_dir", "pkgconfig_dir", "sentinel", "package_name"):
+        if key in value:
+            result[key] = (_name if key == "package_name" else _relative)(
+                value[key], f"{where}.{key}")
+    if "package_name" in result and "config_dir" not in result:
+        raise ValueError(f"{where}.package_name: requires config_dir")
+    return result
+
+
 def normalize_architecture(value: str) -> str:
     """规范化已支持的目标别名；未知架构保留原值，不推测其他目标。"""
     return {"x64": "x86_64", "amd64": "x86_64", "x86_64": "x86_64",
@@ -153,7 +168,8 @@ def load_definition(path: Path, system_name: str, architecture: str = "") -> Mod
         with path.open("rb") as stream:
             data = tomllib.load(stream)
         _table(data, {"name", "type", "version", "source", "resources", "cmake",
-                      "patches", "steps", "copy", "platforms", "sentinel"}, "module")
+                      "patches", "steps", "copy", "platforms", "sentinel", "depends",
+                      "config_dir", "pkgconfig_dir", "package_name"}, "module")
         name = _name(data.get("name"), "name")
         if name != path.parent.name:
             raise ValueError("name: must match the module directory name")
@@ -161,7 +177,10 @@ def load_definition(path: Path, system_name: str, architecture: str = "") -> Mod
         if kind not in ("cmake", "copy"):
             raise ValueError("type: expected cmake or copy")
         version = _text(data["version"], "version") if "version" in data else None
-        sentinel = _relative(data["sentinel"], "sentinel") if "sentinel" in data else None
+        depends = list(dict.fromkeys(_name(item, "depends")
+                                    for item in _strings(data.get("depends", []), "depends")))
+        common_metadata = _metadata(data, "module")
+        metadata = common_metadata
         source, resources = _sources(data, "module")
         cmake = data.get("cmake", {})
         cache = dict(_cache(cmake, "cmake", source_subdir=True))
@@ -172,12 +191,15 @@ def load_definition(path: Path, system_name: str, architecture: str = "") -> Mod
         platforms = _table(data.get("platforms", {}), {"windows", "linux"}, "platforms")
         for platform, options in platforms.items():
             at = f"platforms.{platform}"
-            _table(options, {"cmake", "steps", "source", "resources", "architectures"}, at)
+            _table(options, {"cmake", "steps", "source", "resources", "architectures",
+                             "config_dir", "pkgconfig_dir", "package_name", "sentinel"}, at)
+            platform_metadata = _metadata(options, at, common_metadata)
             platform_cache = _cache(options.get("cmake", {}), f"{at}.cmake")
             platform_steps = _steps(options.get("steps", []), path.parent, f"{at}.steps")
             platform_source, platform_resources = _sources(options, at)
             selected = {"Windows": "windows", "Linux": "linux"}.get(system_name) == platform
             if selected:
+                metadata = platform_metadata
                 cache.update(platform_cache)
                 steps.extend(platform_steps)
                 source = platform_source if platform_source is not None else source
@@ -226,6 +248,10 @@ def load_definition(path: Path, system_name: str, architecture: str = "") -> Mod
                 _relative(entry, f"copy.{key}")
             _relative(item.get("destination"), "copy.destination")
         return ModuleDefinition(path, name, kind, version, source, resources,
-                                cache, patches, steps, copies, sentinel, subdir)
+                                cache, patches, steps, copies,
+                                sentinel=metadata.get("sentinel"), source_subdir=subdir,
+                                depends=depends, config_dir=metadata.get("config_dir"),
+                                pkgconfig_dir=metadata.get("pkgconfig_dir"),
+                                package_name=metadata.get("package_name"))
     except (OSError, ValueError) as error:
         raise ValueError(f"{path}: {error}") from error

@@ -4,8 +4,41 @@ import argparse
 from pathlib import Path
 import sys
 
-from definition import load_definition
+from definition import ModuleDefinition, _name, load_definition
 from cmake import BuildContext, cmake_argument, render_module
+
+
+def load_module_closure(source_root: Path, names: list[str], system_name: str,
+                        architecture: str = "") -> list[ModuleDefinition]:
+    """返回稳定依赖先序闭包；非法声明、缺失或环以含声明路径及链的 ValueError 失败。"""
+    result, complete, stack = [], set(), []
+
+    def visit(name):
+        path = source_root / "src/dependencies" / name / "module.toml"
+        chain = " -> ".join([*stack, name])
+        if name in stack:
+            raise ValueError(f"{path}: dependency cycle: {chain}")
+        if name in complete:
+            return
+        try:
+            _name(name, "module name")
+            module = load_definition(path, system_name, architecture)
+        except ValueError as error:
+            raise ValueError(f"{error}; dependency chain: {chain}") from error
+        stack.append(name)
+        try:
+            for dependency in module.depends:
+                visit(dependency)
+        except ValueError as error:
+            raise ValueError(f"{module.path}: {error}") from error
+        finally:
+            stack.pop()
+        complete.add(name)
+        result.append(module)
+
+    for name in names:
+        visit(name)
+    return result
 
 
 def write_if_changed(path: Path, content: str) -> bool:
@@ -38,8 +71,8 @@ def main(argv: list[str] | None = None) -> int:
         cmake_command=args.cmake_command, git_executable=args.git_executable,
         cmake_defaults=dict(value.split("=", 1) for value in args.cmake_default))
     try:
-        definitions = [load_definition(context.source_root / "src/dependencies" / name / "module.toml",
-                                       context.system_name, args.architecture) for name in args.module]
+        definitions = load_module_closure(context.source_root, args.module,
+                                          context.system_name, args.architecture)
         outputs = {}
         for module in definitions:
             outputs[context.build_root / "generated" / f"{module.name}.cmake"] = render_module(module, context)
