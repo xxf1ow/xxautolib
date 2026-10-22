@@ -1,0 +1,51 @@
+cmake_minimum_required(VERSION 3.20)
+
+if(NOT DEFINED PACKAGE_DIR OR PACKAGE_DIR STREQUAL "")
+    message(FATAL_ERROR "fixup-metadata: PACKAGE_DIR is required")
+endif()
+if(NOT DEFINED PRODUCER_PREFIX OR PRODUCER_PREFIX STREQUAL "")
+    message(FATAL_ERROR "fixup-metadata: PRODUCER_PREFIX is required")
+endif()
+if(NOT IS_DIRECTORY "${PACKAGE_DIR}")
+    message(FATAL_ERROR "fixup-metadata: package directory does not exist: ${PACKAGE_DIR}")
+endif()
+
+file(TO_CMAKE_PATH "${PACKAGE_DIR}" _package_dir)
+file(TO_CMAKE_PATH "${PRODUCER_PREFIX}" _producer_cmake)
+file(TO_NATIVE_PATH "${PRODUCER_PREFIX}" _producer_native)
+get_filename_component(_staging_parent "${_package_dir}" DIRECTORY)
+
+set(_producer_spellings "${_producer_cmake}" "${_producer_native}")
+list(REMOVE_DUPLICATES _producer_spellings)
+file(GLOB_RECURSE _metadata_files LIST_DIRECTORIES FALSE
+    "${_package_dir}/*.cmake"
+    "${_package_dir}/*.pc")
+
+foreach(_metadata_file IN LISTS _metadata_files)
+    get_filename_component(_metadata_dir "${_metadata_file}" DIRECTORY)
+    file(RELATIVE_PATH _to_staging_parent "${_metadata_dir}" "${_staging_parent}")
+    string(REGEX REPLACE "/$" "" _to_staging_parent "${_to_staging_parent}")
+    if(_metadata_file MATCHES "\\.pc$")
+        set(_replacement "\${pcfiledir}/${_to_staging_parent}")
+    else()
+        set(_replacement "\${CMAKE_CURRENT_LIST_DIR}/${_to_staging_parent}")
+    endif()
+
+    file(READ "${_metadata_file}" _original)
+    set(_fixed "${_original}")
+    foreach(_producer_spelling IN LISTS _producer_spellings)
+        string(REPLACE "${_producer_spelling}" "${_replacement}" _fixed "${_fixed}")
+    endforeach()
+    if(NOT _fixed STREQUAL _original)
+        file(WRITE "${_metadata_file}" "${_fixed}")
+    endif()
+
+    file(READ "${_metadata_file}" _validated)
+    foreach(_producer_spelling IN LISTS _producer_spellings)
+        string(FIND "${_validated}" "${_producer_spelling}" _remaining_prefix)
+        if(NOT _remaining_prefix EQUAL -1)
+            message(FATAL_ERROR
+                "fixup-metadata: producer prefix remains in ${_metadata_file}: ${_producer_spelling}")
+        endif()
+    endforeach()
+endforeach()
