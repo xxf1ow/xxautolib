@@ -20,8 +20,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stdout, "autolib-builder 1")
 		return 0
 	}
+	if len(args) > 0 && args[0] == "package" {
+		return runPackage(args[1:], stderr)
+	}
 	if len(args) == 0 || args[0] != "generate" {
-		return fail(fmt.Errorf("usage: autolib-builder version | generate [options]"))
+		return fail(fmt.Errorf("usage: autolib-builder version | generate [options] | package [options]"))
 	}
 	flags := flag.NewFlagSet("generate", flag.ContinueOnError)
 	flags.SetOutput(stderr)
