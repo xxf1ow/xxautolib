@@ -26,7 +26,7 @@ cmake --build build --config Release
 
 公共入口仅为 Go 子进程设置项目 SDK、缓存、`GOENV=off`、`GOWORK=off`、`GOTOOLCHAIN=local` 和 `CGO_ENABLED=0`，不修改全局环境或用户 Go 配置。只读模块模式增量编译宿主 builder，宿主不随 C++ 目标架构改变；go.mod 固定依赖、go.sum 校验内容。每份工作副本统一用 build，不跨平台混用产物。子项目固定 Release，沿用父生成器、平台、完整工具集和 instance；父显式 CRT 原值传递，未指定时 MSVC Release 使用 `/MD`，静态库不自动改为 `/MT`。
 
-已有 SDK 和模块缓存可离线复用；需要显式禁用 Go 模块联网时，仅在当前进程设置 `GOPROXY=off`、`GOSUMDB=off`。SDK 下载失败、摘要不符、解包失败、版本不符及模块缺失分别诊断，失败不执行残留 builder；损坏缓存按报错只处理对应路径，不删除校验文件或清空整个目录。该流程不等于消费者离线导入，当前尚无 importer。
+已有 SDK 和模块缓存可离线复用；需要显式禁用 Go 模块联网时，仅在当前进程设置 `GOPROXY=off`、`GOSUMDB=off`。SDK 下载失败、摘要不符、解包失败、版本不符及模块缺失分别诊断，失败不执行残留 builder；损坏缓存按报错只处理对应路径，不删除校验文件或清空整个目录。该流程是生产端工具准备，与下游二进制导入分离。
 
 补丁无法正向或反向检查时，构建明确失败，需人工重新准备该模块的干净源码；不会自动还原或清空源码。不要把修改补丁等同于自动替换已应用的旧补丁。
 
@@ -35,6 +35,23 @@ Git 主来源复用 `git/<模块名>/`，资源复用 `git/_resources/<模块名
 可选 `sentinel` 是模块安装前缀下的相对路径；configure 时存在即显示 cached，保留同名空目标和模块依赖顺序，不执行资源、补丁或步骤。安装后重新 configure 才切换为空目标；同 build 的普通重复构建仍依赖原生 stamp。sentinel 不校验版本、ABI 或完整性，缺失也不保证已有 stamp 自动修复安装。理由及路径规则见[本地复用设计](agent-notes/implemented/architecture/2026-10-20-local-reuse-and-platform-inputs.md)。
 
 归档 `URL` 是有序非空数组，`URL_HASH` 必须为 `SHA256=<64位十六进制摘要>`，可用单文件名 `DOWNLOAD_NAME`。版本、URL 与摘要同步维护；下载共用根 `git/`，匹配摘要的归档由原生流程复用，解压仍在 build。cmake 类型用 `[cmake] SOURCE_SUBDIR` 选择来源内子目录；copy 映射用互斥的 `files` 或 `directories`，`directories=["."]`、`destination="."` 复制完整内容。平台来源按公共→平台→架构整组替换，资源按名称整组替换；目标架构来自系统处理器，VS 显式平台优先，无匹配来源报错。具体声明参考 [lz4](../src/dependencies/lz4/module.toml) 与 [ONNX Runtime](../src/dependencies/onnxruntime/module.toml)。
+
+## 本地打包与消费
+
+先完成所选模块的安装，再独立构建两工具；Windows 输出名用 `.exe`，Linux 去掉该后缀：
+
+```text
+cmake -P src/autolib-builder/go-sdk.cmake -- build -mod=readonly -trimpath -o build/tools/autolib-builder.exe ./src/autolib-builder
+cmake -P src/autolib-builder/go-sdk.cmake -- build -mod=readonly -trimpath -o build/tools/autolib-importer.exe ./src/autolib-importer
+```
+
+`builder package` 必填 `--source-root`、`--install-root`、`--output-root`、`--os`、`--arch`、`--host-os`、`--host-arch`、`--importer-file`、`--cmake-command` 及重复 `--module`。输出必须在本副本 build 内且不与安装树重叠；只打包显式模块，不自动补依赖。真实示例由[本地闭环测试](testing.md#本地二进制闭环)执行。
+
+将 `src/autolib.cmake` 复制到消费者，include 后在其他库查找或子目录创建同名目标前调用 `autolib_import(URI <本地发行目录> PACKAGES flann queue lz4)`，链接 `AutoLib::queue`、`AutoLib::lz4`、`AutoLib::flann`。不混用同名库的不同来源，首次导入遇既有上游目标报错。可选 `WORK_ROOT`、`TARGET_OS`、`TARGET_ARCH`；默认工作根为消费者 build 下的 autolib。发行来源可含分号，实际工作根及搬迁包根不得含分号；默认或显式工作根含分号时，指定不含分号的 `WORK_ROOT`。系统支持 windows/linux，架构使用 x86_64/aarch64；工具按宿主选择，包按目标选择。同一次 configure 只使用一个来源。
+
+发行清单严格格式见[导入设计](agent-notes/proposed/architecture/2026-10-21-go-tooling-and-offline-import.md#消费入口与数据流)。asset 为权威文件名，摘要不认证来源，信任由用户负责。调用固定为 `importer prepare --uri --work-root --os --arch --result`、可选 `--manifest` 和重复 `--package`，不查询版本或协商协议。
+
+工作根下以规范化绝对来源的 SHA256 分目录，工具在 `tools/<host-os>-<host-arch>`，包在 `packages/<os>-<arch>/<name>`。已有匹配缓存不读取来源更新；工具每次按取得时清单复验，包核对身份。刷新前保护本地改动，只移走所需工具目录或包目录；异常缓存保留报错，不覆盖。缺输入、错误摘要或越界归档均失败，不加载失败调用的残留结果。FLANN 的 AutoLib 包依赖只有 lz4；OpenMP 和 C++ ABI/系统运行库仍由消费环境满足，不承诺包自包含。
 
 ## 日常修改
 

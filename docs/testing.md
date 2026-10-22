@@ -8,12 +8,25 @@
 
 ```text
 cmake -P src/autolib-builder/go-sdk.cmake -- test ./src/autolib-builder -count=1 -v
-cmake -P src/autolib-builder/go-sdk.cmake -- vet ./src/autolib-builder
+cmake -P src/autolib-builder/go-sdk.cmake -- test ./src/autolib-importer -count=1 -v
+cmake -P src/autolib-builder/go-sdk.cmake -- vet ./src/autolib-builder ./src/autolib-importer
 ```
 
-测试源码与 builder 同目录，包含表驱动子例。CMake 包装入口自动准备并使用项目私有 SDK 和缓存；fixture 使用已有 SDK 与缓存，不下载真实依赖。测试在 `build/tests/` 创建含空格和中文的隔离副本，结束时仅清理自身临时目录。SDK 测试通过本地 HTTP fixture 验证首次获取、摘要与解包失败、断网复用 SDK/归档；真实根入口验证跨 build 复用、用户 Go 配置隔离、模块缺失、编译失败不加载旧结果、实际 Go 输入失效及阻断 uv/Python 后成功安装。定向验证用 `-run TestDefinition`；依赖接线用 `-run TestDirectDependencies`，资源补丁用 `-run TestPatch`，真实模块声明用 `-run TestRealModuleDeclarations`。修改公共入口或跨文件接线时运行全集；同批定向验证后在批末运行一次全集。
+测试源码与各工具同目录，包含表驱动子例。CMake 包装入口自动准备并使用项目私有 SDK 和缓存；fixture 使用已有 SDK 与缓存，不下载真实依赖。builder 在 `build/tests/` 创建含空格和中文的隔离副本，importer 使用 Go 临时目录，结束时仅清理自身目录。SDK 测试通过本地 HTTP fixture 验证首次获取、摘要与解包失败、断网复用 SDK/归档；真实根入口验证跨 build 复用、用户 Go 配置隔离、模块缺失、编译失败不加载旧结果、实际 Go 输入失效及阻断 uv/Python 后成功安装。定向验证用 `-run TestDefinition`；依赖接线用 `-run TestDirectDependencies`，资源补丁用 `-run TestPatch`，真实模块声明用 `-run TestRealModuleDeclarations`。修改公共入口或跨文件接线时运行全集；同批定向验证后在批末运行一次全集。
 
 仅修改文档时使用 doc-standards、agent-notes 技能校验链接、归属和 `scripts/doc-budgets.manifest.json` 预算；校验器不是构建依赖。仓库没有自动 Git hook、CI 或覆盖率门槛。
+
+## 本地二进制闭环
+
+先准备真实 queue、lz4、flann 安装树，再按[开发指南](development.md#本地打包与消费)构建两个宿主工具。Windows x64/v143 在本仓库目录执行：
+
+```text
+cmake -DSOURCE_ROOT=D:/Work/xxautolib -DINSTALL_ROOT=D:/Work/xxautolib/3rdparty -DRELEASE_DIR=D:/Work/xxautolib/build/validation/local-binary/release -DBUILDER_FILE=D:/Work/xxautolib/build/tools/autolib-builder.exe -DIMPORTER_FILE=D:/Work/xxautolib/build/tools/autolib-importer.exe -DTARGET_OS=windows -DTARGET_ARCH=x86_64 "-DGENERATOR=Visual Studio 17 2022" -DGENERATOR_PLATFORM=x64 "-DGENERATOR_TOOLSET=v143,host=x64" -P tests/autolib/run-local.cmake
+```
+
+Linux aarch64 将绝对根和程序名替换为本机值，使用 `-DTARGET_OS=linux -DTARGET_ARCH=aarch64 "-DGENERATOR=Unix Makefiles"`，不传 VS 平台或工具集。INSTALL_ROOT 必须对应元数据中的真实生产前缀，不能先搬动未修正的安装输入。driver 不构建源码；它在 `build/validation/local-binary/` 新建运行目录，记录打包、安装摘要、导入属性、链接输入和 CTest 日志。发行根搬迁后空缓存导入，再搬迁准备好的包并重新编译运行；两次 CTest 各 1/1，实际 FLANN 动态库来自搬迁包，生产安装及消费包字节不变。
+
+打包定向回归使用 `-run 'Test(StagePackage|StageFixup|PackageArchive|LocalReleaseManifest|PackageCLI|CLI)$'`；adapter 与路径检查用 importer 的 `-run 'Test(RepresentativeAdapters|AdapterDependencyOrder|AdapterExistingTargets|CMakeEntryPaths|CMakeWorkRootSemicolon)$'`。importer 全集覆盖恶意归档及内部链接、严格清单、缓存与失败保护、依赖顺序、同名目标拒绝和真实 CMake。特殊路径覆盖来源分号与字面数据传递，实际包根不支持分号；默认/显式工作根含分号须在准备前失败。受控 PATH 拦截语言工具及下载器，完整/缺包路径 HTTP 与代理请求均为零；网络受限沙箱内执行首次导入，不以预热成功证明离线。双端闭环证据不包含真实 UNC 共享、HTTPS、Linux x86_64 工具执行或三宿主正式发行；UNC 只有词法测试。
 
 ## 安装产物集成验证
 
