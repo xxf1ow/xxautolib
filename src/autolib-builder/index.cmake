@@ -5,14 +5,8 @@ function(xxautolib_generate_modules)
     set(root "${CMAKE_CURRENT_SOURCE_DIR}")
     xxautolib_prepare_go(go_executable go_environment)
 
+    # GLOB 检测源码增删；文件内容变化统一由生成器的输入清单登记。
     file(GLOB go_sources CONFIGURE_DEPENDS "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/*.go")
-    list(FILTER go_sources EXCLUDE REGEX "_test\\.go$")
-    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-        ${go_sources} "${root}/go.mod" "${root}/go.sum"
-        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/go-sdk.cmake"
-        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/go-sdk-versions.cmake"
-        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/apply_patch.cmake"
-        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/configure_dependencies.cmake")
     set(builder "${CMAKE_BINARY_DIR}/tools/autolib-builder")
     if(CMAKE_HOST_WIN32)
         string(APPEND builder ".exe")
