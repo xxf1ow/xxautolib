@@ -10,9 +10,17 @@
 
 模块使用 cmake 构建或 copy 安装。独立依赖用 `depends` 声明，contrib 等附属输入归消费模块。原生目标等待直接依赖安装及资源补丁；配置代理只为当前子配置注入直接依赖的前缀、包、pkg-config 和 include 位置，保留调用方 include。窄引用提供资源源码根，不注入 Python 解释器；规则见[依赖接线决定](agent-notes/implemented/architecture/2026-10-20-flann-opencv-dependencies.md)。
 
-子项目沿用父生成器身份、显式 CRT，固定 Release；模块 cache 优先于父级值，再采用引擎 policy、PIC、C++ 标准兜底值，不向父级 cache 写默认值。本项目不提供下游导入接口。
+子项目沿用父生成器身份、显式 CRT，固定 Release；模块 cache 优先于父级值，再采用引擎 policy、PIC、C++ 标准兜底值，不向父级 cache 写默认值。
 
 各工作副本独立维护 `.tools/go/`、`git/`、`build/` 和 `3rdparty/`，不整体跨平台传输。私有 SDK 与 Go 缓存在 `.tools/go/`，不随 build 清理，也不修改全局环境。主 Git 位于 `git/<模块>/`，Git 资源位于 `git/_resources/<模块>/<资源>/`，归档下载共用根 `git/`；解压、编译和步骤留在 `build/ep/`，builder 留在 `build/tools/`，生成结果留在 `build/generated/`。configure 检查本地 `.git` 与安装 sentinel；命中 sentinel 保留空目标及依赖顺序，声明校验仍执行。复用限制见[本地复用设计](agent-notes/implemented/architecture/2026-10-20-local-reuse-and-platform-inputs.md)。builder 同目录的 Go 测试验证公共引擎，库专用测试验证安装产物。
+
+## 本地二进制消费
+
+builder 的 `package` 将显式选择且提供 adapter 的安装树复制到 staging，只在副本中修正本包及声明 sibling 的生产路径，生成 tar.zst、宿主 importer 和统一 `manifest.json`，不改原安装或库编译方式。根 Go module 固定 TOML 与纯 Go zstd 依赖；生产与消费程序独立构建，不相互调用。
+
+下游只携带单文件 [autolib.cmake](../src/autolib.cmake)，从用户指定的本地发行目录读取清单，按宿主平台校验并启动 importer。`src/autolib-importer/` 负责严格清单校验、包摘要、安全解包和结果文件；全部请求包准备成功后，CMake 才加载包内 adapter，提供全局 `AutoLib::<name>`。消费者不需要 Go、Python、uv 或 builder，本地缺输入即失败，不联网补齐。
+
+queue、lz4、flann 提供精确布局 adapter；调用者列出完整包集，flann 显式先导入 sibling lz4，不回退系统包。OpenMP 属编译器及系统运行环境要求。工具按宿主、库包按目标选择；缓存按来源及平台隔离，已有匹配目录权威，更新需人工刷新。格式与取舍见[导入设计](agent-notes/proposed/architecture/2026-10-21-go-tooling-and-offline-import.md)，命令见开发及测试指南。
 
 ## 文档职责
 

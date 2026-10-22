@@ -14,10 +14,10 @@ import (
 )
 
 type entryFixture struct {
-	t                                               *testing.T
-	root, source, release, work, cmake, ninja, tool string
-	options                                         prepareOptions
-	manifest                                        manifest
+	t                                                              *testing.T
+	root, source, release, work, cmake, generator, buildTool, tool string
+	options                                                        prepareOptions
+	manifest                                                       manifest
 }
 
 func buildEntryTool(t *testing.T, fake bool) string {
@@ -91,11 +91,15 @@ func newEntryFixture(t *testing.T, fake bool, suffix string) *entryFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ninja, err := exec.LookPath("ninja")
+	generator, toolName := "Ninja", "ninja"
+	if runtime.GOOS == "linux" {
+		generator, toolName = "Unix Makefiles", "make"
+	}
+	buildTool, err := exec.LookPath(toolName)
 	if err != nil {
 		t.Fatal(err)
 	}
-	f := &entryFixture{t: t, root: root, source: source, release: o.URI, work: o.WorkRoot, cmake: cmake, ninja: ninja, tool: tool, options: o, manifest: m}
+	f := &entryFixture{t: t, root: root, source: source, release: o.URI, work: o.WorkRoot, cmake: cmake, generator: generator, buildTool: buildTool, tool: tool, options: o, manifest: m}
 	if fake {
 		dir := filepath.Join(root, "fake prepared")
 		putTestFile(t, filepath.Join(dir, "autolib-import.cmake"), adapter)
@@ -107,7 +111,7 @@ func newEntryFixture(t *testing.T, fake bool, suffix string) *entryFixture {
 
 func (f *entryFixture) configure(extra ...string) (string, error) {
 	f.t.Helper()
-	args := []string{"-S", f.source, "-B", filepath.Join(f.root, "consumer-build"), "-G", "Ninja", "-DCMAKE_MAKE_PROGRAM=" + f.ninja, "-DFIXTURE_RELEASE=" + f.release, "-DFIXTURE_WORK=" + f.work, "-DFIXTURE_OS=" + f.options.OS, "-DFIXTURE_ARCH=" + f.options.Arch}
+	args := []string{"-S", f.source, "-B", filepath.Join(f.root, "consumer-build"), "-G", f.generator, "-DCMAKE_MAKE_PROGRAM=" + f.buildTool, "-DFIXTURE_RELEASE=" + f.release, "-DFIXTURE_WORK=" + f.work, "-DFIXTURE_OS=" + f.options.OS, "-DFIXTURE_ARCH=" + f.options.Arch}
 	args = append(args, extra...)
 	out, err := exec.Command(f.cmake, args...).CombinedOutput()
 	return string(out), err
@@ -358,6 +362,59 @@ func newEntryMissingPackage(t *testing.T, f *entryFixture) {
 	}
 	if err := os.Remove(filepath.Join(f.release, f.manifest.Packages[0].Asset)); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func representativeFixture(t *testing.T, packages string) *entryFixture {
+	t.Helper()
+	f := newEntryFixture(t, false, "")
+	f.manifest.Packages = nil
+	for _, name := range []string{"queue", "lz4", "flann"} {
+		adapter, err := os.ReadFile(filepath.Join("../dependencies", name, "autolib-import.cmake"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		id := packageIdentity{Name: name, OS: f.options.OS, Arch: f.options.Arch}
+		members := []archiveMember{{Name: name + "/autolib-import.cmake", Body: identityHeader(id) + string(adapter)}, {Name: name + "/include/", Kind: '5'}}
+		if name == "queue" {
+			members = append(members, archiveMember{Name: "queue/include/queue/readerwriterqueue.h", Body: "// fixture header\n"})
+		}
+		if name == "lz4" {
+			members = append(members, archiveMember{Name: "lz4/lib/cmake/lz4/lz4Config.cmake", Body: "add_library(LZ4::lz4 INTERFACE IMPORTED)\n"})
+		}
+		if name == "flann" {
+			members = append(members, archiveMember{Name: "flann/lib/cmake/flann/flann-config.cmake", Body: "if(NOT TARGET AutoLib::lz4)\nmessage(FATAL_ERROR \"lz4 not loaded first\")\nendif()\nadd_library(flann::flann_cpp INTERFACE IMPORTED)\nadd_library(flann::flann INTERFACE IMPORTED)\n"})
+		}
+		a := testArchive(t, members)
+		data, err := os.ReadFile(a)
+		if err != nil {
+			t.Fatal(err)
+		}
+		asset := name + ".tar.zst"
+		putTestFile(t, filepath.Join(f.release, asset), string(data))
+		f.manifest.Packages = append(f.manifest.Packages, packageRecord{Name: name, OS: id.OS, Arch: id.Arch, Asset: asset, SHA256: testDigest(data)})
+	}
+	writeTestManifest(t, filepath.Join(f.release, "manifest.json"), f.manifest)
+	putTestFile(t, filepath.Join(f.source, "CMakeLists.txt"), "cmake_minimum_required(VERSION 3.20)\nproject(representatives NONE)\ninclude(autolib.cmake)\nautolib_import(URI \"${FIXTURE_RELEASE}\" WORK_ROOT \"${FIXTURE_WORK}\" TARGET_OS \"${FIXTURE_OS}\" TARGET_ARCH \"${FIXTURE_ARCH}\" PACKAGES "+packages+")\nadd_subdirectory(child)\n")
+	putTestFile(t, filepath.Join(f.source, "child/CMakeLists.txt"), "foreach(name IN ITEMS queue lz4 flann)\nif(NOT TARGET AutoLib::${name})\nmessage(FATAL_ERROR \"target not visible: ${name}\")\nendif()\nendforeach()\nadd_library(consumer INTERFACE)\ntarget_link_libraries(consumer INTERFACE AutoLib::queue AutoLib::lz4 AutoLib::flann)\nautolib_import(URI \"${FIXTURE_RELEASE}\" WORK_ROOT \"${FIXTURE_WORK}\" TARGET_OS \"${FIXTURE_OS}\" TARGET_ARCH \"${FIXTURE_ARCH}\" PACKAGES flann queue lz4)\n")
+	return f
+}
+
+func TestRepresentativeAdapters(t *testing.T) {
+	f := representativeFixture(t, "flann queue lz4 flann")
+	f.mustConfigure()
+}
+
+func TestAdapterDependencyOrder(t *testing.T) {
+	f := representativeFixture(t, "flann")
+	system := filepath.Join(f.root, "system")
+	marker := filepath.Join(f.root, "system-was-used")
+	putTestFile(t, filepath.Join(system, "lz4Config.cmake"), "file(WRITE \""+filepath.ToSlash(marker)+"\" \"unexpected system fallback\")\nadd_library(LZ4::lz4 INTERFACE IMPORTED)\n")
+	if out, err := f.configure("-DCMAKE_PREFIX_PATH=" + system); err == nil {
+		t.Fatalf("unlisted sibling was imported: %s", out)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatal("adapter fell back to system lz4")
 	}
 }
 
