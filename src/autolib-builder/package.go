@@ -116,30 +116,10 @@ func stagePackage(o stageOptions) (staged string, err error) {
 	if err != nil {
 		return "", err
 	}
-	stageRoot, err := filepath.Abs(o.StageRoot)
+	stageRoot, err := resolvePackagePath(o.StageRoot)
 	if err != nil {
 		return "", err
 	}
-	// Resolve the existing ancestor before creating anything under the requested output.
-	ancestor := stageRoot
-	for {
-		if _, statErr := os.Lstat(ancestor); statErr == nil {
-			break
-		} else if !os.IsNotExist(statErr) {
-			return "", statErr
-		}
-		next := filepath.Dir(ancestor)
-		if next == ancestor {
-			return "", fmt.Errorf("stage path has no existing ancestor: %s", stageRoot)
-		}
-		ancestor = next
-	}
-	resolved, err := filepath.EvalSymlinks(ancestor)
-	if err != nil {
-		return "", err
-	}
-	rel, _ := filepath.Rel(ancestor, stageRoot)
-	stageRoot = filepath.Join(resolved, rel)
 	if pathWithin(installRoot, stageRoot) || pathWithin(stageRoot, installRoot) {
 		return "", fmt.Errorf("stage %s overlaps installation %s", stageRoot, installRoot)
 	}
