@@ -20,7 +20,7 @@ builder 的 `package` 将显式选择且提供 adapter 的安装树复制到 sta
 
 下游只携带单文件 [autolib.cmake](../src/autolib.cmake)，从用户指定的本地发行目录读取清单，按宿主平台校验并启动 importer。`src/autolib-importer/` 负责严格清单校验、包摘要、安全解包和结果文件；全部请求包准备成功后，CMake 才加载包内 adapter，提供全局 `AutoLib::<name>`。消费者不需要 Go、Python、uv 或 builder，本地缺输入即失败，不联网补齐。
 
-queue、lz4、flann 提供精确布局 adapter；调用者列出完整包集，flann 显式先导入 sibling lz4，不回退系统包。OpenMP 属编译器及系统运行环境要求。工具按宿主、库包按目标选择；缓存按来源及平台隔离，已有匹配目录权威，更新需人工刷新。格式与取舍见[导入设计](agent-notes/proposed/architecture/2026-10-21-go-tooling-and-offline-import.md)，命令见开发及测试指南。
+queue、lz4、flann 提供精确布局 adapter；调用者列出完整包集，flann 显式先导入 sibling lz4，不回退系统包。AutoLib 导入早于其他同名库目标创建，首次导入拒绝既有上游目标；实际工作根与搬迁包根不得含分号，发行来源不受此限制。OpenMP 属编译器及系统运行环境要求。工具按宿主、库包按目标选择；缓存按来源及平台隔离，已有匹配目录权威，更新需人工刷新。格式与取舍见[导入设计](agent-notes/proposed/architecture/2026-10-21-go-tooling-and-offline-import.md)，命令见开发及测试指南。
 
 ## 文档职责
 

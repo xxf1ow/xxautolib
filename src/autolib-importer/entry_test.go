@@ -51,7 +51,7 @@ func newEntryFixture(t *testing.T, fake bool, suffix string) *entryFixture {
 			t.Fatal(err)
 		}
 		o.URI = destination
-		o.WorkRoot = filepath.Join(root, "work "+suffix)
+		o.WorkRoot = filepath.Join(root, "work "+strings.ReplaceAll(suffix, ";", ""))
 	}
 	tool := buildEntryTool(t, fake)
 	data, err := os.ReadFile(tool)
@@ -314,6 +314,37 @@ func TestCMakeEntryPaths(t *testing.T) {
 	}
 }
 
+func TestCMakeWorkRootSemicolon(t *testing.T) {
+	for _, kind := range []string{"explicit", "default"} {
+		t.Run(kind, func(t *testing.T) {
+			f := newEntryFixture(t, true, "")
+			work := filepath.Join(f.root, "work;literal")
+			var extra []string
+			if kind == "explicit" {
+				f.work = work
+			} else {
+				consumer := filepath.Join(f.source, "CMakeLists.txt")
+				putTestFile(t, consumer, strings.ReplaceAll(readTestFile(t, consumer), ` WORK_ROOT "${FIXTURE_WORK}"`, ""))
+				build := filepath.Join(f.root, "build;literal")
+				work = filepath.Join(build, "autolib")
+				extra = []string{"-B", build}
+			}
+			putTestFile(t, filepath.Join(work, "sentinel"), "preserve")
+			out, err := f.configure(extra...)
+			if err == nil || !strings.Contains(out, "WORK_ROOT must not contain semicolons") {
+				t.Fatalf("unsafe work root was not rejected clearly: %v\n%s", err, out)
+			}
+			entries, err := os.ReadDir(work)
+			if err != nil || len(entries) != 1 || readTestFile(t, filepath.Join(work, "sentinel")) != "preserve" {
+				t.Fatalf("rejected work root changed: %v, %v", entries, err)
+			}
+			if _, err := os.Stat(filepath.Join(f.root, "calls.jsonl")); !os.IsNotExist(err) {
+				t.Fatal("importer executed for rejected work root")
+			}
+		})
+	}
+}
+
 func TestLocalConsumerNoToolchainRuntime(t *testing.T) {
 	f := newEntryFixture(t, false, "offline 中文")
 	trap := buildEntryTool(t, true)
@@ -380,10 +411,11 @@ func representativeFixture(t *testing.T, packages string) *entryFixture {
 			members = append(members, archiveMember{Name: "queue/include/queue/readerwriterqueue.h", Body: "// fixture header\n"})
 		}
 		if name == "lz4" {
-			members = append(members, archiveMember{Name: "lz4/lib/cmake/lz4/lz4Config.cmake", Body: "add_library(LZ4::lz4 INTERFACE IMPORTED)\n"})
+			// 上游 Targets 在完整目标集已存在时直接返回，不能靠重新定义报错来发现来源冲突。
+			members = append(members, archiveMember{Name: "lz4/lib/cmake/lz4/lz4Config.cmake", Body: "if(TARGET LZ4::lz4 AND TARGET LZ4::lz4_static)\nreturn()\nendif()\nadd_library(LZ4::lz4 INTERFACE IMPORTED)\nadd_library(LZ4::lz4_static INTERFACE IMPORTED)\n"})
 		}
 		if name == "flann" {
-			members = append(members, archiveMember{Name: "flann/lib/cmake/flann/flann-config.cmake", Body: "if(NOT TARGET AutoLib::lz4)\nmessage(FATAL_ERROR \"lz4 not loaded first\")\nendif()\nadd_library(flann::flann_cpp INTERFACE IMPORTED)\nadd_library(flann::flann INTERFACE IMPORTED)\n"})
+			members = append(members, archiveMember{Name: "flann/lib/cmake/flann/flann-config.cmake", Body: "if(NOT TARGET AutoLib::lz4)\nmessage(FATAL_ERROR \"lz4 not loaded first\")\nendif()\nif(TARGET flann::flann_cpp AND TARGET flann::flann)\nreturn()\nendif()\nadd_library(flann::flann_cpp INTERFACE IMPORTED)\nadd_library(flann::flann INTERFACE IMPORTED)\n"})
 		}
 		a := testArchive(t, members)
 		data, err := os.ReadFile(a)
@@ -402,7 +434,34 @@ func representativeFixture(t *testing.T, packages string) *entryFixture {
 
 func TestRepresentativeAdapters(t *testing.T) {
 	f := representativeFixture(t, "flann queue lz4 flann")
+	destination := f.release + ";中文 空格"
+	if err := os.Rename(f.release, destination); err != nil {
+		t.Fatal(err)
+	}
+	f.release = destination
 	f.mustConfigure()
+}
+
+func TestAdapterExistingTargets(t *testing.T) {
+	for _, name := range []string{"lz4", "flann"} {
+		t.Run(name, func(t *testing.T) {
+			f := representativeFixture(t, "flann queue lz4")
+			targets := []string{"LZ4::lz4", "LZ4::lz4_static"}
+			if name == "flann" {
+				targets = []string{"flann::flann_cpp", "flann::flann"}
+			}
+			definitions := ""
+			for _, target := range targets {
+				definitions += "add_library(" + target + " INTERFACE IMPORTED)\n"
+			}
+			consumer := filepath.Join(f.source, "CMakeLists.txt")
+			putTestFile(t, consumer, strings.Replace(readTestFile(t, consumer), "autolib_import(", definitions+"autolib_import(", 1))
+			out, err := f.configure()
+			if err == nil || !strings.Contains(out, "AutoLib "+name+" cannot import existing target") {
+				t.Fatalf("existing package-external targets were not rejected clearly: %v\n%s", err, out)
+			}
+		})
+	}
 }
 
 func TestAdapterDependencyOrder(t *testing.T) {

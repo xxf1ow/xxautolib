@@ -47,7 +47,7 @@ cmake -P src/autolib-builder/go-sdk.cmake -- build -mod=readonly -trimpath -o bu
 
 `builder package` 必填 `--source-root`、`--install-root`、`--output-root`、`--os`、`--arch`、`--host-os`、`--host-arch`、`--importer-file`、`--cmake-command` 及重复 `--module`。输出必须在本副本 build 内且不与安装树重叠；只打包显式模块，不自动补依赖。真实示例由[本地闭环测试](testing.md#本地二进制闭环)执行。
 
-将 `src/autolib.cmake` 复制到消费者，include 后调用 `autolib_import(URI <本地发行目录> PACKAGES flann queue lz4)`，链接 `AutoLib::queue`、`AutoLib::lz4`、`AutoLib::flann`。可选 `WORK_ROOT`、`TARGET_OS`、`TARGET_ARCH`；默认工作根为消费者 build 下的 autolib。系统支持 windows/linux，架构使用 x86_64/aarch64；工具按宿主选择，包按目标选择。同一次 configure 只使用一个来源。
+将 `src/autolib.cmake` 复制到消费者，include 后在其他库查找或子目录创建同名目标前调用 `autolib_import(URI <本地发行目录> PACKAGES flann queue lz4)`，链接 `AutoLib::queue`、`AutoLib::lz4`、`AutoLib::flann`。不混用同名库的不同来源，首次导入遇既有上游目标报错。可选 `WORK_ROOT`、`TARGET_OS`、`TARGET_ARCH`；默认工作根为消费者 build 下的 autolib。发行来源可含分号，实际工作根及搬迁包根不得含分号；默认或显式工作根含分号时，指定不含分号的 `WORK_ROOT`。系统支持 windows/linux，架构使用 x86_64/aarch64；工具按宿主选择，包按目标选择。同一次 configure 只使用一个来源。
 
 发行清单严格格式见[导入设计](agent-notes/proposed/architecture/2026-10-21-go-tooling-and-offline-import.md#消费入口与数据流)。asset 为权威文件名，摘要不认证来源，信任由用户负责。调用固定为 `importer prepare --uri --work-root --os --arch --result`、可选 `--manifest` 和重复 `--package`，不查询版本或协商协议。
 

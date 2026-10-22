@@ -26,7 +26,7 @@ cmake -DSOURCE_ROOT=D:/Work/xxautolib -DINSTALL_ROOT=D:/Work/xxautolib/3rdparty 
 
 Linux aarch64 将绝对根和程序名替换为本机值，使用 `-DTARGET_OS=linux -DTARGET_ARCH=aarch64 "-DGENERATOR=Unix Makefiles"`，不传 VS 平台或工具集。INSTALL_ROOT 必须对应元数据中的真实生产前缀，不能先搬动未修正的安装输入。driver 不构建源码；它在 `build/validation/local-binary/` 新建运行目录，记录打包、安装摘要、导入属性、链接输入和 CTest 日志。发行根搬迁后空缓存导入，再搬迁准备好的包并重新编译运行；两次 CTest 各 1/1，实际 FLANN 动态库来自搬迁包，生产安装及消费包字节不变。
 
-打包定向回归使用 `-run 'Test(StagePackage|StageFixup|PackageArchive|LocalReleaseManifest|PackageCLI|CLI)$'`；adapter 用 importer 的 `-run 'Test(RepresentativeAdapters|AdapterDependencyOrder)$'`。importer 全集覆盖恶意归档及内部链接、严格清单、缓存与失败保护、依赖顺序、特殊字符路径和真实 CMake。受控 PATH 拦截语言工具及下载器，完整/缺包路径 HTTP 与代理请求均为零；网络受限沙箱内执行首次导入，不以预热成功证明离线。双端闭环证据不包含真实 UNC 共享、HTTPS、Linux x86_64 工具执行或三宿主正式发行；UNC 只有词法测试。
+打包定向回归使用 `-run 'Test(StagePackage|StageFixup|PackageArchive|LocalReleaseManifest|PackageCLI|CLI)$'`；adapter 与路径检查用 importer 的 `-run 'Test(RepresentativeAdapters|AdapterDependencyOrder|AdapterExistingTargets|CMakeEntryPaths|CMakeWorkRootSemicolon)$'`。importer 全集覆盖恶意归档及内部链接、严格清单、缓存与失败保护、依赖顺序、同名目标拒绝和真实 CMake。特殊路径覆盖来源分号与字面数据传递，实际包根不支持分号；默认/显式工作根含分号须在准备前失败。受控 PATH 拦截语言工具及下载器，完整/缺包路径 HTTP 与代理请求均为零；网络受限沙箱内执行首次导入，不以预热成功证明离线。双端闭环证据不包含真实 UNC 共享、HTTPS、Linux x86_64 工具执行或三宿主正式发行；UNC 只有词法测试。
 
 ## 安装产物集成验证
 
