@@ -2,9 +2,11 @@
 
 本仓库按能力分批接入模块，先完成本地构建安装，再建立下游导入、二进制交付和 CI。本文维护阶段目标与迁移范围；各阶段的理由和约束由链接的 Agent Note 拥有，具体实现开始前再确认该批设计。
 
+工具层重建及导入链路按 [Go 工具层与离线导入设计](agent-notes/proposed/architecture/2026-10-21-go-tooling-and-offline-import.md)分阶段推进：Go 生成器已替换自有 Python 路径，保留 TOML 和原生构建契约；本地二进制闭环、联网引导与工具发行仍待实施，不表示下游接口已可用。
+
 ## 状态与依据
 
-本仓库支持 TOML 定义、Python 生成、原生 ExternalProject、固定来源、多资源、补丁、自定义步骤、平台输入、依赖闭包及 uv 根环境。下表已验证模块均通过 Windows x64、Linux aarch64 本地安装；v142、Linux x86_64 实机仍待验收。流程由[模块技能](../.agents/skills/add-third-party-module/SKILL.md)维护；当前职责见[架构](architecture.md)，验证入口见[测试](testing.md)。
+本仓库支持 TOML 定义、Go builder、原生 ExternalProject、固定来源、多资源、补丁、自定义步骤、平台输入及依赖闭包。下表已验证模块均通过 Windows x64、Linux aarch64 本地安装；v142、Linux x86_64 实机仍待验收。流程由[模块技能](../.agents/skills/add-third-party-module/SKILL.md)维护；当前职责见[架构](architecture.md)，验证入口见[测试](testing.md)。
 
 “参考已实现”指参考实现中存在对应代码或模块，并有相关决定；不表示本仓库支持，也不表示本轮重新验证了参考实现的全部模块。“参考待实施”指已有方向但尚未落地。迁移不导入历史提交、旧发布数据或所有辅助机制。
 

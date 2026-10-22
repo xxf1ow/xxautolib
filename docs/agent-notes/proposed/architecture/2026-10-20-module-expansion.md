@@ -32,7 +32,7 @@ FLANN、HarfBuzz 与 OpenCV 4.14.0 已验证的依赖声明、安装查找位置
 
 缺少 URL 或摘要、字段类型错误，以及同时声明 Git 和 URL 来源时，在 configure 的声明解析阶段失败，沿用携带模块路径和失败字段的诊断方式。主来源和资源使用同一套字段校验与参数展开，不在引擎中添加 FreeType 或镜像站点分支。
 
-Python 只解析声明并生成原生参数，不访问网络、下载文件、校验归档或执行解压。CMake 的 ExternalProject 在 build 阶段完成下载、摘要校验与解压；首个地址下载失败时继续尝试后续地址，全部失败则获取步骤失败，未经摘要校验的归档不得进入解压和构建。回退、内部重试及错误输出全部沿用 [CMake 3.20 ExternalProject 的原生 URL 能力](https://cmake.org/cmake/help/v3.20/module/ExternalProject.html#download-step-options)，不新增下载脚本、自定义 `DOWNLOAD_COMMAND`、Python 重试循环或地址健康状态。摘要不匹配不等于立即终止：原生下载脚本会移除不匹配的文件并继续尝试，候选与内部重试均耗尽后才失败；不承诺具体重试次数或间隔，依据见 [CMake 3.20.6 下载脚本](https://github.com/Kitware/CMake/blob/v3.20.6/Modules/ExternalProject-download.cmake.in)。
+Go builder 只解析声明并生成原生参数，不访问网络、下载文件、校验归档或执行解压。CMake 的 ExternalProject 在 build 阶段完成下载、摘要校验与解压；首个地址下载失败时继续尝试后续地址，全部失败则获取步骤失败，未经摘要校验的归档不得进入解压和构建。回退、内部重试及错误输出全部沿用 [CMake 3.20 ExternalProject 的原生 URL 能力](https://cmake.org/cmake/help/v3.20/module/ExternalProject.html#download-step-options)，不新增下载脚本、自定义 `DOWNLOAD_COMMAND`、生成器重试循环或地址健康状态。摘要不匹配不等于立即终止：原生下载脚本会移除不匹配的文件并继续尝试，候选与内部重试均耗尽后才失败；不承诺具体重试次数或间隔，依据见 [CMake 3.20.6 下载脚本](https://github.com/Kitware/CMake/blob/v3.20.6/Modules/ExternalProject-download.cmake.in)。
 
 归档解压保留 `build/ep/<模块名>/src/`，资源保留模块内独立解压目录；下载和 Git 持久输入位置由[本地复用设计](../../implemented/architecture/2026-10-20-local-reuse-and-platform-inputs.md)拥有。不增加缓存数据库；来源变更仍适用[开发指南](../../../development.md)的人工准备规则，不能覆盖已有源码修改或清空其他模块。
 
@@ -61,7 +61,7 @@ FreeType 的库特定构建行为保持参考基线，不新增依赖声明，�
 
 ### 公共 CMake 默认值
 
-`src/build_system/cmake.py` 在 CMake 类型子项目参数组装处提供三个兜底值：`CMAKE_POLICY_VERSION_MINIMUM=3.5`、`CMAKE_POSITION_INDEPENDENT_CODE=ON`、`CMAKE_CXX_STANDARD=17`。`index.cmake` 只转发父级已经定义的同名值，不写入默认值；根 `CMakeLists.txt` 不维护这三个子项目默认项。合并优先级为模块 `[cmake.cache]` 显式值 > 父级已定义值 > 引擎兜底值，最终通过原生 `CMAKE_ARGS` 传给子项目；copy 类型及只取源资源不应用这些默认项。根入口 `-D`、toolchain 或已有 cache 可提供父级值；已有 cache 不自动清理。FreeType 与 zlib 共用公共默认项。
+`src/autolib-builder/cmake.go` 在 CMake 类型子项目参数组装处提供三个兜底值：`CMAKE_POLICY_VERSION_MINIMUM=3.5`、`CMAKE_POSITION_INDEPENDENT_CODE=ON`、`CMAKE_CXX_STANDARD=17`。`index.cmake` 只转发父级已经定义的同名值，不写入默认值；根 `CMakeLists.txt` 不维护这三个子项目默认项。合并优先级为模块 `[cmake.cache]` 显式值 > 父级已定义值 > 引擎兜底值，最终通过原生 `CMAKE_ARGS` 传给子项目；copy 类型及只取源资源不应用这些默认项。根入口 `-D`、toolchain 或已有 cache 可提供父级值；已有 cache 不自动清理。FreeType 与 zlib 共用公共默认项。
 
 ExternalProject 的子配置不隐式继承父级变量；在子 configure 命令中传入 `-D`，可确保这些值在子项目的 `cmake_minimum_required()` 和目标创建之前可用。默认值不写入父级 cache，避免自动默认项持久化后与用户配置混淆；只把根文件中的 `set(... CACHE ...)` 移到公共入口不能消除这种影响。
 
@@ -79,13 +79,13 @@ policy 参数仅提供下限：上游较高的 policy 声明不降低，低于 3
 
 技能以说明和既有实例引用为主，不增加安装器、生成器、下载脚本、插件或独立评测框架。验收检查技能元数据、全部采用的本地链接，以及新增源码库、复制安装库和库运行时问题的触发范围；不把措辞匹配测试当成行为正确性的证明。
 
-原版 skill 元数据校验器所需 PyYAML 放入根 uv 的 `dev` 开发依赖组并锁定版本，重复校验使用根环境，不逐次用临时 `--with` 补依赖；生成流水线本身不引入 PyYAML 运行时依赖。
+skill 元数据校验器所需 Python/PyYAML 由外部个人技能环境准备，不在仓库根恢复 Python 项目元数据或为每次校验创建临时环境；Go 生成流水线不依赖这些工具。
 
 ### 首批验证与交接
 
-新增引擎行为在 `tests/build_system/` 补公共回归。解析与参数生成验证 Git 来源不受影响，URL 列表顺序、摘要和归档名正确传递，并检查主来源与资源均能使用归档。小型归档与本地 HTTP fixture 通过生成的 ExternalProject 执行，覆盖首地址成功时不请求备用地址、首地址返回 404 后使用备用地址、全部地址失败、首地址内容摘要错误后备用地址内容正确时成功，以及所有候选内容均不匹配摘要时不安装产物。不将摘要错误断言为立即终止，不固定原生内部重试次数；公网可用性不作为故障注入条件，也不穷举所有网络错误。带单顶层目录的小型归档应直接提供 `src/CMakeLists.txt` 并完成安装。
+新增引擎行为在 `src/autolib-builder/` 的 Go 测试补公共回归。解析与参数生成验证 Git 来源不受影响，URL 列表顺序、摘要和归档名正确传递，并检查主来源与资源均能使用归档。小型归档与本地 HTTP fixture 通过生成的 ExternalProject 执行，覆盖首地址成功时不请求备用地址、首地址返回 404 后使用备用地址、全部地址失败、首地址内容摘要错误后备用地址内容正确时成功，以及所有候选内容均不匹配摘要时不安装产物。不将摘要错误断言为立即终止，不固定原生内部重试次数；公网可用性不作为故障注入条件，也不穷举所有网络错误。带单顶层目录的小型归档应直接提供 `src/CMakeLists.txt` 并完成安装。
 
-HTTP fixture 沿用现有 unittest 与 Python 标准库，在 `127.0.0.1:0` 启动服务，将实际绑定端口组成普通 URL 传入声明，不增加引擎端口接口或 pytest 依赖。无论测试成功或失败，均保证从服务线程以外调用 `shutdown()`、关闭套接字并等待服务线程退出，避免端口冲突或线程遗留。
+HTTP fixture 使用 Go 标准库 httptest 在本地动态端口启动服务，将实际 URL 传入声明，不增加引擎端口接口或额外测试依赖。测试通过 t.Cleanup 关闭服务，成功和失败路径均释放监听与连接，避免端口冲突或后台任务遗留。
 
 FreeType 从真实根入口选择单模块，先在 Windows x64 实际下载、构建和安装，再在既有授权的 Linux aarch64 设备 `lxx@192.168.0.127` 的 `/home/lxx/xxautolib` 中验证。源码传输、已有数据保护及目录限制继续遵守[基础设施与验证授权](../../implemented/process/2026-10-19-repository-foundation.md)。两端均核对安装头文件、静态库与安装配置，不以 configure 成功或小型 fixture 替代 FreeType 的实际构建，不为该模块强制新增专用测试工程。
 
@@ -111,7 +111,7 @@ ImGui 的专用 CMakeLists、sed 修改和安装期修正继续放在模块目�
 
 普通 Windows 模块不全局强制 v142。已选父工具集、平台、instance 和 CRT 必须完整传给子项目；确需 CUDA/TensorRT 的 v142 组合属于专项配置，不自动探测后降级或切换。当前 v142 实机验收缺口保持明确。
 
-模块声明自身需要的系统包，不能依赖同批兄弟模块碰巧安装它们；兄弟模块可能命中缓存而不执行准备。bash、sed、pkg-config 等只在实际模块需要时成为前置条件，不要求本地基础构建安装整套 CI/发布工具。涉及 Python 的准备、脚本和测试继续统一使用 uv。
+模块声明自身需要的系统包，不能依赖同批兄弟模块碰巧安装它们；兄弟模块可能命中缓存而不执行准备。bash、sed、pkg-config 等只在实际模块需要时成为前置条件，不要求本地基础构建安装整套 CI/发布工具。自有生成器和公共测试按 [Go 工具层设计](2026-10-21-go-tooling-and-offline-import.md)使用固定 SDK 与模块依赖；上游实际解释器要求不得据此推定或自动安装。
 
 ## 备选方案
 

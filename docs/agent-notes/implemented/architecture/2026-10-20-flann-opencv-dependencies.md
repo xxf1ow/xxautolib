@@ -145,7 +145,7 @@ contrib 4.9.0 与 4.14.0 的模块目录对照结果仅新增 fastcv、signal，
 
 ### 工具、取源与已有数据
 
-各模块自行说明实际前置工具及系统开发包，不依赖同批兄弟模块碰巧安装它们，也不新增 apt/choco 安装器。pkg-config 用于 FLANN 与文字库探测，保留必要的 OpenMP 和所选 FFmpeg 后端环境要求；配置摘要记录哪些可选项实际可用。HarfBuzz 的 Python3_EXECUTABLE、OpenCV 的 PYTHON3_EXECUTABLE/PYTHON_DEFAULT_EXECUTABLE 使用 cache 窄引用 `<PYTHON_EXECUTABLE>`，由生成器替换为当前 uv 解释器；缺少解释器上下文即报错。不回退到系统 Python，不因禁用 Python 绑定就假定完全不需要解释器。
+各模块自行说明实际前置工具及系统开发包，不依赖同批兄弟模块碰巧安装它们，也不新增 apt/choco 安装器。pkg-config 用于 FLANN 与文字库探测，保留必要的 OpenMP 和所选 FFmpeg 后端环境要求；配置摘要记录哪些可选项实际可用。当前 HarfBuzz/OpenCV 功能已在禁止 Python 探测的两平台干净构建中通过，正式声明不注入解释器，Go builder 不支持 `<PYTHON_EXECUTABLE>`。原 uv 注入的语言实现由 [Go 工具层设计](../../proposed/architecture/2026-10-21-go-tooling-and-offline-import.md)替代；其他上游功能若确需解释器，须先取得实际证据及用户决定，不自动安装或回退系统 Python。
 
 所有包按[基础设施取源规则](../../implemented/process/2026-10-19-repository-foundation.md#验证授权)先在 Windows 下载、校验，再传到 ARM；Git 来源可使用仅含对应上游历史的 bundle，接收后核对固定提交。OpenCV 内部的 IPP、Windows FFmpeg、KleidiCV 或其他附属下载仍沿用 4.14 原生缓存及校验机制，ARM 所需缓存同样先在 Windows 准备，不在 ARM 反复联网重试。两份主归档的摘要不代表内部下载均已固定或离线可用；不导入 4.9 专用缓存，不新增通用下载器、镜像健康状态或恢复服务。
 
@@ -153,7 +153,7 @@ contrib 4.9.0 与 4.14.0 的模块目录对照结果仅新增 fastcv、signal，
 
 ### 验证与维护边界
 
-新增公共行为在 `tests/build_system/` 用现有 unittest 与隔离 fixture 验证，不新建测试框架：叶子请求发现闭包、去重与顺序，缺失及环诊断，依赖 TOML 触发重配置，原生目标顺序、实际收到的包/前缀/环境路径，资源引用及选定目标的补丁，以及 sentinel 命中仍可作为依赖且不执行资源。含空格路径、列表和平台环境分隔符围绕新增接线定向覆盖，不穷举模块开关组合。
+公共行为在 `src/autolib-builder/` 用 Go 测试与隔离 fixture 验证，不另建测试框架：叶子请求发现闭包、去重与顺序，缺失及环诊断，依赖 TOML 触发重配置，原生目标顺序、实际收到的包/前缀/环境路径，资源引用及选定目标的补丁，以及 sentinel 命中仍可作为依赖且不执行资源。含空格路径、列表和平台环境分隔符围绕新增接线定向覆盖，不穷举模块开关组合。
 
 先在 Windows x64 使用现有 VS2022/v143 环境完成真实根入口构建，再在 `lxx@192.168.0.127` 的 `/home/lxx/xxautolib` 完成 Linux aarch64 验证。源码传输和数据保护遵守[基础设施授权](../../implemented/process/2026-10-19-repository-foundation.md)，仅传任务源码及已校验的第三方输入，不传本仓库 `.git/`、`.venv/`、Windows 构建安装产物或凭据；第三方输入单独传输，不整体复制 `git/`、`build/`、`3rdparty/`。该授权不包含其他机器、目录、托管平台写操作或远端 CI。
 
@@ -181,6 +181,8 @@ contrib 4.9.0 与 4.14.0 的模块目录对照结果仅新增 fastcv、signal，
 
 ## 验证结果
 
+### 原 Python 基线
+
 Windows x64 使用 CMake 4.2.3、VS2022 `v143,host=x64`、MSVC 19.42.34444、pkg-config 0.26；Linux aarch64 使用 CMake 3.31.9、GCC 9.4.0、pkg-config 0.29.1。两端仅选 flann 或 opencv 均从根入口完成真实编译安装，分别得到 lz4/flann 与 freetype/harfbuzz/opencv 闭包；OpenCV 未引入独立 FLANN。新增库安装后重新 configure/build 均命中 cached，保留依赖目标。
 
 FLANN 固定提交及本地源码状态核对通过，Windows 安装 flann/flann_cpp DLL 与导入库，Linux 安装 `.so.1.9.2`；头文件、lib/cmake/flann、flann.pc 齐全。cache 与实际链接输入指向仓库 lz4 静态库；OpenMP 两端分别为 2.0、`-fopenmp`。HarfBuzz 8.5.0 安装 harfbuzz 与 subset 静态库、头文件、CMake 配置及 `.pc`；其 FreeType cache 路径来自本仓库，解释器为各自 uv 环境。
@@ -193,7 +195,13 @@ FFmpeg 两端均为 YES：Windows 使用上游预编译后端，ARM 使用系统
 
 Windows FreeType `.pc` 无额外 Requires/Libs.private；ARM 保留系统 zlib 1.2.11、PNG 1.6.37，未发现 BZip2、HarfBuzz、BrotliDec。FreeType 的 `.pc` Version=26.1.20 是 2.13.2 上游内部版本值。ARM world 的直接动态依赖含 PNG/zlib、FFmpeg 与系统运行库；FFmpeg 的传递依赖还会加载系统 HarfBuzz/FreeType，不等于 OpenCV 显式文字库输入来自系统，也不构成安装树自包含。
 
-公共回归覆盖闭包、环、输入变更、sentinel 依赖、直接查找位置、含空格/列表参数、调用方 include、资源路径、资源补丁和嵌套宿主仓库的归档补丁。两端整批公共全集均为 71/71；执行命令及当前数量由[测试指南](../../../testing.md)拥有。
+原 Python 公共回归覆盖闭包、环、输入变更、sentinel 依赖、直接查找位置、含空格/列表参数、调用方 include、资源路径、资源补丁和嵌套宿主仓库的归档补丁。两端当时整批公共全集均为 71/71；对应行为已迁入 Go 测试，执行命令及当前数量由[测试指南](../../../testing.md)拥有。
+
+### Go 入口与无解释器验证
+
+Windows x64/v143 与授权 Linux aarch64 各自使用全新隔离源码、build 和安装目录，经 Go 1.27.3 与普通根入口实际编译安装 FreeType 2.13.2、HarfBuzz 8.5.0（含 subset）和 OpenCV 4.14.0，不复用旧 stamp 或 sentinel。验证副本仅增加 Python3/Python2/PythonInterp 查包禁止项、解释器 NOTFOUND 及 OpenCV 的 OPENCV_PYTHON_SKIP_DETECTION；这些设置确实进入子 cache，未写入正式模块。正式声明只移除三项解释器注入，原功能选项与补丁保持不变。
+
+两端 OpenCV 摘要均为 Python (for build)=NO、FFmpeg=YES；freetype、calib3d、features2d、flann、ximgproc、video、world 均实际编译。FreeType/HarfBuzz cache 与链接输入来自各自本次安装前缀；ARM 保留 KleidiCV 26.03 和已校验内部缓存。现有 OpenCV 4.14.0 smoke 两端各通过 CTest 1/1，ARM ldd 无缺失依赖。Windows 上游构建有 339 条警告、零错误，未抑制警告或改变功能；可选 Eigen 仍由本机环境发现参考工作区头文件，此证据不证明包自包含。Linux x86_64/v142 缺口保持不变。
 
 ## 影响
 

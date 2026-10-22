@@ -35,7 +35,7 @@ message(STATUS "================================================================
 
 # setting third party
 include(ExternalProject)
-include(src/build_system/index.cmake)
+include(src/autolib-builder/index.cmake)
 message(STATUS "========================= Third Party Summary ========================")
 
 set(BUILD_MODULES)

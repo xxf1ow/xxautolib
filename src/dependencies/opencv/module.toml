@@ -28,8 +28,6 @@ sentinel = "OpenCVConfig.cmake"
 [cmake.cache] # 不设置 OpenCV BUILD_LIST；未列模块按上游默认值与依赖选择，KleidiCV 保持平台默认值。
 OPENCV_EXTRA_MODULES_PATH = "<RESOURCE_SOURCE_DIR:opencv_contrib>/modules" # 加载 contrib 扩展模块源码。
 
-PYTHON3_EXECUTABLE = "<PYTHON_EXECUTABLE>"        # Python 探测绑定根 uv 环境，不启用 Python 绑定。
-PYTHON_DEFAULT_EXECUTABLE = "<PYTHON_EXECUTABLE>" # 代码生成使用同一根 uv 解释器。
 OPENCV_ENABLE_NONFREE = true                      # 允许构建受额外许可限制的算法，使用时仍须遵守各算法许可。
 BUILD_opencv_world = true                         # 将支持 world 聚合的已启用模块合并构建。
 BUILD_opencv_freetype = true                      # 启用字体加载和文字绘制，支持中文。
