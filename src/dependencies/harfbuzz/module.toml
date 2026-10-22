@@ -13,4 +13,3 @@ DOWNLOAD_NAME = "harfbuzz-8.5.0.zip"
 
 [cmake.cache]                              # 其余组件沿用上游默认值。
 HB_HAVE_FREETYPE = true                    # 启用 FreeType 集成，由 depends 引入本仓库 freetype。
-Python3_EXECUTABLE = "<PYTHON_EXECUTABLE>" # 上游查找 Python 时绑定根 uv 环境，不从系统另选解释器。

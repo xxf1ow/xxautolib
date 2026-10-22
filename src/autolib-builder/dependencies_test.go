@@ -30,7 +30,7 @@ func TestDirectDependencies(t *testing.T) {
 	dep := f.child("dep", "install(FILES dep.h DESTINATION include)", "config_dir='lib/cmake/Dep'\npackage_name='Dep'\npkgconfig_dir='lib/pkgconfig'\n", "", []string{"shared"}, map[string]string{"dep.h": "#define DEP 17\n"})
 	sibling := f.child("sibling", "", "pkgconfig_dir='lib/pkgconfig'\n", "", nil, nil)
 	caller := putFile(t, filepath.Join(f.root, "caller include.cmake"), "file(WRITE \"${CMAKE_BINARY_DIR}/caller\" \"caller preserved\")\n")
-	leaf := f.child("leaf", `if(NOT EXISTS "${Dep_DIR}/../../../marker")
+	leaf := f.child("leaf", `if(NOT EXISTS "`+filepath.ToSlash(f.installed("dep", "marker"))+`")
 message(FATAL_ERROR "dependency not installed")
 endif()
 file(WRITE "${CMAKE_BINARY_DIR}/paths" "${CMAKE_PREFIX_PATH}|${Dep_DIR}|$ENV{PKG_CONFIG_PATH}")
