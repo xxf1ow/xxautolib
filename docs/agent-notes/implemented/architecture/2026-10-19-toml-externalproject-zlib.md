@@ -16,21 +16,23 @@ Status: implemented
 
 本记录保存两层架构、模块声明与原生执行机制的取舍。基础设施和设备授权由[仓库基础设施决定](../process/2026-10-19-repository-foundation.md)拥有；当前组成、开发与测试命令分别由[架构](../../../architecture.md)、[开发指南](../../../development.md)和[测试指南](../../../testing.md)拥有。
 
+生成器的语言与运行环境由 [Go 工具层设计](../../proposed/architecture/2026-10-21-go-tooling-and-offline-import.md)替代原 Python 实现；本文保留纯声明、原生执行、模块归属及失败保护的决定，以下机制与路径对应当前 Go builder。
+
 ### 职责与执行流程
 
 ```text
 CMake configure
-  → 公共入口准备根目录 uv 环境，传入明确的构建上下文
-  → Python 通用引擎读取选中的 TOML，生成 CMake 及输入依赖列表
+  → 公共入口校验固定 Go SDK，增量编译宿主 builder，传入明确的构建上下文
+  → Go builder 读取选中的 TOML，生成 CMake 及输入依赖列表
   → CMake 登记 configure 依赖，包含生成文件，建立目标
 CMake build
   → ExternalProject 执行声明的步骤与步骤依赖
   → 安装到 3rdparty/<模块名>/
 ```
 
-根 CMake 拥有模块选择、构建环境和生成结果的加载。Python 引擎拥有 TOML 解析、公共路径解析、上下文选择、参数编码和 CMake 生成。TOML 拥有模块名称、固定来源、附属资源、配置选项、文件引用、安装映射及自定义步骤。ExternalProject 拥有执行顺序、步骤完成记录和增量执行。
+根 CMake 拥有模块选择、构建环境和生成结果的加载。Go builder 拥有 TOML 解析、公共路径解析、上下文选择、参数编码和 CMake 生成。TOML 拥有模块名称、固定来源、附属资源、配置选项、文件引用、安装映射及自定义步骤。ExternalProject 拥有执行顺序、步骤完成记录和增量执行。
 
-TOML 不包含 Python 函数、条件表达式、路径计算或 CMake 生成逻辑。平台差异可以声明为数据，由引擎根据 CMake 提供的上下文选择。引擎不包含按 `zlib`、`opencv` 等模块名分支的专用逻辑，不执行下载或构建，不建立独立状态数据库、插件系统或任意表达式语言。Python 使用标准库，不为 TOML 解析引入额外依赖。
+TOML 不包含函数、条件表达式、路径计算或 CMake 生成逻辑。平台差异可以声明为数据，由引擎根据 CMake 提供的上下文选择。引擎不包含按 `zlib`、`opencv` 等模块名分支的专用逻辑，不执行下载或构建，不建立独立状态数据库、插件系统或任意表达式语言。TOML 解析使用根 Go module 固定的 go-toml/v2，其他生产逻辑使用标准库。
 
 纯声明不禁止描述命令或引用脚本。确实需要执行的模块专用逻辑放在同目录的补丁、CMakeLists 或执行脚本中，由 TOML 声明其引用及执行位置；不把它改写成通用引擎中的特例，也不构建 TOML 版 CMake 编程语言。
 
@@ -40,12 +42,16 @@ TOML 不包含 Python 函数、条件表达式、路径计算或 CMake 生成逻
 
 ```text
 src/
-  build_system/          # 通用入口、解析与 CMake 生成
+  autolib-builder/       # 通用入口、解析、CMake 生成与 Go 测试
     index.cmake          # 调用生成器、登记输入依赖、加载生成结果
-    generate.py          # Python 入口：接收上下文并组织生成
-    definition.py        # TOML 读取、字段校验和平台数据选择
-    cmake.py             # 通用 CMake 生成与参数编码
+    main.go              # builder CLI
+    generate.go          # 接收上下文并组织生成
+    definition.go        # TOML 读取、字段校验和平台数据选择
+    model.go             # 声明数据
+    cmake.go             # 通用 CMake 生成与参数编码
     apply_patch.cmake    # 公共补丁驱动，由 ExternalProject 调用
+    configure_dependencies.cmake # 直接依赖的子配置代理
+    *_test.go            # 通用引擎与入口验证
   dependencies/
     zlib/
       module.toml        # 模块声明入口
@@ -53,7 +59,6 @@ src/
     queue/
       module.toml        # 两个资源与头文件安装映射
 tests/
-  build_system/          # 通用引擎与入口验证
   zlib/                  # 本模块补丁及安装产物验证
   queue/                 # 资源获取与安装头文件验证
 build/
@@ -67,11 +72,11 @@ build/
 
 库专用文件集中在 `src/dependencies/<模块名>/`。补丁较多时可在该目录内分类，不另建顶层补丁或 recipe 目录。ImGui 专用 `CMakeLists.txt` 等文件也归对应模块目录；模块专用测试放在对应测试目录，不移入公共引擎。
 
-`src/build_system/` 是通用流水线引擎的源码目录。index.cmake 只连接 CMake 与 Python；generate.py 组织一次生成；definition.py 解释声明数据；cmake.py 输出原生构建声明；apply_patch.cmake 在构建阶段调用已探测的 Git 检查和应用补丁。这些文件不保存任何模块专用配置或模块名分支。
+`src/autolib-builder/` 是通用流水线引擎的源码目录。index.cmake 连接 CMake 与 Go builder；generate.go 组织一次生成；definition.go 解释声明数据；cmake.go 输出原生构建声明；apply_patch.cmake 在构建阶段调用已探测的 Git 检查和应用补丁。这些文件不保存任何模块专用配置或模块名分支。
 
 `build/generated/zlib.cmake` 是可检查的生成结果，不是需要手写维护的模块源文件。日常调整 zlib 时修改 TOML 或同目录专用文件；排查生成结果时查看生成的 CMake。生成内容直接展示 ExternalProject 参数与步骤，不以多层 helper 隐藏实际行为。
 
-每份工作副本统一使用根 `.venv/`、`build/` 和 `3rdparty/`。Python 环境准备、生成器、测试及开发脚本全部经 uv 执行，使用受跟踪的 `.python-version`、`pyproject.toml` 与 `uv.lock`，不创建 build 专属环境，不回退到系统 Python 或 pip。构建中间产物放在 `build/`，不提供多构建目录管理或交叉编译支持，同一个 build 不混用 Windows 与 Linux 产物。
+每份工作副本统一使用 `build/` 和 `3rdparty/`。builder 与测试使用固定 Go SDK、根 go.mod/go.sum；普通配置不安装 SDK、不升级依赖、不回退到 Python。构建中间产物与程序放在 `build/`，不提供多构建目录管理或 C++ 交叉编译支持，同一个 build 不混用 Windows 与 Linux 产物。
 
 ExternalProject 的 `PREFIX` 为 `build/ep/<模块名>/`，其下保留归档解压的 `src/`、编译的 `bin/`、步骤的 `stamp/` 和临时 `tmp/`。Git 来源与归档下载使用根 `git/`，具体布局及验收状态由[本地复用设计](2026-10-20-local-reuse-and-platform-inputs.md)拥有。最终安装使用 `3rdparty/<模块名>/`，生成声明使用 `build/generated/`。此布局不保证任意深度工作区都能构建；Windows 长路径能力仍取决于系统及工具，不自动修改系统设置。
 
@@ -79,9 +84,9 @@ ExternalProject 的 `PREFIX` 为 `build/ep/<模块名>/`，其下保留归档解
 
 ### 根入口与模块发现
 
-根 `CMakeLists.txt` 以现有参考骨架为基线，保留编译设置、环境摘要、`BUILD_LIST`、默认目录发现及模块去重的组织，仅为 TOML 模块发现、生成与加载作必要适配，不顺手重构。最低 CMake 版本维持根入口的 3.20，不因采用 Python 或 TOML 自动提高版本。
+根 `CMakeLists.txt` 以现有参考骨架为基线，保留编译设置、环境摘要、`BUILD_LIST`、默认目录发现及模块去重的组织，仅为 TOML 模块发现、生成与加载作必要适配，不顺手重构。最低 CMake 版本维持根入口的 3.20，不因生成器语言或 TOML 自动提高版本。
 
-未指定 `BUILD_LIST` 时发现 `src/dependencies/<模块名>/module.toml`；指定时沿用逗号分隔模块名的入口，生成指定模块及其依赖闭包。缺少声明时失败，重复模块不重复建立目标。configure 阶段通过公共入口运行一次 Python，生成本次选择所需的声明，再包含生成结果；不为每个字段或 helper 单独启动进程。
+未指定 `BUILD_LIST` 时发现 `src/dependencies/<模块名>/module.toml`；指定时沿用逗号分隔模块名的入口，生成指定模块及其依赖闭包。缺少声明时失败，重复模块不重复建立目标。configure 阶段通过公共入口构建并运行一次 builder，生成本次选择所需的声明，再包含生成结果；不为每个字段或 helper 单独启动进程。
 
 模块间依赖与附属资源不同。`depends` 闭包、原生顺序及安装查找位置由[依赖接线决定](2026-10-20-flann-opencv-dependencies.md)拥有，不属于被排除的下游项目接入；不提供版本求解。zlib 与 queue 之间没有依赖；queue 内部的两个资源由原生目标依赖接线。
 
@@ -91,7 +96,7 @@ ExternalProject 的 `PREFIX` 为 `build/ep/<模块名>/`，其下保留归档解
 
 模块顶层使用 `name`、`type` 和可选的 `version`。name 与模块目录名一致，type 为 cmake 或 copy；version 是供维护者阅读的版本标识，不代替来源中的固定提交。包含不同上游的聚合模块不要求编造统一版本号。
 
-主来源放在 `[source]`，附属资源放在 `[resources.<资源名>]`，两者适用相同来源规则。Git 使用成对的 `GIT_REPOSITORY`、`GIT_TAG`，现有 Git 上游均固定完整提交；归档使用有序非空 `URL` 数组、必填 `URL_HASH="SHA256=<64位十六进制摘要>"` 和可选单文件名 `DOWNLOAD_NAME`。Git 与归档字段互斥。Python 只把来源声明生成为 ExternalProject 参数，不自行获取源码。固定提交不启用不适用的浅克隆，也不引入自动跟随分支的更新策略。
+主来源放在 `[source]`，附属资源放在 `[resources.<资源名>]`，两者适用相同来源规则。Git 使用成对的 `GIT_REPOSITORY`、`GIT_TAG`，现有 Git 上游均固定完整提交；归档使用有序非空 `URL` 数组、必填 `URL_HASH="SHA256=<64位十六进制摘要>"` 和可选单文件名 `DOWNLOAD_NAME`。Git 与归档字段互斥。Go builder 只把来源声明生成为 ExternalProject 参数，不自行获取源码。固定提交不启用不适用的浅克隆，也不引入自动跟随分支的更新策略。
 
 URL 列表按声明顺序交给原生下载步骤；网络失败与摘要不符均可继续下一候选，所有候选失败则构建失败，未经校验的归档不进入解压。原生解压剥离唯一顶层目录，源码根直接位于 SOURCE_DIR；不增加 SOURCE_SUBDIR 或自建下载重试。FreeType 的归档提供该路径的真实集成验证。
 
@@ -136,7 +141,7 @@ copy 模块允许没有主来源。queue 保持一个模块和一个对外目标
 
 通用引擎支持 TOML 解析、cmake 与 copy 生成、附属资源获取接线、文件补丁、原生自定义步骤、平台数据选择、参数编码及输入依赖登记，通过 zlib 与 queue 验证；不只生成两个模块的固定文本，也不完整封装 ExternalProject 的全部 API。OpenCV 的接入与证据见依赖接线决定，oneTBB 仍待接入。
 
-无主来源的 copy 模块显式禁用主目标的获取、configure 和 build 命令，安装步骤仅执行声明的复制。资源准备由内部 ExternalProject 目标执行，原生步骤依赖保证使用资源前准备完成；queue 的 install 依赖两个资源均已就绪。Python 不提前复制或下载，也不以 configure 时资源尚未存在为错误。
+无主来源的 copy 模块显式禁用主目标的获取、configure 和 build 命令，安装步骤仅执行声明的复制。资源准备由内部 ExternalProject 目标执行，原生步骤依赖保证使用资源前准备完成；queue 的 install 依赖两个资源均已就绪。Go builder 不提前复制或下载，也不以 configure 时资源尚未存在为错误。
 
 ### 原生步骤与源码修改
 
@@ -166,7 +171,7 @@ COMMAND = [
 
 ### 配置身份与 Release
 
-cmake.py 在 CMake 子项目参数组装处提供 policy、PIC 和 C++ 标准的兜底值；入口只转发父级已定义值，不向父级 cache 写默认项。模块显式 cache 优先于父级值，父级值优先于引擎兜底值，合并结果通过原生 CMAKE_ARGS 传给子项目。默认值与命令见[开发指南](../../../development.md)，兼容下限与覆盖规则见[模块扩展决定](../../proposed/architecture/2026-10-20-module-expansion.md#公共-cmake-默认值)。公共值不依赖 presets 或 IDE，避免普通命令遗漏配置，也避免根 presets 使 CMake Tools 自动切换出 Kit/Variant 模式。
+cmake.go 在 CMake 子项目参数组装处提供 policy、PIC 和 C++ 标准的兜底值；入口只转发父级已定义值，不向父级 cache 写默认项。模块显式 cache 优先于父级值，父级值优先于引擎兜底值，合并结果通过原生 CMAKE_ARGS 传给子项目。默认值与命令见[开发指南](../../../development.md)，兼容下限与覆盖规则见[模块扩展决定](../../proposed/architecture/2026-10-20-module-expansion.md#公共-cmake-默认值)。公共值不依赖 presets 或 IDE，避免普通命令遗漏配置，也避免根 presets 使 CMake Tools 自动切换出 Kit/Variant 模式。
 
 子项目强制沿用父项目的生成器，以及适用且非空的平台、完整工具集和 Visual Studio instance。通过 ExternalProject 的原生 CMake 生成器选项传递，不依靠父 cache 的隐式继承，不擅自切换 Ninja 或平台默认工具集。
 
@@ -180,13 +185,13 @@ MSVC CRT 与库本身的静态或动态类型分别选择，静态 zlib 不意�
 
 引擎按单个参数生成 CMake，集中处理空格、反斜杠、引号、分号和字面变量字符，不使用未经转义的字符串拼接。带空格的单个路径与包含多个元素的 CMake 列表分开处理；`LIST_SEPARATOR` 用于需要传递列表的参数，不把它视为解决所有空格问题的开关。
 
-生成器同时输出实际读取的 Python 源文件和 TOML 输入列表，供根入口以 `CMAKE_CONFIGURE_DEPENDS` 显式登记；不能只登记启动脚本而漏掉 helper。CMake 包含生成的 `.cmake`。补丁或专用脚本作为执行输入登记到相应步骤的文件依赖，必要时触发对应步骤，不以重新生成一份相同文本代替实际失效处理。
+生成器输出实际读取的 Go 源文件和 TOML 输入列表；根入口同时登记 Go 源码增删、go.mod/go.sum 和 CMake helper，供 `CMAKE_CONFIGURE_DEPENDS` 跟踪，不能只登记启动脚本。CMake 包含生成的 `.cmake`。补丁或专用脚本作为执行输入登记到相应步骤的文件依赖，必要时触发对应步骤，不以重新生成一份相同文本代替实际失效处理。
 
 对执行输入使用原生文件依赖，对阶段先后使用原生步骤依赖。例如一个源码修改步骤声明 DEPENDEES patch、DEPENDERS configure 及 DEPENDS 输入文件后，输入变化使其 stamp 失效，并沿 configure、build、install 的原生依赖链触发后续步骤。不能只声明 DEPENDEES 或目标级顺序便认为后续文件依赖已经完整，也不增加独立级联失效机制。
 
 输入内容变化触发重新生成；引擎在内存中生成完整内容，直接与目标文件内容比较，只有不同才写入。内容相同时保持生成文件时间戳不变，不使用额外 hash 或临时文件替换。这避免无意义的时间戳变化干扰增量构建，不把每次覆盖写入等同于必然发生 configure 循环；算法由引擎与测试拥有，不作为开发指南中的用户操作。
 
-uv 环境、锁文件、TOML 解析或 Python 生成失败时，configure 非零退出并报告失败对象，不继续包含旧的生成结果。获取和构建失败由 ExternalProject 与构建工具报告，引擎不自行重试，不以头文件或安装目录存在判定构建已完成。
+SDK 缺失或版本不匹配、模块缓存缺失、builder 编译、TOML 解析或生成失败时，configure 非零退出并报告失败对象，不执行旧程序或包含旧生成结果。获取和构建失败由 ExternalProject 与构建工具报告，引擎不自行重试；可选 sentinel 的存在性短路及其限制由本地复用设计拥有。
 
 ### zlib 声明与验证
 
@@ -220,7 +225,7 @@ FreeType 接入范围由[模块扩展决定](../../proposed/architecture/2026-10
 
 ### 测试边界与后续模块接入
 
-测试对象是本仓库的生成、构建和安装流程，不是上游库的算法、并发正确性或性能。通用引擎测试集中在 `tests/build_system/`，覆盖声明校验、参数编码、配置传递、原生步骤依赖和增量触发，使用小型隔离 fixture，不为每个库重复一套。
+测试对象是本仓库的生成、构建和安装流程，不是上游库的算法、并发正确性或性能。通用引擎 Go 测试集中在 `src/autolib-builder/`，覆盖声明校验、参数编码、配置传递、原生步骤依赖和增量触发，使用小型隔离 fixture，不为每个库重复一套。
 
 zlib 与 queue 是两条真实集成路径。zlib 的最小链接运行验证检查安装的静态库与头文件能够一起使用；queue 的最小编译运行验证检查两个资源的头文件安装完整，不需要源码或系统路径补齐。压缩解压和入队出队仅用于确认本次安装产物可用，不扩展成上游功能测试。
 
@@ -228,11 +233,11 @@ zlib 与 queue 是两条真实集成路径。zlib 的最小链接运行验证检
 
 ## 备选方案
 
-**继续以 CMake 编写模块和全部公共规则。** 原生声明容易对照，但复杂 helper 的作用域、变量和字符串处理仍与模块配置混合。保留 CMake 执行层，用 TOML 数据与 Python 引擎分开维护模块定义和生成规则。
+**继续以 CMake 编写模块和全部公共规则。** 原生声明容易对照，但复杂 helper 的作用域、变量和字符串处理仍与模块配置混合。保留 CMake 执行层，用 TOML 数据与通用生成器分开维护模块定义和生成规则。
 
 **Python 内嵌 CMake、独立 CMake 模板或每库结构化 Python recipe。** 这些写法可以改变排版，却允许每个模块继续包含计算与生成逻辑，不能满足纯声明要求。选择 TOML 限定定义层，专用执行代码通过文件引用维护。
 
-**Python 直接执行完整构建流水线。** 能集中控制命令，却需要重做 ExternalProject 的执行和步骤跟踪；Python 仅生成原生声明。
+**生成器直接执行完整构建流水线。** 能集中控制命令，却需要重做 ExternalProject 的执行和步骤跟踪；生成器仅生成原生声明，语言替换不改变执行所有者。
 
 **在原生步骤外增加 before/after 接口。** 相邻阶段间只有一个位置，再包装会引入重复位置及额外解释规则；直接使用 DEPENDEES、DEPENDERS，不改变上游语义。
 
@@ -243,6 +248,8 @@ zlib 与 queue 是两条真实集成路径。zlib 的最小链接运行验证检
 **根据新固定提交自动同步已有源码。** 需要处理本地修改、已应用补丁、旧构建和安装残留的组合，不属于本地构建流水线的承诺。保留禁用 update 的方式，由维护者显式处理来源变更，不引入源码恢复或升级状态管理。
 
 ## 验证
+
+以下为原 Python 基线的历史实机证据，不是 Go 入口验证。当前 Go 公共回归由[测试指南](../../../testing.md)拥有，Go 入口的无解释器真实构建见[依赖接线验证](2026-10-20-flann-opencv-dependencies.md#go-入口与无解释器验证)。
 
 Windows x64 使用 Visual Studio 2022、`v143,host=x64`、MSVC 19.42、CMake 4.2.3、uv 管理的 Python 3.12.13；授权 Linux aarch64 设备使用 GCC 9.4、CMake 3.31.9、uv 管理的 Python 3.12.15。两端均从不含环境、构建产物和安装树的含空格源码副本，经根 CMake 入口完成两个模块的获取和安装。Windows 安装 `zlibstatic.lib`，Linux 安装 `libz.a`，构建与安装树不产生 zlib 动态库；两端六个 queue 头文件齐全，资源源码目录独立。无修改重复构建复用已完成步骤。
 

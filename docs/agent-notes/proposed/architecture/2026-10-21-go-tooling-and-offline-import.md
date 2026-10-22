@@ -204,4 +204,4 @@ Go 会引入 SDK 和第三方模块的开发准备成本，但这些不进入消
 
 Go 工具链准备与版本选择以[官方工具链说明](https://go.dev/doc/toolchain)为依据；模块获取、版本和内容校验以[模块参考](https://go.dev/ref/mod)为依据；纯 Go 交叉编译条件与系统下限分别见[cgo 说明](https://pkg.go.dev/cmd/cgo)和[最低运行要求](https://go.dev/wiki/MinimumRequirements)。具体依赖的能力见[TOML 项目](https://github.com/pelletier/go-toml/tree/v2)与[压缩项目](https://github.com/klauspost/compress)。这些资料支持技术选择，不替代本仓库的构建或运行证据。
 
-现有 implemented 记录继续说明当前已交付的 Python/uv 行为和有效维护理由，不在 Go 尚未落地时改写成已替换。本文只提出工具实现与获取规则的替换；模块所有权、原生执行、输入复用、依赖接线及已有授权保持有效。相关记录在实际切换时同步更新，不归档仍有约束价值的理由。
+Go builder 已接入普通根入口，自有 Python 生成器与测试退出正式路径；implemented 记录同步当前所有者路径，保留原 Python 基线的历史验证和仍有效的维护理由。模块所有权、原生执行、输入复用、依赖接线及已有授权保持有效，不归档仍有约束价值的理由。本文仍为 proposed，因为 importer、本地二进制闭环和联网发行尚未实现；不以生产端替换证明消费者首次离线导入已可用。

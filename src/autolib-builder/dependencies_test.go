@@ -68,7 +68,7 @@ install(FILES "${CMAKE_BINARY_DIR}/paths" "${CMAKE_BINARY_DIR}/args" "${CMAKE_BI
 		cached.Depends = []string{"dep"}
 		cached.Resources["unavailable"] = sourceDefinition{GitRepository: "unavailable", GitTag: "missing"}
 		putFile(t, f.installed("cached", "marker"), "cached")
-		leaf := f.child("leaf", "if(NOT EXISTS \""+filepath.ToSlash(f.installed("dep", "marker"))+"\")\nmessage(FATAL_ERROR \"cached dependency order lost\")\nendif()", "", "", []string{"cached"}, nil)
+		leaf := f.child("leaf", "if(NOT EXISTS \""+filepath.ToSlash(f.installed("dep", "marker"))+"\")\nmessage(FATAL_ERROR \"cached dependency order lost\")\nendif()\nif(NOT cached_DIR STREQUAL \""+filepath.ToSlash(f.installed("cached", "lib/cmake/Cached"))+"\")\nmessage(FATAL_ERROR \"cached metadata lost\")\nendif()", "", "", []string{"cached"}, nil)
 		f.project([]*moduleDefinition{dep, cached, leaf}, "")
 		f.build()
 		requireFile(t, f.installed("leaf", "marker"), "installed")

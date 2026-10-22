@@ -11,7 +11,7 @@ description: >-
 
 # 新增 / 标准化第三方模块
 
-把库接入根 CMake 构建并安装到 `3rdparty/<name>/`。模块只声明数据；Python 生成原生 ExternalProject，CMake 执行获取、补丁、构建与安装。当前职责见[架构](../../../docs/architecture.md)，基础字段见[流水线决定](../../../docs/agent-notes/implemented/architecture/2026-10-19-toml-externalproject-zlib.md)，依赖与资源消费见[依赖接线决定](../../../docs/agent-notes/implemented/architecture/2026-10-20-flann-opencv-dependencies.md)。
+把库接入根 CMake 构建并安装到 `3rdparty/<name>/`。模块只声明数据；Go builder 生成原生 ExternalProject，CMake 执行获取、补丁、构建与安装。当前职责见[架构](../../../docs/architecture.md)，基础字段见[流水线决定](../../../docs/agent-notes/implemented/architecture/2026-10-19-toml-externalproject-zlib.md)，依赖与资源消费见[依赖接线决定](../../../docs/agent-notes/implemented/architecture/2026-10-20-flann-opencv-dependencies.md)。
 
 本技能提供模块接入与核对流程。新增模块同时需要扩展公共引擎时，模块部分仍按本技能执行，引擎扩展另按其设计处理；不能把参考仓库存在的接口直接写进当前 TOML。
 
@@ -25,7 +25,7 @@ description: >-
 - 仅复制安装：参考 [queue](../../../src/dependencies/queue/module.toml) 的独立附属资源与明确文件清单；头文件或已解压预编译输入使用 `copy`，不执行虚假的 configure/build。
 - 平台预编译包：参考 [onnxruntime](../../../src/dependencies/onnxruntime/module.toml) 的平台/架构来源和完整目录复制。
 - 独立库依赖：参考 [flann](../../../src/dependencies/flann/module.toml) 的 `depends` 与 lz4 安装查找元数据；只请求叶子即可构建依赖闭包。
-- 复杂资源：参考 [opencv](../../../src/dependencies/opencv/module.toml) 的 `<RESOURCE_SOURCE_DIR:opencv_contrib>`、资源补丁与平台包布局；[harfbuzz](../../../src/dependencies/harfbuzz/module.toml) 展示实际需要 Python 时绑定 `<PYTHON_EXECUTABLE>`。
+- 复杂资源：参考 [opencv](../../../src/dependencies/opencv/module.toml) 的 `<RESOURCE_SOURCE_DIR:opencv_contrib>`、资源补丁与平台包布局；[harfbuzz](../../../src/dependencies/harfbuzz/module.toml) 展示 FreeType 依赖接线。当前功能已验证无需本仓库注入 Python；新库若实际需要解释器，先按证据确认要求，不自动恢复解释器引用。
 
 每个模块目录只定义一个对外模块。独立库用 `depends` 声明直接依赖，不在使用方重复构建，也不用资源伪装独立库。附属输入仍归消费模块，不强制拆成公开模块；尚未实现的模块扩展按[总体约束](../../../docs/agent-notes/proposed/architecture/2026-10-20-module-expansion.md)另行确认。
 

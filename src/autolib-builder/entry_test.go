@@ -316,3 +316,48 @@ install(FILES "${CMAKE_BINARY_DIR}/settings" DESTINATION .)
 		requireFile(t, f.installed("specific", "settings"), "3.10|17|ON")
 	})
 }
+
+func TestNoPythonTooling(t *testing.T) {
+	f := newEntryFixture(t)
+	f.copyModule("demo")
+	blocked := filepath.Join(f.root, "blocked tools")
+	marker := filepath.Join(f.root, "forbidden-call")
+	for _, name := range []string{"uv", "python", "python2", "python3"} {
+		file, body := filepath.Join(blocked, name), "#!/bin/sh\nprintf forbidden > '"+marker+"'\nexit 99\n"
+		if runtime.GOOS == "windows" {
+			file += ".cmd"
+			body = "@echo forbidden>\"" + marker + "\"\r\n@exit /b 99\r\n"
+		}
+		putFile(t, file, body)
+		if err := os.Chmod(file, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", blocked+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("VIRTUAL_ENV", "")
+	for _, name := range []string{"pyproject.toml", "uv.lock", ".python-version", ".venv"} {
+		if _, err := os.Stat(filepath.Join(f.root, name)); !os.IsNotExist(err) {
+			t.Fatal("fixture contains Python input", name)
+		}
+	}
+	f.mustEntry()
+	f.build()
+	requireFile(t, f.installed("demo", "include/x.h"), "demo")
+	output := filepath.Join(f.context.BuildRoot, "generated/demo.cmake")
+	before, err := os.Stat(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.mustEntry()
+	f.build()
+	after, err := os.Stat(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !before.ModTime().Equal(after.ModTime()) {
+		t.Fatal("unchanged generated output rewritten")
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatal("Python or uv was invoked")
+	}
+}
