@@ -10,7 +10,7 @@ Status: implemented
 
 目录按维护对象划分：通用构建代码与 Go 测试归 `src/autolib-builder/`，库声明、补丁和专用执行脚本归 `src/dependencies/<库名>/`，库专用测试归 `tests/<库名>/`。根 CMake 以参考入口为基线，只适配项目名、最低版本、公共入口路径和范围内的调用，不顺手整理、重构原文。编译设置、摘要、模块选择及加载骨架保持原有组织，不以基础设施适配定义 recipe API。
 
-自有生成器与公共测试使用固定 Go SDK 和根 Go module；普通配置不自动安装 SDK 或升级依赖，失败不回退 Python。SDK、模块缓存和二进制不提交，也不为每个库重复准备工具环境。原先统一根 uv 环境的语言选择由 [Go 工具层设计](../../proposed/architecture/2026-10-21-go-tooling-and-offline-import.md)部分替代；单工作副本集中维护工具、保护已有数据的理由仍有效，已有用户 `.venv/` 不由本仓库清理。
+自有生成器与公共测试使用固定 Go SDK 和根 Go module；SDK 准备与环境隔离由 [Go 工具层设计](../../proposed/architecture/2026-10-21-go-tooling-and-offline-import.md)拥有，不升级依赖，失败不回退 Python。SDK、模块缓存和二进制不提交，也不为每个库重复准备工具环境。该设计部分替代原先统一根 uv 环境的语言选择；单工作副本集中维护工具、保护已有数据的理由仍有效，已有用户 `.venv/` 不由本仓库清理。
 
 当前架构、开发命令、测试命令分别由普通文档拥有；本记录保存理由与授权。普通文档预算位于 `scripts/doc-budgets.manifest.json`，按各页内容设置并保留至少 5% 余量；预算是防止无关内容累积的护栏，不以压缩字数为目标。
 

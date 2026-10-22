@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -8,6 +9,71 @@ import (
 	"testing"
 	"time"
 )
+
+func managedGoRoot(f *fixture) string {
+	return filepath.Join(f.root, ".tools", "go", "sdk", runtime.Version(), runtime.GOOS+"-"+runtime.GOARCH, "go")
+}
+
+func linkFixtureDirectory(f *fixture, destination, source string) {
+	f.t.Helper()
+	if err := os.MkdirAll(filepath.Dir(destination), 0755); err != nil {
+		f.t.Fatal(err)
+	}
+	// Windows 的目录 junction 不要求开发者模式；只链接测试自行创建的位置。
+	if runtime.GOOS == "windows" {
+		f.must("cmd", "/c", "mklink", "/J", filepath.Clean(destination), filepath.Clean(source))
+	} else if err := os.Symlink(source, destination); err != nil {
+		f.t.Fatal(err)
+	}
+}
+
+func seedManagedGo(f *fixture) {
+	f.t.Helper()
+	linkFixtureDirectory(f, managedGoRoot(f), runtime.GOROOT())
+	for _, cache := range []struct{ variable, directory string }{{"GOMODCACHE", "gopath/pkg/mod"}, {"GOCACHE", "gocache"}} {
+		source := strings.TrimSpace(f.must(goExecutable(), "env", cache.variable))
+		linkFixtureDirectory(f, filepath.Join(f.root, ".tools", "go", filepath.FromSlash(cache.directory)), source)
+	}
+}
+
+func TestEntryManagedGo(t *testing.T) {
+	f := newEntryFixture(t)
+	userConfig := filepath.Join(f.root, "user-go-env")
+	putFile(t, userConfig, "GOPATH=unrelated-user-directory\nGOTOOLCHAIN=auto\n")
+	t.Setenv("GOENV", userConfig)
+	t.Setenv("GOROOT", filepath.Join(f.root, "unrelated-sdk"))
+	t.Setenv("GOPATH", filepath.Join(f.root, "unrelated-gopath"))
+	t.Setenv("GOMODCACHE", filepath.Join(f.root, "unrelated-modcache"))
+	t.Setenv("GOCACHE", filepath.Join(f.root, "unrelated-gocache"))
+	project := filepath.Join(f.root, "CMakeLists.txt")
+	putFile(t, project, readFile(t, project)+`
+xxautolib_prepare_go(managed_go managed_environment)
+execute_process(COMMAND ${managed_environment} "${managed_go}" env -json GOROOT GOPATH GOMODCACHE GOCACHE GOENV GOTOOLCHAIN
+    OUTPUT_FILE "${CMAKE_BINARY_DIR}/go-environment.json" COMMAND_ERROR_IS_FATAL ANY)
+`)
+	for _, name := range []string{"first build", "second build"} {
+		build := filepath.Join(f.root, name)
+		args := []string{f.context.CMakeCommand, "-S", f.root, "-B", build, "-G", f.context.Generator}
+		if f.context.Platform != "" {
+			args = append(args, "-A", f.context.Platform, "-T", f.context.Toolset)
+		}
+		f.must(args...)
+		var environment map[string]string
+		if err := json.Unmarshal([]byte(readFile(t, filepath.Join(build, "go-environment.json"))), &environment); err != nil {
+			t.Fatal(err)
+		}
+		for variable, want := range map[string]string{
+			"GOROOT": managedGoRoot(f), "GOPATH": filepath.Join(f.root, ".tools/go/gopath"),
+			"GOMODCACHE": filepath.Join(f.root, ".tools/go/gopath/pkg/mod"), "GOCACHE": filepath.Join(f.root, ".tools/go/gocache"),
+			"GOENV": "", "GOTOOLCHAIN": "local",
+		} {
+			if filepath.Clean(environment[variable]) != filepath.Clean(want) {
+				t.Errorf("%s: want %q, got %q", variable, want, environment[variable])
+			}
+		}
+	}
+	requireFile(t, userConfig, "GOPATH=unrelated-user-directory\nGOTOOLCHAIN=auto\n")
+}
 
 func goExecutable() string {
 	name := "go"
@@ -43,12 +109,13 @@ func newEntryFixture(t *testing.T) *fixture {
 			putFile(t, filepath.Join(f.root, "src/autolib-builder", name), string(data))
 		}
 	}
+	seedManagedGo(f)
 	return f
 }
 
 func (f *fixture) entry(args ...string) (string, error) {
 	f.t.Helper()
-	command := []string{f.context.CMakeCommand, "-S", f.root, "-B", f.context.BuildRoot, "-G", f.context.Generator, "-DGO_EXECUTABLE:FILEPATH=" + goExecutable()}
+	command := []string{f.context.CMakeCommand, "-S", f.root, "-B", f.context.BuildRoot, "-G", f.context.Generator}
 	if f.context.Platform != "" {
 		command = append(command, "-A", f.context.Platform, "-T", f.context.Toolset)
 	}
@@ -87,7 +154,7 @@ func TestEntrySDK(t *testing.T) {
 	}
 	requireFile(t, filepath.Join(f.root, "go.mod"), mod)
 	requireFile(t, filepath.Join(f.root, "go.sum"), sum)
-	for _, tc := range []struct{ arg, want string }{{"-DGO_EXECUTABLE:FILEPATH=" + filepath.Join(f.root, "missing-go"), "Go SDK"}, {"-DCMAKE_DISABLE_FIND_PACKAGE_Git=ON", "Git"}} {
+	for _, tc := range []struct{ arg, want string }{{"-DCMAKE_DISABLE_FIND_PACKAGE_Git=ON", "Git"}} {
 		out, err := f.entry(tc.arg)
 		if err == nil || !strings.Contains(out, tc.want) {
 			t.Fatalf("%v %s", err, out)
@@ -95,7 +162,7 @@ func TestEntrySDK(t *testing.T) {
 	}
 	f.context.BuildRoot = filepath.Join(f.root, "bad-version-build")
 	putFile(t, filepath.Join(f.root, "go.mod"), strings.ReplaceAll(mod, "go 1.27.3", "go 1.0.0"))
-	if out, err := f.entry(); err == nil || !strings.Contains(out, "version mismatch") {
+	if out, err := f.entry(); err == nil || !strings.Contains(out, "metadata mismatch") {
 		t.Fatalf("%v %s", err, out)
 	}
 }
@@ -112,7 +179,8 @@ func TestEntryFailureStopsBeforeInclude(t *testing.T) {
 			case "toml":
 				putFile(t, m.Path, "name=[broken TOML")
 			case "sdk":
-				args = append(args, "-DGO_EXECUTABLE:FILEPATH="+filepath.Join(f.root, "missing-go"))
+				path := filepath.Join(f.root, "go.mod")
+				putFile(t, path, strings.ReplaceAll(readFile(t, path), "go 1.27.3", "go 1.0.0"))
 			case "compile":
 				putFile(t, filepath.Join(f.root, "src/autolib-builder/broken.go"), "package main\nnot valid Go\n")
 			}
@@ -130,8 +198,11 @@ func TestEntryOffline(t *testing.T) {
 	f.mustEntry()
 	f.build()
 	requireFile(t, f.installed("demo", "include/x.h"), "demo")
-	t.Setenv("GOMODCACHE", filepath.Join(f.root, "empty-modcache"))
-	t.Setenv("GOCACHE", filepath.Join(f.root, "empty-cache"))
+	// 仅移除 fixture 的缓存 junction，不触碰其指向的共享缓存。
+	cache := filepath.Join(f.root, ".tools/go/gopath/pkg/mod")
+	if err := os.Remove(cache); err != nil {
+		t.Fatal(err)
+	}
 	out, err := f.entry()
 	if err == nil || !strings.Contains(out, "module lookup disabled") || !strings.Contains(out, "builder compilation failed") {
 		t.Fatalf("%v %s", err, out)

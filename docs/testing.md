@@ -7,11 +7,11 @@
 先按 [开发指南](development.md) 准备环境，再在仓库根目录运行：
 
 ```text
-go test ./src/autolib-builder -count=1 -v
-go vet ./src/autolib-builder
+cmake -P src/autolib-builder/go-sdk.cmake -- test ./src/autolib-builder -count=1 -v
+cmake -P src/autolib-builder/go-sdk.cmake -- vet ./src/autolib-builder
 ```
 
-测试源码与 builder 同目录，包含 27 个顶层测试及表驱动子例。测试在 `build/tests/` 创建含空格和中文的隔离副本，结束时仅清理自身临时目录。先按开发指南设置离线环境；入口测试覆盖 SDK/模块缺失、编译失败不加载旧结果、实际 Go 输入失效及阻断 uv/Python 后成功安装。定向验证用 `-run TestDefinition`；依赖接线用 `-run TestDirectDependencies`，资源补丁用 `-run TestPatch`，真实模块声明用 `-run TestRealModuleDeclarations`。修改公共入口或跨文件接线时运行全集；同批定向验证后在批末运行一次全集。
+测试源码与 builder 同目录，包含表驱动子例。CMake 包装入口自动准备并使用项目私有 SDK 和缓存；fixture 使用已有 SDK 与缓存，不下载真实依赖。测试在 `build/tests/` 创建含空格和中文的隔离副本，结束时仅清理自身临时目录。SDK 测试通过本地 HTTP fixture 验证首次获取、摘要与解包失败、断网复用 SDK/归档；真实根入口验证跨 build 复用、用户 Go 配置隔离、模块缺失、编译失败不加载旧结果、实际 Go 输入失效及阻断 uv/Python 后成功安装。定向验证用 `-run TestDefinition`；依赖接线用 `-run TestDirectDependencies`，资源补丁用 `-run TestPatch`，真实模块声明用 `-run TestRealModuleDeclarations`。修改公共入口或跨文件接线时运行全集；同批定向验证后在批末运行一次全集。
 
 仅修改文档时使用 doc-standards、agent-notes 技能校验链接、归属和 `scripts/doc-budgets.manifest.json` 预算；校验器不是构建依赖。仓库没有自动 Git hook、CI 或覆盖率门槛。
 

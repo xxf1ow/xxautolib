@@ -1,6 +1,6 @@
 # 架构
 
-根 [CMakeLists.txt](../CMakeLists.txt) 设置编译选项、安装目录并输出构建环境摘要，通过 `BUILD_LIST` 或目录扫描选择模块。它启用 C/C++ 编译器，并通过[公共入口](../src/autolib-builder/index.cmake)探测 Git、校验 Go SDK 1.27.3、增量构建 builder，再一次生成并加载所选模块。SDK、编译或生成失败时 configure 直接失败，不加载旧程序或生成结果，也不自动安装工具、升级依赖。
+根 [CMakeLists.txt](../CMakeLists.txt) 设置编译选项、安装目录并输出构建环境摘要，通过 `BUILD_LIST` 或目录扫描选择模块。它启用 C/C++ 编译器，并通过[公共入口](../src/autolib-builder/index.cmake)探测 Git、自动准备固定 Go SDK 和模块缓存、增量构建 builder，再一次生成并加载所选模块。SDK、编译或生成失败时 configure 直接失败，不加载旧程序或生成结果，不升级工具链或依赖。
 
 ## 目录职责
 
@@ -12,7 +12,7 @@
 
 子项目沿用父生成器身份、显式 CRT，固定 Release；模块 cache 优先于父级值，再采用引擎 policy、PIC、C++ 标准兜底值，不向父级 cache 写默认值。本项目不提供下游导入接口。
 
-各工作副本独立维护 `git/`、`build/` 和 `3rdparty/`，不整体跨平台传输。主 Git 位于 `git/<模块>/`，Git 资源位于 `git/_resources/<模块>/<资源>/`，归档下载共用根 `git/`；解压、编译和步骤留在 `build/ep/`，程序留在 `build/tools/`，生成结果留在 `build/generated/`。configure 检查本地 `.git` 与安装 sentinel；命中 sentinel 保留空目标及依赖顺序，声明校验仍执行。复用限制见[本地复用设计](agent-notes/implemented/architecture/2026-10-20-local-reuse-and-platform-inputs.md)。builder 同目录的 Go 测试验证公共引擎，库专用测试验证安装产物。
+各工作副本独立维护 `.tools/go/`、`git/`、`build/` 和 `3rdparty/`，不整体跨平台传输。私有 SDK 与 Go 缓存在 `.tools/go/`，不随 build 清理，也不修改全局环境。主 Git 位于 `git/<模块>/`，Git 资源位于 `git/_resources/<模块>/<资源>/`，归档下载共用根 `git/`；解压、编译和步骤留在 `build/ep/`，builder 留在 `build/tools/`，生成结果留在 `build/generated/`。configure 检查本地 `.git` 与安装 sentinel；命中 sentinel 保留空目标及依赖顺序，声明校验仍执行。复用限制见[本地复用设计](agent-notes/implemented/architecture/2026-10-20-local-reuse-and-platform-inputs.md)。builder 同目录的 Go 测试验证公共引擎，库专用测试验证安装产物。
 
 ## 文档职责
 

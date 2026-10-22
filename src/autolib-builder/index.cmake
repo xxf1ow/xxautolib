@@ -1,48 +1,23 @@
+include("${CMAKE_CURRENT_LIST_DIR}/go-sdk.cmake")
+
 function(xxautolib_generate_modules)
-    find_program(GO_EXECUTABLE NAMES go DOC "Go SDK executable (version pinned in go.mod)")
-    if(NOT GO_EXECUTABLE OR NOT EXISTS "${GO_EXECUTABLE}")
-        message(FATAL_ERROR "Go SDK missing: set GO_EXECUTABLE to the SDK required by go.mod")
-    endif()
     find_package(Git REQUIRED)
     set(root "${CMAKE_CURRENT_SOURCE_DIR}")
-    file(STRINGS "${root}/go.mod" go_directive REGEX "^go [0-9]+\\.[0-9]+\\.[0-9]+$")
-    if(NOT go_directive)
-        message(FATAL_ERROR "go.mod must pin a full Go SDK version")
-    endif()
-    string(REGEX REPLACE "^go " "" required_go "${go_directive}")
-    set(go_environment "${CMAKE_COMMAND}" -E env "GOTOOLCHAIN=local" "CGO_ENABLED=0")
-    execute_process(COMMAND ${go_environment} "${GO_EXECUTABLE}" version
-        WORKING_DIRECTORY "${root}" RESULT_VARIABLE sdk_result
-        OUTPUT_VARIABLE sdk_version ERROR_VARIABLE sdk_error OUTPUT_STRIP_TRAILING_WHITESPACE)
-    if(NOT sdk_result STREQUAL "0")
-        message(FATAL_ERROR "Go SDK cannot execute: ${GO_EXECUTABLE}\n${sdk_error}")
-    endif()
-    if(NOT sdk_version MATCHES "^go version go${required_go} ")
-        message(FATAL_ERROR "Go SDK version mismatch: require ${required_go}; ${GO_EXECUTABLE}: ${sdk_version}")
-    endif()
-    execute_process(COMMAND ${go_environment} "${GO_EXECUTABLE}" env GOHOSTOS GOHOSTARCH
-        WORKING_DIRECTORY "${root}" RESULT_VARIABLE host_result
-        OUTPUT_VARIABLE go_host ERROR_VARIABLE host_error OUTPUT_STRIP_TRAILING_WHITESPACE)
-    if(NOT host_result STREQUAL "0")
-        message(FATAL_ERROR "Go SDK host query failed: ${GO_EXECUTABLE}\n${host_error}")
-    endif()
-    string(REPLACE "\r" "" go_host "${go_host}")
-    string(REPLACE "\n" ";" go_host "${go_host}")
-    list(GET go_host 0 go_host_os)
-    list(GET go_host 1 go_host_arch)
-    list(APPEND go_environment "GOOS=${go_host_os}" "GOARCH=${go_host_arch}")
+    xxautolib_prepare_go(go_executable go_environment)
 
     file(GLOB go_sources CONFIGURE_DEPENDS "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/*.go")
     list(FILTER go_sources EXCLUDE REGEX "_test\\.go$")
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
         ${go_sources} "${root}/go.mod" "${root}/go.sum"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/go-sdk.cmake"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/go-sdk-versions.cmake"
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/apply_patch.cmake"
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/configure_dependencies.cmake")
     set(builder "${CMAKE_BINARY_DIR}/tools/autolib-builder")
     if(CMAKE_HOST_WIN32)
         string(APPEND builder ".exe")
     endif()
-    execute_process(COMMAND ${go_environment} "${GO_EXECUTABLE}" build -mod=readonly -trimpath
+    execute_process(COMMAND ${go_environment} "${go_executable}" build -mod=readonly -trimpath
         -o "${builder}" ./src/autolib-builder
         WORKING_DIRECTORY "${root}" RESULT_VARIABLE compilation_result
         OUTPUT_VARIABLE compilation_output ERROR_VARIABLE compilation_error)
@@ -50,7 +25,7 @@ function(xxautolib_generate_modules)
         message(FATAL_ERROR
             "autolib-builder compilation failed: ${compilation_result}\n"
             "${compilation_output}${compilation_error}\n"
-            "For offline builds, prepare the pinned modules in GOMODCACHE before configuring.")
+            "Pinned modules are downloaded automatically when needed; check network access or the cache in ${root}/.tools/go/gopath/pkg/mod.")
     endif()
 
     set(module_arguments)

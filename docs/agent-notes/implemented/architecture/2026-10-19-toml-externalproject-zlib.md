@@ -76,7 +76,7 @@ build/
 
 `build/generated/zlib.cmake` 是可检查的生成结果，不是需要手写维护的模块源文件。日常调整 zlib 时修改 TOML 或同目录专用文件；排查生成结果时查看生成的 CMake。生成内容直接展示 ExternalProject 参数与步骤，不以多层 helper 隐藏实际行为。
 
-每份工作副本统一使用 `build/` 和 `3rdparty/`。builder 与测试使用固定 Go SDK、根 go.mod/go.sum；普通配置不安装 SDK、不升级依赖、不回退到 Python。构建中间产物与程序放在 `build/`，不提供多构建目录管理或 C++ 交叉编译支持，同一个 build 不混用 Windows 与 Linux 产物。
+每份工作副本统一使用 `build/` 和 `3rdparty/`。builder 与测试使用固定 Go SDK、根 go.mod/go.sum；SDK 准备与私有缓存由 Go 工具层设计拥有，不升级依赖、不回退到 Python。构建中间产物与程序放在 `build/`，不提供多构建目录管理或 C++ 交叉编译支持，同一个 build 不混用 Windows 与 Linux 产物。
 
 ExternalProject 的 `PREFIX` 为 `build/ep/<模块名>/`，其下保留归档解压的 `src/`、编译的 `bin/`、步骤的 `stamp/` 和临时 `tmp/`。Git 来源与归档下载使用根 `git/`，具体布局及验收状态由[本地复用设计](2026-10-20-local-reuse-and-platform-inputs.md)拥有。最终安装使用 `3rdparty/<模块名>/`，生成声明使用 `build/generated/`。此布局不保证任意深度工作区都能构建；Windows 长路径能力仍取决于系统及工具，不自动修改系统设置。
 
@@ -191,7 +191,7 @@ MSVC CRT 与库本身的静态或动态类型分别选择，静态 zlib 不意�
 
 输入内容变化触发重新生成；引擎在内存中生成完整内容，直接与目标文件内容比较，只有不同才写入。内容相同时保持生成文件时间戳不变，不使用额外 hash 或临时文件替换。这避免无意义的时间戳变化干扰增量构建，不把每次覆盖写入等同于必然发生 configure 循环；算法由引擎与测试拥有，不作为开发指南中的用户操作。
 
-SDK 缺失或版本不匹配、模块缓存缺失、builder 编译、TOML 解析或生成失败时，configure 非零退出并报告失败对象，不执行旧程序或包含旧生成结果。获取和构建失败由 ExternalProject 与构建工具报告，引擎不自行重试；可选 sentinel 的存在性短路及其限制由本地复用设计拥有。
+SDK 准备或版本校验、模块获取、builder 编译、TOML 解析或生成失败时，configure 非零退出并报告失败对象，不执行旧程序或包含旧生成结果。第三方源码获取和构建失败由 ExternalProject 与构建工具报告，引擎不自行重试；可选 sentinel 的存在性短路及其限制由本地复用设计拥有。
 
 ### zlib 声明与验证
 
