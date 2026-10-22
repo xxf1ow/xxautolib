@@ -1,10 +1,73 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestGenerationWrites(t *testing.T) {
+	f := newEntryFixture(t)
+	dep := definitionFile(t, f.root, "dep", "cmake", testSource+"[cmake.cache]\nVALUE='one'\n")
+	definitionFile(t, f.root, "leaf", "cmake", "depends=['dep']\n"+testSource)
+	definitionFile(t, f.root, "unused", "cmake", testSource)
+	if err := generate(f.context, []string{"leaf"}); err != nil {
+		t.Fatal(err)
+	}
+	manifest := filepath.Join(f.context.BuildRoot, "generated/inputs.cmake")
+	before := readFile(t, manifest)
+	stat, err := os.Stat(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, part := range []string{"dep/module.toml", "leaf/module.toml", "go.mod", "go.sum", "cmake.go", "apply_patch.cmake", "configure_dependencies.cmake"} {
+		if !strings.Contains(before, part) {
+			t.Fatalf("missing input %s", part)
+		}
+	}
+	if strings.Contains(before, "unused/module.toml") {
+		t.Fatal("unselected input")
+	}
+	if err := generate(f.context, []string{"leaf"}); err != nil {
+		t.Fatal(err)
+	}
+	now, _ := os.Stat(manifest)
+	if !stat.ModTime().Equal(now.ModTime()) {
+		t.Fatal("unchanged output rewritten")
+	}
+	generated := filepath.Join(f.context.BuildRoot, "generated/dep.cmake")
+	old := readFile(t, generated)
+	putFile(t, dep, strings.ReplaceAll(readFile(t, dep), "VALUE='one'", "VALUE='two'"))
+	if err := generate(f.context, []string{"leaf"}); err != nil {
+		t.Fatal(err)
+	}
+	if readFile(t, generated) == old || !strings.Contains(readFile(t, generated), "VALUE:STRING=two") {
+		t.Fatal("dependency change ignored")
+	}
+	putFile(t, dep, "name=[broken TOML")
+	if err := generate(f.context, []string{"leaf"}); err == nil {
+		t.Fatal("accepted malformed input")
+	}
+	if readFile(t, manifest) != before {
+		t.Fatal("failed generation replaced inputs")
+	}
+	now, _ = os.Stat(manifest)
+	if !stat.ModTime().Equal(now.ModTime()) {
+		t.Fatal("failed generation rewrote inputs")
+	}
+	output := filepath.Join(f.root, "output.cmake")
+	if changed, err := writeIfChanged(output, "one"); err != nil || !changed {
+		t.Fatal(changed, err)
+	}
+	if changed, err := writeIfChanged(output, "one"); err != nil || changed {
+		t.Fatal(changed, err)
+	}
+	if changed, err := writeIfChanged(output, "two"); err != nil || !changed {
+		t.Fatal(changed, err)
+	}
+}
 
 func TestModuleClosureStable(t *testing.T) {
 	root := t.TempDir()

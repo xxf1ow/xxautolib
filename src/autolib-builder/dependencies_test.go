@@ -77,3 +77,47 @@ install(FILES "${CMAKE_BINARY_DIR}/paths" "${CMAKE_BINARY_DIR}/args" "${CMAKE_BI
 		}
 	})
 }
+
+func TestDependencyConfigurationIdentity(t *testing.T) {
+	f := newFixture(t)
+	dep := f.child("dep", "", "", "", nil, nil)
+	leaf := f.child("leaf", "", "", "", []string{"dep"}, nil)
+	crt := "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
+	context := f.context
+	context.SystemName = "Windows"
+	context.Generator = "Visual Studio 17 2022"
+	context.Platform = "x64"
+	context.Toolset = "v142,host=x64"
+	context.Instance = "C:/VS instance"
+	context.MultiConfig = true
+	context.MSVCRuntimeLibrary = &crt
+	for _, multi := range []bool{true, false} {
+		if !multi {
+			context.Generator = "Unix Makefiles"
+			context.Platform, context.Toolset, context.Instance = "", "", ""
+			context.MultiConfig = false
+			context.MSVCRuntimeLibrary = nil
+		}
+		generated, err := renderModule(leaf, context, []*moduleDefinition{dep})
+		if err != nil {
+			t.Fatal(err)
+		}
+		putFile(t, filepath.Join(f.root, "modules.cmake"), generated)
+		putFile(t, filepath.Join(f.root, "CMakeLists.txt"), "cmake_minimum_required(VERSION 3.20)\nproject(fixture NONE)\ninclude(ExternalProject)\nadd_custom_target(dep)\ninclude(modules.cmake)\n")
+		f.configure()
+		script := putFile(t, filepath.Join(f.root, "inspect.cmake"), "include(\""+filepath.ToSlash(filepath.Join(f.context.BuildRoot, "generated/leaf-dependency-setup.cmake"))+"\")\nforeach(arg IN LISTS _al_command)\nmessage(\"ARG=${arg}\")\nendforeach()\n")
+		out := f.must(f.context.CMakeCommand, "-P", script)
+		if multi {
+			for _, want := range []string{"ARG=Visual Studio 17 2022\n", "ARG=-A\n", "ARG=x64\n", "ARG=-T\n", "ARG=v142,host=x64\n", "ARG=-DCMAKE_GENERATOR_INSTANCE:INTERNAL=C:/VS instance\n", "ARG=-DCMAKE_MSVC_RUNTIME_LIBRARY:STRING=" + crt + "\n"} {
+				if !strings.Contains(strings.ReplaceAll(out, "\r\n", "\n"), want) {
+					t.Fatal(want, out)
+				}
+			}
+			if strings.Contains(out, "CMAKE_BUILD_TYPE") {
+				t.Fatal(out)
+			}
+		} else if !strings.Contains(out, "ARG=-DCMAKE_BUILD_TYPE:STRING=Release") || strings.Contains(out, "CMAKE_MSVC_RUNTIME_LIBRARY") {
+			t.Fatal(out)
+		}
+	}
+}
