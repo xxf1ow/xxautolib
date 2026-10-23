@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -23,8 +24,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && args[0] == "package" {
 		return runPackage(args[1:], stderr)
 	}
+	if len(args) > 0 && args[0] == "ci" {
+		if len(args) < 2 || args[1] != "plan" {
+			return fail(fmt.Errorf("usage: autolib-builder ci plan [options]"))
+		}
+		return runCIPlan(args[2:], stdout, stderr)
+	}
 	if len(args) == 0 || args[0] != "generate" {
-		return fail(fmt.Errorf("usage: autolib-builder version | generate [options] | package [options]"))
+		return fail(fmt.Errorf("usage: autolib-builder version | generate [options] | package [options] | ci plan [options]"))
 	}
 	flags := flag.NewFlagSet("generate", flag.ContinueOnError)
 	flags.SetOutput(stderr)
@@ -82,6 +89,56 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if err := generate(context, modules); err != nil {
 		return fail(fmt.Errorf("Module generation failed: %w", err))
 	}
+	return 0
+}
+
+func runCIPlan(args []string, stdout, stderr io.Writer) int {
+	fail := func(err error) int { fmt.Fprintln(stderr, err); return 1 }
+	flags := flag.NewFlagSet("ci plan", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	var sourceRoot, platformsValue, modulesValue, output string
+	var force bool
+	flags.StringVar(&sourceRoot, "source-root", "", "repository source root")
+	flags.StringVar(&platformsValue, "platforms", "", "comma-separated target platforms")
+	flags.StringVar(&modulesValue, "modules", "", "comma-separated module selection")
+	flags.BoolVar(&force, "force", false, "force rebuild of selected dependency closure")
+	flags.StringVar(&output, "output", "", "plan JSON output file")
+	if err := flags.Parse(args); err != nil {
+		return 1
+	}
+	if flags.NArg() != 0 {
+		return fail(fmt.Errorf("ci plan: unexpected positional argument %q", flags.Arg(0)))
+	}
+	visited := map[string]bool{}
+	flags.Visit(func(f *flag.Flag) { visited[f.Name] = true })
+	if !visited["source-root"] || strings.TrimSpace(sourceRoot) == "" {
+		return fail(fmt.Errorf("ci plan: --source-root is required and cannot be empty"))
+	}
+	if !visited["output"] || strings.TrimSpace(output) == "" {
+		return fail(fmt.Errorf("ci plan: --output is required and cannot be empty"))
+	}
+	options := ciPlanOptions{SourceRoot: sourceRoot, Force: force}
+	if visited["platforms"] {
+		options.Platforms = &platformsValue
+	}
+	if visited["modules"] {
+		options.Modules = &modulesValue
+	}
+	plan, err := planCI(options)
+	if err != nil {
+		return fail(err)
+	}
+	data, err := json.MarshalIndent(plan, "", "  ")
+	if err != nil {
+		return fail(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(output), 0755); err != nil {
+		return fail(err)
+	}
+	if err := os.WriteFile(output, append(data, '\n'), 0644); err != nil {
+		return fail(err)
+	}
+	fmt.Fprintln(stdout, output)
 	return 0
 }
 

@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -20,6 +22,50 @@ func cliArguments(context buildContext, names ...string) []string {
 		config = "ON"
 	}
 	return append(args, "--multi-config="+config)
+}
+
+func TestCICLI(t *testing.T) {
+	root, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := filepath.Join(t.TempDir(), "ci plan.json")
+	var stdout, stderr bytes.Buffer
+	args := []string{"ci", "plan", "--source-root", root, "--output", output, "--platforms", "linux-aarch64,linux-x86_64", "--modules", "flann", "--force"}
+	if code := run(args, &stdout, &stderr); code != 0 {
+		t.Fatalf("run failed: %d %s", code, stderr.String())
+	}
+	var plan ciPlan
+	data, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &plan); err != nil {
+		t.Fatal(err)
+	}
+	if !plan.Force || plan.Publisher != "" || strings.Join(plan.Modules, ",") != "lz4,flann" || strings.Join(plan.Platforms, ",") != "linux-aarch64,linux-x86_64" {
+		t.Fatalf("unexpected CLI plan: %+v", plan)
+	}
+	if !strings.Contains(string(data), `"layers"`) || !strings.HasSuffix(string(data), "\n") {
+		t.Fatalf("plan output is not deterministic formatted JSON: %q", data)
+	}
+	validOutput := string(data)
+
+	for _, bad := range [][]string{
+		{"ci", "plan", "--source-root", root, "--output", output, "--platforms="},
+		{"ci", "plan", "--source-root", root, "--output", output, "--modules="},
+		{"ci", "plan", "--source-root", root, "--output", output, "--force=maybe"},
+		append(append([]string{}, args...), "unexpected"),
+	} {
+		stdout.Reset()
+		stderr.Reset()
+		if code := run(bad, &stdout, &stderr); code == 0 || stderr.Len() == 0 {
+			t.Fatalf("accepted invalid CLI input %q: %d %q", bad, code, stderr.String())
+		}
+		if got, err := os.ReadFile(output); err != nil || string(got) != validOutput {
+			t.Fatalf("invalid plan changed success output: %q, %v", got, err)
+		}
+	}
 }
 
 func TestCLI(t *testing.T) {
