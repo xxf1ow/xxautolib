@@ -26,11 +26,3 @@ endif()
 file(MAKE_DIRECTORY "${INSTALL_ROOT}")
 file(MAKE_DIRECTORY "${_destination}")
 file(COPY "${_source}/" DESTINATION "${_destination}" PATTERN "autolib-import.cmake" EXCLUDE)
-
-set(_adapter "${SOURCE_ROOT}/src/dependencies/${PACKAGE_NAME}/autolib-import.cmake")
-if(NOT EXISTS "${_adapter}" OR IS_DIRECTORY "${_adapter}")
-    message(FATAL_ERROR "Package adapter is missing: ${_adapter}")
-endif()
-file(READ "${_adapter}" _adapter_contents)
-file(WRITE "${_destination}/autolib-import.cmake"
-    "set(AUTOLIB_PACKAGE_NAME \"${PACKAGE_NAME}\")\nset(AUTOLIB_OS \"${OS}\")\nset(AUTOLIB_ARCH \"${ARCH}\")\n${_adapter_contents}")

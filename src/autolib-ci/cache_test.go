@@ -155,6 +155,36 @@ func TestCICachePrepareBoundary(t *testing.T) {
 			}
 		})
 	}
+	t.Run("old importer cache does not bypass candidate validation", func(t *testing.T) {
+		options := cacheTestOptions(t, "build-1")
+		options.SourceRoot = cacheTestSourceRoot(t)
+		options.ImporterFile, options.CMakeCommand = importer, "cmake"
+		options.Slot.OS, options.Slot.Arch = targetOS, targetArch
+		cacheSource, err := filepath.Abs(options.ReleaseRoot)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cacheKey := sha256.Sum256([]byte(filepath.ToSlash(filepath.Clean(cacheSource))))
+		oldPackage := filepath.Join(options.WorkRoot, hex.EncodeToString(cacheKey[:]), "packages", targetOS+"-"+targetArch, "queue")
+		if err := os.MkdirAll(oldPackage, 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(oldPackage, "autolib-import.cmake"), []byte(cacheTestIdentityHeader("queue", targetOS, targetArch)), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(oldPackage, "stale.txt"), []byte("stale importer cache"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		badArchive := []byte("not a zstd archive")
+		client := cacheTestClient(t, badArchive, "queue", "any", "any", "build-1", cacheTestDigest(badArchive))
+		got, err := lookupCICache(context.Background(), client, options)
+		if err == nil || got.Hit {
+			t.Fatalf("invalid new candidate archive bypassed validation: %+v %v", got, err)
+		}
+		if _, statErr := os.Stat(filepath.Join(options.InstallRoot, "queue", "stale.txt")); !os.IsNotExist(statErr) {
+			t.Fatalf("old importer result was restored: %v", statErr)
+		}
+	})
 }
 
 func TestCICacheRestoredDependency(t *testing.T) {
@@ -175,17 +205,6 @@ func TestCICacheRestoredDependency(t *testing.T) {
 		t.Fatal(err)
 	}
 	targetOS, targetArch := cacheTestPlatform()
-	libraryName := "libfixture.a"
-	if runtime.GOOS == "windows" {
-		libraryName = "libfixture.lib"
-	}
-	adapter := "add_library(AutoLib::queue STATIC IMPORTED GLOBAL)\nset_target_properties(AutoLib::queue PROPERTIES IMPORTED_LOCATION \"${CMAKE_CURRENT_LIST_DIR}/lib/" + libraryName + "\" INTERFACE_INCLUDE_DIRECTORIES \"${CMAKE_CURRENT_LIST_DIR}/include\")\n"
-	if err := os.MkdirAll(filepath.Join(source, "src", "dependencies", "queue"), 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(source, "src", "dependencies", "queue", "autolib-import.cmake"), []byte(adapter), 0644); err != nil {
-		t.Fatal(err)
-	}
 	packageRoot := filepath.Join(root, "package", "queue")
 	if err := os.MkdirAll(filepath.Join(packageRoot, "include"), 0755); err != nil {
 		t.Fatal(err)
@@ -236,7 +255,7 @@ func TestCICacheRestoredDependency(t *testing.T) {
 	}
 	contents := []cacheArchiveMember{
 		{Name: "queue/include/fixture.h", Body: "int fixture_value(void);\n"},
-		{Name: "queue/lib/libfixture.lib", Body: mustReadText(t, library)},
+		{Name: "queue/lib/" + filepath.Base(library), Body: mustReadText(t, library)},
 	}
 	linkProbeRoot := t.TempDir()
 	linkProbeTarget := filepath.Join(linkProbeRoot, "target")
@@ -257,8 +276,8 @@ func TestCICacheRestoredDependency(t *testing.T) {
 	if err != nil || !got.Hit {
 		t.Fatalf("restore verified fixture: %+v %v", got, err)
 	}
-	if got, err := os.ReadFile(filepath.Join(options.InstallRoot, "queue", "autolib-import.cmake")); err != nil || !strings.Contains(string(got), "IMPORTED_LOCATION") || strings.Contains(string(got), "archived adapter") {
-		t.Fatalf("restore did not inject the source adapter: %s %v", got, err)
+	if _, err := os.Lstat(filepath.Join(options.InstallRoot, "queue", "autolib-import.cmake")); !os.IsNotExist(err) {
+		t.Fatalf("restore mixed a root adapter into the installation payload: %v", err)
 	}
 	if hasInternalLink {
 		if _, err := os.Lstat(filepath.Join(options.InstallRoot, "queue", "include", "fixture-alias.h")); err != nil {
@@ -272,7 +291,7 @@ func TestCICacheRestoredDependency(t *testing.T) {
 	if err := os.MkdirAll(consumer, 0755); err != nil {
 		t.Fatal(err)
 	}
-	consumerSource := "cmake_minimum_required(VERSION 3.20)\nproject(consumer LANGUAGES C)\ninclude(\"${PACKAGE_ROOT}/autolib-import.cmake\")\nadd_executable(consumer main.c)\ntarget_link_libraries(consumer PRIVATE AutoLib::queue)\n"
+	consumerSource := "cmake_minimum_required(VERSION 3.20)\nproject(consumer LANGUAGES C)\nadd_library(AutoLib::queue STATIC IMPORTED GLOBAL)\nset_target_properties(AutoLib::queue PROPERTIES IMPORTED_LOCATION \"${PACKAGE_ROOT}/lib/" + filepath.Base(library) + "\" INTERFACE_INCLUDE_DIRECTORIES \"${PACKAGE_ROOT}/include\")\nadd_executable(consumer main.c)\ntarget_link_libraries(consumer PRIVATE AutoLib::queue)\n"
 	if err := os.WriteFile(filepath.Join(consumer, "CMakeLists.txt"), []byte(consumerSource), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -296,7 +315,7 @@ func TestCICacheRestoredDependency(t *testing.T) {
 func cacheTestSourceRoot(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
-	for _, path := range []string{"src/autolib-ci", "src/dependencies/queue"} {
+	for _, path := range []string{"src/autolib-ci"} {
 		if err := os.MkdirAll(filepath.Join(root, path), 0755); err != nil {
 			t.Fatal(err)
 		}
@@ -306,9 +325,6 @@ func cacheTestSourceRoot(t *testing.T) string {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(root, "src/autolib-ci/restore-cache.cmake"), data, 0644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, "src/dependencies/queue/autolib-import.cmake"), []byte("# adapter\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	return root
