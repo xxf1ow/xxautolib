@@ -7,6 +7,10 @@ config_dir = "lib/cmake/flann"
 pkgconfig_dir = "lib/pkgconfig"
 sentinel = "include/flann/flann.hpp"
 
+[system_dependencies]
+apt = ["pkg-config", "libgomp1"]
+choco = ["pkgconfiglite"]
+
 [source]
 GIT_REPOSITORY = "https://github.com/flann-lib/flann.git"
 GIT_TAG = "f9caaf609d8b8cb2b7104a85cf59eb92c275a25d"

@@ -19,7 +19,8 @@ Status: proposed
 | 部分 | 负责 | 不负责 |
 | --- | --- | --- |
 | 模块目录 | `module.toml`、补丁、专用构建文件、`autolib-import.cmake` | 通用下载器、环境管理器、共享生成逻辑 |
-| `autolib-builder` | 声明解析、校验、平台选择、生产依赖闭包、路径编码、原生 CMake 生成、暂存修正、打包及发行元数据生成 | 自行执行源码下载、补丁、编译、安装或跟踪构建 stamp；为下游准备二进制包 |
+| `autolib-builder` | 声明解析、校验、平台选择、生产依赖闭包、路径编码、原生 CMake 生成、暂存修正、打包及本地发行元数据生成 | 自行执行源码下载、补丁、编译、安装或跟踪构建 stamp；为下游准备二进制包；CI 编排、GitHub API 或远端发布 |
+| `autolib-ci` | 通过独立 CLI 调用生产与消费能力，执行 CI 计划、生产缓存、发布和汇总；完整职责由 [CI 系统设计](2026-10-20-ci-system.md#组件职责与数据流)拥有 | 混编 builder/importer 源码、复制声明解析与打包引擎、替代消费工具 |
 | CMake / ExternalProject | 生产端实际获取、补丁、配置、编译、安装和增量步骤 | Go 模块解析、二进制发行选择 |
 | `src/autolib.cmake` | 单文件 CMake 入口，识别宿主、按 JSON 清单获取并校验 importer、调用 importer，准备后加载全部包内 adapter | 解析完整模块定义、实现库包获取协议、依赖旁置 CMake helper 或安装语言环境 |
 | `autolib-importer` | manifest 校验、二进制包获取、校验和解包，返回准备好的包目录 | 生产端生成与打包、代替 CMake 执行 `include`、猜测上游导出 target、编译消费者或自动获取消费依赖闭包 |
@@ -27,18 +28,19 @@ Status: proposed
 
 消费端保留 `autolib.cmake` 与 `autolib-importer` 两层：CMake 只处理最小引导及目标加载，可测试的文件与获取逻辑集中在 Go 中。importer 是原生可执行文件，而不是复杂 CMake 脚本集合。入口自身完整保存在 `src/autolib.cmake`，不拆成需要一起分发的 helper；每库 adapter 仍随各自归档发布，不搬到 importer 维护一份按库名分支的适配表。
 
-Go 源码采用一个根 Go module、两个独立可执行目标，按生产与消费职责组织。布局如下；只在实现对应能力时创建文件和目录：
+Go 源码采用一个根 Go module。本文覆盖 `autolib-builder` 和 `autolib-importer` 两个独立可执行目标；[CI 系统设计](2026-10-20-ci-system.md)另定义第三个独立目标 `autolib-ci`，不作为 builder 子命令。三个目标的业务源码和入口严格分离，布局如下；只在实现对应能力时创建文件和目录：
 
 ```text
 go.mod / go.sum                 根 Go module 的依赖声明与内容校验
 src/autolib.cmake               简洁、自包含的单文件消费入口
 src/autolib-builder/            生产端 Go 入口及实现；保留必要生产 CMake helper
 src/autolib-importer/           消费端 Go 入口及实现
+src/autolib-ci/                 独立 CI Go 入口及实现；不混入生产或消费工具
 src/dependencies/<name>/        既有声明、补丁及每包导入适配
 build/                         Git 忽略：可执行程序、生成文件、staging 和发行包
 ```
 
-builder 提供生成与打包能力，importer 提供消费端准备能力；两者不相互调用业务命令，不增加进程间服务或插件框架。生产端的产物处理源码归 builder，消费端的获取与解包源码归 importer，不设独立 `src/artifacts/` 或预建 `common/shared` 层。两个目标遵守同一发行协议，但不因此强行共享实现；只有实际出现有维护价值的重复逻辑时才考虑抽取。源码目录不保存生成产物，暂存和归档均进入忽略的构建目录。
+builder 提供生成与打包能力，importer 提供消费端准备能力；两者不相互调用业务命令，也不依赖 CI，不增加进程间服务或插件框架。CI 通过通用 CLI 组合调用二者，模块信息复用与失败规则由 [CI 调用设计](2026-10-20-ci-system.md#独立命令之间的调用)拥有。生产端的产物处理源码归 builder，消费端的获取与解包源码归 importer，不设独立 `src/artifacts/` 或预建 `common/shared` 层；遵守同一发行协议不等于混编业务实现。源码目录不保存生成产物，暂存和归档均进入忽略的构建目录。
 
 ### 生产端：替换工具代码，保留业务契约
 

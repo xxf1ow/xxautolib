@@ -15,6 +15,7 @@ var targetName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.+\-]*$`)
 var cacheKey = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 var sha256Hash = regexp.MustCompile(`^SHA256=[0-9a-fA-F]{64}$`)
 var resourceReference = regexp.MustCompile(`<RESOURCE_SOURCE_DIR:([^>]*)>`)
+var systemPackageName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9+_.:~=-]*$`)
 
 func normalizeArchitecture(value string) string {
 	switch strings.ToLower(value) {
@@ -333,11 +334,32 @@ func loadDefinition(path, systemName, architecture string) (definition *moduleDe
 	if err = toml.Unmarshal(content, &raw); err != nil {
 		return nil, err
 	}
-	m, err := table(raw, "module", "name", "type", "version", "source", "resources", "cmake", "patches", "steps", "copy", "platforms", "sentinel", "depends", "config_dir", "pkgconfig_dir", "package_name", "platform_independent")
+	m, err := table(raw, "module", "name", "type", "version", "source", "resources", "cmake", "patches", "steps", "copy", "platforms", "sentinel", "depends", "config_dir", "pkgconfig_dir", "package_name", "platform_independent", "system_dependencies")
 	if err != nil {
 		return nil, err
 	}
 	d := &moduleDefinition{Path: path}
+	d.SystemDependencies = map[string][]string{}
+	if value, ok := m["system_dependencies"]; ok {
+		dependencies, err := table(value, "system_dependencies", "apt", "choco")
+		if err != nil {
+			return nil, err
+		}
+		for _, manager := range []string{"apt", "choco"} {
+			if entries, exists := dependencies[manager]; exists {
+				values, err := stringArray(entries, "system_dependencies."+manager)
+				if err != nil {
+					return nil, err
+				}
+				for _, item := range values {
+					if !systemPackageName.MatchString(item) {
+						return nil, fmt.Errorf("system_dependencies.%s: invalid package name %q", manager, item)
+					}
+				}
+				d.SystemDependencies[manager] = unique(values)
+			}
+		}
+	}
 	if value, ok := m["platform_independent"]; ok {
 		var valid bool
 		d.PlatformIndependent, valid = value.(bool)

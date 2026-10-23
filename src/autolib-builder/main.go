@@ -24,6 +24,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && args[0] == "package" {
 		return runPackage(args[1:], stderr)
 	}
+	if len(args) > 0 && args[0] == "describe" {
+		return runDescribe(args[1:], stdout, stderr)
+	}
 	if len(args) > 0 && args[0] == "ci" {
 		if len(args) < 2 || args[1] != "plan" {
 			return fail(fmt.Errorf("usage: autolib-builder ci plan [options]"))
@@ -31,7 +34,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runCIPlan(args[2:], stdout, stderr)
 	}
 	if len(args) == 0 || args[0] != "generate" {
-		return fail(fmt.Errorf("usage: autolib-builder version | generate [options] | package [options] | ci plan [options]"))
+		return fail(fmt.Errorf("usage: autolib-builder version | generate [options] | describe [options] | package [options] | ci plan [options]"))
 	}
 	flags := flag.NewFlagSet("generate", flag.ContinueOnError)
 	flags.SetOutput(stderr)
@@ -39,7 +42,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	for _, field := range []struct {
 		key   string
 		value *string
-	}{{"source-root", &context.SourceRoot}, {"build-root", &context.BuildRoot}, {"system-name", &context.SystemName}, {"architecture", &context.Architecture}, {"generator", &context.Generator}, {"platform", &context.Platform}, {"toolset", &context.Toolset}, {"instance", &context.Instance}, {"cmake-command", &context.CMakeCommand}, {"git-executable", &context.GitExecutable}} {
+	}{{"source-root", &context.SourceRoot}, {"build-root", &context.BuildRoot}, {"install-root", &context.InstallRoot}, {"make-program", &context.MakeProgram}, {"system-name", &context.SystemName}, {"architecture", &context.Architecture}, {"generator", &context.Generator}, {"platform", &context.Platform}, {"toolset", &context.Toolset}, {"instance", &context.Instance}, {"cmake-command", &context.CMakeCommand}, {"git-executable", &context.GitExecutable}} {
 		flags.StringVar(field.value, field.key, "", field.key)
 	}
 	multiConfig := flags.String("multi-config", "", "ON or OFF")
@@ -85,6 +88,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if context.BuildRoot, err = filepath.Abs(context.BuildRoot); err != nil {
 		return fail(err)
+	}
+	if context.InstallRoot != "" {
+		if context.InstallRoot, err = filepath.Abs(context.InstallRoot); err != nil {
+			return fail(err)
+		}
 	}
 	if err := generate(context, modules); err != nil {
 		return fail(fmt.Errorf("Module generation failed: %w", err))

@@ -258,3 +258,41 @@ func TestDefinitionPreservesInput(t *testing.T) {
 		t.Fatal("declaration modified")
 	}
 }
+
+func TestSystemDependencies(t *testing.T) {
+	path := definitionFile(t, t.TempDir(), "demo", "cmake", testSource+"[system_dependencies]\napt=['pkg-config','libgomp1','pkg-config']\nchoco=['pkgconfiglite']\n")
+	definition, err := loadDefinition(path, "Linux", "x86_64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := strings.Join(definition.SystemDependencies["apt"], ","), "pkg-config,libgomp1"; got != want {
+		t.Fatalf("APT list was not deduplicated: got %q, want %q", got, want)
+	}
+	for _, invalid := range []string{
+		"apt=['pkg-config']\nyum=['yum-only']\n",
+		"apt='pkg-config'\n",
+		"apt=['pkg-config; arbitrary-command']\n",
+		"apt=['']\n",
+		"apt=['-unsafe-option']\n",
+		"apt=['not a package']\n",
+	} {
+		path := definitionFile(t, t.TempDir(), "demo", "cmake", testSource+"[system_dependencies]\n"+invalid)
+		if _, err := loadDefinition(path, "Linux", "x86_64"); err == nil {
+			t.Fatalf("unsafe or unsupported system dependency accepted: %s", invalid)
+		}
+	}
+	root, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	flann, err := loadDefinition(filepath.Join(root, "src", "dependencies", "flann", "module.toml"), "Linux", "x86_64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := strings.Join(flann.SystemDependencies["apt"], ","), "pkg-config,libgomp1"; got != want {
+		t.Fatalf("flann APT dependencies: got %q, want %q", got, want)
+	}
+	if got, want := strings.Join(flann.SystemDependencies["choco"], ","), "pkgconfiglite"; got != want {
+		t.Fatalf("flann Chocolatey dependencies: got %q, want %q", got, want)
+	}
+}

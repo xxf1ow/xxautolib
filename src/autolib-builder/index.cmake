@@ -39,8 +39,12 @@ function(xxautolib_generate_modules)
     if(DEFINED CMAKE_MSVC_RUNTIME_LIBRARY)
         list(APPEND runtime_argument "--msvc-runtime-library=${CMAKE_MSVC_RUNTIME_LIBRARY}")
     endif()
+    set(make_program_argument)
+    if(CMAKE_GENERATOR STREQUAL "Unix Makefiles")
+        list(APPEND make_program_argument "--make-program=${CMAKE_MAKE_PROGRAM}")
+    endif()
     set(cmake_defaults)
-    foreach(key CMAKE_POLICY_VERSION_MINIMUM CMAKE_POSITION_INDEPENDENT_CODE CMAKE_CXX_STANDARD CMAKE_PROJECT_INCLUDE)
+    foreach(key CMAKE_POLICY_VERSION_MINIMUM CMAKE_POSITION_INDEPENDENT_CODE CMAKE_CXX_STANDARD CMAKE_INSTALL_LIBDIR CMAKE_PROJECT_INCLUDE)
         if(DEFINED ${key})
             string(REPLACE ";" "\\;" default_argument "--cmake-default=${key}=${${key}}")
             list(APPEND cmake_defaults "${default_argument}")
@@ -48,6 +52,7 @@ function(xxautolib_generate_modules)
     endforeach()
     execute_process(COMMAND "${builder}" generate ${module_arguments}
         "--source-root=${root}" "--build-root=${CMAKE_BINARY_DIR}"
+        "--install-root=${CMAKE_INSTALL_PREFIX}" ${make_program_argument}
         "--system-name=${CMAKE_SYSTEM_NAME}" "--architecture=${architecture}"
         "--generator=${CMAKE_GENERATOR}" "--platform=${CMAKE_GENERATOR_PLATFORM}"
         "--toolset=${CMAKE_GENERATOR_TOOLSET}" "--instance=${CMAKE_GENERATOR_INSTANCE}"
