@@ -2,7 +2,9 @@
 
 本仓库按能力分批接入模块，先完成本地构建安装，再建立下游导入、二进制交付和 CI。本文维护阶段目标与迁移范围；各阶段的理由和约束由链接的 Agent Note 拥有，具体实现开始前再确认该批设计。
 
-工具层重建及导入链路按 [Go 工具层与离线导入设计](agent-notes/proposed/architecture/2026-10-21-go-tooling-and-offline-import.md)分阶段推进：Go 生成器替换自有 Python 路径，保留 TOML 和原生构建契约；第二阶段已实现本地打包、统一清单、独立 importer 和单文件消费入口。queue、lz4、flann 在 Windows x64/v143、Linux aarch64 完成发行与准备包搬迁后的真实链接运行，第二阶段已通过用户验收。第三阶段的 HTTPS 引导和三宿主工具发行仍待设计交接，不自动启动。
+工具层重建及导入链路按 [Go 工具层与离线导入设计](agent-notes/proposed/architecture/2026-10-21-go-tooling-and-offline-import.md)分阶段推进：Go 生成器替换自有 Python 路径，保留 TOML 和原生构建契约；第二阶段已实现本地打包、统一清单、独立 importer 和单文件消费入口。queue、lz4、flann 在 Windows x64/v143、Linux aarch64 完成发行与准备包搬迁后的真实链接运行，第二阶段已通过用户验收；第三阶段 HTTPS 消费暂缓。
+
+下一项工作为独立的 [CI 系统](agent-notes/proposed/architecture/2026-10-20-ci-system.md)，建立三平台原生构建与实际 Release 供给，不作为 Go 工具层的子阶段，也不要求先批量增加第三方库。CI 验收后再恢复 HTTPS 消费的设计交接。
 
 ## 状态与依据
 
@@ -21,11 +23,11 @@
 | 模块依赖 | 已实现 | 已验证 FLANN → lz4、HarfBuzz → FreeType、OpenCV → FreeType/HarfBuzz；叶子请求得到稳定闭包，显式依赖实际来自本仓库。Boost、PCL 待接入。 |
 | 复杂模块与专用文件 | 已实现 | 已验证 OpenCV 4.14.0 contrib 路径引用、资源补丁、平台安装布局与链接运行；oneTBB HWLOC、ImGui 专用文件仍待接入。 |
 | 下游导入与可搬迁包 | 已实现 | queue、lz4、flann 的显式包内 adapter 已完成双端搬迁链接运行，原安装树不变；其他模块按需提供 adapter，本地构建资格与发布资格分离。 |
-| 固定槽交付与缓存 | 已实现 | 本地按名称消费、统一 manifest、工具及包摘要校验、已有目录权威与人工刷新已实现；生产端内部 build ID、GitHub 发布和 Gitee 镜像待接入，远端写操作另行授权。 |
-| 三平台原生 CI | 基础流水线已实现，单 job 优化待实施 | 接入 Windows x86_64、Linux x86_64/aarch64；以原生单 job 分层、统一环境与并行预算为目标，不先复制多 job 传完整包的结构再重写。 |
-| 平台无关头文件槽位 | 待实施 | 仅对显式声明且安装内容确实平台无关的包启用 any/any；规划、导入、缓存、manifest、镜像共同支持，并通过三平台消费。 |
+| 固定槽交付与缓存 | 已实现 | 本地消费已实现；首期 CI 接入三库的内部 build ID、生产缓存和 GitHub 发布，单一汇总保留未更新平台。Gitee 镜像暂缓，远端写操作另行授权。 |
+| 三平台原生 CI | 基础流水线已实现，单 job 优化待实施 | 下一批仅 queue、lz4、flann，覆盖头文件、静态库、动态库及显式依赖；Windows x86_64、Linux x86_64/aarch64 原生单 job、统一环境与并行预算。手动触发，默认分支发布；验收后再增加 OpenCV 等其余库。 |
+| 平台无关头文件槽位 | 待实施 | 与首期 CI 一起接入 queue-any-any 单槽；显式声明平台无关，唯一选中平台发布，三平台消费。规划、打包、导入、缓存及 manifest 同步支持；机器码包与 importer 仍限定平台。 |
 
-本地能力的既有决定见[模块扩展](agent-notes/proposed/architecture/2026-10-20-module-expansion.md)，本批方案见[本地复用与平台输入设计](agent-notes/implemented/architecture/2026-10-20-local-reuse-and-platform-inputs.md)；导入、打包和固定槽见[二进制交付](agent-notes/proposed/architecture/2026-10-20-name-only-artifact-delivery.md)；环境、ABI、并行和通用槽位见[三平台 CI](agent-notes/proposed/process/2026-10-20-native-platform-ci.md)。
+本地能力的既有决定见[模块扩展](agent-notes/proposed/architecture/2026-10-20-module-expansion.md)，本批方案见[本地复用与平台输入设计](agent-notes/implemented/architecture/2026-10-20-local-reuse-and-platform-inputs.md)；导入、打包和固定槽见[二进制交付](agent-notes/proposed/architecture/2026-10-20-name-only-artifact-delivery.md)；流水线、环境、ABI、并行和通用槽位见独立的[CI 系统设计](agent-notes/proposed/architecture/2026-10-20-ci-system.md)。
 
 FLANN、HarfBuzz 与 OpenCV 4.14.0 的具体取舍和双平台安装证据见[依赖与复杂资源决定](agent-notes/implemented/architecture/2026-10-20-flann-opencv-dependencies.md)；本地二进制闭环入口见[测试指南](testing.md#本地二进制闭环)。这些证据不表示其他复杂模块或远端二进制发行已经完成。
 
