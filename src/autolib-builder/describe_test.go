@@ -53,7 +53,7 @@ func TestDescribeInputs(t *testing.T) {
 	putFile(t, filepath.Join(moduleDir, "fix.patch"), "patch\n")
 	putFile(t, filepath.Join(moduleDir, "run.cmake"), "step input\n")
 	body := "version='1.0'\nconfig_dir='config/linux'\n" + testSource + "[resources.assets]\nGIT_REPOSITORY='assets'\nGIT_TAG='fixed'\n[cmake.cache]\nVALUE='selected'\n" +
-		"[platforms.linux.cmake.cache]\nPLATFORM='linux'\n[[steps]]\nname='prepare'\nCOMMAND=['cmake','-P','run.cmake']\nDEPENDS=['run.cmake']\nWORKING_DIRECTORY='.'\n[[patches]]\nfile='fix.patch'\n[[copy]]\nfiles=['plain.h']\ndestination='include'\n"
+		"[platforms.linux.cmake.cache]\nPLATFORM='linux'\n[[steps]]\nname='prepare'\nCOMMAND=['cmake','-P','run.cmake']\nDEPENDS=['run.cmake','<RESOURCE_SOURCE_DIR:assets>/run.cmake']\nWORKING_DIRECTORY='<RESOURCE_SOURCE_DIR:assets>'\n[[patches]]\nfile='fix.patch'\n[[copy]]\nfiles=['plain.h']\ndestination='include'\n"
 	definitionFile(t, f.root, "plain", "copy", body)
 	putFile(t, filepath.Join(moduleDir, "autolib-import.cmake"), "# adapter\n")
 	description, err := describeModules(f.root, "Linux", "x86_64", []string{"plain"})
@@ -74,8 +74,9 @@ func TestDescribeInputs(t *testing.T) {
 	copies := configuration["Copies"].([]any)
 	if configuration["Cache"].(map[string]any)["PLATFORM"] != "linux" ||
 		patches[0].(map[string]any)["File"] != "src/dependencies/plain/fix.patch" ||
-		steps[0].(map[string]any)["WorkingDirectory"] != "src/dependencies/plain" ||
+		steps[0].(map[string]any)["WorkingDirectory"] != "<RESOURCE_SOURCE_DIR:assets>" ||
 		steps[0].(map[string]any)["Depends"].([]any)[0] != "src/dependencies/plain/run.cmake" ||
+		steps[0].(map[string]any)["Depends"].([]any)[1] != "<RESOURCE_SOURCE_DIR:assets>/run.cmake" ||
 		resources["assets"] == nil || len(copies) != 1 ||
 		len(description.BuilderFiles) == 0 || !slices.Contains(description.BuilderFiles, "CMakeLists.txt") ||
 		slices.ContainsFunc(description.BuilderFiles, func(name string) bool { return strings.Contains(name, "ci_") }) {
@@ -98,6 +99,29 @@ func TestDescribeInputs(t *testing.T) {
 	definitionFile(t, f.root, "unsafe", "cmake", testSource+"[[steps]]\nname='unsafe'\nCOMMAND=['cmake','-P','x']\nDEPENDS=['"+outside+"']\n")
 	if _, err := describeModules(f.root, "Linux", "x86_64", []string{"unsafe"}); err == nil || !strings.Contains(err.Error(), "escapes source root") {
 		t.Fatalf("accepted a local input outside the source root: %v", err)
+	}
+}
+
+func TestDescribeRejectsAbsoluteResourcePrefixes(t *testing.T) {
+	f := newFixture(t)
+	describeRootInputs(t, f.root)
+	outside := filepath.ToSlash(filepath.Join(f.root, "outside")) + "/<RESOURCE_SOURCE_DIR:assets>/run.cmake"
+	for _, field := range []string{"DEPENDS", "WORKING_DIRECTORY"} {
+		t.Run(field, func(t *testing.T) {
+			module := "unsafe-" + strings.ToLower(field)
+			fieldValue := "['" + outside + "']"
+			if field == "WORKING_DIRECTORY" {
+				fieldValue = "'" + outside + "'"
+			}
+			body := "version='1.0'\n" + testSource + "[resources.assets]\nGIT_REPOSITORY='assets'\nGIT_TAG='fixed'\n" +
+				"[[steps]]\nname='prepare'\nCOMMAND=['cmake','-P','x']\n" + field + "=" + fieldValue + "\n"
+			definitionFile(t, f.root, module, "cmake", body)
+			var stdout, stderr bytes.Buffer
+			args := []string{"describe", "--source-root", f.root, "--system-name", "Linux", "--architecture", "x86_64", "--module", module}
+			if code := run(args, &stdout, &stderr); code == 0 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "escapes source root") {
+				t.Fatalf("accepted external absolute %s path: code=%d stdout=%q stderr=%q", field, code, stdout.String(), stderr.String())
+			}
+		})
 	}
 }
 

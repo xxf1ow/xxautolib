@@ -100,6 +100,9 @@ func describeModule(root string, definition *moduleDefinition) (describedModule,
 	paths := map[string]bool{}
 	toRelative := func(value string, allowPlaceholder bool) (string, error) {
 		if allowPlaceholder && resourceReference.MatchString(value) {
+			if filepath.IsAbs(value) {
+				return "", fmt.Errorf("referenced path escapes source root: %s", value)
+			}
 			return value, nil
 		}
 		path := value
