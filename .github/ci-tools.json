@@ -37,7 +37,6 @@
   },
   "production": {
     "common": {
-      "go_version": "1.27.3",
       "cmake_version": "3.31.12",
       "configuration": "Release",
       "cmake_defaults": {

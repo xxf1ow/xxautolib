@@ -31,7 +31,6 @@ type ciEnvironmentConfig struct {
 	} `json:"cmake"`
 	Production struct {
 		Common struct {
-			GoVersion     string            `json:"go_version"`
 			CMakeVersion  string            `json:"cmake_version"`
 			Configuration string            `json:"configuration"`
 			CMakeDefaults map[string]string `json:"cmake_defaults"`
@@ -53,6 +52,8 @@ type ciEnvironmentConfig struct {
 }
 
 var digestValue = regexp.MustCompile(`^[0-9a-f]{64}$`)
+var versionTriplet = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`)
+var versionPair = regexp.MustCompile(`^[0-9]+\.[0-9]+$`)
 
 func loadCIEnvironment(path string) (ciEnvironmentConfig, error) {
 	data, err := os.ReadFile(path)
@@ -87,22 +88,23 @@ func validateCIEnvironment(config ciEnvironmentConfig) error {
 	if len(config.Ubuntu.PlatformDigests) != len(wantPlatforms) {
 		return fmt.Errorf("ubuntu.platform_digests: expected exactly amd64 and arm64/v8")
 	}
-	if config.Make.Version != "4.4.1" || config.Make.URL != "https://ftp.gnu.org/gnu/make/make-4.4.1.tar.gz" || !digestValue.MatchString(config.Make.SHA256) {
-		return fmt.Errorf("make: expected pinned GNU Make 4.4.1 source and SHA256")
+	if !versionTriplet.MatchString(config.Make.Version) || config.Make.URL != "https://ftp.gnu.org/gnu/make/make-"+config.Make.Version+".tar.gz" || !digestValue.MatchString(config.Make.SHA256) {
+		return fmt.Errorf("make: expected a version-matched GNU Make source URL and SHA256")
 	}
-	if config.CMake.Version != "3.31.12" || config.CMake.ChecksumsURL != "https://github.com/Kitware/CMake/releases/download/v3.31.12/cmake-3.31.12-SHA-256.txt" {
-		return fmt.Errorf("cmake: expected pinned Kitware CMake 3.31.12 checksums")
+	if !versionTriplet.MatchString(config.CMake.Version) || config.CMake.ChecksumsURL != "https://github.com/Kitware/CMake/releases/download/v"+config.CMake.Version+"/cmake-"+config.CMake.Version+"-SHA-256.txt" {
+		return fmt.Errorf("cmake: expected version-matched Kitware checksums URL")
 	}
-	want := map[string]string{"linux-aarch64": "cmake-3.31.12-linux-aarch64.tar.gz", "linux-x86_64": "cmake-3.31.12-linux-x86_64.tar.gz", "windows-x86_64": "cmake-3.31.12-windows-x86_64.zip"}
+	want := map[string]string{"linux-aarch64": "linux-aarch64.tar.gz", "linux-x86_64": "linux-x86_64.tar.gz", "windows-x86_64": "windows-x86_64.zip"}
 	if len(config.CMake.Assets) != len(want) {
 		return fmt.Errorf("cmake.assets: expected Linux aarch64/x86_64 and Windows x86_64 assets")
 	}
 	for _, asset := range config.CMake.Assets {
-		filename, ok := want[asset.Platform]
+		suffix, ok := want[asset.Platform]
+		filename := "cmake-" + config.CMake.Version + "-" + suffix
 		if !ok || filename != asset.Filename {
 			return fmt.Errorf("cmake.assets: unexpected platform or drifting asset %q", asset.Filename)
 		}
-		if asset.URL != "https://github.com/Kitware/CMake/releases/download/v3.31.12/"+filename || !digestValue.MatchString(asset.SHA256) {
+		if asset.URL != "https://github.com/Kitware/CMake/releases/download/v"+config.CMake.Version+"/"+filename || !digestValue.MatchString(asset.SHA256) {
 			return fmt.Errorf("cmake.assets.%s: expected official URL and SHA256", asset.Platform)
 		}
 		delete(want, asset.Platform)
@@ -120,16 +122,16 @@ func validateCIEnvironment(config ciEnvironmentConfig) error {
 
 func validateProductionEnvironment(config ciEnvironmentConfig) error {
 	common := config.Production.Common
-	if common.GoVersion != "1.27.3" || common.CMakeVersion != "3.31.12" || common.Configuration != "Release" {
-		return fmt.Errorf("production.common: fixed Go, CMake, and configuration values are required")
+	if common.CMakeVersion == "" || common.CMakeVersion != config.CMake.Version || common.Configuration != "Release" {
+		return fmt.Errorf("production.common: CMake version must match cmake.version and configuration must be Release")
 	}
 	wantDefaults := map[string]string{"CMAKE_INSTALL_LIBDIR": "lib", "CMAKE_POLICY_VERSION_MINIMUM": "3.5"}
 	if !equalStringMap(common.CMakeDefaults, wantDefaults) {
 		return fmt.Errorf("production.common.cmake_defaults: expected fixed CMake defaults")
 	}
 	linux := config.Production.Linux
-	if linux.Distribution != "ubuntu-20.04" || linux.GCCVersion != "9.4" || linux.GlibcMax != "2.31" || linux.MakeVersion != "4.4.1" || linux.Generator != "Unix Makefiles" {
-		return fmt.Errorf("production.linux: fixed Ubuntu, GCC, glibc, Make, and generator values are required")
+	if linux.Distribution != "ubuntu-20.04" || !versionPair.MatchString(linux.GCCVersion) || !strings.HasPrefix(linux.GCCVersion, "9.") || !versionPair.MatchString(linux.GlibcMax) || compareVersion("GLIBC_"+linux.GlibcMax, "GLIBC_2.31") > 0 || linux.MakeVersion != config.Make.Version || linux.Generator != "Unix Makefiles" {
+		return fmt.Errorf("production.linux: expected supported Ubuntu, GCC, glibc, Make, and generator values")
 	}
 	windows := config.Production.Windows
 	if windows.Generator != "Visual Studio 17 2022" || windows.Platform != "x64" || windows.Toolset != "v143,host=x64" || windows.Runtime != "MultiThreadedDLL" {

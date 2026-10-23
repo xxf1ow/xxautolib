@@ -154,7 +154,7 @@ func identityModule(name string, dependencies []string, independent bool) descri
 }
 
 func identityBaseline(cmakeVersion, gccVersion string) string {
-	return `{"production":{"common":{"go_version":"1.27.3","cmake_version":"` + cmakeVersion + `","configuration":"Release","cmake_defaults":{"CMAKE_INSTALL_LIBDIR":"lib"}},"linux":{"distribution":"ubuntu-20.04","gcc_version":"` + gccVersion + `","glibc_max":"2.31","make_version":"4.4.1","generator":"Unix Makefiles"}},"make":{"version":"4.4.1","url":"https://example.invalid/make.tar.gz","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"cmake":{"checksums_url":"https://example.invalid/checksums","assets":[{"platform":"linux-x86_64","url":"https://example.invalid/cmake.tar.gz","sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}]}}`
+	return `{"production":{"common":{"cmake_version":"` + cmakeVersion + `","configuration":"Release","cmake_defaults":{"CMAKE_INSTALL_LIBDIR":"lib"}},"linux":{"distribution":"ubuntu-20.04","gcc_version":"` + gccVersion + `","glibc_max":"2.31","make_version":"4.4.1","generator":"Unix Makefiles"}},"make":{"version":"4.4.1","url":"https://example.invalid/make.tar.gz","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"cmake":{"checksums_url":"https://example.invalid/checksums","assets":[{"platform":"linux-x86_64","url":"https://example.invalid/cmake.tar.gz","sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}]}}`
 }
 
 func writeIdentityFixture(t *testing.T, root, path, value string) {

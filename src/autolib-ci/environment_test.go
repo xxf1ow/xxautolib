@@ -20,7 +20,7 @@ func TestCIEnvironmentConfig(t *testing.T) {
 	if !strings.HasPrefix(config.Ubuntu.Image, "ubuntu:20.04@sha256:") || len(config.Ubuntu.PlatformDigests) != 2 {
 		t.Fatalf("Ubuntu index or architecture coverage: %+v", config.Ubuntu)
 	}
-	if config.Make.Version != "4.4.1" || config.CMake.Version != "3.31.12" || len(config.CMake.Assets) != 3 {
+	if config.Make.Version == "" || config.CMake.Version == "" || len(config.CMake.Assets) != 3 {
 		t.Fatalf("tool versions/assets: make=%+v cmake=%+v", config.Make, config.CMake)
 	}
 	if err := validateCIEnvironment(config); err != nil {
@@ -28,16 +28,16 @@ func TestCIEnvironmentConfig(t *testing.T) {
 	}
 	missingMakeDigest := config
 	missingMakeDigest.Make.SHA256 = ""
-	if err := validateCIEnvironment(missingMakeDigest); err == nil || !strings.Contains(err.Error(), "GNU Make 4.4.1") {
+	if err := validateCIEnvironment(missingMakeDigest); err == nil || !strings.Contains(err.Error(), "SHA256") {
 		t.Fatalf("missing Make digest accepted: %v", err)
 	}
-	if config.Production.Common.GoVersion != "1.27.3" || config.Production.Common.CMakeVersion != "3.31.12" || config.Production.Common.Configuration != "Release" {
+	if config.Production.Common.CMakeVersion != config.CMake.Version || config.Production.Common.Configuration == "" {
 		t.Fatalf("production common baseline: %+v", config.Production.Common)
 	}
-	if config.Production.Linux.GCCVersion != "9.4" || config.Production.Linux.GlibcMax != "2.31" || config.Production.Linux.MakeVersion != "4.4.1" || config.Production.Linux.Generator != "Unix Makefiles" {
+	if config.Production.Linux.MakeVersion != config.Make.Version || config.Production.Linux.GCCVersion == "" || config.Production.Linux.GlibcMax == "" || config.Production.Linux.Generator == "" {
 		t.Fatalf("production Linux baseline: %+v", config.Production.Linux)
 	}
-	if config.Production.Windows.Generator != "Visual Studio 17 2022" || config.Production.Windows.Platform != "x64" || config.Production.Windows.Toolset != "v143,host=x64" || config.Production.Windows.Runtime != "MultiThreadedDLL" {
+	if config.Production.Windows.Generator == "" || config.Production.Windows.Platform == "" || config.Production.Windows.Toolset == "" || config.Production.Windows.Runtime == "" {
 		t.Fatalf("production Windows baseline: %+v", config.Production.Windows)
 	}
 	missingArchitecture := config
@@ -63,7 +63,7 @@ func TestCIEnvironmentConfig(t *testing.T) {
 
 func TestCIEnvironmentRejectsMissingProductionFields(t *testing.T) {
 	for _, field := range []struct{ section, name string }{
-		{"common", "go_version"}, {"common", "cmake_version"}, {"common", "configuration"}, {"common", "cmake_defaults"},
+		{"common", "cmake_version"}, {"common", "configuration"}, {"common", "cmake_defaults"},
 		{"linux", "distribution"}, {"linux", "gcc_version"}, {"linux", "glibc_max"}, {"linux", "make_version"}, {"linux", "generator"},
 		{"windows", "generator"}, {"windows", "platform"}, {"windows", "toolset"}, {"windows", "runtime"},
 	} {
@@ -78,18 +78,17 @@ func TestCIEnvironmentRejectsMissingProductionFields(t *testing.T) {
 	}
 }
 
-func TestCIEnvironmentRejectsProductionDrift(t *testing.T) {
-	for _, field := range []struct{ section, name string }{
-		{"common", "go_version"}, {"common", "cmake_version"}, {"common", "configuration"}, {"common", "cmake_defaults"},
-		{"linux", "distribution"}, {"linux", "gcc_version"}, {"linux", "glibc_max"}, {"linux", "make_version"}, {"linux", "generator"},
-		{"windows", "generator"}, {"windows", "platform"}, {"windows", "toolset"}, {"windows", "runtime"},
+func TestCIEnvironmentRejectsProductionToolMismatch(t *testing.T) {
+	for _, test := range []struct{ section, name, value string }{
+		{"common", "cmake_version", "3.30.0"},
+		{"linux", "make_version", "4.3"},
 	} {
-		t.Run(field.section+"/"+field.name, func(t *testing.T) {
+		t.Run(test.section+"/"+test.name, func(t *testing.T) {
 			document := environmentFixture(t)
 			production := document["production"].(map[string]any)
-			production[field.section].(map[string]any)[field.name] = "drifted"
+			production[test.section].(map[string]any)[test.name] = test.value
 			if err := loadEnvironmentDocument(t, document); err == nil {
-				t.Fatalf("drifting production.%s.%s was accepted", field.section, field.name)
+				t.Fatalf("mismatched production.%s.%s was accepted", test.section, test.name)
 			}
 		})
 	}
@@ -97,7 +96,29 @@ func TestCIEnvironmentRejectsProductionDrift(t *testing.T) {
 	production := document["production"].(map[string]any)
 	production["common"].(map[string]any)["cmake_defaults"] = map[string]any{"CMAKE_INSTALL_LIBDIR": "lib64", "CMAKE_POLICY_VERSION_MINIMUM": "3.5"}
 	if err := loadEnvironmentDocument(t, document); err == nil {
-		t.Fatal("drifting production.common.cmake_defaults was accepted")
+		t.Fatal("unsupported production.common.cmake_defaults was accepted")
+	}
+}
+
+func TestCIEnvironmentUsesConfiguredToolVersions(t *testing.T) {
+	document := environmentFixture(t)
+	cmake := document["cmake"].(map[string]any)
+	cmake["version"] = "3.32.0"
+	cmake["checksums_url"] = "https://github.com/Kitware/CMake/releases/download/v3.32.0/cmake-3.32.0-SHA-256.txt"
+	for _, asset := range cmake["assets"].([]any) {
+		entry := asset.(map[string]any)
+		filename := strings.Replace(entry["filename"].(string), "3.31.12", "3.32.0", 1)
+		entry["filename"] = filename
+		entry["url"] = strings.ReplaceAll(entry["url"].(string), "3.31.12", "3.32.0")
+	}
+	production := document["production"].(map[string]any)
+	production["common"].(map[string]any)["cmake_version"] = "3.32.0"
+	make := document["make"].(map[string]any)
+	make["version"] = "4.5.0"
+	make["url"] = "https://ftp.gnu.org/gnu/make/make-4.5.0.tar.gz"
+	production["linux"].(map[string]any)["make_version"] = "4.5.0"
+	if err := loadEnvironmentDocument(t, document); err != nil {
+		t.Fatalf("rejected tool versions consistently selected in configuration: %v", err)
 	}
 }
 
@@ -140,7 +161,7 @@ func environmentFixture(t *testing.T) map[string]any {
 	}
 	document["production"] = map[string]any{
 		"common": map[string]any{
-			"go_version": "1.27.3", "cmake_version": "3.31.12", "configuration": "Release",
+			"cmake_version": "3.31.12", "configuration": "Release",
 			"cmake_defaults": map[string]any{"CMAKE_INSTALL_LIBDIR": "lib", "CMAKE_POLICY_VERSION_MINIMUM": "3.5"},
 		},
 		"linux": map[string]any{

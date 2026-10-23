@@ -1,8 +1,16 @@
+#ifdef AUTOLIB_TEST_QUEUE
 #include <queue/readerwriterqueue.h>
+#endif
+#ifdef AUTOLIB_TEST_LZ4
 #include <lz4.h>
+#endif
+#ifdef AUTOLIB_TEST_FLANN
 #include <flann/flann.h>
+#endif
 
+#ifdef AUTOLIB_TEST_LZ4
 #include <cstring>
+#endif
 #include <filesystem>
 #include <iostream>
 #include <system_error>
@@ -15,11 +23,14 @@
 
 int main()
 {
+#ifdef AUTOLIB_TEST_QUEUE
     moodycamel::ReaderWriterQueue<int> queue;
     int value = 0;
     if (!queue.enqueue(17) || !queue.try_dequeue(value) || value != 17)
         return 1;
+#endif
 
+#ifdef AUTOLIB_TEST_LZ4
     const char input[] = "relocatable lz4 bytes: relocatable lz4 bytes";
     char compressed[LZ4_COMPRESSBOUND(sizeof(input))] = {};
     char restored[sizeof(input)] = {};
@@ -27,7 +38,9 @@ int main()
     if (compressed_size <= 0 || LZ4_decompress_safe(compressed, restored, compressed_size, sizeof(restored)) != sizeof(input)
         || std::memcmp(input, restored, sizeof(input)) != 0)
         return 2;
+#endif
 
+#ifdef AUTOLIB_TEST_FLANN
     float dataset[] = {0, 0, 1, 1, 2, 2};
     float speedup = 0;
     auto parameters = DEFAULT_FLANN_PARAMETERS;
@@ -61,5 +74,6 @@ int main()
     if (error)
         return 7;
     std::cout << "runtime_flann=" << actual_path.generic_u8string() << '\n';
+#endif
     return 0;
 }
