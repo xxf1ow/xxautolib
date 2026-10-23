@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -124,6 +125,9 @@ func ciHashFiles(root string, paths []string) (map[string]string, error) {
 		if err != nil {
 			return nil, err
 		}
+		if _, exists := result[clean]; exists {
+			return nil, fmt.Errorf("duplicate CI input path %q", clean)
+		}
 		digest := sha256.Sum256(data)
 		result[clean] = hex.EncodeToString(digest[:])
 	}
@@ -131,7 +135,7 @@ func ciHashFiles(root string, paths []string) (map[string]string, error) {
 }
 
 func ciReadSourceFile(root, name string) (string, []byte, error) {
-	if name == "" || filepath.IsAbs(name) || strings.Contains(name, "\\") {
+	if name == "" || path.IsAbs(name) || filepath.IsAbs(name) || strings.Contains(name, "\\") || path.Clean(name) != name {
 		return "", nil, fmt.Errorf("CI input path %q must be source-root relative POSIX path", name)
 	}
 	clean := filepath.ToSlash(filepath.Clean(filepath.FromSlash(name)))

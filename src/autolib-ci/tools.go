@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -121,7 +122,7 @@ func validateDescriptionPaths(paths []string) error {
 	seen := map[string]bool{}
 	for _, name := range paths {
 		clean := filepath.ToSlash(filepath.Clean(filepath.FromSlash(name)))
-		if name == "" || filepath.IsAbs(name) || clean == ".." || strings.HasPrefix(clean, "../") || strings.Contains(name, "\\") || seen[name] {
+		if name == "" || path.IsAbs(name) || filepath.IsAbs(name) || path.Clean(name) != name || clean == ".." || strings.HasPrefix(clean, "../") || strings.Contains(name, "\\") || seen[name] {
 			return fmt.Errorf("invalid builder describe path %q", name)
 		}
 		seen[name] = true

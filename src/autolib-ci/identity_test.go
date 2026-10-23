@@ -28,6 +28,22 @@ func TestCIIdentityOwnership(t *testing.T) {
 	}
 }
 
+func TestCIReadSourceFileRejectsNonCanonicalAliases(t *testing.T) {
+	root := t.TempDir()
+	writeIdentityFixture(t, root, "b", "content")
+	writeIdentityFixture(t, root, "x/y", "content")
+	for _, name := range []string{"a/../b", "x/./y"} {
+		t.Run(name, func(t *testing.T) {
+			if _, _, err := ciReadSourceFile(root, name); err == nil {
+				t.Fatalf("accepted non-canonical source path %q", name)
+			}
+		})
+	}
+	if _, err := ciHashFiles(root, []string{"a/../b", "b"}); err == nil {
+		t.Fatal("accepted duplicate source files through path aliases")
+	}
+}
+
 func TestCIIdentityPropagation(t *testing.T) {
 	root, description, inputs := identityFixture(t)
 	inputs.SourceRoot = root
