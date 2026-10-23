@@ -19,6 +19,7 @@ type copyDefinition struct {
 }
 type moduleDefinition struct {
 	Path, Name, Kind, Version                                    string
+	PlatformIndependent                                          bool
 	Sentinel, SourceSubdir, ConfigDir, PkgconfigDir, PackageName string
 	Depends                                                      []string
 	Source                                                       *sourceDefinition

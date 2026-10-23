@@ -333,11 +333,18 @@ func loadDefinition(path, systemName, architecture string) (definition *moduleDe
 	if err = toml.Unmarshal(content, &raw); err != nil {
 		return nil, err
 	}
-	m, err := table(raw, "module", "name", "type", "version", "source", "resources", "cmake", "patches", "steps", "copy", "platforms", "sentinel", "depends", "config_dir", "pkgconfig_dir", "package_name")
+	m, err := table(raw, "module", "name", "type", "version", "source", "resources", "cmake", "patches", "steps", "copy", "platforms", "sentinel", "depends", "config_dir", "pkgconfig_dir", "package_name", "platform_independent")
 	if err != nil {
 		return nil, err
 	}
 	d := &moduleDefinition{Path: path}
+	if value, ok := m["platform_independent"]; ok {
+		var valid bool
+		d.PlatformIndependent, valid = value.(bool)
+		if !valid {
+			return nil, fmt.Errorf("platform_independent: expected a boolean")
+		}
+	}
 	if d.Name, err = name(m["name"], "name"); err != nil {
 		return nil, err
 	}

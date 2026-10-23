@@ -31,7 +31,20 @@ func validateIdentity(id packageIdentity) error {
 	if !packageName.MatchString(id.Name) {
 		return fmt.Errorf("invalid package name %q", id.Name)
 	}
+	if id.OS == "any" || id.Arch == "any" {
+		if id.OS == "any" && id.Arch == "any" {
+			return nil
+		}
+		return fmt.Errorf("unsupported platform %s/%s", id.OS, id.Arch)
+	}
 	return validatePlatform(id.OS, id.Arch)
+}
+
+func matchesPackageIdentity(actual, requested packageIdentity) bool {
+	if actual.Name != requested.Name || validatePlatform(requested.OS, requested.Arch) != nil {
+		return false
+	}
+	return (actual.OS == requested.OS && actual.Arch == requested.Arch) || (actual.OS == "any" && actual.Arch == "any")
 }
 
 func validatePlatform(system, arch string) error {

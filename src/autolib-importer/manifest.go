@@ -58,8 +58,12 @@ func readManifest(path string) (result manifest, err error) {
 				}
 				values[key] = value
 			}
-			if err = validatePlatform(values["os"], values["arch"]); err != nil {
-				return result, err
+			if kind == "importers" || (values["os"] != "any" && values["arch"] != "any") {
+				if err = validatePlatform(values["os"], values["arch"]); err != nil {
+					return result, err
+				}
+			} else if values["os"] != "any" || values["arch"] != "any" {
+				return result, fmt.Errorf("unsupported package platform %s/%s", values["os"], values["arch"])
 			}
 			if kind == "packages" && !packageName.MatchString(values["name"]) {
 				return result, fmt.Errorf("invalid package name %q", values["name"])
@@ -78,6 +82,11 @@ func readManifest(path string) (result manifest, err error) {
 			}
 			seen[slot] = true
 			if kind == "packages" {
+				for _, previous := range result.Packages {
+					if previous.Name == values["name"] && ((previous.OS == "any" && previous.Arch == "any") || (values["os"] == "any" && values["arch"] == "any")) {
+						return result, fmt.Errorf("conflicting universal and platform package slots for %s", values["name"])
+					}
+				}
 				result.Packages = append(result.Packages, packageRecord{Name: values["name"], OS: values["os"], Arch: values["arch"], Asset: asset, SHA256: values["sha256"]})
 			} else {
 				result.Importers = append(result.Importers, importerRecord{OS: values["os"], Arch: values["arch"], Asset: asset, SHA256: values["sha256"]})
@@ -88,8 +97,12 @@ func readManifest(path string) (result manifest, err error) {
 }
 
 func selectPackage(m manifest, id packageIdentity) (packageRecord, error) {
+	if err := validatePlatform(id.OS, id.Arch); err != nil {
+		return packageRecord{}, err
+	}
 	for _, row := range m.Packages {
-		if row.Name == id.Name && row.OS == id.OS && row.Arch == id.Arch {
+		actual := packageIdentity{Name: row.Name, OS: row.OS, Arch: row.Arch}
+		if matchesPackageIdentity(actual, id) {
 			return row, nil
 		}
 	}

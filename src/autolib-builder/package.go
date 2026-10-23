@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/tar"
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -24,6 +25,13 @@ func validatePackagePlatform(system, arch string) error {
 		return fmt.Errorf("unsupported package platform %s/%s", system, arch)
 	}
 	return nil
+}
+
+func packagePlatform(m *moduleDefinition, system, arch string) (string, string) {
+	if m.PlatformIndependent {
+		return "any", "any"
+	}
+	return system, arch
 }
 
 func pathWithin(parent, child string) bool {
@@ -156,7 +164,13 @@ func stagePackage(o stageOptions) (staged string, err error) {
 	if err = copyPackageTree(input, staged); err != nil {
 		return "", err
 	}
-	header := fmt.Sprintf("set(AUTOLIB_PACKAGE_NAME %q)\nset(AUTOLIB_OS %q)\nset(AUTOLIB_ARCH %q)\n", o.Name, o.OS, o.Arch)
+	packageOS, packageArch := packagePlatform(module, o.OS, o.Arch)
+	if module.PlatformIndependent {
+		if err = validateUniversalPackage(module, installRoot, adapter); err != nil {
+			return "", err
+		}
+	}
+	header := fmt.Sprintf("set(AUTOLIB_PACKAGE_NAME %q)\nset(AUTOLIB_OS %q)\nset(AUTOLIB_ARCH %q)\n", o.Name, packageOS, packageArch)
 	if err = os.WriteFile(filepath.Join(staged, "autolib-import.cmake"), append([]byte(header), adapter...), 0644); err != nil {
 		return "", err
 	}
@@ -169,6 +183,86 @@ func stagePackage(o stageOptions) (staged string, err error) {
 		return "", fmt.Errorf("fixup %s: %w\n%s", staged, runErr, output)
 	}
 	return staged, nil
+}
+
+func validateUniversalPackage(module *moduleDefinition, installRoot string, adapter []byte) error {
+	if module.Name != "queue" || len(module.Copies) != 2 {
+		return fmt.Errorf("universal packages are only eligible for the declared queue layout")
+	}
+	want := map[string]string{
+		"include/queue/atomicops.h":                  "readerwriterqueue/atomicops.h",
+		"include/queue/readerwriterqueue.h":          "readerwriterqueue/readerwriterqueue.h",
+		"include/queue/readerwritercircularbuffer.h": "readerwriterqueue/readerwritercircularbuffer.h",
+		"include/queue/concurrentqueue.h":            "concurrentqueue/concurrentqueue.h",
+		"include/queue/lightweightsemaphore.h":       "concurrentqueue/lightweightsemaphore.h",
+		"include/queue/blockingconcurrentqueue.h":    "concurrentqueue/blockingconcurrentqueue.h",
+	}
+	declared := map[string]string{}
+	for _, mapping := range module.Copies {
+		if mapping.Destination == "" || len(mapping.Files) == 0 || len(mapping.Directories) != 0 {
+			return fmt.Errorf("queue universal package requires explicit header file mappings")
+		}
+		for _, file := range mapping.Files {
+			declared[filepath.ToSlash(filepath.Join(mapping.Destination, file))] = filepath.ToSlash(filepath.Join(mapping.Resource, file))
+		}
+	}
+	if len(declared) != len(want) {
+		return fmt.Errorf("queue universal package must declare exactly the six fixed headers")
+	}
+	for path, source := range want {
+		if declared[path] != source {
+			return fmt.Errorf("queue universal package declaration differs at %s", path)
+		}
+	}
+	if len(adapter) == 0 {
+		return fmt.Errorf("queue adapter is empty")
+	}
+	actual := map[string]bool{}
+	root := filepath.Join(installRoot, module.Name)
+	if err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		actual[filepath.ToSlash(rel)] = true
+		return nil
+	}); err != nil {
+		return err
+	}
+	if len(actual) != len(want) {
+		return fmt.Errorf("queue universal installation must contain exactly the six declared headers")
+	}
+	for path := range want {
+		if !actual[path] {
+			return fmt.Errorf("queue universal installation is missing %s", path)
+		}
+		resource := "readerwriterqueue"
+		if strings.HasPrefix(want[path], "concurrentqueue/") {
+			resource = "concurrentqueue"
+		}
+		moduleRoot := filepath.Dir(module.Path)
+		sourceRoot := filepath.Clean(filepath.Join(moduleRoot, "../../.."))
+		source := filepath.Join(sourceRoot, "git", "_resources", module.Name, resource, filepath.Base(want[path]))
+		installed := filepath.Join(root, filepath.FromSlash(path))
+		sourceBytes, err := os.ReadFile(source)
+		if err != nil {
+			return fmt.Errorf("queue universal source %s: %w", source, err)
+		}
+		installedBytes, err := os.ReadFile(installed)
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(sourceBytes, installedBytes) {
+			return fmt.Errorf("queue universal header differs from its fixed source: %s", path)
+		}
+	}
+	return nil
 }
 
 func checkProducerReferences(root, prefix string, allowed []string) error {

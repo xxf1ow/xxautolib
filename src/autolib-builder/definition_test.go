@@ -77,6 +77,9 @@ sentinel='lib/DemoConfig.cmake'
 	if linux.Source.GitRepository != "" || !reflect.DeepEqual(linux.Source.URL, []string{"https://one.invalid/linux.tar.xz", "https://two.invalid/linux.tar.xz"}) {
 		t.Fatalf("source not replaced: %+v", linux.Source)
 	}
+	if linux.PlatformIndependent {
+		t.Fatal("platform_independent default must be false")
+	}
 	if linux.Resources["extra"].GitRepository != "" || linux.Resources["extra"].DownloadName != "extra.tar.xz" {
 		t.Fatal(linux.Resources)
 	}
@@ -125,6 +128,7 @@ func TestDefinitionRejectsInvalidData(t *testing.T) {
 	archive := "URL=['one','two']\nURL_HASH='SHA256=" + strings.Repeat("A", 64) + "'\n"
 	cases := []struct{ kind, body, field string }{
 		{"cmake", "unknown=true\n" + testSource, "unknown"},
+		{"copy", "platform_independent='true'\n" + testSource + "[[copy]]\nresource='extra'\nfiles=['a']\ndestination='.'\n", "platform_independent"},
 		{"cmake", "depends=[1]\n" + testSource, "depends"},
 		{"cmake", "depends=['../escape']\n" + testSource, "depends"},
 		{"cmake", "package_name='Demo'\n" + testSource, "package_name"},

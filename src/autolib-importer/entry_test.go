@@ -172,6 +172,33 @@ func TestCMakeBootstrap(t *testing.T) {
 	f.mustConfigure()
 }
 
+func TestUniversalPackageThroughCMakeEntry(t *testing.T) {
+	f := newEntryFixture(t, false, "")
+	row := f.manifest.Packages[0]
+	id := packageIdentity{Name: row.Name, OS: "any", Arch: "any"}
+	archivePath := testArchive(t, []archiveMember{{Name: row.Name + "/autolib-import.cmake", Body: identityHeader(id) + "if(TARGET AutoLib::demo)\nreturn()\nendif()\nadd_library(AutoLib::demo INTERFACE IMPORTED GLOBAL)\n"}, {Name: row.Name + "/include/demo.h", Body: "portable"}})
+	archive, err := os.ReadFile(archivePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	putTestFile(t, filepath.Join(f.release, row.Asset), string(archive))
+	f.manifest.Packages[0].OS, f.manifest.Packages[0].Arch = "any", "any"
+	f.manifest.Packages[0].SHA256 = testDigest(archive)
+	writeTestManifest(t, filepath.Join(f.release, "manifest.json"), f.manifest)
+	f.mustConfigure()
+	source, err := normalizeLocalSource(f.release)
+	if err != nil {
+		t.Fatal(err)
+	}
+	directory := packageDirectory(f.work, source, packageIdentity{Name: row.Name, OS: f.options.OS, Arch: f.options.Arch})
+	if got := readTestFile(t, filepath.Join(directory, "autolib-import.cmake")); !strings.HasPrefix(got, identityHeader(id)) {
+		t.Fatalf("consumer cache lost universal package identity: %q", got)
+	}
+	if got := readTestFile(t, filepath.Join(directory, "include/demo.h")); got != "portable" {
+		t.Fatalf("consumer did not install universal package: %q", got)
+	}
+}
+
 func TestCMakeBootstrapFailure(t *testing.T) {
 	t.Run("cached tool corruption", func(t *testing.T) {
 		f := newEntryFixture(t, true, "")

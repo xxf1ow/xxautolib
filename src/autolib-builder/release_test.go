@@ -23,6 +23,14 @@ func releaseFixture(t *testing.T) packageOptions {
 
 func TestLocalReleaseManifest(t *testing.T) {
 	o := releaseFixture(t)
+	definition, err := loadDefinition(filepath.Join(o.SourceRoot, "src/dependencies/queue/module.toml"), "Windows", "x86_64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	packageOS, packageArch := packagePlatform(definition, o.OS, o.Arch)
+	if packageOS != o.OS || packageArch != o.Arch {
+		t.Fatalf("undeclared package became universal: %s/%s", packageOS, packageArch)
+	}
 	putFile(t, filepath.Join(o.OutputRoot, "unrelated"), "preserve")
 	for range 2 {
 		if err := packageRelease(o); err != nil {

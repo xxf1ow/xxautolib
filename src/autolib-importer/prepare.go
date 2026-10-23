@@ -56,7 +56,7 @@ func prepare(o prepareOptions) ([]preparedPackage, error) {
 			if err != nil {
 				return nil, err
 			}
-			if actual != id {
+			if !matchesPackageIdentity(actual, id) {
 				return nil, fmt.Errorf("existing package %s: expected identity %+v, got %+v; preserve or remove this cache before retrying", directory, id, actual)
 			}
 		} else {
@@ -78,7 +78,8 @@ func prepare(o prepareOptions) ([]preparedPackage, error) {
 			if err != nil {
 				return nil, err
 			}
-			if err := prepareMissingPackage(source, directory, row, id); err != nil {
+			selectedIdentity := packageIdentity{Name: row.Name, OS: row.OS, Arch: row.Arch}
+			if err := prepareMissingPackage(source, directory, row, selectedIdentity); err != nil {
 				return nil, err
 			}
 		}

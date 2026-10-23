@@ -104,11 +104,16 @@ func packageRelease(o packageOptions) error {
 	m := releaseManifest{Importers: []releaseImporter{{OS: o.HostOS, Arch: o.HostArch, Asset: toolAsset, SHA256: digest}}, Packages: []releasePackage{}}
 	assets := []string{toolAsset}
 	for _, n := range names {
+		module, err := loadDefinition(filepath.Join(source, "src/dependencies", n, "module.toml"), map[string]string{"windows": "Windows", "linux": "Linux"}[o.OS], o.Arch)
+		if err != nil {
+			return err
+		}
+		packageOS, packageArch := packagePlatform(module, o.OS, o.Arch)
 		directory, err := stagePackage(stageOptions{SourceRoot: source, InstallRoot: install, StageRoot: filepath.Join(work, "staging"), Name: n, OS: o.OS, Arch: o.Arch, CMakeCommand: o.CMakeCommand})
 		if err != nil {
 			return err
 		}
-		asset := fmt.Sprintf("%s-%s-%s.tar.zst", n, o.OS, o.Arch)
+		asset := fmt.Sprintf("%s-%s-%s.tar.zst", n, packageOS, packageArch)
 		if err := writePackageArchive(directory, filepath.Join(work, asset)); err != nil {
 			return err
 		}
@@ -116,7 +121,7 @@ func packageRelease(o packageOptions) error {
 		if err != nil {
 			return err
 		}
-		m.Packages = append(m.Packages, releasePackage{Name: n, OS: o.OS, Arch: o.Arch, Asset: asset, SHA256: digest})
+		m.Packages = append(m.Packages, releasePackage{Name: n, OS: packageOS, Arch: packageArch, Asset: asset, SHA256: digest})
 		assets = append(assets, asset)
 	}
 	data, err := json.MarshalIndent(m, "", "  ")
