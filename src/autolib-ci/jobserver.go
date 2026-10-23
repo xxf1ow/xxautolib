@@ -11,75 +11,83 @@ import (
 	"strings"
 )
 
-type parallelEvidence struct {
-	Budget, Peak           int
-	Overlap                bool
-	MakeVersion, Jobserver string
-	Warnings               []string
+type ciJobserverOptions struct {
+	SourceRoot, MakeProgram, WorkRoot string
+	Budget                            int
 }
 
-func findMakeProgram() (string, error) {
-	if path, err := exec.LookPath("make"); err == nil {
-		return path, nil
-	}
-	return "", fmt.Errorf("GNU Make executable was not found")
+type ciJobserverEvidence struct {
+	Budget, Peak int
+	Overlap      bool
+	Warnings     []string
 }
 
-func probeJobserver(ctx context.Context, makePath, workRoot, sourceRoot string, budget int) (parallelEvidence, error) {
-	if budget < 1 {
-		return parallelEvidence{}, fmt.Errorf("jobserver budget must be at least 1")
+func probeJobserver(ctx context.Context, o ciJobserverOptions) (ciJobserverEvidence, error) {
+	if o.Budget < 1 {
+		return ciJobserverEvidence{}, fmt.Errorf("jobserver budget must be at least 1")
 	}
-	if strings.TrimSpace(sourceRoot) == "" {
-		return parallelEvidence{}, fmt.Errorf("source root is required for jobserver fixtures")
+	if strings.TrimSpace(o.SourceRoot) == "" {
+		return ciJobserverEvidence{}, fmt.Errorf("source root is required for jobserver fixtures")
 	}
-	if err := os.MkdirAll(workRoot, 0755); err != nil {
-		return parallelEvidence{}, err
+	if strings.TrimSpace(o.MakeProgram) == "" {
+		return ciJobserverEvidence{}, fmt.Errorf("Make program is required for jobserver probe")
 	}
-	fixture := filepath.Join(sourceRoot, "tests", "ci", "jobserver")
+	if strings.TrimSpace(o.WorkRoot) == "" {
+		return ciJobserverEvidence{}, fmt.Errorf("work root is required for jobserver probe")
+	}
+	makeProgram, err := filepath.Abs(o.MakeProgram)
+	if err != nil {
+		return ciJobserverEvidence{}, err
+	}
+	if err := os.MkdirAll(o.WorkRoot, 0755); err != nil {
+		return ciJobserverEvidence{}, err
+	}
+	fixture := filepath.Join(o.SourceRoot, "tests", "ci", "jobserver")
 	for _, file := range []string{"Makefile", "child.mk"} {
 		data, err := os.ReadFile(filepath.Join(fixture, file))
 		if err != nil {
-			return parallelEvidence{}, err
+			return ciJobserverEvidence{}, err
 		}
-		if err := os.WriteFile(filepath.Join(workRoot, file), data, 0644); err != nil {
-			return parallelEvidence{}, err
-		}
-	}
-	events := filepath.Join(workRoot, "events.log")
-	cmd := exec.CommandContext(ctx, makePath, fmt.Sprintf("-j%d", budget), "--jobserver-style=fifo", "--no-print-directory", "-f", "Makefile", "LOG="+events)
-	cmd.Dir = workRoot
-	cmd.Env = prependPath(withoutEnvironment(os.Environ(), "MAKEFLAGS", "CMAKE_BUILD_PARALLEL_LEVEL"), filepath.Dir(makePath))
-	output, err := cmd.CombinedOutput()
-	versionOutput, versionErr := exec.CommandContext(ctx, makePath, "--version").Output()
-	if versionErr != nil {
-		return parallelEvidence{}, versionErr
-	}
-	evidence := parallelEvidence{Budget: budget, MakeVersion: strings.Split(strings.TrimSpace(string(versionOutput)), "\n")[0]}
-	if evidence.MakeVersion != "GNU Make 4.4.1" {
-		return evidence, fmt.Errorf("jobserver probe requires GNU Make 4.4.1, got %q", evidence.MakeVersion)
-	}
-	for _, line := range strings.Split(string(output), "\n") {
-		if strings.Contains(line, "jobserver-auth=") {
-			evidence.Jobserver = strings.TrimSpace(line)
+		if err := os.WriteFile(filepath.Join(o.WorkRoot, file), data, 0644); err != nil {
+			return ciJobserverEvidence{}, err
 		}
 	}
-	evidence.Warnings = detectedJobserverWarnings(string(output))
-	if budget > 1 && !strings.Contains(evidence.Jobserver, "fifo:") {
-		evidence.Warnings = append(evidence.Warnings, "recursive Make did not expose a FIFO jobserver in MAKEFLAGS")
-	}
+	events := filepath.Join(o.WorkRoot, "events.log")
+	cmd := exec.CommandContext(ctx, makeProgram, fmt.Sprintf("-j%d", o.Budget), "--jobserver-style=fifo", "--no-print-directory", "-f", "Makefile", "LOG="+events)
+	cmd.Dir = o.WorkRoot
+	cmd.Env = prependPath(withoutEnvironment(os.Environ(), "MAKEFLAGS", "CMAKE_BUILD_PARALLEL_LEVEL"), filepath.Dir(makeProgram))
+	output, commandErr := cmd.CombinedOutput()
+	warnings, warningErr := validateJobserverWarnings(string(output), o.Budget)
+	evidence := ciJobserverEvidence{Budget: o.Budget, Warnings: warnings}
 	data, readErr := os.ReadFile(events)
 	if readErr != nil {
-		return evidence, fmt.Errorf("read jobserver events: %w; make: %v; output: %s", readErr, err, output)
+		return evidence, fmt.Errorf("read jobserver events: %w; make: %v; output: %s", readErr, commandErr, output)
 	}
 	evidence.Peak, evidence.Overlap, readErr = jobserverPeak(string(data))
 	if readErr != nil {
 		return evidence, readErr
 	}
-	if err != nil {
-		return evidence, fmt.Errorf("GNU Make jobserver probe failed: %w: %s", err, output)
+	if commandErr != nil {
+		return evidence, fmt.Errorf("GNU Make jobserver probe failed: %w: %s", commandErr, output)
 	}
-	if evidence.Peak > budget {
-		evidence.Warnings = append(evidence.Warnings, fmt.Sprintf("observed worker peak %d exceeds budget %d", evidence.Peak, budget))
+	versionOutput, err := exec.CommandContext(ctx, makeProgram, "--version").Output()
+	if err != nil {
+		return evidence, fmt.Errorf("read GNU Make version: %w", err)
+	}
+	if version := strings.Split(strings.TrimSpace(string(versionOutput)), "\n")[0]; version != "GNU Make 4.4.1" {
+		return evidence, fmt.Errorf("jobserver probe requires GNU Make 4.4.1, got %q", version)
+	}
+	if evidence.Peak > o.Budget {
+		evidence.Warnings = append(evidence.Warnings, fmt.Sprintf("observed worker peak %d exceeds budget %d", evidence.Peak, o.Budget))
+	}
+	if o.Budget > 1 && !evidence.Overlap {
+		evidence.Warnings = append(evidence.Warnings, "FIFO jobserver did not produce overlapping workers")
+	}
+	if len(evidence.Warnings) != 0 {
+		if warningErr != nil {
+			return evidence, warningErr
+		}
+		return evidence, fmt.Errorf("GNU Make jobserver probe warnings: %s", strings.Join(evidence.Warnings, "; "))
 	}
 	return evidence, nil
 }
@@ -115,9 +123,33 @@ func detectedJobserverWarnings(output string) []string {
 		lower := strings.ToLower(line)
 		if strings.Contains(lower, "jobserver unavailable") || strings.Contains(lower, "resetting jobserver") {
 			warnings = append(warnings, strings.TrimSpace(line))
+			continue
+		}
+		if strings.Contains(line, "MAKEFLAGS=") && strings.Contains(line, "--jobserver-auth=") && !strings.Contains(line, "--jobserver-auth=fifo:") {
+			warnings = append(warnings, "recursive Make is using a non-FIFO jobserver: "+strings.TrimSpace(line))
 		}
 	}
 	return warnings
+}
+
+func validateJobserverWarnings(output string, budget int) ([]string, error) {
+	warnings := detectedJobserverWarnings(output)
+	if budget > 1 && !hasFIFOJobserver(output) {
+		warnings = append(warnings, "recursive Make did not expose a FIFO jobserver in MAKEFLAGS")
+	}
+	if len(warnings) != 0 {
+		return warnings, fmt.Errorf("GNU Make jobserver probe warnings: %s", strings.Join(warnings, "; "))
+	}
+	return warnings, nil
+}
+
+func hasFIFOJobserver(output string) bool {
+	for _, line := range strings.Split(output, "\n") {
+		if strings.Contains(line, "MAKEFLAGS=") && strings.Contains(line, "--jobserver-auth=fifo:") {
+			return true
+		}
+	}
+	return false
 }
 
 func jobserverPeak(events string) (int, bool, error) {

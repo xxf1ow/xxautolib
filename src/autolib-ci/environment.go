@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-type ciEnvironment struct {
+type ciEnvironmentConfig struct {
 	Ubuntu struct {
 		Image           string            `json:"image"`
 		PlatformDigests map[string]string `json:"platform_digests"`
@@ -29,41 +29,62 @@ type ciEnvironment struct {
 			SHA256   string `json:"sha256"`
 		} `json:"assets"`
 	} `json:"cmake"`
+	Production struct {
+		Common struct {
+			GoVersion     string            `json:"go_version"`
+			CMakeVersion  string            `json:"cmake_version"`
+			Configuration string            `json:"configuration"`
+			CMakeDefaults map[string]string `json:"cmake_defaults"`
+		} `json:"common"`
+		Linux struct {
+			Distribution string `json:"distribution"`
+			GCCVersion   string `json:"gcc_version"`
+			GlibcMax     string `json:"glibc_max"`
+			MakeVersion  string `json:"make_version"`
+			Generator    string `json:"generator"`
+		} `json:"linux"`
+		Windows struct {
+			Generator string `json:"generator"`
+			Platform  string `json:"platform"`
+			Toolset   string `json:"toolset"`
+			Runtime   string `json:"runtime"`
+		} `json:"windows"`
+	} `json:"production"`
 }
 
 var digestValue = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
-func loadCIEnvironment(path string) (ciEnvironment, error) {
+func loadCIEnvironment(path string) (ciEnvironmentConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return ciEnvironment{}, err
+		return ciEnvironmentConfig{}, err
 	}
-	var config ciEnvironment
+	var config ciEnvironmentConfig
 	if err := json.Unmarshal(data, &config); err != nil {
-		return ciEnvironment{}, err
+		return ciEnvironmentConfig{}, err
 	}
 	if err := validateCIEnvironment(config); err != nil {
-		return ciEnvironment{}, err
+		return ciEnvironmentConfig{}, err
 	}
 	return config, nil
 }
 
-func validateCIEnvironment(config ciEnvironment) error {
-	const image = "ubuntu:20.04@sha256:8feb4d8ca5354def3d8fce243717141ce31e2c428701f6682bd2fafe15388214"
-	if config.Ubuntu.Image != image {
-		return fmt.Errorf("ubuntu.image: expected fixed Ubuntu 20.04 index digest, got %q", config.Ubuntu.Image)
+func validateCIEnvironment(config ciEnvironmentConfig) error {
+	const imagePrefix = "ubuntu:20.04@sha256:"
+	if !strings.HasPrefix(config.Ubuntu.Image, imagePrefix) || !digestValue.MatchString(strings.TrimPrefix(config.Ubuntu.Image, imagePrefix)) {
+		return fmt.Errorf("ubuntu.image: expected Ubuntu 20.04 with an index SHA256 digest, got %q", config.Ubuntu.Image)
 	}
-	wantPlatforms := map[string]string{
-		"linux/amd64":    "sha256:c664f8f86ed5a386b0a340d981b8f81714e21a8b9c73f658c4bea56aa179d54a",
-		"linux/arm64/v8": "sha256:722ea796ac2d57eeb3627c58a582fc1acc58be51faf815e1bce1682ae5c092f7",
-	}
-	for platform, expected := range wantPlatforms {
-		value := strings.TrimPrefix(config.Ubuntu.PlatformDigests[platform], "sha256:")
-		if !digestValue.MatchString(value) || config.Ubuntu.PlatformDigests[platform] != expected {
-			return fmt.Errorf("ubuntu.platform_digests.%s: expected sha256 digest", platform)
+	wantPlatforms := []string{"linux/amd64", "linux/arm64/v8"}
+	for _, platform := range wantPlatforms {
+		digest, exists := config.Ubuntu.PlatformDigests[platform]
+		if !exists {
+			return fmt.Errorf("ubuntu.platform_digests.%s: missing required platform digest", platform)
+		}
+		if !strings.HasPrefix(digest, "sha256:") || !digestValue.MatchString(strings.TrimPrefix(digest, "sha256:")) {
+			return fmt.Errorf("ubuntu.platform_digests.%s: expected SHA256 digest", platform)
 		}
 	}
-	if len(config.Ubuntu.PlatformDigests) != 2 {
+	if len(config.Ubuntu.PlatformDigests) != len(wantPlatforms) {
 		return fmt.Errorf("ubuntu.platform_digests: expected exactly amd64 and arm64/v8")
 	}
 	if config.Make.Version != "4.4.1" || config.Make.URL != "https://ftp.gnu.org/gnu/make/make-4.4.1.tar.gz" || !digestValue.MatchString(config.Make.SHA256) {
@@ -94,5 +115,37 @@ func validateCIEnvironment(config ciEnvironment) error {
 		slices.Sort(missing)
 		return fmt.Errorf("cmake.assets: missing platform(s) %v", missing)
 	}
+	return validateProductionEnvironment(config)
+}
+
+func validateProductionEnvironment(config ciEnvironmentConfig) error {
+	common := config.Production.Common
+	if common.GoVersion != "1.27.3" || common.CMakeVersion != "3.31.12" || common.Configuration != "Release" {
+		return fmt.Errorf("production.common: fixed Go, CMake, and configuration values are required")
+	}
+	wantDefaults := map[string]string{"CMAKE_INSTALL_LIBDIR": "lib", "CMAKE_POLICY_VERSION_MINIMUM": "3.5"}
+	if !equalStringMap(common.CMakeDefaults, wantDefaults) {
+		return fmt.Errorf("production.common.cmake_defaults: expected fixed CMake defaults")
+	}
+	linux := config.Production.Linux
+	if linux.Distribution != "ubuntu-20.04" || linux.GCCVersion != "9.4" || linux.GlibcMax != "2.31" || linux.MakeVersion != "4.4.1" || linux.Generator != "Unix Makefiles" {
+		return fmt.Errorf("production.linux: fixed Ubuntu, GCC, glibc, Make, and generator values are required")
+	}
+	windows := config.Production.Windows
+	if windows.Generator != "Visual Studio 17 2022" || windows.Platform != "x64" || windows.Toolset != "v143,host=x64" || windows.Runtime != "MultiThreadedDLL" {
+		return fmt.Errorf("production.windows: fixed Visual Studio generator, platform, toolset, and runtime are required")
+	}
 	return nil
+}
+
+func equalStringMap(actual, expected map[string]string) bool {
+	if len(actual) != len(expected) {
+		return false
+	}
+	for key, value := range expected {
+		if actual[key] != value {
+			return false
+		}
+	}
+	return true
 }
