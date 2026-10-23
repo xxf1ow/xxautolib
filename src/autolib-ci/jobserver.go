@@ -53,6 +53,9 @@ func probeJobserver(ctx context.Context, o ciJobserverOptions) (ciJobserverEvide
 		}
 	}
 	events := filepath.Join(o.WorkRoot, "events.log")
+	if err := os.WriteFile(events, nil, 0644); err != nil {
+		return ciJobserverEvidence{}, fmt.Errorf("clear jobserver events: %w", err)
+	}
 	cmd := exec.CommandContext(ctx, makeProgram, fmt.Sprintf("-j%d", o.Budget), "--jobserver-style=fifo", "--no-print-directory", "-f", "Makefile", "LOG="+events)
 	cmd.Dir = o.WorkRoot
 	cmd.Env = prependPath(withoutEnvironment(os.Environ(), "MAKEFLAGS", "CMAKE_BUILD_PARALLEL_LEVEL"), filepath.Dir(makeProgram))

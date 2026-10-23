@@ -1,12 +1,44 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
+
+func TestMain(m *testing.M) {
+	if os.Getenv("AUTOLIB_CI_JOBSERVER_FAKE_MAKE") == "1" {
+		if len(os.Args) == 2 && os.Args[1] == "--version" {
+			fmt.Println("GNU Make 4.4.1")
+			os.Exit(0)
+		}
+		for _, arg := range os.Args[1:] {
+			if strings.HasPrefix(arg, "LOG=") {
+				file, err := os.OpenFile(strings.TrimPrefix(arg, "LOG="), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+				if err != nil {
+					fmt.Fprintln(os.Stderr, err)
+					os.Exit(1)
+				}
+				_, err = file.WriteString("start 100\nend 200\n")
+				if closeErr := file.Close(); err == nil {
+					err = closeErr
+				}
+				if err != nil {
+					fmt.Fprintln(os.Stderr, err)
+					os.Exit(1)
+				}
+				os.Exit(0)
+			}
+		}
+		fmt.Fprintln(os.Stderr, "fake Make invocation did not include LOG")
+		os.Exit(1)
+	}
+	os.Exit(m.Run())
+}
 
 func TestFIFOJobserver(t *testing.T) {
 	if runtime.GOOS == "windows" {
@@ -37,6 +69,31 @@ func TestFIFOJobserver(t *testing.T) {
 		if budget == 2 && !evidence.Overlap {
 			t.Fatalf("two workers did not overlap: %+v", evidence)
 		}
+	}
+}
+
+func TestFIFOJobserverClearsEventsWhenWorkRootIsReused(t *testing.T) {
+	root, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	workRoot := t.TempDir()
+	staleEvents := "start 1\nstart 2\nend 3\nend 4\n"
+	if err := os.WriteFile(filepath.Join(workRoot, "events.log"), []byte(staleEvents), 0644); err != nil {
+		t.Fatal(err)
+	}
+	makePath, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("AUTOLIB_CI_JOBSERVER_FAKE_MAKE", "1")
+
+	evidence, err := probeJobserver(t.Context(), ciJobserverOptions{SourceRoot: root, MakeProgram: makePath, WorkRoot: workRoot, Budget: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if evidence.Peak != 1 || evidence.Overlap {
+		t.Fatalf("probe included events from a previous run: %+v", evidence)
 	}
 }
 
