@@ -180,7 +180,7 @@ func validateCIValidationPaths(o ciValidationOptions) (ciValidationRoots, error)
 		if err != nil {
 			return ciValidationRoots{}, err
 		}
-		if i == 0 || i == 1 || i == 2 || i == 6 {
+		if i == 0 || i == 1 || i == 2 || i == 3 || i == 4 || i == 6 {
 			absolute, err = resolveExistingPrefix(absolute)
 			if err != nil {
 				return ciValidationRoots{}, fmt.Errorf("resolve %s: %w", item.name, err)

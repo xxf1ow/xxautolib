@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -58,6 +59,76 @@ func TestCIWindowsIdentity(t *testing.T) {
 	context := ciProductionContext{OS: "windows", Arch: "x86_64", Generator: config.Production.Windows.Generator, Platform: config.Production.Windows.Platform, Toolset: "v142,host=x64", Configuration: config.Production.Common.Configuration, Runtime: config.Production.Windows.Runtime, MultiConfig: true, CMakeDefaults: config.Production.Common.CMakeDefaults}
 	if err := validateCIProductionIdentity(context, config); err == nil || !strings.Contains(strings.ToLower(err.Error()), "configuration") {
 		t.Fatalf("accepted a CI consumer identity that differs from ci-tools.json: %v", err)
+	}
+}
+
+func TestCIValidationPathsResolveExecutableSymlinks(t *testing.T) {
+	t.Run("accepts internal targets", func(t *testing.T) {
+		o := ciValidationPathFixture(t)
+		for _, name := range []string{"builder", "importer"} {
+			link := filepath.Join(o.SourceRoot, "tools", name+"-link.exe")
+			target := filepath.Join(o.SourceRoot, "tools", name+"-real.exe")
+			createCIExecutableSymlink(t, link, target)
+			if name == "builder" {
+				o.BuilderFile = link
+			} else {
+				o.ImporterFile = link
+			}
+		}
+		if _, err := validateCIValidationPaths(o); err != nil {
+			t.Fatalf("rejected executable symlinks resolving inside source root: %v", err)
+		}
+	})
+
+	for _, name := range []string{"builder", "importer"} {
+		t.Run("rejects external "+name+" target", func(t *testing.T) {
+			o := ciValidationPathFixture(t)
+			outside := filepath.Join(filepath.Dir(o.SourceRoot), "external-"+name+".exe")
+			link := filepath.Join(o.SourceRoot, "tools", name+"-link.exe")
+			createCIExecutableSymlink(t, link, outside)
+			if name == "builder" {
+				o.BuilderFile = link
+			} else {
+				o.ImporterFile = link
+			}
+			if _, err := validateCIValidationPaths(o); err == nil || !strings.Contains(err.Error(), name+" file must resolve inside source root") {
+				t.Fatalf("accepted %s symlink resolving outside source root: %v", name, err)
+			}
+		})
+	}
+}
+
+func ciValidationPathFixture(t *testing.T) ciValidationOptions {
+	t.Helper()
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	for _, path := range []string{
+		filepath.Join(source, "tools"), filepath.Join(source, "install"),
+		filepath.Join(source, "build", "release"), filepath.Join(source, "build", "evidence"),
+	} {
+		if err := os.MkdirAll(path, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return ciValidationOptions{
+		SourceRoot: source, InstallRoot: filepath.Join(source, "install"),
+		BuildRoot: filepath.Join(source, "build"), ReleaseRoot: filepath.Join(source, "build", "release"),
+		BuilderFile:  filepath.Join(source, "tools", "builder.exe"),
+		ImporterFile: filepath.Join(source, "tools", "importer.exe"),
+		CMakeCommand: filepath.Join(source, "cmake.exe"), EvidenceDirectory: filepath.Join(source, "build", "evidence"),
+	}
+}
+
+func createCIExecutableSymlink(t *testing.T, link, target string) {
+	t.Helper()
+	if err := os.WriteFile(target, []byte("fixture executable"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, link); err != nil {
+		if errors.Is(err, os.ErrPermission) || strings.Contains(strings.ToLower(err.Error()), "privilege") {
+			t.Skipf("host does not permit creating symlink fixtures: %v", err)
+		}
+		t.Fatalf("create executable symlink: %v", err)
 	}
 }
 
