@@ -73,13 +73,6 @@ func probeJobserver(ctx context.Context, o ciJobserverOptions) (ciJobserverEvide
 	if commandErr != nil {
 		return evidence, fmt.Errorf("GNU Make jobserver probe failed: %w: %s", commandErr, output)
 	}
-	versionOutput, err := exec.CommandContext(ctx, makeProgram, "--version").Output()
-	if err != nil {
-		return evidence, fmt.Errorf("read GNU Make version: %w", err)
-	}
-	if version := strings.Split(strings.TrimSpace(string(versionOutput)), "\n")[0]; version != "GNU Make 4.4.1" {
-		return evidence, fmt.Errorf("jobserver probe requires GNU Make 4.4.1, got %q", version)
-	}
 	if evidence.Peak > o.Budget {
 		evidence.Warnings = append(evidence.Warnings, fmt.Sprintf("observed worker peak %d exceeds budget %d", evidence.Peak, o.Budget))
 	}

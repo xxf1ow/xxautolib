@@ -181,6 +181,7 @@ jobs:
             ${{ env.WORK_ROOT }}/logs/
             ${{ env.WORK_ROOT }}/evidence/**/*.json
             ${{ env.WORK_ROOT }}/evidence/**/*.log
+            ${{ env.WORK_ROOT }}/evidence/**/*.txt
             ${{ env.WORK_ROOT }}/jobserver.json
           if-no-files-found: warn
 
@@ -256,6 +257,7 @@ jobs:
             ${{ env.WORK_ROOT }}/logs/
             ${{ env.WORK_ROOT }}/evidence/**/*.json
             ${{ env.WORK_ROOT }}/evidence/**/*.log
+            ${{ env.WORK_ROOT }}/evidence/**/*.txt
           if-no-files-found: warn
 
   finalize:

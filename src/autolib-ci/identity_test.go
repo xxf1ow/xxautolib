@@ -112,6 +112,17 @@ func TestCIIdentityPropagation(t *testing.T) {
 	}
 }
 
+func TestCISystemDependenciesInvalidateIdentity(t *testing.T) {
+	root, description, inputs := identityFixture(t)
+	inputs.SourceRoot = root
+	before := identitiesForTest(t, inputs, description)
+	description.Modules[0].SystemDependencies["apt"] = []string{"libomp-dev"}
+	after := identitiesForTest(t, inputs, description)
+	if before["lz4"].BuildID == after["lz4"].BuildID || before["flann"].BuildID == after["flann"].BuildID {
+		t.Fatal("system dependency declaration must invalidate the module and its consumer")
+	}
+}
+
 func identityFixture(t *testing.T) (string, moduleDescription, ciBuildInputs) {
 	t.Helper()
 	root := t.TempDir()
@@ -154,7 +165,7 @@ func identityModule(name string, dependencies []string, independent bool) descri
 }
 
 func identityBaseline(cmakeVersion, gccVersion string) string {
-	return `{"production":{"common":{"cmake_version":"` + cmakeVersion + `","configuration":"Release","cmake_defaults":{"CMAKE_INSTALL_LIBDIR":"lib"}},"linux":{"distribution":"ubuntu-20.04","gcc_version":"` + gccVersion + `","glibc_max":"2.31","make_version":"4.4.1","generator":"Unix Makefiles"}},"make":{"version":"4.4.1","url":"https://example.invalid/make.tar.gz","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"cmake":{"checksums_url":"https://example.invalid/checksums","assets":[{"platform":"linux-x86_64","url":"https://example.invalid/cmake.tar.gz","sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}]}}`
+	return `{"production":{"common":{"configuration":"Release","cmake_defaults":{"CMAKE_INSTALL_LIBDIR":"lib"}},"linux":{"distribution":"ubuntu-20.04","gcc_version":"` + gccVersion + `","glibc_max":"2.31","generator":"Unix Makefiles"}},"make":{"version":"4.4.1","url":"https://example.invalid/make.tar.gz","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"cmake":{"version":"` + cmakeVersion + `","checksums_url":"https://example.invalid/checksums","assets":[{"platform":"linux-x86_64","url":"https://example.invalid/cmake.tar.gz","sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}]}}`
 }
 
 func writeIdentityFixture(t *testing.T, root, path, value string) {

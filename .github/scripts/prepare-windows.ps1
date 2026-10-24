@@ -17,8 +17,8 @@ $platformPlan = @($planDocument.platforms | Where-Object id -eq $Platform)
 if ($platformPlan.Count -ne 1) { throw "Plan must contain exactly one platform entry for $Platform." }
 
 $cmakeVersion = [string]$configDocument.cmake.version
-if ([string]::IsNullOrWhiteSpace($cmakeVersion) -or $configDocument.production.common.cmake_version -ne $cmakeVersion) {
-    throw 'Production CMake version must match cmake.version.'
+if ([string]::IsNullOrWhiteSpace($cmakeVersion)) {
+    throw 'cmake.version is required.'
 }
 if ($configDocument.cmake.checksums_url -ne "https://github.com/Kitware/CMake/releases/download/v$cmakeVersion/cmake-$cmakeVersion-SHA-256.txt") {
     throw 'Configured CMake checksums URL does not match cmake.version.'

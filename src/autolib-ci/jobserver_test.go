@@ -12,10 +12,6 @@ import (
 
 func TestMain(m *testing.M) {
 	if os.Getenv("AUTOLIB_CI_JOBSERVER_FAKE_MAKE") == "1" {
-		if len(os.Args) == 2 && os.Args[1] == "--version" {
-			fmt.Println("GNU Make 4.4.1")
-			os.Exit(0)
-		}
 		for _, arg := range os.Args[1:] {
 			if strings.HasPrefix(arg, "LOG=") {
 				file, err := os.OpenFile(strings.TrimPrefix(arg, "LOG="), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)

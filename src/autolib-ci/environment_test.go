@@ -31,10 +31,10 @@ func TestCIEnvironmentConfig(t *testing.T) {
 	if err := validateCIEnvironment(missingMakeDigest); err == nil || !strings.Contains(err.Error(), "SHA256") {
 		t.Fatalf("missing Make digest accepted: %v", err)
 	}
-	if config.Production.Common.CMakeVersion != config.CMake.Version || config.Production.Common.Configuration == "" {
+	if config.Production.Common.Configuration == "" {
 		t.Fatalf("production common baseline: %+v", config.Production.Common)
 	}
-	if config.Production.Linux.MakeVersion != config.Make.Version || config.Production.Linux.GCCVersion == "" || config.Production.Linux.GlibcMax == "" || config.Production.Linux.Generator == "" {
+	if config.Production.Linux.GCCVersion == "" || config.Production.Linux.GlibcMax == "" || config.Production.Linux.Generator == "" {
 		t.Fatalf("production Linux baseline: %+v", config.Production.Linux)
 	}
 	if config.Production.Windows.Generator == "" || config.Production.Windows.Platform == "" || config.Production.Windows.Toolset == "" || config.Production.Windows.Runtime == "" {
@@ -63,8 +63,8 @@ func TestCIEnvironmentConfig(t *testing.T) {
 
 func TestCIEnvironmentRejectsMissingProductionFields(t *testing.T) {
 	for _, field := range []struct{ section, name string }{
-		{"common", "cmake_version"}, {"common", "configuration"}, {"common", "cmake_defaults"},
-		{"linux", "distribution"}, {"linux", "gcc_version"}, {"linux", "glibc_max"}, {"linux", "make_version"}, {"linux", "generator"},
+		{"common", "configuration"}, {"common", "cmake_defaults"},
+		{"linux", "distribution"}, {"linux", "gcc_version"}, {"linux", "glibc_max"}, {"linux", "generator"},
 		{"windows", "generator"}, {"windows", "platform"}, {"windows", "toolset"}, {"windows", "runtime"},
 	} {
 		t.Run(field.section+"/"+field.name, func(t *testing.T) {
@@ -78,20 +78,7 @@ func TestCIEnvironmentRejectsMissingProductionFields(t *testing.T) {
 	}
 }
 
-func TestCIEnvironmentRejectsProductionToolMismatch(t *testing.T) {
-	for _, test := range []struct{ section, name, value string }{
-		{"common", "cmake_version", "3.30.0"},
-		{"linux", "make_version", "4.3"},
-	} {
-		t.Run(test.section+"/"+test.name, func(t *testing.T) {
-			document := environmentFixture(t)
-			production := document["production"].(map[string]any)
-			production[test.section].(map[string]any)[test.name] = test.value
-			if err := loadEnvironmentDocument(t, document); err == nil {
-				t.Fatalf("mismatched production.%s.%s was accepted", test.section, test.name)
-			}
-		})
-	}
+func TestCIEnvironmentRejectsUnsupportedDefaults(t *testing.T) {
 	document := environmentFixture(t)
 	production := document["production"].(map[string]any)
 	production["common"].(map[string]any)["cmake_defaults"] = map[string]any{"CMAKE_INSTALL_LIBDIR": "lib64", "CMAKE_POLICY_VERSION_MINIMUM": "3.5"}
@@ -111,12 +98,9 @@ func TestCIEnvironmentUsesConfiguredToolVersions(t *testing.T) {
 		entry["filename"] = filename
 		entry["url"] = strings.ReplaceAll(entry["url"].(string), "3.31.12", "3.32.0")
 	}
-	production := document["production"].(map[string]any)
-	production["common"].(map[string]any)["cmake_version"] = "3.32.0"
 	make := document["make"].(map[string]any)
 	make["version"] = "4.5.0"
 	make["url"] = "https://ftp.gnu.org/gnu/make/make-4.5.0.tar.gz"
-	production["linux"].(map[string]any)["make_version"] = "4.5.0"
 	if err := loadEnvironmentDocument(t, document); err != nil {
 		t.Fatalf("rejected tool versions consistently selected in configuration: %v", err)
 	}
@@ -161,11 +145,11 @@ func environmentFixture(t *testing.T) map[string]any {
 	}
 	document["production"] = map[string]any{
 		"common": map[string]any{
-			"cmake_version": "3.31.12", "configuration": "Release",
+			"configuration":  "Release",
 			"cmake_defaults": map[string]any{"CMAKE_INSTALL_LIBDIR": "lib", "CMAKE_POLICY_VERSION_MINIMUM": "3.5"},
 		},
 		"linux": map[string]any{
-			"distribution": "ubuntu-20.04", "gcc_version": "9.4", "glibc_max": "2.31", "make_version": "4.4.1", "generator": "Unix Makefiles",
+			"distribution": "ubuntu-20.04", "gcc_version": "9.4", "glibc_max": "2.31", "generator": "Unix Makefiles",
 		},
 		"windows": map[string]any{
 			"generator": "Visual Studio 17 2022", "platform": "x64", "toolset": "v143,host=x64", "runtime": "MultiThreadedDLL",

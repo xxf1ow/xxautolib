@@ -82,7 +82,7 @@ func computeBuildIdentities(o ciBuildInputs, description moduleDescription) (map
 		inputID, err := ciHash(map[string]any{
 			"module": module.Name, "configuration": config, "input_files": fileHashes,
 			"builder_inputs": shared, "baseline": baseline, "context": baseContext,
-			"dependencies": dependencyInputs,
+			"dependencies": dependencyInputs, "system_dependencies": module.SystemDependencies,
 		})
 		if err != nil {
 			return err
@@ -176,10 +176,12 @@ func ciProductionBaseline(root, filename string, context ciProductionContext, pl
 	var document struct {
 		Production map[string]json.RawMessage `json:"production"`
 		Make       struct {
-			URL    string `json:"url"`
-			SHA256 string `json:"sha256"`
+			Version string `json:"version"`
+			URL     string `json:"url"`
+			SHA256  string `json:"sha256"`
 		} `json:"make"`
 		CMake struct {
+			Version      string `json:"version"`
 			ChecksumsURL string `json:"checksums_url"`
 			Assets       []struct {
 				Platform string `json:"platform"`
@@ -199,7 +201,7 @@ func ciProductionBaseline(root, filename string, context ciProductionContext, pl
 	if err := json.Unmarshal(commonRaw, &common); err != nil || common == nil {
 		return nil, fmt.Errorf("production.common must be an object")
 	}
-	result := map[string]any{"common": common}
+	result := map[string]any{"common": common, "cmake_version": document.CMake.Version}
 	if platformIndependent {
 		return result, nil
 	}
@@ -232,6 +234,7 @@ func ciProductionBaseline(root, filename string, context ciProductionContext, pl
 			return nil, fmt.Errorf("production baseline is missing make asset URL or SHA256")
 		}
 		result["make_asset"] = map[string]string{"url": document.Make.URL, "sha256": document.Make.SHA256}
+		result["make_version"] = document.Make.Version
 	}
 	return result, nil
 }

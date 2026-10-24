@@ -36,9 +36,9 @@ type ciCacheOptions struct {
 }
 
 type ciCacheResult struct {
-	Hit                 bool
-	Reason, ArchiveFile string
-	Asset               githubAsset
+	Hit    bool
+	Reason string
+	Asset  githubAsset
 }
 
 var cacheDigestPattern = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
@@ -144,7 +144,7 @@ func lookupCICache(ctx context.Context, client *githubClient, o ciCacheOptions) 
 	if err := os.Rename(staged, archive); err != nil {
 		return ciCacheResult{}, fmt.Errorf("retain verified archive: %w", err)
 	}
-	return ciCacheResult{Hit: true, ArchiveFile: archive, Asset: asset}, nil
+	return ciCacheResult{Hit: true, Asset: asset}, nil
 }
 
 func validateCICacheOptions(o ciCacheOptions) error {
@@ -271,7 +271,7 @@ func restoreCICache(ctx context.Context, o ciCacheOptions, archive string) error
 	if _, err := os.Stat(result); err != nil {
 		return fmt.Errorf("importer did not create current result: %w", err)
 	}
-	command = exec.CommandContext(ctx, o.CMakeCommand, "-DRESULT_FILE="+result, "-DSOURCE_ROOT="+o.SourceRoot, "-DINSTALL_ROOT="+o.InstallRoot, "-DPACKAGE_NAME="+o.Slot.Name, "-DEXPECTED_PACKAGES="+strings.Join(expected, ";"), "-DOS="+o.TargetOS, "-DARCH="+o.TargetArch, "-P", filepath.Join(o.SourceRoot, "src", "autolib-ci", "restore-cache.cmake"))
+	command = exec.CommandContext(ctx, o.CMakeCommand, "-DRESULT_FILE="+result, "-DINSTALL_ROOT="+o.InstallRoot, "-DPACKAGE_NAME="+o.Slot.Name, "-DEXPECTED_PACKAGES="+strings.Join(expected, ";"), "-P", filepath.Join(o.SourceRoot, "src", "autolib-ci", "restore-cache.cmake"))
 	if output, err := command.CombinedOutput(); err != nil {
 		return fmt.Errorf("CMake cache restore failed: %w\n%s", err, strings.TrimSpace(string(output)))
 	}

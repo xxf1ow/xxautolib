@@ -71,7 +71,7 @@ func TestCIValidationMode(t *testing.T) {
 			if err := os.Chmod(tool, 0755); err != nil {
 				t.Fatal(err)
 			}
-			o := ciValidationOptions{SourceRoot: source, InstallRoot: filepath.Join(work, "install"), BuildRoot: work, ReleaseRoot: release, BuilderFile: filepath.Join(root, "missing-builder"), ImporterFile: importer, CMakeCommand: cmake, EvidenceDirectory: filepath.Join(work, "evidence"), Modules: []string{"queue"}, Context: production, Mode: mode}
+			o := ciValidationOptions{SourceRoot: source, InstallRoot: filepath.Join(work, "install"), BuildRoot: work, ReleaseRoot: release, ImporterFile: importer, CMakeCommand: cmake, EvidenceDirectory: filepath.Join(work, "evidence"), Modules: []string{"queue"}, Context: production, Mode: mode}
 			result, err := validateCIRelease(context.Background(), o)
 			if err != nil || !result.Passed {
 				t.Fatalf("validation failed: %+v %v", result, err)
@@ -143,37 +143,25 @@ func TestCIWindowsIdentity(t *testing.T) {
 func TestCIValidationPathsResolveExecutableSymlinks(t *testing.T) {
 	t.Run("accepts internal targets", func(t *testing.T) {
 		o := ciValidationPathFixture(t)
-		for _, name := range []string{"builder", "importer"} {
-			link := filepath.Join(o.SourceRoot, "tools", name+"-link.exe")
-			target := filepath.Join(o.SourceRoot, "tools", name+"-real.exe")
-			createCIExecutableSymlink(t, link, target)
-			if name == "builder" {
-				o.BuilderFile = link
-			} else {
-				o.ImporterFile = link
-			}
-		}
+		link := filepath.Join(o.SourceRoot, "tools", "importer-link.exe")
+		target := filepath.Join(o.SourceRoot, "tools", "importer-real.exe")
+		createCIExecutableSymlink(t, link, target)
+		o.ImporterFile = link
 		if _, err := validateCIValidationPaths(o); err != nil {
 			t.Fatalf("rejected executable symlinks resolving inside source root: %v", err)
 		}
 	})
 
-	for _, name := range []string{"builder", "importer"} {
-		t.Run("rejects external "+name+" target", func(t *testing.T) {
-			o := ciValidationPathFixture(t)
-			outside := filepath.Join(filepath.Dir(o.SourceRoot), "external-"+name+".exe")
-			link := filepath.Join(o.SourceRoot, "tools", name+"-link.exe")
-			createCIExecutableSymlink(t, link, outside)
-			if name == "builder" {
-				o.BuilderFile = link
-			} else {
-				o.ImporterFile = link
-			}
-			if _, err := validateCIValidationPaths(o); err == nil || !strings.Contains(err.Error(), name+" file must resolve inside source root") {
-				t.Fatalf("accepted %s symlink resolving outside source root: %v", name, err)
-			}
-		})
-	}
+	t.Run("rejects external importer target", func(t *testing.T) {
+		o := ciValidationPathFixture(t)
+		outside := filepath.Join(filepath.Dir(o.SourceRoot), "external-importer.exe")
+		link := filepath.Join(o.SourceRoot, "tools", "importer-link.exe")
+		createCIExecutableSymlink(t, link, outside)
+		o.ImporterFile = link
+		if _, err := validateCIValidationPaths(o); err == nil || !strings.Contains(err.Error(), "importer file must resolve inside source root") {
+			t.Fatalf("accepted importer symlink resolving outside source root: %v", err)
+		}
+	})
 }
 
 func ciValidationPathFixture(t *testing.T) ciValidationOptions {
@@ -191,7 +179,6 @@ func ciValidationPathFixture(t *testing.T) ciValidationOptions {
 	return ciValidationOptions{
 		SourceRoot: source, InstallRoot: filepath.Join(source, "install"),
 		BuildRoot: filepath.Join(source, "build"), ReleaseRoot: filepath.Join(source, "build", "release"),
-		BuilderFile:  filepath.Join(source, "tools", "builder.exe"),
 		ImporterFile: filepath.Join(source, "tools", "importer.exe"),
 		CMakeCommand: filepath.Join(source, "cmake.exe"), EvidenceDirectory: filepath.Join(source, "build", "evidence"),
 	}

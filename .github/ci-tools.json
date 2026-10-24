@@ -37,7 +37,6 @@
   },
   "production": {
     "common": {
-      "cmake_version": "3.31.12",
       "configuration": "Release",
       "cmake_defaults": {
         "CMAKE_INSTALL_LIBDIR": "lib",
@@ -48,7 +47,6 @@
       "distribution": "ubuntu-20.04",
       "gcc_version": "9.4",
       "glibc_max": "2.31",
-      "make_version": "4.4.1",
       "generator": "Unix Makefiles"
     },
     "windows": {

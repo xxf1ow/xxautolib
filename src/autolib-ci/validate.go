@@ -17,7 +17,7 @@ import (
 
 type ciValidationOptions struct {
 	SourceRoot, InstallRoot, BuildRoot, ReleaseRoot string
-	BuilderFile, ImporterFile, CMakeCommand         string
+	ImporterFile, CMakeCommand                      string
 	EvidenceDirectory                               string
 	Mode                                            string
 	Modules                                         []string
@@ -57,7 +57,6 @@ func validateCIRelease(ctx context.Context, o ciValidationOptions) (ciValidation
 		"-DRELEASE_DIR=" + roots.release,
 		"-DVALIDATION_ROOT=" + roots.build,
 		"-DEVIDENCE_DIRECTORY=" + roots.evidence,
-		"-DBUILDER_FILE=" + o.BuilderFile,
 		"-DIMPORTER_FILE=" + o.ImporterFile,
 		"-DCMAKE_COMMAND=" + o.CMakeCommand,
 		"-DTARGET_OS=" + o.Context.OS,
@@ -162,7 +161,7 @@ func validateCIValidationPaths(o ciValidationOptions) (ciValidationRoots, error)
 		name, value string
 	}{
 		{"source root", o.SourceRoot}, {"install root", o.InstallRoot}, {"validation root", o.BuildRoot},
-		{"release root", o.ReleaseRoot}, {"builder file", o.BuilderFile}, {"importer file", o.ImporterFile},
+		{"release root", o.ReleaseRoot}, {"importer file", o.ImporterFile},
 		{"CMake command", o.CMakeCommand}, {"evidence directory", o.EvidenceDirectory},
 	}
 	for _, item := range paths {
@@ -184,20 +183,20 @@ func validateCIValidationPaths(o ciValidationOptions) (ciValidationRoots, error)
 		if err != nil {
 			return ciValidationRoots{}, err
 		}
-		if i == 0 || i == 1 || i == 2 || i == 3 || i == 4 || i == 6 {
+		if item.name != "CMake command" {
 			absolute, err = resolveExistingPrefix(absolute)
 			if err != nil {
 				return ciValidationRoots{}, fmt.Errorf("resolve %s: %w", item.name, err)
 			}
 		}
 		resolved[i] = absolute
-		if i != 5 {
+		if item.name != "CMake command" {
 			if err := requirePathWithin(source, absolute, item.name); err != nil {
 				return ciValidationRoots{}, err
 			}
 		}
 	}
-	return ciValidationRoots{source: source, install: resolved[0], build: resolved[1], release: resolved[2], evidence: resolved[6]}, nil
+	return ciValidationRoots{source: source, install: resolved[0], build: resolved[1], release: resolved[2], evidence: resolved[5]}, nil
 }
 
 func resolveExistingPrefix(path string) (string, error) {

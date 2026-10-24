@@ -74,7 +74,7 @@ func describeModules(sourceRoot, systemName, architecture string, names []string
 	}
 	for _, entry := range entries {
 		name := entry.Name()
-		if entry.IsDir() || strings.HasSuffix(name, "_test.go") || strings.HasPrefix(name, "ci_") {
+		if entry.IsDir() || strings.HasSuffix(name, "_test.go") {
 			continue
 		}
 		if strings.HasSuffix(name, ".go") || strings.HasSuffix(name, ".cmake") {

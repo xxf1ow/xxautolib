@@ -31,7 +31,6 @@ type ciEnvironmentConfig struct {
 	} `json:"cmake"`
 	Production struct {
 		Common struct {
-			CMakeVersion  string            `json:"cmake_version"`
 			Configuration string            `json:"configuration"`
 			CMakeDefaults map[string]string `json:"cmake_defaults"`
 		} `json:"common"`
@@ -39,7 +38,6 @@ type ciEnvironmentConfig struct {
 			Distribution string `json:"distribution"`
 			GCCVersion   string `json:"gcc_version"`
 			GlibcMax     string `json:"glibc_max"`
-			MakeVersion  string `json:"make_version"`
 			Generator    string `json:"generator"`
 		} `json:"linux"`
 		Windows struct {
@@ -122,16 +120,16 @@ func validateCIEnvironment(config ciEnvironmentConfig) error {
 
 func validateProductionEnvironment(config ciEnvironmentConfig) error {
 	common := config.Production.Common
-	if common.CMakeVersion == "" || common.CMakeVersion != config.CMake.Version || common.Configuration != "Release" {
-		return fmt.Errorf("production.common: CMake version must match cmake.version and configuration must be Release")
+	if common.Configuration != "Release" {
+		return fmt.Errorf("production.common.configuration must be Release")
 	}
 	wantDefaults := map[string]string{"CMAKE_INSTALL_LIBDIR": "lib", "CMAKE_POLICY_VERSION_MINIMUM": "3.5"}
 	if !equalStringMap(common.CMakeDefaults, wantDefaults) {
 		return fmt.Errorf("production.common.cmake_defaults: expected fixed CMake defaults")
 	}
 	linux := config.Production.Linux
-	if linux.Distribution != "ubuntu-20.04" || !versionPair.MatchString(linux.GCCVersion) || !strings.HasPrefix(linux.GCCVersion, "9.") || !versionPair.MatchString(linux.GlibcMax) || compareVersion("GLIBC_"+linux.GlibcMax, "GLIBC_2.31") > 0 || linux.MakeVersion != config.Make.Version || linux.Generator != "Unix Makefiles" {
-		return fmt.Errorf("production.linux: expected supported Ubuntu, GCC, glibc, Make, and generator values")
+	if linux.Distribution != "ubuntu-20.04" || !versionPair.MatchString(linux.GCCVersion) || !strings.HasPrefix(linux.GCCVersion, "9.") || !versionPair.MatchString(linux.GlibcMax) || compareVersion("GLIBC_"+linux.GlibcMax, "GLIBC_2.31") > 0 || linux.Generator != "Unix Makefiles" {
+		return fmt.Errorf("production.linux: expected supported Ubuntu, GCC, glibc, and generator values")
 	}
 	windows := config.Production.Windows
 	if windows.Generator != "Visual Studio 17 2022" || windows.Platform != "x64" || windows.Toolset != "v143,host=x64" || windows.Runtime != "MultiThreadedDLL" {

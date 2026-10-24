@@ -35,12 +35,11 @@ type githubRelease struct {
 }
 
 type githubAsset struct {
-	ID                 int64  `json:"id"`
-	Name               string `json:"name"`
-	State              string `json:"state"`
-	Label              string `json:"label"`
-	Digest             string `json:"digest"`
-	BrowserDownloadURL string `json:"browser_download_url"`
+	ID     int64  `json:"id"`
+	Name   string `json:"name"`
+	State  string `json:"state"`
+	Label  string `json:"label"`
+	Digest string `json:"digest"`
 }
 
 func (c *githubClient) httpClient() *http.Client {

@@ -188,7 +188,7 @@ func runCILayerWithClient(ctx context.Context, o ciRunOptions, client *githubCli
 			return errors.New("verify requires all selected package results")
 		}
 		if len(modules) == 3 && modules["queue"].Name != "" && modules["lz4"].Name != "" && modules["flann"].Name != "" {
-			if _, err := validateCIRelease(ctx, ciValidationOptions{SourceRoot: source, InstallRoot: install, BuildRoot: work, ReleaseRoot: releaseRoot, BuilderFile: o.BuilderFile, ImporterFile: o.ImporterFile, CMakeCommand: o.CMakeCommand, EvidenceDirectory: filepath.Join(work, "evidence", "relocate"), Modules: []string{"queue", "lz4", "flann"}, Context: production, Mode: "relocate"}); err != nil {
+			if _, err := validateCIRelease(ctx, ciValidationOptions{SourceRoot: source, InstallRoot: install, BuildRoot: work, ReleaseRoot: releaseRoot, ImporterFile: o.ImporterFile, CMakeCommand: o.CMakeCommand, EvidenceDirectory: filepath.Join(work, "evidence", "relocate"), Modules: []string{"queue", "lz4", "flann"}, Context: production, Mode: "relocate"}); err != nil {
 				return err
 			}
 		}
@@ -270,7 +270,7 @@ func runCILayerWithClient(ctx context.Context, o ciRunOptions, client *githubCli
 			return err
 		}
 		item.SHA256 = digest
-		if _, err := validateCIRelease(ctx, ciValidationOptions{SourceRoot: source, InstallRoot: install, BuildRoot: work, ReleaseRoot: releaseRoot, BuilderFile: o.BuilderFile, ImporterFile: o.ImporterFile, CMakeCommand: o.CMakeCommand, EvidenceDirectory: filepath.Join(work, "evidence", name), Modules: consumerModules, RootPackages: []string{name}, Context: production, Mode: "single"}); err != nil {
+		if _, err := validateCIRelease(ctx, ciValidationOptions{SourceRoot: source, InstallRoot: install, BuildRoot: work, ReleaseRoot: releaseRoot, ImporterFile: o.ImporterFile, CMakeCommand: o.CMakeCommand, EvidenceDirectory: filepath.Join(work, "evidence", name), Modules: consumerModules, RootPackages: []string{name}, Context: production, Mode: "single"}); err != nil {
 			return err
 		}
 		item.Verified = true

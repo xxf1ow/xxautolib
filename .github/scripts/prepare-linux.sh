@@ -46,7 +46,6 @@ apt-get update
 apt-get install -y --no-install-recommends ca-certificates curl git jq build-essential "gcc-$gcc_major" "g++-$gcc_major" pkg-config libgomp1 xz-utils tar unzip
 
 cmake_version=$(jq -er '.cmake.version' "$config")
-[[ "$(jq -er '.production.common.cmake_version' "$config")" == "$cmake_version" ]] || { echo "Production CMake version does not match cmake.version." >&2; exit 1; }
 cmake_file=$(jq -er --arg platform "$platform" '.cmake.assets[] | select(.platform == $platform) | .filename' "$config")
 cmake_url=$(jq -er --arg platform "$platform" '.cmake.assets[] | select(.platform == $platform) | .url' "$config")
 cmake_hash=$(jq -er --arg platform "$platform" '.cmake.assets[] | select(.platform == $platform) | .sha256' "$config")
@@ -58,7 +57,6 @@ cmake_command="$tools/bin/cmake"
 [[ "$("$cmake_command" --version | head -n1)" == "cmake version $cmake_version" ]] || { echo "Unexpected CMake version." >&2; exit 1; }
 
 make_version=$(jq -er '.make.version' "$config")
-[[ "$(jq -er '.production.linux.make_version' "$config")" == "$make_version" ]] || { echo "Production Make version does not match make.version." >&2; exit 1; }
 make_url=$(jq -er '.make.url' "$config")
 make_hash=$(jq -er '.make.sha256' "$config")
 make_archive="$tools/src/make-$make_version.tar.gz"
