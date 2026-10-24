@@ -15,63 +15,35 @@ import (
 	"strings"
 )
 
-type ciImporterRecord struct {
-	OS     string `json:"os"`
-	Arch   string `json:"arch"`
-	Asset  string `json:"asset"`
-	SHA256 string `json:"sha256"`
-}
-
-type ciPackageRecord struct {
-	Name   string `json:"name"`
-	OS     string `json:"os"`
-	Arch   string `json:"arch"`
-	Asset  string `json:"asset"`
-	SHA256 string `json:"sha256"`
-}
-
-type ciManifest struct {
-	Importers []ciImporterRecord `json:"importers"`
-	Packages  []ciPackageRecord  `json:"packages"`
-}
-
 type ciSlot struct {
 	Name string `json:"name"`
 	OS   string `json:"os"`
 	Arch string `json:"arch"`
 }
 
-type ciCacheRecord struct {
-	Slot    ciSlot `json:"slot"`
+type ciAssetLabel struct {
 	BuildID string `json:"build_id"`
-	SHA256  string `json:"sha256"`
 	Commit  string `json:"commit"`
 }
 
-type ciCacheIndex struct {
-	Packages []ciCacheRecord `json:"packages"`
-}
+type ciReadyArchive struct{ Name, File string }
 
 type ciCacheOptions struct {
 	SourceRoot, WorkRoot, InstallRoot, ReleaseRoot, ImporterFile, CMakeCommand, BuildID string
+	TargetOS, TargetArch                                                                string
 	Slot                                                                                ciSlot
+	DependencyArchives                                                                  []ciReadyArchive
 }
 
 type ciCacheResult struct {
-	Hit         bool
-	Reason      string
-	ArchiveFile string
-	Package     ciPackageRecord
+	Hit                 bool
+	Reason, ArchiveFile string
+	Asset               githubAsset
 }
 
 var cacheDigestPattern = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
 var cacheCommitPattern = regexp.MustCompile(`^[0-9a-fA-F]{40}$`)
 var cachePackagePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.+\-]*$`)
-
-type ciAssetLabel struct {
-	BuildID string `json:"build_id"`
-	Commit  string `json:"commit"`
-}
 
 func ciPackageAssetName(slot ciSlot) string {
 	return slot.Name + "-" + slot.OS + "-" + slot.Arch + ".tar.zst"
@@ -107,19 +79,13 @@ func selectCICacheAsset(assets []githubAsset, slot ciSlot, buildID string) (gith
 		return githubAsset{}, "package asset is not completely uploaded", nil
 	}
 	var label ciAssetLabel
-	decoder := json.NewDecoder(strings.NewReader(selected.Label))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&label); err != nil {
-		return githubAsset{}, "package production label is invalid", nil
-	}
-	var extra any
-	if !errors.Is(decoder.Decode(&extra), io.EOF) || strings.TrimSpace(label.BuildID) == "" || !cacheCommitPattern.MatchString(label.Commit) {
+	if err := decodeStrictJSON(strings.NewReader(selected.Label), &label); err != nil || strings.TrimSpace(label.BuildID) == "" || !cacheCommitPattern.MatchString(label.Commit) {
 		return githubAsset{}, "package production label is invalid", nil
 	}
 	if label.BuildID != buildID {
 		return githubAsset{}, "cached package build ID does not match", nil
 	}
-	if !strings.HasPrefix(selected.Digest, "sha256:") || !cacheDigestPattern.MatchString(strings.TrimPrefix(selected.Digest, "sha256:")) {
+	if !validGitHubDigest(selected.Digest) {
 		return githubAsset{}, "package asset has no valid GitHub SHA256 digest", nil
 	}
 	return selected, "", nil
@@ -143,117 +109,42 @@ func lookupCICache(ctx context.Context, client *githubClient, o ciCacheOptions) 
 	if err != nil {
 		return ciCacheResult{}, err
 	}
-	byName := make(map[string]githubAsset, len(assets))
-	for _, asset := range assets {
-		if asset.ID <= 0 || asset.Name == "" || byName[asset.Name].ID != 0 {
-			return ciCacheResult{}, fmt.Errorf("GitHub release contains invalid or duplicate asset metadata")
-		}
-		byName[asset.Name] = asset
-	}
-	manifestAsset, ok := byName["manifest.json"]
-	if !ok {
-		return ciCacheMiss("release has no public manifest.json asset"), nil
-	}
-	manifestFile, err := downloadMetadata(ctx, client, manifestAsset, o.WorkRoot)
+	asset, reason, err := selectCICacheAsset(assets, o.Slot, o.BuildID)
 	if err != nil {
 		return ciCacheResult{}, err
 	}
-	defer os.Remove(manifestFile)
-	manifest, err := readCICacheManifest(manifestFile)
-	if err != nil {
-		return ciCacheResult{}, err
+	if reason != "" {
+		return ciCacheMiss(reason), nil
 	}
-	indexAsset, ok := byName["build-cache.json"]
-	if !ok {
-		return ciCacheMiss("release has no private build-cache.json asset"), nil
-	}
-	indexFile, err := downloadMetadata(ctx, client, indexAsset, o.WorkRoot)
-	if err != nil {
-		return ciCacheResult{}, err
-	}
-	defer os.Remove(indexFile)
-	index, err := readCICacheIndex(indexFile)
-	if err != nil {
-		return ciCacheResult{}, err
-	}
-	var public *ciPackageRecord
-	for i := range manifest.Packages {
-		record := &manifest.Packages[i]
-		if record.Name == o.Slot.Name && matchesCISlot(record.OS, record.Arch, o.Slot.OS, o.Slot.Arch) {
-			public = record
-			break
-		}
-	}
-	if public == nil {
-		return ciCacheMiss("public manifest has no matching package slot"), nil
-	}
-	var private *ciCacheRecord
-	for i := range index.Packages {
-		record := &index.Packages[i]
-		if record.Slot.Name == o.Slot.Name && matchesCISlot(record.Slot.OS, record.Slot.Arch, o.Slot.OS, o.Slot.Arch) {
-			private = record
-			break
-		}
-	}
-	if private == nil {
-		return ciCacheMiss("private cache index has no matching package slot"), nil
-	}
-	if private.BuildID != o.BuildID {
-		return ciCacheMiss("cached package build ID does not match"), nil
-	}
-	if !strings.EqualFold(private.SHA256, public.SHA256) {
-		return ciCacheMiss("public and private package digests differ"), nil
-	}
-	archiveAsset, ok := byName[public.Asset]
-	if !ok {
-		return ciCacheMiss("release package asset is missing"), nil
-	}
-	if !digestMatches(archiveAsset.Digest, public.SHA256) {
-		return ciCacheMiss("GitHub asset digest does not match public manifest"), nil
-	}
-	archivePath := filepath.Join(o.ReleaseRoot, public.Asset)
 	if err := os.MkdirAll(o.ReleaseRoot, 0755); err != nil {
-		return ciCacheResult{}, fmt.Errorf("create release cache: %w", err)
-	}
-	if existing, err := os.Open(archivePath); err == nil {
-		actual, hashErr := hashReader(existing)
-		closeErr := existing.Close()
-		if err := errors.Join(hashErr, closeErr); err != nil {
-			return ciCacheResult{}, err
-		}
-		if !strings.EqualFold(actual, public.SHA256) {
-			return ciCacheMiss("existing release archive does not match the verified digest"), nil
-		}
-	} else if !os.IsNotExist(err) {
-		return ciCacheResult{}, err
-	} else {
-		staged, err := os.CreateTemp(o.ReleaseRoot, ".cache-download-")
-		if err != nil {
-			return ciCacheResult{}, err
-		}
-		stagedPath := staged.Name()
-		staged.Close()
-		defer os.Remove(stagedPath)
-		digest, err := client.downloadAsset(ctx, archiveAsset, stagedPath)
-		if err != nil {
-			var mismatch *cacheDigestMismatch
-			if errors.As(err, &mismatch) {
-				return ciCacheMiss("downloaded archive bytes do not match GitHub asset digest"), nil
-			}
-			return ciCacheResult{}, err
-		}
-		if !strings.EqualFold(digest, public.SHA256) {
-			return ciCacheMiss("downloaded archive bytes do not match public manifest"), nil
-		}
-		if err := os.Rename(stagedPath, archivePath); err != nil {
-			return ciCacheResult{}, fmt.Errorf("retain verified release archive: %w", err)
-		}
-	}
-
-	if err := restoreCICache(ctx, o, *public, archivePath); err != nil {
 		return ciCacheResult{}, err
 	}
-	return ciCacheResult{Hit: true, ArchiveFile: archivePath, Package: *public}, nil
+	file, err := os.CreateTemp(o.ReleaseRoot, ".cache-download-")
+	if err != nil {
+		return ciCacheResult{}, err
+	}
+	staged := file.Name()
+	file.Close()
+	defer os.Remove(staged)
+	if _, err := client.downloadAsset(ctx, asset, staged); err != nil {
+		var mismatch *cacheDigestMismatch
+		if errors.As(err, &mismatch) {
+			return ciCacheMiss("downloaded archive bytes do not match GitHub asset digest"), nil
+		}
+		return ciCacheResult{}, err
+	}
+	if err := restoreCICache(ctx, o, staged); err != nil {
+		var invalid *ciInvalidCache
+		if errors.As(err, &invalid) {
+			return ciCacheMiss(invalid.Error()), nil
+		}
+		return ciCacheResult{}, err
+	}
+	archive := filepath.Join(o.ReleaseRoot, asset.Name)
+	if err := os.Rename(staged, archive); err != nil {
+		return ciCacheResult{}, fmt.Errorf("retain verified archive: %w", err)
+	}
+	return ciCacheResult{Hit: true, ArchiveFile: archive, Asset: asset}, nil
 }
 
 func validateCICacheOptions(o ciCacheOptions) error {
@@ -262,8 +153,8 @@ func validateCICacheOptions(o ciCacheOptions) error {
 			return fmt.Errorf("CI cache %s cannot be empty", name)
 		}
 	}
-	if !cachePackagePattern.MatchString(o.Slot.Name) || !validCachePlatform(o.Slot.OS, o.Slot.Arch) {
-		return fmt.Errorf("invalid CI cache slot %q/%q/%q", o.Slot.Name, o.Slot.OS, o.Slot.Arch)
+	if !cachePackagePattern.MatchString(o.Slot.Name) || !validCachePlatform(o.Slot.OS, o.Slot.Arch) || o.TargetOS == "any" || !validCachePlatform(o.TargetOS, o.TargetArch) {
+		return fmt.Errorf("invalid CI cache slot or target")
 	}
 	return nil
 }
@@ -275,104 +166,19 @@ func validCachePlatform(system, arch string) bool {
 	return (system == "linux" || system == "windows") && (arch == "x86_64" || arch == "aarch64")
 }
 
-func matchesCISlot(actualOS, actualArch, requestedOS, requestedArch string) bool {
-	return (actualOS == requestedOS && actualArch == requestedArch) || (actualOS == "any" && actualArch == "any")
-}
-
 func ciCacheMiss(reason string) ciCacheResult { return ciCacheResult{Reason: reason} }
 
-func downloadMetadata(ctx context.Context, client *githubClient, asset githubAsset, workRoot string) (string, error) {
-	assetDigest := strings.TrimPrefix(asset.Digest, "sha256:")
-	if !cacheDigestPattern.MatchString(assetDigest) {
-		return "", fmt.Errorf("GitHub asset %s has no valid SHA-256 digest", asset.Name)
+func decodeStrictJSON(reader io.Reader, result any) error {
+	decoder := json.NewDecoder(io.LimitReader(reader, 8<<20))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(result); err != nil {
+		return err
 	}
-	if err := os.MkdirAll(workRoot, 0755); err != nil {
-		return "", err
+	var extra any
+	if !errors.Is(decoder.Decode(&extra), io.EOF) {
+		return fmt.Errorf("trailing JSON data")
 	}
-	file, err := os.CreateTemp(workRoot, ".github-metadata-")
-	if err != nil {
-		return "", err
-	}
-	name := file.Name()
-	file.Close()
-	digest, err := client.downloadAsset(ctx, asset, name)
-	if err != nil {
-		os.Remove(name)
-		return "", err
-	}
-	if !strings.EqualFold(digest, assetDigest) {
-		os.Remove(name)
-		return "", fmt.Errorf("GitHub metadata asset %s bytes do not match its digest", asset.Name)
-	}
-	return name, nil
-}
-
-func readCICacheManifest(filename string) (ciManifest, error) {
-	var manifest ciManifest
-	if err := decodeStrictJSONFile(filename, &manifest); err != nil {
-		return manifest, fmt.Errorf("decode production manifest: %w", err)
-	}
-	if manifest.Importers == nil || manifest.Packages == nil {
-		return manifest, fmt.Errorf("production manifest arrays must not be null")
-	}
-	seen := map[ciSlot]bool{}
-	for _, record := range manifest.Packages {
-		if !cachePackagePattern.MatchString(record.Name) || !validCachePlatform(record.OS, record.Arch) || !validCacheAsset(record.Asset) || !cacheDigestPattern.MatchString(record.SHA256) {
-			return manifest, fmt.Errorf("production manifest contains an invalid package record")
-		}
-		key := ciSlot{Name: record.Name, OS: record.OS, Arch: record.Arch}
-		if seen[key] {
-			return manifest, fmt.Errorf("production manifest repeats package slot %s/%s/%s", key.Name, key.OS, key.Arch)
-		}
-		seen[key] = true
-	}
-	for i, record := range manifest.Packages {
-		for _, other := range manifest.Packages[i+1:] {
-			if record.Name == other.Name && ((record.OS == "any" && record.Arch == "any") || (other.OS == "any" && other.Arch == "any")) {
-				return manifest, fmt.Errorf("production manifest has conflicting universal and platform package slots for %s", record.Name)
-			}
-		}
-	}
-	seenImporters := map[ciSlot]bool{}
-	for _, record := range manifest.Importers {
-		if !validCachePlatform(record.OS, record.Arch) || !validCacheAsset(record.Asset) || !cacheDigestPattern.MatchString(record.SHA256) {
-			return manifest, fmt.Errorf("production manifest contains an invalid importer record")
-		}
-		key := ciSlot{OS: record.OS, Arch: record.Arch}
-		if seenImporters[key] {
-			return manifest, fmt.Errorf("production manifest repeats importer slot %s/%s", key.OS, key.Arch)
-		}
-		seenImporters[key] = true
-	}
-	return manifest, nil
-}
-
-func readCICacheIndex(filename string) (ciCacheIndex, error) {
-	var index ciCacheIndex
-	if err := decodeStrictJSONFile(filename, &index); err != nil {
-		return index, fmt.Errorf("decode private cache index: %w", err)
-	}
-	if index.Packages == nil {
-		return index, fmt.Errorf("private cache index packages must not be null")
-	}
-	seen := map[ciSlot]bool{}
-	for _, record := range index.Packages {
-		if !cachePackagePattern.MatchString(record.Slot.Name) || !validCachePlatform(record.Slot.OS, record.Slot.Arch) || record.BuildID == "" || !cacheDigestPattern.MatchString(record.SHA256) || !cacheCommitPattern.MatchString(record.Commit) {
-			return index, fmt.Errorf("private cache index contains an invalid package record")
-		}
-		if seen[record.Slot] {
-			return index, fmt.Errorf("private cache index repeats package slot %s/%s/%s", record.Slot.Name, record.Slot.OS, record.Slot.Arch)
-		}
-		seen[record.Slot] = true
-	}
-	for i, record := range index.Packages {
-		for _, other := range index.Packages[i+1:] {
-			if record.Slot.Name == other.Slot.Name && ((record.Slot.OS == "any" && record.Slot.Arch == "any") || (other.Slot.OS == "any" && other.Slot.Arch == "any")) {
-				return index, fmt.Errorf("private cache index has conflicting universal and platform slots for %s", record.Slot.Name)
-			}
-		}
-	}
-	return index, nil
+	return nil
 }
 
 func decodeStrictJSONFile(filename string, result any) error {
@@ -381,28 +187,18 @@ func decodeStrictJSONFile(filename string, result any) error {
 		return err
 	}
 	defer file.Close()
-	decoder := json.NewDecoder(io.LimitReader(file, 8<<20))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(result); err != nil {
-		return err
-	}
-	var extra any
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		return fmt.Errorf("trailing JSON data")
-	}
-	return nil
+	return decodeStrictJSON(file, result)
 }
 
 func validCacheAsset(name string) bool {
 	return name != "" && filepath.Base(name) == name && name != "." && name != ".." && !strings.ContainsAny(name, `/\:`)
 }
-
-func digestMatches(apiDigest, digest string) bool {
-	apiDigest = strings.TrimPrefix(apiDigest, "sha256:")
-	digest = strings.TrimPrefix(digest, "sha256:")
-	return cacheDigestPattern.MatchString(apiDigest) && cacheDigestPattern.MatchString(digest) && strings.EqualFold(apiDigest, digest)
+func validGitHubDigest(value string) bool {
+	return strings.HasPrefix(value, "sha256:") && cacheDigestPattern.MatchString(strings.TrimPrefix(value, "sha256:"))
 }
-
+func digestMatches(apiDigest, digest string) bool {
+	return validGitHubDigest(apiDigest) && cacheDigestPattern.MatchString(digest) && strings.EqualFold(strings.TrimPrefix(apiDigest, "sha256:"), digest)
+}
 func hashReader(reader io.Reader) (string, error) {
 	hash := sha256.New()
 	if _, err := io.Copy(hash, reader); err != nil {
@@ -435,7 +231,11 @@ type cacheDigestMismatch struct{}
 
 func (*cacheDigestMismatch) Error() string { return "GitHub asset bytes do not match API digest" }
 
-func restoreCICache(ctx context.Context, o ciCacheOptions, record ciPackageRecord, archive string) error {
+type ciInvalidCache struct{ message string }
+
+func (e *ciInvalidCache) Error() string { return e.message }
+
+func restoreCICache(ctx context.Context, o ciCacheOptions, archive string) error {
 	if err := os.MkdirAll(o.WorkRoot, 0755); err != nil {
 		return err
 	}
@@ -444,42 +244,36 @@ func restoreCICache(ctx context.Context, o ciCacheOptions, record ciPackageRecor
 		return err
 	}
 	defer os.RemoveAll(candidate)
-	archiveName := filepath.Base(record.Asset)
-	copyPath := filepath.Join(candidate, archiveName)
-	if err := copyCacheFile(archive, copyPath); err != nil {
+	if err := copyCacheFile(archive, filepath.Join(candidate, ciPackageAssetName(o.Slot))); err != nil {
 		return err
 	}
-	manifest := ciManifest{Importers: []ciImporterRecord{}, Packages: []ciPackageRecord{record}}
-	data, err := json.Marshal(manifest)
-	if err != nil {
-		return err
+	expected := []string{}
+	for _, dependency := range o.DependencyArchives {
+		if err := copyCacheFile(dependency.File, filepath.Join(candidate, filepath.Base(dependency.File))); err != nil {
+			return err
+		}
+		expected = append(expected, dependency.Name)
 	}
-	manifestPath := filepath.Join(candidate, "manifest.json")
-	if err := os.WriteFile(manifestPath, data, 0644); err != nil {
-		return err
-	}
-	isolatedWork, err := os.MkdirTemp(o.WorkRoot, "ci-importer-work-")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(isolatedWork)
-	resultPath := filepath.Join(candidate, "prepared.cmake")
-	args := []string{"prepare", "--uri", candidate, "--manifest", manifestPath, "--work-root", isolatedWork, "--os", o.Slot.OS, "--arch", o.Slot.Arch, "--result", resultPath, "--package", record.Name}
-	command := exec.CommandContext(ctx, o.ImporterFile, args...)
+	expected = append(expected, o.Slot.Name)
+	result := filepath.Join(candidate, "prepared.cmake")
+	command := exec.CommandContext(ctx, o.ImporterFile, "prepare", "--local-root", candidate, "--work-root", filepath.Join(candidate, "work"), "--os", o.TargetOS, "--arch", o.TargetArch, "--result", result, "--package", o.Slot.Name)
 	output, err := command.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("importer prepare failed: %w\n%s", err, strings.TrimSpace(string(output)))
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		var exit *exec.ExitError
+		if errors.As(err, &exit) {
+			return &ciInvalidCache{message: fmt.Sprintf("importer rejected cache candidate: %s", strings.TrimSpace(string(output)))}
+		}
+		return fmt.Errorf("start importer prepare: %w", err)
 	}
-	if _, err := os.Stat(resultPath); err != nil {
-		return fmt.Errorf("importer prepare did not create result: %w", err)
+	if _, err := os.Stat(result); err != nil {
+		return fmt.Errorf("importer did not create current result: %w", err)
 	}
-	if err := os.MkdirAll(o.InstallRoot, 0755); err != nil {
-		return err
-	}
-	cmakeCommand := exec.CommandContext(ctx, o.CMakeCommand, "-DRESULT_FILE="+resultPath, "-DSOURCE_ROOT="+o.SourceRoot, "-DINSTALL_ROOT="+o.InstallRoot, "-DPACKAGE_NAME="+record.Name, "-DOS="+o.Slot.OS, "-DARCH="+o.Slot.Arch, "-P", filepath.Join(o.SourceRoot, "src", "autolib-ci", "restore-cache.cmake"))
-	cmakeOutput, err := cmakeCommand.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("CMake cache restore failed: %w\n%s", err, strings.TrimSpace(string(cmakeOutput)))
+	command = exec.CommandContext(ctx, o.CMakeCommand, "-DRESULT_FILE="+result, "-DSOURCE_ROOT="+o.SourceRoot, "-DINSTALL_ROOT="+o.InstallRoot, "-DPACKAGE_NAME="+o.Slot.Name, "-DEXPECTED_PACKAGES="+strings.Join(expected, ";"), "-DOS="+o.TargetOS, "-DARCH="+o.TargetArch, "-P", filepath.Join(o.SourceRoot, "src", "autolib-ci", "restore-cache.cmake"))
+	if output, err := command.CombinedOutput(); err != nil {
+		return fmt.Errorf("CMake cache restore failed: %w\n%s", err, strings.TrimSpace(string(output)))
 	}
 	return nil
 }

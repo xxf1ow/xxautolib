@@ -64,90 +64,42 @@ func TestCICacheAssetSelection(t *testing.T) {
 }
 
 func TestCICacheIntegrity(t *testing.T) {
-	archive := []byte("package archive bytes")
-	archiveDigest := cacheTestDigest(archive)
-	validManifest := ciManifest{Importers: []ciImporterRecord{}, Packages: []ciPackageRecord{{Name: "queue", OS: "any", Arch: "any", Asset: "queue-any-any.tar.zst", SHA256: archiveDigest}}}
-	validIndex := ciCacheIndex{Packages: []ciCacheRecord{{Slot: ciSlot{Name: "queue", OS: "any", Arch: "any"}, BuildID: "build-1", SHA256: archiveDigest, Commit: strings.Repeat("a", 40)}}}
-	cases := []struct {
-		name       string
-		manifest   ciManifest
-		index      ciCacheIndex
-		buildID    string
-		wantReason string
-		badJSON    bool
+	archive := cacheTestPackageArchive(t, "queue", "any", "any", []cacheArchiveMember{{Name: "queue/payload", Body: "valid"}})
+	importer := buildCacheTestImporter(t)
+	for _, test := range []struct {
+		name, buildID, digest string
+		hit                   bool
 	}{
-		{name: "build ID mismatch is a miss", manifest: validManifest, index: validIndex, buildID: "different-build", wantReason: "build ID"},
-		{name: "private digest disagreement is a miss", manifest: validManifest, index: ciCacheIndex{Packages: []ciCacheRecord{{Slot: ciSlot{Name: "queue", OS: "any", Arch: "any"}, BuildID: "build-1", SHA256: strings.Repeat("b", 64), Commit: strings.Repeat("a", 40)}}}, buildID: "build-1", wantReason: "digests differ"},
-		{name: "missing public package is a miss", manifest: ciManifest{Importers: []ciImporterRecord{}, Packages: []ciPackageRecord{}}, index: validIndex, buildID: "build-1", wantReason: "no matching package"},
-		{name: "missing private record is a miss", manifest: validManifest, index: ciCacheIndex{Packages: []ciCacheRecord{}}, buildID: "build-1", wantReason: "no matching package slot"},
-		{name: "malformed production manifest is an error", index: validIndex, buildID: "build-1", badJSON: true},
-	}
-	for _, test := range cases {
+		{"standalone valid package", "build-1", cacheTestDigest(archive), true},
+		{"build ID mismatch", "different", cacheTestDigest(archive), false},
+		{"actual byte mismatch", "build-1", strings.Repeat("b", 64), false},
+	} {
 		t.Run(test.name, func(t *testing.T) {
-			manifestJSON, _ := json.Marshal(test.manifest)
-			if test.badJSON {
-				manifestJSON = []byte(`{"importers":[],"packages":[{"name":"queue","os":"any","arch":"any","asset":"../escape","sha256":"bad"}]}`)
+			o := cacheTestOptions(t, test.buildID)
+			o.SourceRoot, o.ImporterFile, o.CMakeCommand = cacheTestSourceRoot(t), importer, "cmake"
+			got, err := lookupCICache(context.Background(), cacheTestClient(t, archive, "queue", "any", "any", "build-1", test.digest), o)
+			if err != nil || got.Hit != test.hit {
+				t.Fatalf("hit=%v want %v: %+v %v", got.Hit, test.hit, got, err)
 			}
-			indexJSON, _ := json.Marshal(test.index)
-			client := newCacheTestGitHub(t, manifestJSON, indexJSON, archive, archiveDigest)
-			options := cacheTestOptions(t, test.buildID)
-			got, err := lookupCICache(context.Background(), client, options)
-			if test.badJSON {
-				if err == nil {
-					t.Fatal("malformed production manifest must fail, not become an empty cache")
-				}
-				return
-			}
-			if err != nil || got.Hit || !strings.Contains(got.Reason, test.wantReason) {
-				t.Fatalf("want explained miss containing %q, got %+v, %v", test.wantReason, got, err)
+			if !test.hit && got.Reason == "" {
+				t.Fatal("cache miss has no reason")
 			}
 		})
 	}
-
-	t.Run("GitHub public digest disagreement is a miss", func(t *testing.T) {
-		manifestJSON, _ := json.Marshal(validManifest)
-		indexJSON, _ := json.Marshal(validIndex)
-		client := newCacheTestGitHub(t, manifestJSON, indexJSON, archive, strings.Repeat("b", 64))
-		got, err := lookupCICache(context.Background(), client, cacheTestOptions(t, "build-1"))
-		if err != nil || got.Hit || !strings.Contains(got.Reason, "GitHub asset digest") {
-			t.Fatalf("expected public metadata digest miss, got %+v, %v", got, err)
-		}
-	})
-
-	t.Run("actual package bytes are bound to the API digest", func(t *testing.T) {
-		expected := []byte("expected package bytes")
-		corrupt := []byte("different package bytes")
-		digest := cacheTestDigest(expected)
-		manifest, _ := json.Marshal(ciManifest{Importers: []ciImporterRecord{}, Packages: []ciPackageRecord{{Name: "queue", OS: "any", Arch: "any", Asset: "queue-any-any.tar.zst", SHA256: digest}}})
-		index, _ := json.Marshal(ciCacheIndex{Packages: []ciCacheRecord{{Slot: ciSlot{Name: "queue", OS: "any", Arch: "any"}, BuildID: "build-1", SHA256: digest, Commit: strings.Repeat("a", 40)}}})
-		client := newCacheTestGitHub(t, manifest, index, corrupt, digest)
-		got, err := lookupCICache(context.Background(), client, cacheTestOptions(t, "build-1"))
-		if err != nil || got.Hit || !strings.Contains(got.Reason, "downloaded archive bytes") {
-			t.Fatalf("expected corrupted package byte miss, got %+v, %v", got, err)
-		}
-	})
 }
 
-func newCacheTestGitHub(t *testing.T, manifestJSON, indexJSON, archive []byte, packageAssetDigest string) *githubClient {
+func newCacheTestGitHub(t *testing.T, asset githubAsset, archive []byte) *githubClient {
 	t.Helper()
-	metadata := map[string][]byte{"manifest.json": manifestJSON, "build-cache.json": indexJSON, "queue-any-any.tar.zst": archive}
-	assetNames := []string{"manifest.json", "build-cache.json", "queue-any-any.tar.zst"}
-	assetDigests := map[string]string{"manifest.json": cacheTestDigest(manifestJSON), "build-cache.json": cacheTestDigest(indexJSON), "queue-any-any.tar.zst": packageAssetDigest}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/repos/xxf1ow/xxautolib/releases/tags/autolib-release":
 			fmt.Fprintf(w, `{"id":9,"tag_name":"autolib-release","assets_url":"%s/repos/xxf1ow/xxautolib/releases/9/assets"}`, "http://"+r.Host)
 		case "/repos/xxf1ow/xxautolib/releases/9/assets":
-			rows := []githubAsset{}
-			for i, name := range assetNames {
-				rows = append(rows, githubAsset{ID: int64(i + 1), Name: name, Digest: "sha256:" + assetDigests[name]})
-			}
-			_ = json.NewEncoder(w).Encode(rows)
-		case "/repos/xxf1ow/xxautolib/releases/assets/1", "/repos/xxf1ow/xxautolib/releases/assets/2", "/repos/xxf1ow/xxautolib/releases/assets/3":
-			var index int
-			fmt.Sscanf(filepath.Base(r.URL.Path), "%d", &index)
-			w.Write(metadata[assetNames[index-1]])
+			_ = json.NewEncoder(w).Encode([]githubAsset{asset})
+		case "/repos/xxf1ow/xxautolib/releases/assets/1":
+			w.Write(archive)
 		default:
+			t.Errorf("unexpected cache request %s", r.URL.Path)
 			http.NotFound(w, r)
 		}
 	}))
@@ -158,7 +110,8 @@ func newCacheTestGitHub(t *testing.T, manifestJSON, indexJSON, archive []byte, p
 func cacheTestOptions(t *testing.T, buildID string) ciCacheOptions {
 	t.Helper()
 	root := t.TempDir()
-	return ciCacheOptions{SourceRoot: root, WorkRoot: filepath.Join(root, "work"), InstallRoot: filepath.Join(root, "install"), ReleaseRoot: filepath.Join(root, "release"), ImporterFile: "unused", CMakeCommand: "unused", BuildID: buildID, Slot: ciSlot{Name: "queue", OS: "windows", Arch: "x86_64"}}
+	osName, arch := cacheTestPlatform()
+	return ciCacheOptions{SourceRoot: root, WorkRoot: filepath.Join(root, "work"), InstallRoot: filepath.Join(root, "install"), ReleaseRoot: filepath.Join(root, "release"), ImporterFile: "unused", CMakeCommand: "unused", BuildID: buildID, TargetOS: osName, TargetArch: arch, Slot: ciSlot{Name: "queue", OS: "any", Arch: "any"}}
 }
 
 func cacheTestDigest(data []byte) string {
@@ -187,10 +140,10 @@ func TestCICachePrepareBoundary(t *testing.T) {
 			options := cacheTestOptions(t, "build-1")
 			options.ImporterFile, options.CMakeCommand = item.importerFile, item.cmakeCommand
 			options.SourceRoot = cacheTestSourceRoot(t)
-			options.Slot.OS, options.Slot.Arch = targetOS, targetArch
+			options.TargetOS, options.TargetArch = targetOS, targetArch
 			client := cacheTestClient(t, item.archive, "queue", "any", "any", "build-1", cacheTestDigest(item.archive))
 			got, err := lookupCICache(context.Background(), client, options)
-			if err == nil || got.Hit {
+			if got.Hit || (err == nil && strings.HasPrefix(item.name, "missing")) {
 				t.Fatalf("missing execution tool must fail without reporting a hit: %+v %v", got, err)
 			}
 			if _, statErr := os.Stat(filepath.Join(options.InstallRoot, "queue")); !os.IsNotExist(statErr) {
@@ -202,13 +155,8 @@ func TestCICachePrepareBoundary(t *testing.T) {
 		options := cacheTestOptions(t, "build-1")
 		options.SourceRoot = cacheTestSourceRoot(t)
 		options.ImporterFile, options.CMakeCommand = importer, "cmake"
-		options.Slot.OS, options.Slot.Arch = targetOS, targetArch
-		cacheSource, err := filepath.Abs(options.ReleaseRoot)
-		if err != nil {
-			t.Fatal(err)
-		}
-		cacheKey := sha256.Sum256([]byte(filepath.ToSlash(filepath.Clean(cacheSource))))
-		oldPackage := filepath.Join(options.WorkRoot, hex.EncodeToString(cacheKey[:]), "packages", targetOS+"-"+targetArch, "queue")
+		options.TargetOS, options.TargetArch = targetOS, targetArch
+		oldPackage := filepath.Join(options.ReleaseRoot, "packages", targetOS+"-"+targetArch, "queue")
 		if err := os.MkdirAll(oldPackage, 0755); err != nil {
 			t.Fatal(err)
 		}
@@ -221,7 +169,7 @@ func TestCICachePrepareBoundary(t *testing.T) {
 		badArchive := []byte("not a zstd archive")
 		client := cacheTestClient(t, badArchive, "queue", "any", "any", "build-1", cacheTestDigest(badArchive))
 		got, err := lookupCICache(context.Background(), client, options)
-		if err == nil || got.Hit {
+		if err != nil || got.Hit || got.Reason == "" {
 			t.Fatalf("invalid new candidate archive bypassed validation: %+v %v", got, err)
 		}
 		if _, statErr := os.Stat(filepath.Join(options.InstallRoot, "queue", "stale.txt")); !os.IsNotExist(statErr) {
@@ -302,9 +250,14 @@ func TestCICacheRestoredDependency(t *testing.T) {
 			t.Logf("host cannot create the internal-link fixture: %v", err)
 		}
 	}
-	archive := cacheTestPackageArchiveWithAdapterExtra(t, "queue", "any", "any", contents, "# archived adapter must not be copied\n")
+	archive := cacheTestPackageArchiveWithAdapterExtra(t, "queue", "any", "any", contents, "# archived adapter must not be copied\n", "support")
+	dependencyFile := filepath.Join(root, "support-any-any.tar.zst")
+	if err := os.WriteFile(dependencyFile, cacheTestPackageArchive(t, "support", "any", "any", nil), 0644); err != nil {
+		t.Fatal(err)
+	}
+	options.DependencyArchives = []ciReadyArchive{{Name: "support", File: dependencyFile}}
 	client := cacheTestClient(t, archive, "queue", "any", "any", "build-1", cacheTestDigest(archive))
-	options.Slot = ciSlot{Name: "queue", OS: targetOS, Arch: targetArch}
+	options.TargetOS, options.TargetArch = targetOS, targetArch
 	got, err := lookupCICache(context.Background(), client, options)
 	if err != nil || !got.Hit {
 		t.Fatalf("restore verified fixture: %+v %v", got, err)
@@ -324,7 +277,7 @@ func TestCICacheRestoredDependency(t *testing.T) {
 	if err := os.MkdirAll(consumer, 0755); err != nil {
 		t.Fatal(err)
 	}
-	consumerSource := "cmake_minimum_required(VERSION 3.20)\nproject(consumer LANGUAGES C)\nadd_library(AutoLib::queue STATIC IMPORTED GLOBAL)\nset_target_properties(AutoLib::queue PROPERTIES IMPORTED_LOCATION \"${PACKAGE_ROOT}/lib/" + filepath.Base(library) + "\" INTERFACE_INCLUDE_DIRECTORIES \"${PACKAGE_ROOT}/include\")\nadd_executable(consumer main.c)\ntarget_link_libraries(consumer PRIVATE AutoLib::queue)\n"
+	consumerSource := "cmake_minimum_required(VERSION 3.20)\nproject(consumer LANGUAGES C)\nenable_testing()\nadd_library(AutoLib::queue STATIC IMPORTED GLOBAL)\nset_target_properties(AutoLib::queue PROPERTIES IMPORTED_LOCATION \"${PACKAGE_ROOT}/lib/" + filepath.Base(library) + "\" INTERFACE_INCLUDE_DIRECTORIES \"${PACKAGE_ROOT}/include\")\nadd_executable(consumer main.c)\ntarget_link_libraries(consumer PRIVATE AutoLib::queue)\nadd_test(NAME restored_dependency COMMAND consumer)\n"
 	if err := os.WriteFile(filepath.Join(consumer, "CMakeLists.txt"), []byte(consumerSource), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -336,9 +289,12 @@ func TestCICacheRestoredDependency(t *testing.T) {
 	if output, err := configureConsumer.CombinedOutput(); err != nil {
 		t.Fatalf("configure restored dependency consumer: %v\n%s", err, output)
 	}
-	linkConsumer := exec.Command("cmake", "--build", consumerBuild)
+	linkConsumer := exec.Command("cmake", "--build", consumerBuild, "--config", "Release")
 	if output, err := linkConsumer.CombinedOutput(); err != nil {
 		t.Fatalf("link restored dependency consumer: %v\n%s", err, output)
+	}
+	if output, err := exec.Command("ctest", "--test-dir", consumerBuild, "-C", "Release", "--output-on-failure").CombinedOutput(); err != nil {
+		t.Fatalf("run restored dependency consumer: %v\n%s", err, output)
 	}
 	if _, err := os.Stat(filepath.Join(options.ReleaseRoot, "queue-any-any.tar.zst")); err != nil {
 		t.Fatalf("original archive was not retained: %v", err)
@@ -384,9 +340,8 @@ func buildCacheTestImporter(t *testing.T) string {
 
 func cacheTestClient(t *testing.T, archive []byte, name, osName, arch, buildID, digest string) *githubClient {
 	t.Helper()
-	manifest, _ := json.Marshal(ciManifest{Importers: []ciImporterRecord{}, Packages: []ciPackageRecord{{Name: name, OS: osName, Arch: arch, Asset: name + "-" + osName + "-" + arch + ".tar.zst", SHA256: cacheTestDigest(archive)}}})
-	index, _ := json.Marshal(ciCacheIndex{Packages: []ciCacheRecord{{Slot: ciSlot{Name: name, OS: osName, Arch: arch}, BuildID: buildID, SHA256: cacheTestDigest(archive), Commit: strings.Repeat("a", 40)}}})
-	return newCacheTestGitHub(t, manifest, index, archive, digest)
+	label, _ := json.Marshal(ciAssetLabel{BuildID: buildID, Commit: strings.Repeat("a", 40)})
+	return newCacheTestGitHub(t, githubAsset{ID: 1, Name: name + "-" + osName + "-" + arch + ".tar.zst", State: "uploaded", Label: string(label), Digest: "sha256:" + digest}, archive)
 }
 
 type cacheArchiveMember struct {
@@ -398,7 +353,7 @@ func cacheTestPackageArchive(t *testing.T, name, osName, arch string, contents [
 	return cacheTestPackageArchiveWithAdapterExtra(t, name, osName, arch, contents, "")
 }
 
-func cacheTestPackageArchiveWithAdapterExtra(t *testing.T, name, osName, arch string, contents []cacheArchiveMember, adapterExtra string) []byte {
+func cacheTestPackageArchiveWithAdapterExtra(t *testing.T, name, osName, arch string, contents []cacheArchiveMember, adapterExtra string, dependencies ...string) []byte {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "package.tar.zst")
 	file, err := os.Create(path)
@@ -410,7 +365,7 @@ func cacheTestPackageArchiveWithAdapterExtra(t *testing.T, name, osName, arch st
 		t.Fatal(err)
 	}
 	tarWriter := tar.NewWriter(compressor)
-	identity := cacheTestIdentityHeader(name, osName, arch) + adapterExtra
+	identity := cacheTestIdentityHeader(name, osName, arch, dependencies...) + adapterExtra
 	members := append([]cacheArchiveMember{{Name: name + "/autolib-import.cmake", Body: identity}}, contents...)
 	for _, member := range members {
 		kind := member.Kind
@@ -440,8 +395,8 @@ func cacheTestPackageArchiveWithAdapterExtra(t *testing.T, name, osName, arch st
 	return data
 }
 
-func cacheTestIdentityHeader(name, osName, arch string) string {
-	return fmt.Sprintf("set(AUTOLIB_PACKAGE_NAME \"%s\")\nset(AUTOLIB_OS \"%s\")\nset(AUTOLIB_ARCH \"%s\")\n", name, osName, arch)
+func cacheTestIdentityHeader(name, osName, arch string, dependencies ...string) string {
+	return fmt.Sprintf("set(AUTOLIB_PACKAGE_NAME \"%s\")\nset(AUTOLIB_OS \"%s\")\nset(AUTOLIB_ARCH \"%s\")\nset(AUTOLIB_DEPENDENCIES \"%s\")\n", name, osName, arch, strings.Join(dependencies, ";"))
 }
 
 func cacheTestPlatform() (string, string) {

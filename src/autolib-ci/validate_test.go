@@ -3,9 +3,7 @@ package main
 import (
 	"archive/tar"
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
+	"context"
 	"errors"
 	"os"
 	"os/exec"
@@ -16,6 +14,86 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 )
+
+func TestCIValidationMode(t *testing.T) {
+	// Ignoring Mode would run a second consumer; inferring readiness would invoke packaging.
+	source, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := filepath.Join(source, "build", "ci-test")
+	if err := os.MkdirAll(base, 0755); err != nil {
+		t.Fatal(err)
+	}
+	root, err := os.MkdirTemp(base, "validation-mode-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(root) })
+	importer := filepath.Join(root, "importer"+executableSuffix())
+	if err := copyCacheFile(buildCacheTestImporter(t), importer); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(importer, 0755); err != nil {
+		t.Fatal(err)
+	}
+	cmake, err := exec.LookPath("cmake")
+	if err != nil {
+		t.Fatal(err)
+	}
+	environment, err := loadCIEnvironment(filepath.Join(source, ".github", "ci-tools.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	osName, arch := cacheTestPlatform()
+	production := ciProductionContext{OS: osName, Arch: arch, Configuration: "Release", CMakeDefaults: environment.Production.Common.CMakeDefaults}
+	if osName == "windows" {
+		w := environment.Production.Windows
+		production.Generator, production.Platform, production.Toolset, production.Runtime, production.MultiConfig = w.Generator, w.Platform, w.Toolset, w.Runtime, true
+	} else {
+		production.Generator = environment.Production.Linux.Generator
+	}
+	archive := cacheTestPackageArchiveWithAdapterExtra(t, "queue", "any", "any", []cacheArchiveMember{{Name: "queue/include/queue/readerwriterqueue.h", Body: "#pragma once\nnamespace moodycamel { template<class T> class ReaderWriterQueue { T value{}; public: bool enqueue(T v) { value=v; return true; } bool try_dequeue(T& v) { v=value; return true; } }; }\n"}}, "add_library(AutoLib::queue INTERFACE IMPORTED GLOBAL)\nset_target_properties(AutoLib::queue PROPERTIES INTERFACE_INCLUDE_DIRECTORIES \"${CMAKE_CURRENT_LIST_DIR}/include\")\n")
+	for _, mode := range []string{"single", "relocate"} {
+		t.Run(mode, func(t *testing.T) {
+			work := filepath.Join(root, mode)
+			release := filepath.Join(work, "release")
+			if err := os.MkdirAll(release, 0755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(release, "queue-any-any.tar.zst"), archive, 0644); err != nil {
+				t.Fatal(err)
+			}
+			tool := filepath.Join(release, "autolib-importer-"+osName+"-"+arch+executableSuffix())
+			if err := copyCacheFile(importer, tool); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chmod(tool, 0755); err != nil {
+				t.Fatal(err)
+			}
+			o := ciValidationOptions{SourceRoot: source, InstallRoot: filepath.Join(work, "install"), BuildRoot: work, ReleaseRoot: release, BuilderFile: filepath.Join(root, "missing-builder"), ImporterFile: importer, CMakeCommand: cmake, EvidenceDirectory: filepath.Join(work, "evidence"), Modules: []string{"queue"}, Context: production, Mode: mode}
+			result, err := validateCIRelease(context.Background(), o)
+			if err != nil || !result.Passed {
+				t.Fatalf("validation failed: %+v %v", result, err)
+			}
+			first := mustReadText(t, filepath.Join(result.EvidenceDirectory, "first-ctest.log"))
+			if !strings.Contains(first, "100% tests passed") {
+				t.Fatalf("first consumer did not run: %s", first)
+			}
+			_, secondErr := os.Stat(filepath.Join(result.EvidenceDirectory, "moved-ctest.log"))
+			if mode == "single" && !os.IsNotExist(secondErr) || mode == "relocate" && secondErr != nil {
+				t.Fatalf("unexpected second consumer: %v", secondErr)
+			}
+			if err := os.Remove(filepath.Join(release, "queue-any-any.tar.zst")); err != nil {
+				t.Fatal(err)
+			}
+			failed, err := validateCIRelease(context.Background(), o)
+			if err == nil || failed.Passed || !strings.Contains(err.Error(), "RELEASE_READY=ON requires") {
+				t.Fatalf("missing asset did not fail directly: %+v %v", failed, err)
+			}
+		})
+	}
+}
 
 func TestCIConsumerSelection(t *testing.T) {
 	for _, test := range []struct {
@@ -157,13 +235,13 @@ func TestCIWindowsPackageInputsRequireRelocatedDirectLZ4(t *testing.T) {
 	if err := os.WriteFile(propertiesPath, []byte(properties), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := verifyWindowsPackageInputs(root); err != nil {
+	if err := verifyWindowsPackageInputs(root, "relocate"); err != nil {
 		t.Fatalf("rejected relocated FLANN and direct LZ4 link inputs: %v", err)
 	}
 	if err := os.WriteFile(propertiesPath, []byte("flann::flann\tINTERFACE_LINK_LIBRARIES\t"+filepath.Join(t.TempDir(), "lz4", "lib", "lz4.lib")+"\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := verifyWindowsPackageInputs(root); err == nil {
+	if err := verifyWindowsPackageInputs(root, "relocate"); err == nil {
 		t.Fatal("accepted FLANN's direct LZ4 link input outside the relocated packages")
 	}
 }
@@ -195,42 +273,22 @@ func TestCIImporterSmoke(t *testing.T) {
 	if err := os.MkdirAll(release, 0755); err != nil {
 		t.Fatal(err)
 	}
-	asset := "queue.tar.zst"
-	archive := testQueueArchive(t, targetOS, targetArch)
+	asset := "queue-any-any.tar.zst"
+	archive := testQueueArchive(t, "any", "any")
 	if err := os.WriteFile(filepath.Join(release, asset), archive, 0644); err != nil {
 		t.Fatal(err)
 	}
-	digest := sha256.Sum256(archive)
-	manifest, err := json.Marshal(map[string]any{
-		"importers": []any{},
-		"packages":  []any{map[string]string{"name": "queue", "os": targetOS, "arch": targetArch, "asset": asset, "sha256": hex.EncodeToString(digest[:])}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(release, "manifest.json"), manifest, 0644); err != nil {
-		t.Fatal(err)
-	}
 	result := filepath.Join(root, "result.cmake")
-	command := exec.Command(importer, "prepare", "--uri="+release, "--work-root="+filepath.Join(root, "work"), "--os="+targetOS, "--arch="+targetArch, "--result="+result, "--package=queue")
+	command := exec.Command(importer, "prepare", "--local-root="+release, "--work-root="+filepath.Join(root, "work"), "--os="+targetOS, "--arch="+targetArch, "--result="+result, "--package=queue")
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("local importer prepare failed: %v\n%s", err, output)
 	}
 	if data, err := os.ReadFile(result); err != nil || !strings.Contains(string(data), "AUTOLIB_PREPARED_PACKAGES [[queue]]") {
 		t.Fatalf("prepare did not produce the queue result: %v\n%s", err, data)
 	}
-	if _, err := os.Stat(filepath.Join(root, "work", sourceKeyForTest(release), "packages", targetOS+"-"+targetArch, "queue", "autolib-import.cmake")); err != nil {
+	if _, err := os.Stat(filepath.Join(release, "packages", targetOS+"-"+targetArch, "queue", "autolib-import.cmake")); err != nil {
 		t.Fatalf("prepare did not install the local package: %v", err)
 	}
-}
-
-func sourceKeyForTest(path string) string {
-	absolute, err := filepath.Abs(path)
-	if err != nil {
-		panic(err)
-	}
-	data := sha256.Sum256([]byte(filepath.ToSlash(filepath.Clean(absolute))))
-	return hex.EncodeToString(data[:])
 }
 
 func testQueueArchive(t *testing.T, osName, arch string) []byte {
@@ -242,7 +300,7 @@ func testQueueArchive(t *testing.T, osName, arch string) []byte {
 	}
 	archive := tar.NewWriter(encoder)
 	files := map[string]string{
-		"queue/autolib-import.cmake":              "set(AUTOLIB_PACKAGE_NAME \"queue\")\nset(AUTOLIB_OS \"" + osName + "\")\nset(AUTOLIB_ARCH \"" + arch + "\")\n",
+		"queue/autolib-import.cmake":              cacheTestIdentityHeader("queue", osName, arch),
 		"queue/include/queue/readerwriterqueue.h": "// fixture header\n",
 	}
 	for name, body := range files {
