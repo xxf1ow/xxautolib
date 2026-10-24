@@ -20,6 +20,49 @@ import (
 	"github.com/klauspost/compress/zstd"
 )
 
+func TestCICacheAssetSelection(t *testing.T) {
+	valid := `{"id":7,"name":"queue-any-any.tar.zst","state":"uploaded","label":"{\"build_id\":\"build-1\",\"commit\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}","digest":"sha256:` + strings.Repeat("A", 64) + `"}`
+	for _, test := range []struct {
+		name, asset   string
+		miss, failure bool
+	}{
+		{"standalone asset", valid, false, false},
+		{"missing", "", true, false},
+		{"missing label", strings.Replace(valid, `\"build-1\"`, `\"\"`, 1), true, false},
+		{"invalid label", strings.Replace(valid, `build_id`, `unknown`, 1), true, false},
+		{"invalid commit", strings.Replace(valid, strings.Repeat("a", 40), "bad", 1), true, false},
+		{"build ID mismatch", strings.Replace(valid, "build-1", "build-2", 1), true, false},
+		{"incomplete upload", strings.Replace(valid, "uploaded", "starter", 1), true, false},
+		{"missing digest prefix", strings.Replace(valid, "sha256:", "", 1), true, false},
+		{"duplicate", valid + "," + valid, false, true},
+		{"mixed slot", valid + `,{"id":8,"name":"queue-windows-x86_64.tar.zst"}`, false, true},
+		{"unrelated invalid label", valid + `,{"id":8,"name":"other.tar.zst","label":"broken"}`, false, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var assets []githubAsset
+			if err := json.Unmarshal([]byte("["+test.asset+"]"), &assets); err != nil {
+				t.Fatal(err)
+			}
+			got, reason, err := selectCICacheAsset(assets, ciSlot{Name: "queue", OS: "any", Arch: "any"}, "build-1")
+			if (err != nil) != test.failure {
+				t.Fatalf("asset=%+v reason=%q error=%v", got, reason, err)
+			}
+			if test.failure {
+				return
+			}
+			if test.miss {
+				if got.ID != 0 || reason == "" {
+					t.Fatalf("invalid candidate selected: %+v %q", got, reason)
+				}
+				return
+			}
+			if got.ID != 7 || got.Name != "queue-any-any.tar.zst" || reason != "" {
+				t.Fatalf("standalone asset not selected: %+v %q", got, reason)
+			}
+		})
+	}
+}
+
 func TestCICacheIntegrity(t *testing.T) {
 	archive := []byte("package archive bytes")
 	archiveDigest := cacheTestDigest(archive)

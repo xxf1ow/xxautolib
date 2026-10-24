@@ -68,6 +68,63 @@ var cacheDigestPattern = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
 var cacheCommitPattern = regexp.MustCompile(`^[0-9a-fA-F]{40}$`)
 var cachePackagePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.+\-]*$`)
 
+type ciAssetLabel struct {
+	BuildID string `json:"build_id"`
+	Commit  string `json:"commit"`
+}
+
+func ciPackageAssetName(slot ciSlot) string {
+	return slot.Name + "-" + slot.OS + "-" + slot.Arch + ".tar.zst"
+}
+
+func selectCICacheAsset(assets []githubAsset, slot ciSlot, buildID string) (githubAsset, string, error) {
+	name := ciPackageAssetName(slot)
+	var selected githubAsset
+	conflict := false
+	for _, asset := range assets {
+		if asset.Name == name {
+			if selected.Name != "" {
+				return githubAsset{}, "", fmt.Errorf("duplicate GitHub asset %s", name)
+			}
+			selected = asset
+			continue
+		}
+		if slot.OS != "any" {
+			conflict = conflict || asset.Name == ciPackageAssetName(ciSlot{Name: slot.Name, OS: "any", Arch: "any"})
+		} else {
+			for _, platform := range ciPlatforms {
+				conflict = conflict || asset.Name == slot.Name+"-"+platform+".tar.zst"
+			}
+		}
+	}
+	if selected.Name == "" {
+		return githubAsset{}, "fixed package asset is missing", nil
+	}
+	if conflict {
+		return githubAsset{}, "", fmt.Errorf("conflicting universal and platform assets for %s", slot.Name)
+	}
+	if selected.ID <= 0 || selected.State != "uploaded" {
+		return githubAsset{}, "package asset is not completely uploaded", nil
+	}
+	var label ciAssetLabel
+	decoder := json.NewDecoder(strings.NewReader(selected.Label))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&label); err != nil {
+		return githubAsset{}, "package production label is invalid", nil
+	}
+	var extra any
+	if !errors.Is(decoder.Decode(&extra), io.EOF) || strings.TrimSpace(label.BuildID) == "" || !cacheCommitPattern.MatchString(label.Commit) {
+		return githubAsset{}, "package production label is invalid", nil
+	}
+	if label.BuildID != buildID {
+		return githubAsset{}, "cached package build ID does not match", nil
+	}
+	if !strings.HasPrefix(selected.Digest, "sha256:") || !cacheDigestPattern.MatchString(strings.TrimPrefix(selected.Digest, "sha256:")) {
+		return githubAsset{}, "package asset has no valid GitHub SHA256 digest", nil
+	}
+	return selected, "", nil
+}
+
 func lookupCICache(ctx context.Context, client *githubClient, o ciCacheOptions) (ciCacheResult, error) {
 	if client == nil {
 		return ciCacheResult{}, fmt.Errorf("GitHub client is required")
