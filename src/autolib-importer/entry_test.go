@@ -251,12 +251,14 @@ func TestCMakeEntryPaths(t *testing.T) {
 }
 
 func TestCMakeWorkRootSemicolon(t *testing.T) {
-	for _, kind := range []string{"explicit", "default"} {
+	for _, kind := range []string{"explicit", "default", "local"} {
 		t.Run(kind, func(t *testing.T) {
 			f := newEntryFixture(t, true, "")
 			work := filepath.Join(f.root, "work;literal")
 			var extra []string
-			if kind == "explicit" {
+			if kind == "local" {
+				f.release = filepath.Join(f.root, "local;literal")
+			} else if kind == "explicit" {
 				f.work = work
 			} else {
 				consumer := filepath.Join(f.source, "CMakeLists.txt")
@@ -267,7 +269,11 @@ func TestCMakeWorkRootSemicolon(t *testing.T) {
 			}
 			putTestFile(t, filepath.Join(work, "sentinel"), "preserve")
 			out, err := f.configure(extra...)
-			if err == nil || !strings.Contains(out, "WORK_ROOT must not contain semicolons") {
+			field := "WORK_ROOT"
+			if kind == "local" {
+				field = "LOCAL_ROOT"
+			}
+			if err == nil || !strings.Contains(out, field+" must not contain semicolons") {
 				t.Fatalf("unsafe work root was not rejected clearly: %v\n%s", err, out)
 			}
 			entries, err := os.ReadDir(work)
@@ -276,6 +282,46 @@ func TestCMakeWorkRootSemicolon(t *testing.T) {
 			}
 			if _, err := os.Stat(filepath.Join(f.root, "calls.jsonl")); !os.IsNotExist(err) {
 				t.Fatal("importer executed for rejected work root")
+			}
+		})
+	}
+}
+
+func TestCMakeConfigureIdentity(t *testing.T) {
+	for _, kind := range []string{"same", "local", "work", "target", "old URI", "remote", "stale directory"} {
+		t.Run(kind, func(t *testing.T) {
+			f := newEntryFixture(t, true, "")
+			consumer := filepath.Join(f.source, "CMakeLists.txt")
+			body := readTestFile(t, consumer)
+			body = strings.Replace(body, "include(\"${CMAKE_CURRENT_LIST_DIR}/autolib.cmake\")", "include(\"${CMAKE_CURRENT_LIST_DIR}/autolib.cmake\")\ninclude(\"${CMAKE_CURRENT_LIST_DIR}/autolib.cmake\")", 1)
+			index := strings.LastIndex(body, "autolib_import(")
+			second := body[index:]
+			switch kind {
+			case "local":
+				second = strings.Replace(second, "${FIXTURE_RELEASE}", "${FIXTURE_RELEASE}/other", 1)
+			case "work":
+				second = strings.Replace(second, "${FIXTURE_WORK}", "${FIXTURE_WORK}/other", 1)
+			case "target":
+				second = strings.Replace(second, "${FIXTURE_OS}", "windows", 1)
+			case "old URI":
+				second = strings.Replace(second, "LOCAL_ROOT", "URI", 1)
+			case "remote":
+				second = strings.Replace(second, "LOCAL_ROOT", `REMOTE_ROOT "https://example.invalid/release" LOCAL_ROOT`, 1)
+			case "stale directory":
+				second = "set(ENV{AUTOLIB_TEST_MODE} incomplete)\n" + second
+			}
+			putTestFile(t, consumer, body[:index]+second)
+			out, err := f.configure()
+			if (err == nil) != (kind == "same") {
+				t.Fatalf("%v\n%s", err, out)
+			}
+			lines := strings.Split(strings.TrimSpace(readTestFile(t, filepath.Join(f.root, "calls.jsonl"))), "\n")
+			want := 1
+			if kind == "same" || kind == "stale directory" {
+				want = 2
+			}
+			if len(lines) != want {
+				t.Fatalf("expected %d prepares, got %d: %s", want, len(lines), out)
 			}
 		})
 	}
@@ -394,6 +440,11 @@ func TestAdapterExistingTargets(t *testing.T) {
 }
 
 func TestAdapterDependencyOrder(t *testing.T) {
+	t.Run("root only", func(t *testing.T) {
+		f := representativeFixture(t, "flann")
+		putTestFile(t, filepath.Join(f.source, "CMakeLists.txt"), "cmake_minimum_required(VERSION 3.20)\nproject(root_only NONE)\ninclude(autolib.cmake)\nautolib_import(LOCAL_ROOT \"${FIXTURE_RELEASE}\" WORK_ROOT \"${FIXTURE_WORK}\" TARGET_OS \"${FIXTURE_OS}\" TARGET_ARCH \"${FIXTURE_ARCH}\" PACKAGES flann)\nif(NOT TARGET AutoLib::lz4 OR NOT TARGET AutoLib::flann OR NOT AUTOLIB_PREPARED_PACKAGES STREQUAL \"lz4;flann\")\nmessage(FATAL_ERROR \"missing dependency closure\")\nendif()\n")
+		f.mustConfigure()
+	})
 	f := representativeFixture(t, "flann")
 	system := filepath.Join(f.root, "system")
 	marker := filepath.Join(f.root, "system-was-used")
