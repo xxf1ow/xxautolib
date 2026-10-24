@@ -21,9 +21,11 @@
 - autolib-builder 维护构建与本地打包机制；CMake/ExternalProject 执行实际构建，CI 不重写构建规则。
 - autolib-importer 维护消费校验和准备，不承担生产缓存策略或远端发布。
 - autolib-ci 维护生产策略：根据 builder 提供的事实规划模块依赖层与通用包 publisher，计算 build ID，校验生产缓存，并调用既有工具完成消费验证和安装负载恢复；不重新解析模块声明或复制构建、打包和解包引擎。
-- 发布编排、Release 写入和结果汇总归 autolib-ci，触发、runner/container、环境准备、权限、job 依赖与运行串行化归 workflow；接线与验收要求由独立的 [CI 系统设计](agent-notes/proposed/architecture/2026-10-20-ci-system.md)约定，不在 builder 或 importer 中实现。
+- 发布编排、Release 写入和结果汇总归 autolib-ci，触发、runner/container、环境准备、权限、job 依赖与运行串行化归 [workflow](../.github/workflows/build-platform.yml)；接线与验收要求由独立的 [CI 系统设计](agent-notes/proposed/architecture/2026-10-20-ci-system.md)约定，不在 builder 或 importer 中实现。
 
 普通本地构建和离线消费不依赖 CI、GitHub 或 workflow，builder 不读取 CI 配置或凭据。
+
+CI 按固定名资产的 label、digest 和实际包内容复用缓存；未命中才构建，逐槽消费验证后同名替换。各平台按依赖层共用隔离安装根；finalize 只汇总，不写发行清单。
 
 ## 本地二进制消费
 

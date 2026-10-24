@@ -54,6 +54,8 @@ if ($packages.Count -gt 0) {
 $goSdkScript = Join-Path $repoRoot 'src/autolib-builder/go-sdk.cmake'
 & $cmakeCommand -P $goSdkScript -- build -mod=readonly -trimpath -o (Join-Path $WorkRoot 'autolib-builder.exe') ./src/autolib-builder 2>&1 | ForEach-Object { [Console]::Error.WriteLine($_) }
 if ($LASTEXITCODE -ne 0) { throw "Private Go SDK builder preparation failed: $LASTEXITCODE" }
+& $cmakeCommand -P $goSdkScript -- build -mod=readonly -trimpath -o (Join-Path $WorkRoot 'autolib-importer.exe') ./src/autolib-importer 2>&1 | ForEach-Object { [Console]::Error.WriteLine($_) }
+if ($LASTEXITCODE -ne 0) { throw "Private Go SDK importer preparation failed: $LASTEXITCODE" }
 & $cmakeCommand -P $goSdkScript -- build -mod=readonly -trimpath -o (Join-Path $WorkRoot 'autolib-ci.exe') ./src/autolib-ci 2>&1 | ForEach-Object { [Console]::Error.WriteLine($_) }
 if ($LASTEXITCODE -ne 0) { throw "Private Go SDK CI tool preparation failed: $LASTEXITCODE" }
 

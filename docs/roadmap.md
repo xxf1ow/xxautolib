@@ -2,9 +2,9 @@
 
 本仓库按能力分批接入模块，先完成本地构建安装，再建立下游导入、二进制交付和 CI。本文维护阶段目标与迁移范围；各阶段的理由和约束由链接的 Agent Note 拥有，具体实现开始前再确认该批设计。
 
-工具层重建及导入链路按 [Go 工具层与离线导入设计](agent-notes/proposed/architecture/2026-10-21-go-tooling-and-offline-import.md)分阶段推进：Go 生成器替换自有 Python 路径，保留 TOML 和原生构建契约；第二阶段已实现本地打包、统一清单、独立 importer 和单文件消费入口。queue、lz4、flann 在 Windows x64/v143、Linux aarch64 完成发行与准备包搬迁后的真实链接运行，第二阶段已通过用户验收；第三阶段 HTTPS 消费暂缓。
+工具层重建及导入链路按 [Go 工具层与离线导入设计](agent-notes/proposed/architecture/2026-10-21-go-tooling-and-offline-import.md)分阶段推进：Go 生成器替换自有 Python 路径，保留 TOML 和原生构建契约；第二阶段实现本地打包、独立 importer 和单文件消费入口。queue、lz4、flann 在 Windows x64/v143、Linux aarch64 完成发行与准备包搬迁后的真实链接运行，第二阶段已通过用户验收；第三阶段 HTTPS 消费暂缓。
 
-下一项工作为独立的 [CI 系统](agent-notes/proposed/architecture/2026-10-20-ci-system.md)，建立三平台原生构建与实际 Release 供给，不作为 Go 工具层的子阶段，也不要求先批量增加第三方库。其消费接口调整见[无全局清单的双来源包消费提案](agent-notes/proposed/architecture/2026-10-24-manifestless-package-consumption.md)，本地协议实现四行依赖头、目录优先、无清单依赖闭包和 CMake LOCAL_ROOT，Windows x64/v143 完成两次搬迁链接运行；本地阶段已通过用户验收，Linux 新协议实机复验尚缺。CI 的旧清单调用及生产缓存留下一阶段同步迁移；CI 验收后再恢复 HTTPS 消费的设计交接。
+独立的 [CI 系统](agent-notes/proposed/architecture/2026-10-20-ci-system.md)接入三平台原生构建与 Release 供给，不作为 Go 工具层的子阶段，也不要求先批量增加第三方库。[无全局清单包消费](agent-notes/proposed/architecture/2026-10-24-manifestless-package-consumption.md)的本地协议已通过用户验收，Windows x64/v143 完成两次搬迁链接运行；Linux 新协议实机复验尚缺。CI 已接入资产事实缓存、同名替换、分层编排和手动 workflow，本地验证不代替三平台真实 Release 与 token 验收；远端操作另行授权。CI 验收后再恢复 HTTPS 消费的设计交接。
 
 ## 状态与依据
 
@@ -24,7 +24,7 @@
 | 复杂模块与专用文件 | 已实现 | 已验证 OpenCV 4.14.0 contrib 路径引用、资源补丁、平台安装布局与链接运行；oneTBB HWLOC、ImGui 专用文件仍待接入。 |
 | 下游导入与可搬迁包 | 已实现 | queue、lz4、flann 的显式包内 adapter 已完成双端搬迁链接运行，原安装树不变；其他模块按需提供 adapter，本地构建资格与发布资格分离。 |
 | 固定槽交付与缓存 | 已实现 | 本地消费已实现；首期 CI 接入三库的内部 build ID、生产缓存和 GitHub 发布，各槽独立更新、不维护全局发行清单，汇总只报告结果。Gitee 镜像暂缓，远端写操作另行授权。 |
-| 三平台原生 CI | 基础流水线已实现，单 job 优化待实施 | 下一批仅 queue、lz4、flann，覆盖头文件、静态库、动态库及显式依赖；Windows x86_64、Linux x86_64/aarch64 原生单 job、统一环境与并行预算。手动触发，默认分支发布；验收后再增加 OpenCV 等其余库。 |
+| 三平台原生 CI | 基础流水线已实现，单 job 优化待实施 | 首期 queue、lz4、flann 的原生单 job 接线完成，统一环境与并行预算待真实 CI 验收。仅手动触发、默认分支运行；通过三平台供给和缓存复用验收后再增加 OpenCV 等其余库。 |
 | 平台无关头文件槽位 | 待实施 | 本地打包和导入已支持 queue-any-any；首期 CI 接入单槽发布，显式声明平台无关，唯一选中平台发布，三平台消费。规划、打包、导入、缓存及资产发现同步支持；机器码包与 importer 仍限定平台。 |
 
 本地能力的既有决定见[模块扩展](agent-notes/proposed/architecture/2026-10-20-module-expansion.md)，本批方案见[本地复用与平台输入设计](agent-notes/implemented/architecture/2026-10-20-local-reuse-and-platform-inputs.md)；导入、打包和固定槽见[二进制交付](agent-notes/proposed/architecture/2026-10-20-name-only-artifact-delivery.md)；流水线、环境、ABI、并行和通用槽位见独立的[CI 系统设计](agent-notes/proposed/architecture/2026-10-20-ci-system.md)。

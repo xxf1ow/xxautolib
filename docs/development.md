@@ -38,22 +38,27 @@ Git 主来源复用 `git/<模块名>/`，资源复用 `git/_resources/<模块名
 
 ## 本地打包与消费
 
-先完成所选模块的安装，再独立构建两工具；Windows 输出名用 `.exe`，Linux 去掉该后缀：
+先完成所选模块的安装，再独立构建 builder、importer；CI 开发另构建第三个目标。Windows 输出名用 `.exe`，Linux 去掉后缀：
 
 ```text
 cmake -P src/autolib-builder/go-sdk.cmake -- build -mod=readonly -trimpath -o build/tools/autolib-builder.exe ./src/autolib-builder
 cmake -P src/autolib-builder/go-sdk.cmake -- build -mod=readonly -trimpath -o build/tools/autolib-importer.exe ./src/autolib-importer
+cmake -P src/autolib-builder/go-sdk.cmake -- build -mod=readonly -trimpath -o build/tools/autolib-ci.exe ./src/autolib-ci
 ```
 
-`builder package` 必填 `--source-root`、`--install-root`、`--output-root`、`--os`、`--arch`、`--host-os`、`--host-arch`、`--importer-file`、`--cmake-command` 及重复 `--module`。输出必须在本副本 build 内且不与安装树重叠；只打包显式模块，不自动补依赖。真实示例由[本地闭环测试](testing.md#本地二进制闭环)执行。
+`builder package` 必须显式提供源码、安装、输出根，目标和宿主身份、工具路径及重复模块选择；完整参数见[打包入口](../src/autolib-builder/release.go)。输出必须在本副本 build 内且不与安装树重叠；只打包显式模块，不自动补依赖。真实示例由[本地闭环测试](testing.md#本地二进制闭环)执行。
 
 将 `src/autolib.cmake` 复制到消费者，include 后在其他同名库目标创建前调用 `autolib_import(LOCAL_ROOT <本地发行目录> PACKAGES flann queue)`，链接 `AutoLib::queue`、`AutoLib::lz4`、`AutoLib::flann`；lz4 从 flann 包头自动补齐。可选 `WORK_ROOT`、`TARGET_OS`、`TARGET_ARCH`，默认工作根为消费者 build 下的 autolib。系统支持 windows/linux，架构为 x86_64/aarch64；工具按宿主、库包按目标选择。同一次 configure 固定来源、工作根和目标，可增加根包，首次导入拒绝既有上游目标。
 
 LOCAL_ROOT 平铺固定名宿主工具和 `<name>-<os>-<arch>.tar.zst`；通用归档使用 any-any。准备目录为 `LOCAL_ROOT/packages/<os>-<arch>/<name>/`，优先于归档。相对根按顶层源码目录解析；本地根、工作根及实际包路径不得含分号。现有完整目录可只读复用；缺包需要本地根可写，同根写入由调用方串行，独立构建使用各自工作根。
 
-CLI 为 `importer prepare --local-root=<目录> --work-root=<目录> --os=<目标OS> --arch=<目标架构> --result=<文件> --package=<根包>`，package 可重复。CMake 接受 REMOTE_ROOT、CLI 接受 --remote-root 参数位置，但非空值明确报远端尚未启用，不联网。URI、--uri、--manifest 均拒绝，不提供兼容层；CI 中的旧调用由独立 CI 阶段同步迁移，当前不能作为新协议使用。
+CLI 为 `importer prepare --local-root=<目录> --work-root=<目录> --os=<目标OS> --arch=<目标架构> --result=<文件> --package=<根包>`，package 可重复。CMake 接受 REMOTE_ROOT、CLI 接受 --remote-root 参数位置，但非空值明确报远端尚未启用，不联网。URI、--uri、--manifest 均拒绝，不提供兼容层；CI 缓存恢复和消费验证也只使用本地入口。
 
 包头及依赖格式见[包消费设计](agent-notes/proposed/architecture/2026-10-24-manifestless-package-consumption.md#包内身份与依赖)。已有目录仅核对包头，不逐文件散列；归档内容校验用于意外损坏检测，不认证来源，本地工具须由用户信任。坏目录、坏归档或缺输入直接失败，不回退低优先级来源或加载上次结果。刷新前保护本地改动，移走对应 `packages/<目标OS>-<目标架构>/<包名>/`，不删除共享依赖；本地归档仍优先，更新归档不会覆盖目录。FLANN 的包依赖仅 lz4，OpenMP、C++ ABI 和系统运行库由消费环境满足。
+
+## CI 开发与运行
+
+[手动流水线](../.github/workflows/build-platform.yml)只接受默认分支并检出事件提交，逐槽验证后同名替换，不备份或回滚。汇总失败保留成功槽，重跑整个流水线按资产复用；force 重建选中闭包。本地目录由用户按上节刷新。真实发布及权限待另获授权验收；命令见[入口](../src/autolib-ci/main.go)，验证见[测试指南](testing.md#ci-验证)，固定目标和策略见 [CI 设计](agent-notes/proposed/architecture/2026-10-20-ci-system.md)。
 
 ## 日常修改
 

@@ -66,7 +66,10 @@ curl --fail --location --retry 2 "$make_url" -o "$make_archive"
 echo "$make_hash  $make_archive" | sha256sum --check
 tar -xzf "$make_archive" -C "$tools/src"
 make_source="$tools/src/make-$make_version"
-"$make_source/configure" --prefix="$tools"
+(
+  cd "$make_source"
+  ./configure --prefix="$tools"
+)
 make -C "$make_source"
 make -C "$make_source" install
 
@@ -87,9 +90,10 @@ fi
 
 export PATH="$tools/bin:$PATH" CC="gcc-$gcc_major" CXX="g++-$gcc_major"
 "$cmake_command" -P "$repo_root/src/autolib-builder/go-sdk.cmake" -- build -mod=readonly -trimpath -o "$work_root/autolib-builder" ./src/autolib-builder
+"$cmake_command" -P "$repo_root/src/autolib-builder/go-sdk.cmake" -- build -mod=readonly -trimpath -o "$work_root/autolib-importer" ./src/autolib-importer
 "$cmake_command" -P "$repo_root/src/autolib-builder/go-sdk.cmake" -- build -mod=readonly -trimpath -o "$work_root/autolib-ci" ./src/autolib-ci
 if [[ -n "${GITHUB_PATH:-}" ]]; then printf '%s\n' "$tools/bin" >>"$GITHUB_PATH"; fi
-if [[ -n "${GITHUB_ENV:-}" ]]; then printf 'CC=gcc-9\nCXX=g++-9\n' >>"$GITHUB_ENV"; fi
+if [[ -n "${GITHUB_ENV:-}" ]]; then printf 'CC=gcc-%s\nCXX=g++-%s\n' "$gcc_major" "$gcc_major" >>"$GITHUB_ENV"; fi
 dpkg-query -W -f='${binary:Package}=${Version}\n' ca-certificates curl git jq build-essential "gcc-$gcc_major" "g++-$gcc_major" pkg-config libgomp1 xz-utils tar unzip libgcc-s1 libstdc++6 "${apt_packages[@]}" 2>/dev/null | sort -u >&2
 printf 'architecture=%s\nGCC=%s\nG++=%s\nMake=%s\nCMake=%s\n' "$arch" "$actual_gcc_version" "$actual_gxx_version" "$("$tools/bin/make" --version | head -n1)" "$("$cmake_command" --version | head -n1)" >&2
 budget=$(nproc)
