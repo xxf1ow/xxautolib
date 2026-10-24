@@ -223,36 +223,26 @@ func TestCICacheRestoredDependency(t *testing.T) {
 	if err := os.MkdirAll(cmakeSource, 0755); err != nil {
 		t.Fatal(err)
 	}
-	cmakeLists := "cmake_minimum_required(VERSION 3.20)\nproject(fixture LANGUAGES C)\nadd_library(fixture STATIC fixture.c)\ntarget_include_directories(fixture PUBLIC \"${CMAKE_CURRENT_SOURCE_DIR}\")\nset_target_properties(fixture PROPERTIES OUTPUT_NAME fixture ARCHIVE_OUTPUT_DIRECTORY \"${PACKAGE_LIB}\")\n"
+	cmakeLists := "cmake_minimum_required(VERSION 3.20)\nproject(fixture LANGUAGES C)\nadd_library(fixture STATIC fixture.c)\ntarget_include_directories(fixture PUBLIC \"${CMAKE_CURRENT_SOURCE_DIR}\")\nset_target_properties(fixture PROPERTIES OUTPUT_NAME fixture-selected-by-cmake ARCHIVE_OUTPUT_DIRECTORY \"${PACKAGE_LIB}\")\nfile(GENERATE OUTPUT \"${CMAKE_CURRENT_BINARY_DIR}/fixture-location-$<CONFIG>.txt\" CONTENT \"$<TARGET_FILE:fixture>\")\n"
 	if err := os.WriteFile(filepath.Join(cmakeSource, "CMakeLists.txt"), []byte(cmakeLists), 0644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(cmakeSource, "fixture.c"), []byte("int fixture_value(void) { return 42; }\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	configure := exec.Command("cmake", "-S", cmakeSource, "-B", buildRoot, "-DPACKAGE_LIB="+filepath.Join(packageRoot, "lib"))
+	configure := exec.Command("cmake", "-S", cmakeSource, "-B", buildRoot, "-DCMAKE_BUILD_TYPE=Release", "-DPACKAGE_LIB="+filepath.Join(packageRoot, "lib"))
 	if output, err := configure.CombinedOutput(); err != nil {
 		t.Fatalf("configure dependency fixture: %v\n%s", err, output)
 	}
-	build := exec.Command("cmake", "--build", buildRoot)
+	build := exec.Command("cmake", "--build", buildRoot, "--config", "Release")
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build dependency fixture: %v\n%s", err, output)
 	}
-	library := ""
-	if err := filepath.WalkDir(filepath.Join(packageRoot, "lib"), func(path string, entry os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if !entry.IsDir() && strings.EqualFold(filepath.Ext(path), ".lib") {
-			library = path
-		}
-		return nil
-	}); err != nil {
-		t.Fatal(err)
+	libraryPathData, err := os.ReadFile(filepath.Join(buildRoot, "fixture-location-Release.txt"))
+	if err != nil {
+		t.Fatalf("read CMake-selected fixture library path: %v", err)
 	}
-	if library == "" {
-		t.Fatalf("dependency build produced no library below %s", filepath.Join(packageRoot, "lib"))
-	}
+	library := strings.TrimSpace(string(libraryPathData))
 	contents := []cacheArchiveMember{
 		{Name: "queue/include/fixture.h", Body: "int fixture_value(void);\n"},
 		{Name: "queue/lib/" + filepath.Base(library), Body: mustReadText(t, library)},
