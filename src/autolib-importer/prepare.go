@@ -1,30 +1,29 @@
 package main
 
 import (
-	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
-	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
-	"slices"
+	"strings"
 )
 
 type prepareOptions struct {
-	URI, WorkRoot, OS, Arch, ResultPath, ManifestPath string
-	Packages                                          []string
+	LocalRoot, RemoteRoot, WorkRoot, OS, Arch, ResultPath string
+	Packages                                              []string
 }
 
+// Writes to one local root must be serialized by the caller. Completed directories are authoritative.
 func prepare(o prepareOptions) ([]preparedPackage, error) {
 	if err := validatePlatform(o.OS, o.Arch); err != nil {
 		return nil, err
 	}
+	if o.RemoteRoot != "" {
+		return nil, fmt.Errorf("remote consumption is not enabled: %s", o.RemoteRoot)
+	}
 	if o.WorkRoot == "" || o.ResultPath == "" || len(o.Packages) == 0 {
 		return nil, fmt.Errorf("prepare requires work-root, result and at least one package")
 	}
-	source, err := normalizeLocalSource(o.URI)
+	local, err := normalizeLocalSource(o.LocalRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -32,58 +31,73 @@ func prepare(o prepareOptions) ([]preparedPackage, error) {
 	if err != nil {
 		return nil, err
 	}
-	names := []string{}
+	if strings.ContainsAny(local+work, ";") {
+		return nil, fmt.Errorf("local-root and work-root must not contain semicolons")
+	}
 	for _, name := range o.Packages {
-		if err := validateIdentity(packageIdentity{Name: name, OS: o.OS, Arch: o.Arch}); err != nil {
+		if err := validatePackageName(name); err != nil {
 			return nil, err
 		}
-		if !slices.Contains(names, name) {
-			names = append(names, name)
-		}
 	}
-	packages := make([]preparedPackage, 0, len(names))
-	var current manifest
-	manifestRead := false
-	for _, name := range names {
-		id := packageIdentity{Name: name, OS: o.OS, Arch: o.Arch}
-		directory := packageDirectory(work, source, id)
-		info, statErr := os.Lstat(directory)
-		if statErr == nil {
-			if !info.IsDir() {
-				return nil, fmt.Errorf("existing package is not a directory: %s", directory)
-			}
-			metadata, err := readPackageMetadata(directory)
+	if err := os.MkdirAll(work, 0755); err != nil {
+		return nil, err
+	}
+	packages := []preparedPackage{}
+	state := map[string]uint8{}
+	spellings := map[string]string{}
+	var visit func(string) error
+	visit = func(name string) error {
+		key := strings.ToLower(name)
+		if previous, ok := spellings[key]; ok && previous != name {
+			return fmt.Errorf("package name case collision: %s and %s", previous, name)
+		}
+		spellings[key] = name
+		if state[name] == 1 {
+			return fmt.Errorf("dependency cycle at package %s", name)
+		}
+		if state[name] == 2 {
+			return nil
+		}
+		state[name] = 1
+		id := packageIdentity{name, o.OS, o.Arch}
+		directory := packageDirectory(local, id)
+		info, err := os.Lstat(directory)
+		if os.IsNotExist(err) {
+			archive, identity, err := selectLocalArchive(local, id)
 			if err != nil {
-				return nil, err
+				return err
 			}
-			if !matchesPackageIdentity(metadata.Identity, id) {
-				return nil, fmt.Errorf("existing package %s: expected identity %+v, got %+v; preserve or remove this cache before retrying", directory, id, metadata.Identity)
+			if archive == "" {
+				return fmt.Errorf("missing local package %s for %s/%s in %s", name, o.OS, o.Arch, local)
 			}
-		} else {
-			if !os.IsNotExist(statErr) {
-				return nil, statErr
+			if err := prepareMissingPackage(archive, directory, identity); err != nil {
+				return err
 			}
-			if !manifestRead {
-				manifestPath := o.ManifestPath
-				if manifestPath == "" {
-					manifestPath = filepath.Join(source, "manifest.json")
-				}
-				current, err = readManifest(manifestPath)
-				if err != nil {
-					return nil, err
-				}
-				manifestRead = true
-			}
-			row, err := selectPackage(current, id)
-			if err != nil {
-				return nil, err
-			}
-			selectedIdentity := packageIdentity{Name: row.Name, OS: row.OS, Arch: row.Arch}
-			if err := prepareMissingPackage(source, directory, row, selectedIdentity); err != nil {
-				return nil, err
+		} else if err != nil {
+			return err
+		} else if !info.IsDir() {
+			return fmt.Errorf("existing package is not a directory: %s", directory)
+		}
+		metadata, err := readPackageMetadata(directory)
+		if err != nil {
+			return err
+		}
+		if !matchesPackageIdentity(metadata.Identity, id) {
+			return fmt.Errorf("existing package %s: expected identity %+v, got %+v; preserve or remove this directory before retrying", directory, id, metadata.Identity)
+		}
+		for _, dependency := range metadata.Dependencies {
+			if err := visit(dependency); err != nil {
+				return err
 			}
 		}
-		packages = append(packages, preparedPackage{Name: name, Directory: directory})
+		state[name] = 2
+		packages = append(packages, preparedPackage{name, directory})
+		return nil
+	}
+	for _, name := range o.Packages {
+		if err := visit(name); err != nil {
+			return nil, err
+		}
 	}
 	if err := writePreparedResult(o.ResultPath, packages); err != nil {
 		return nil, err
@@ -91,34 +105,14 @@ func prepare(o prepareOptions) ([]preparedPackage, error) {
 	return packages, nil
 }
 
-func prepareMissingPackage(source, directory string, row packageRecord, id packageIdentity) error {
+func prepareMissingPackage(archivePath, directory string, id packageIdentity) error {
 	parent := filepath.Dir(directory)
 	if err := os.MkdirAll(parent, 0755); err != nil {
 		return err
 	}
-	archive, err := os.CreateTemp(parent, ".download-")
+	staged, err := extractPackage(archivePath, parent, id)
 	if err != nil {
-		return err
-	}
-	defer os.Remove(archive.Name())
-	asset := filepath.Join(source, row.Asset)
-	input, err := os.Open(asset)
-	if err != nil {
-		archive.Close()
-		return fmt.Errorf("local package %s: %w", asset, err)
-	}
-	hash := sha256.New()
-	_, copyErr := io.Copy(io.MultiWriter(archive, hash), input)
-	if err := errors.Join(copyErr, input.Close(), archive.Close()); err != nil {
-		return err
-	}
-	want, err := hex.DecodeString(row.SHA256)
-	if err != nil || !bytes.Equal(want, hash.Sum(nil)) {
-		return fmt.Errorf("package %s: SHA256 mismatch, expected %s, got %x", asset, row.SHA256, hash.Sum(nil))
-	}
-	staged, err := extractPackage(archive.Name(), parent, id)
-	if err != nil {
-		return fmt.Errorf("package %s: %w", asset, err)
+		return fmt.Errorf("package %s: %w", archivePath, err)
 	}
 	defer os.RemoveAll(filepath.Dir(staged))
 	if _, err := os.Lstat(directory); err == nil {

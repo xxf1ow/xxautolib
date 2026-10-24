@@ -2,9 +2,6 @@ package main
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,7 +18,35 @@ func releaseFixture(t *testing.T) packageOptions {
 	return packageOptions{SourceRoot: o.SourceRoot, InstallRoot: o.InstallRoot, OutputRoot: filepath.Join(o.SourceRoot, "build/release"), OS: o.OS, Arch: o.Arch, HostOS: "windows", HostArch: "x86_64", ImporterFile: tool, CMakeCommand: o.CMakeCommand, Modules: []string{"queue", "lz4", "queue"}}
 }
 
-func TestLocalReleaseManifest(t *testing.T) {
+func TestLocalPackageAssets(t *testing.T) {
+	o := releaseFixture(t)
+	if err := packageRelease(o); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(o.OutputRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 3 {
+		t.Fatalf("expected only tool and two archives, got %v", entries)
+	}
+	for _, asset := range []string{"autolib-importer-windows-x86_64.exe", "lz4-windows-x86_64.tar.zst", "queue-windows-x86_64.tar.zst"} {
+		if _, err := os.Stat(filepath.Join(o.OutputRoot, asset)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	putFile(t, filepath.Join(o.OutputRoot, "unrelated"), "preserve")
+	putFile(t, filepath.Join(o.OutputRoot, "manifest.json"), "user-owned old file")
+	o.Modules = append(o.Modules, "missing")
+	if err := packageRelease(o); err == nil {
+		t.Fatal("accepted missing input")
+	}
+	requireFile(t, filepath.Join(o.OutputRoot, "unrelated"), "preserve")
+	requireFile(t, filepath.Join(o.OutputRoot, "manifest.json"), "user-owned old file")
+	requireFile(t, filepath.Join(o.InstallRoot, "queue/include/input.h"), "unchanged installation\n")
+}
+
+func TestLocalReleasePreservesInputs(t *testing.T) {
 	o := releaseFixture(t)
 	definition, err := loadDefinition(filepath.Join(o.SourceRoot, "src/dependencies/queue/module.toml"), "Windows", "x86_64")
 	if err != nil {
@@ -36,43 +61,14 @@ func TestLocalReleaseManifest(t *testing.T) {
 		if err := packageRelease(o); err != nil {
 			t.Fatal(err)
 		}
-		var document map[string][]map[string]string
-		if err := json.Unmarshal([]byte(readFile(t, filepath.Join(o.OutputRoot, "manifest.json"))), &document); err != nil {
-			t.Fatal(err)
-		}
-		if len(document) != 2 || len(document["importers"]) != 1 || len(document["packages"]) != 2 {
-			t.Fatal(document)
-		}
-		if document["packages"][0]["name"] != "lz4" || document["packages"][1]["name"] != "queue" {
-			t.Fatal(document)
-		}
-		for kind, records := range document {
-			for _, row := range records {
-				wantFields := 4
-				if kind == "packages" {
-					wantFields = 5
-				}
-				if len(row) != wantFields || row["os"] != "windows" || row["arch"] != "x86_64" {
-					t.Fatal(row)
-				}
-				data, err := os.ReadFile(filepath.Join(o.OutputRoot, row["asset"]))
-				if err != nil {
-					t.Fatal(err)
-				}
-				digest := sha256.Sum256(data)
-				if row["sha256"] != hex.EncodeToString(digest[:]) {
-					t.Fatal(row)
-				}
-			}
-		}
 		requireFile(t, filepath.Join(o.OutputRoot, "unrelated"), "preserve")
 	}
-	old := readFile(t, filepath.Join(o.OutputRoot, "manifest.json"))
+	old := readFile(t, filepath.Join(o.OutputRoot, "queue-windows-x86_64.tar.zst"))
 	o.Modules = append(o.Modules, "missing")
 	if err := packageRelease(o); err == nil {
 		t.Fatal("published missing package")
 	}
-	requireFile(t, filepath.Join(o.OutputRoot, "manifest.json"), old)
+	requireFile(t, filepath.Join(o.OutputRoot, "queue-windows-x86_64.tar.zst"), old)
 	t.Run("symlink output overlaps input", func(t *testing.T) {
 		o := releaseFixture(t)
 		if err := os.Symlink(o.InstallRoot, o.OutputRoot); err != nil {

@@ -1,9 +1,6 @@
 package main
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -57,13 +54,6 @@ func TestUniversalPackageAcrossTargets(t *testing.T) {
 		if _, err := os.Stat(asset); err != nil {
 			t.Fatal(err)
 		}
-		var document releaseManifest
-		if err := json.Unmarshal([]byte(readFile(t, filepath.Join(o.OutputRoot, "manifest.json"))), &document); err != nil {
-			t.Fatal(err)
-		}
-		if len(document.Packages) != 1 || document.Packages[0].OS != "any" || document.Packages[0].Arch != "any" || document.Packages[0].Asset != "queue-any-any.tar.zst" {
-			t.Fatal(document.Packages)
-		}
 		staged, err := stagePackage(stageOptions{SourceRoot: o.SourceRoot, InstallRoot: o.InstallRoot, StageRoot: filepath.Join(o.SourceRoot, "build/universal-stage", target[0]+"-"+target[1]), Name: "queue", OS: target[0], Arch: target[1], CMakeCommand: o.CMakeCommand})
 		if err != nil {
 			t.Fatal(err)
@@ -79,14 +69,6 @@ func TestUniversalPackageAcrossTargets(t *testing.T) {
 			}
 		}
 		requireTextFile(t, filepath.Join(staged, "autolib-import.cmake"), "set(AUTOLIB_PACKAGE_NAME \"queue\")\nset(AUTOLIB_OS \"any\")\nset(AUTOLIB_ARCH \"any\")\nset(AUTOLIB_DEPENDENCIES \"\")\nadd_library(AutoLib::queue INTERFACE IMPORTED GLOBAL)\n")
-		data, err := os.ReadFile(asset)
-		if err != nil {
-			t.Fatal(err)
-		}
-		digest := sha256.Sum256(data)
-		if document.Packages[0].SHA256 != hex.EncodeToString(digest[:]) {
-			t.Fatal("universal package digest mismatch")
-		}
 	}
 	o.OS, o.Arch = "linux", "x86_64"
 	putFile(t, filepath.Join(o.InstallRoot, "queue/generated/platform.cmake"), "platform generated")

@@ -2,8 +2,6 @@ package main
 
 import (
 	"bufio"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -28,13 +26,29 @@ func normalizeLocalSource(uri string) (string, error) {
 	return filepath.ToSlash(filepath.Clean(absolute)), nil
 }
 
-func sourceKey(source string) string {
-	digest := sha256.Sum256([]byte(source))
-	return hex.EncodeToString(digest[:])
+func packageDirectory(localRoot string, id packageIdentity) string {
+	return filepath.Join(localRoot, "packages", id.OS+"-"+id.Arch, id.Name)
 }
 
-func packageDirectory(workRoot, source string, id packageIdentity) string {
-	return filepath.Join(workRoot, sourceKey(source), "packages", id.OS+"-"+id.Arch, id.Name)
+func selectLocalArchive(localRoot string, target packageIdentity) (archivePath string, archiveIdentity packageIdentity, err error) {
+	for _, id := range []packageIdentity{target, {Name: target.Name, OS: "any", Arch: "any"}} {
+		candidate := filepath.Join(localRoot, id.Name+"-"+id.OS+"-"+id.Arch+".tar.zst")
+		info, err := os.Lstat(candidate)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return "", packageIdentity{}, err
+		}
+		if !info.Mode().IsRegular() {
+			return "", packageIdentity{}, fmt.Errorf("package archive must be a regular file: %s", candidate)
+		}
+		if archivePath != "" {
+			return "", packageIdentity{}, fmt.Errorf("ambiguous package archives: %s and %s", archivePath, candidate)
+		}
+		archivePath, archiveIdentity = candidate, id
+	}
+	return archivePath, archiveIdentity, nil
 }
 
 func readPackageMetadata(directory string) (metadata packageMetadata, err error) {

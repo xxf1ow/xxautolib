@@ -1,9 +1,6 @@
 package main
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -15,26 +12,6 @@ import (
 type packageOptions struct {
 	SourceRoot, InstallRoot, OutputRoot, OS, Arch, HostOS, HostArch, ImporterFile, CMakeCommand string
 	Modules                                                                                     []string
-}
-
-type releaseImporter struct {
-	OS     string `json:"os"`
-	Arch   string `json:"arch"`
-	Asset  string `json:"asset"`
-	SHA256 string `json:"sha256"`
-}
-
-type releasePackage struct {
-	Name   string `json:"name"`
-	OS     string `json:"os"`
-	Arch   string `json:"arch"`
-	Asset  string `json:"asset"`
-	SHA256 string `json:"sha256"`
-}
-
-type releaseManifest struct {
-	Importers []releaseImporter `json:"importers"`
-	Packages  []releasePackage  `json:"packages"`
 }
 
 func packageRelease(o packageOptions) error {
@@ -74,7 +51,7 @@ func packageRelease(o packageOptions) error {
 	}
 	names := []string{}
 	for _, n := range o.Modules {
-		if _, err := name(n, "package name"); err != nil {
+		if err := validatePackageName(n); err != nil {
 			return err
 		}
 		if !slices.Contains(names, n) {
@@ -97,11 +74,6 @@ func packageRelease(o packageOptions) error {
 	if err := copyPackageFile(o.ImporterFile, filepath.Join(work, toolAsset), 0755); err != nil {
 		return err
 	}
-	digest, err := releaseDigest(filepath.Join(work, toolAsset))
-	if err != nil {
-		return err
-	}
-	m := releaseManifest{Importers: []releaseImporter{{OS: o.HostOS, Arch: o.HostArch, Asset: toolAsset, SHA256: digest}}, Packages: []releasePackage{}}
 	assets := []string{toolAsset}
 	for _, n := range names {
 		module, err := loadDefinition(filepath.Join(source, "src/dependencies", n, "module.toml"), map[string]string{"windows": "Windows", "linux": "Linux"}[o.OS], o.Arch)
@@ -117,24 +89,12 @@ func packageRelease(o packageOptions) error {
 		if err := writePackageArchive(directory, filepath.Join(work, asset)); err != nil {
 			return err
 		}
-		digest, err := releaseDigest(filepath.Join(work, asset))
-		if err != nil {
-			return err
-		}
-		m.Packages = append(m.Packages, releasePackage{Name: n, OS: packageOS, Arch: packageArch, Asset: asset, SHA256: digest})
 		assets = append(assets, asset)
-	}
-	data, err := json.MarshalIndent(m, "", "  ")
-	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(filepath.Join(work, "manifest.json"), append(data, '\n'), 0644); err != nil {
-		return err
 	}
 	if err := os.MkdirAll(output, 0755); err != nil {
 		return err
 	}
-	for _, asset := range append(assets, "manifest.json") {
+	for _, asset := range assets {
 		if err := os.Rename(filepath.Join(work, asset), filepath.Join(output, asset)); err != nil {
 			return fmt.Errorf("publish %s: %w", asset, err)
 		}
@@ -170,19 +130,6 @@ func resolvePackagePath(path string) (string, error) {
 		return "", err
 	}
 	return filepath.Join(resolved, rel), nil
-}
-
-func releaseDigest(path string) (string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 func runPackage(args []string, stderr io.Writer) int {

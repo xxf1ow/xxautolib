@@ -64,14 +64,10 @@ func TestLocalSource(t *testing.T) {
 			}
 		}
 	}
-	if got := sourceKey("/tmp/release"); got != "52c4bf853c6fb38d1cba37946f606eec34ae56a4662b1ba434f4a1e3f2bfaf1b" {
-		t.Fatal(got)
-	}
-	a := packageDirectory(want, "source A", packageIdentity{Name: "lz4", OS: "linux", Arch: "aarch64"})
-	b := packageDirectory(want, "source B", packageIdentity{Name: "lz4", OS: "linux", Arch: "aarch64"})
-	c := packageDirectory(want, "source A", packageIdentity{Name: "lz4", OS: "windows", Arch: "x86_64"})
-	if a == b || a == c || filepath.Base(a) != "lz4" || filepath.Base(filepath.Dir(a)) != "linux-aarch64" {
-		t.Fatal(a, b, c)
+	a := packageDirectory(want, packageIdentity{Name: "lz4", OS: "linux", Arch: "aarch64"})
+	c := packageDirectory(want, packageIdentity{Name: "lz4", OS: "windows", Arch: "x86_64"})
+	if a == c || filepath.Base(a) != "lz4" || filepath.Base(filepath.Dir(a)) != "linux-aarch64" {
+		t.Fatal(a, c)
 	}
 }
 

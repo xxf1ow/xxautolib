@@ -13,23 +13,6 @@ type packageMetadata struct {
 	Dependencies []string
 }
 type preparedPackage struct{ Name, Directory string }
-type importerRecord struct {
-	OS     string `json:"os"`
-	Arch   string `json:"arch"`
-	Asset  string `json:"asset"`
-	SHA256 string `json:"sha256"`
-}
-type packageRecord struct {
-	Name   string `json:"name"`
-	OS     string `json:"os"`
-	Arch   string `json:"arch"`
-	Asset  string `json:"asset"`
-	SHA256 string `json:"sha256"`
-}
-type manifest struct {
-	Importers []importerRecord `json:"importers"`
-	Packages  []packageRecord  `json:"packages"`
-}
 
 var packageName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.+\-]*$`)
 
