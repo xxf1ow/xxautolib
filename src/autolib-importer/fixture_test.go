@@ -68,7 +68,7 @@ type archiveMember struct {
 }
 
 func identityHeader(id packageIdentity) string {
-	return "set(AUTOLIB_PACKAGE_NAME \"" + id.Name + "\")\nset(AUTOLIB_OS \"" + id.OS + "\")\nset(AUTOLIB_ARCH \"" + id.Arch + "\")\n"
+	return "set(AUTOLIB_PACKAGE_NAME \"" + id.Name + "\")\nset(AUTOLIB_OS \"" + id.OS + "\")\nset(AUTOLIB_ARCH \"" + id.Arch + "\")\nset(AUTOLIB_DEPENDENCIES \"\")\n"
 }
 
 func testArchive(t *testing.T, members []archiveMember) string {

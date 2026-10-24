@@ -52,12 +52,12 @@ func prepare(o prepareOptions) ([]preparedPackage, error) {
 			if !info.IsDir() {
 				return nil, fmt.Errorf("existing package is not a directory: %s", directory)
 			}
-			actual, err := readPackageIdentity(directory)
+			metadata, err := readPackageMetadata(directory)
 			if err != nil {
 				return nil, err
 			}
-			if !matchesPackageIdentity(actual, id) {
-				return nil, fmt.Errorf("existing package %s: expected identity %+v, got %+v; preserve or remove this cache before retrying", directory, id, actual)
+			if !matchesPackageIdentity(metadata.Identity, id) {
+				return nil, fmt.Errorf("existing package %s: expected identity %+v, got %+v; preserve or remove this cache before retrying", directory, id, metadata.Identity)
 			}
 		} else {
 			if !os.IsNotExist(statErr) {

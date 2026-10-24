@@ -78,7 +78,7 @@ func TestUniversalPackageAcrossTargets(t *testing.T) {
 				t.Fatalf("header bytes differ for %s: %v", name, err)
 			}
 		}
-		requireTextFile(t, filepath.Join(staged, "autolib-import.cmake"), "set(AUTOLIB_PACKAGE_NAME \"queue\")\nset(AUTOLIB_OS \"any\")\nset(AUTOLIB_ARCH \"any\")\nadd_library(AutoLib::queue INTERFACE IMPORTED GLOBAL)\n")
+		requireTextFile(t, filepath.Join(staged, "autolib-import.cmake"), "set(AUTOLIB_PACKAGE_NAME \"queue\")\nset(AUTOLIB_OS \"any\")\nset(AUTOLIB_ARCH \"any\")\nset(AUTOLIB_DEPENDENCIES \"\")\nadd_library(AutoLib::queue INTERFACE IMPORTED GLOBAL)\n")
 		data, err := os.ReadFile(asset)
 		if err != nil {
 			t.Fatal(err)

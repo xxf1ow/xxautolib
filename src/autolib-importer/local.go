@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -36,35 +37,47 @@ func packageDirectory(workRoot, source string, id packageIdentity) string {
 	return filepath.Join(workRoot, sourceKey(source), "packages", id.OS+"-"+id.Arch, id.Name)
 }
 
-func readPackageIdentity(directory string) (id packageIdentity, err error) {
+func readPackageMetadata(directory string) (metadata packageMetadata, err error) {
+	id := &metadata.Identity
+	var dependencies string
 	path := filepath.Join(directory, "autolib-import.cmake")
 	defer func() {
 		if err != nil {
-			err = fmt.Errorf("package identity %s: expected fixed name/os/arch header: %w", path, err)
+			err = fmt.Errorf("package metadata %s: expected fixed name/os/arch/dependencies header: %w", path, err)
 		}
 	}()
 	f, err := os.Open(path)
 	if err != nil {
-		return id, err
+		return metadata, err
 	}
 	defer f.Close()
 	scanner := bufio.NewScanner(f)
 	for _, field := range []struct {
 		key   string
 		value *string
-	}{{"AUTOLIB_PACKAGE_NAME", &id.Name}, {"AUTOLIB_OS", &id.OS}, {"AUTOLIB_ARCH", &id.Arch}} {
+	}{{"AUTOLIB_PACKAGE_NAME", &id.Name}, {"AUTOLIB_OS", &id.OS}, {"AUTOLIB_ARCH", &id.Arch}, {"AUTOLIB_DEPENDENCIES", &dependencies}} {
 		if !scanner.Scan() {
-			return id, fmt.Errorf("missing %s: %v", field.key, scanner.Err())
+			return metadata, fmt.Errorf("missing %s: %v", field.key, scanner.Err())
 		}
 		prefix := `set(` + field.key + ` "`
 		line := scanner.Text()
 		if !strings.HasPrefix(line, prefix) || !strings.HasSuffix(line, `")`) {
-			return id, fmt.Errorf("invalid %s line", field.key)
+			return metadata, fmt.Errorf("invalid %s line", field.key)
 		}
 		*field.value = strings.TrimSuffix(strings.TrimPrefix(line, prefix), `")`)
 	}
-	if err := validateIdentity(id); err != nil {
-		return id, err
+	if err := validateIdentity(*id); err != nil {
+		return metadata, err
 	}
-	return id, nil
+	if dependencies != "" {
+		metadata.Dependencies = strings.Split(dependencies, ";")
+		for _, dependency := range metadata.Dependencies {
+			if err := validatePackageName(dependency); err != nil {
+				return metadata, err
+			}
+		}
+		slices.Sort(metadata.Dependencies)
+		metadata.Dependencies = slices.Compact(metadata.Dependencies)
+	}
+	return metadata, nil
 }

@@ -20,6 +20,16 @@ type stageOptions struct {
 	SourceRoot, InstallRoot, StageRoot, Name, OS, Arch, CMakeCommand string
 }
 
+func validatePackageName(value string) error {
+	stem := strings.ToUpper(strings.SplitN(value, ".", 2)[0])
+	reserved := slices.Contains([]string{"CON", "PRN", "AUX", "NUL"}, stem) ||
+		(len(stem) == 4 && (strings.HasPrefix(stem, "COM") || strings.HasPrefix(stem, "LPT")) && stem[3] >= '1' && stem[3] <= '9')
+	if !targetName.MatchString(value) || strings.HasSuffix(value, ".") || reserved {
+		return fmt.Errorf("invalid package name %q", value)
+	}
+	return nil
+}
+
 func validatePackagePlatform(system, arch string) error {
 	if (system != "windows" && system != "linux") || (arch != "x86_64" && arch != "aarch64") {
 		return fmt.Errorf("unsupported package platform %s/%s", system, arch)
@@ -103,7 +113,7 @@ func copyPackageFile(source, destination string, mode fs.FileMode) error {
 }
 
 func stagePackage(o stageOptions) (staged string, err error) {
-	if _, err = name(o.Name, "package name"); err != nil {
+	if err = validatePackageName(o.Name); err != nil {
 		return "", err
 	}
 	if err = validatePackagePlatform(o.OS, o.Arch); err != nil {
@@ -170,7 +180,15 @@ func stagePackage(o stageOptions) (staged string, err error) {
 			return "", err
 		}
 	}
-	header := fmt.Sprintf("set(AUTOLIB_PACKAGE_NAME %q)\nset(AUTOLIB_OS %q)\nset(AUTOLIB_ARCH %q)\n", o.Name, packageOS, packageArch)
+	dependencies := slices.Clone(module.Depends)
+	for _, dependency := range dependencies {
+		if err = validatePackageName(dependency); err != nil {
+			return "", err
+		}
+	}
+	slices.Sort(dependencies)
+	dependencies = slices.Compact(dependencies)
+	header := fmt.Sprintf("set(AUTOLIB_PACKAGE_NAME %q)\nset(AUTOLIB_OS %q)\nset(AUTOLIB_ARCH %q)\nset(AUTOLIB_DEPENDENCIES %q)\n", o.Name, packageOS, packageArch, strings.Join(dependencies, ";"))
 	if err = os.WriteFile(filepath.Join(staged, "autolib-import.cmake"), append([]byte(header), adapter...), 0644); err != nil {
 		return "", err
 	}
@@ -316,7 +334,7 @@ func writePackageArchive(packageDir, destination string) (err error) {
 		return err
 	}
 	defer os.Remove(file.Name())
-	z, err := zstd.NewWriter(file)
+	z, err := zstd.NewWriter(file, zstd.WithEncoderCRC(true))
 	if err != nil {
 		file.Close()
 		return err

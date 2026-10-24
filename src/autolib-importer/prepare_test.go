@@ -103,7 +103,7 @@ func TestPrepareFailures(t *testing.T) {
 	if _, err := prepare(o); err == nil {
 		t.Fatal("replaced mismatched existing package")
 	}
-	if id, err := readPackageIdentity(first); err != nil || id.Name != "wrong" {
+	if metadata, err := readPackageMetadata(first); err != nil || metadata.Identity.Name != "wrong" {
 		t.Fatal("existing package changed", err)
 	}
 	t.Run("no network", func(t *testing.T) {
