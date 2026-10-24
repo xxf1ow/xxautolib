@@ -408,7 +408,9 @@ func representativeFixture(t *testing.T, packages string) *entryFixture {
 }
 
 func TestRepresentativeAdapters(t *testing.T) {
-	f := representativeFixture(t, "flann queue lz4 flann")
+	f := representativeFixture(t, "flann queue")
+	consumer := filepath.Join(f.source, "CMakeLists.txt")
+	putTestFile(t, consumer, strings.Replace(readTestFile(t, consumer), "add_subdirectory(child)", "if(NOT AUTOLIB_PREPARED_PACKAGES STREQUAL \"lz4;flann;queue\")\nmessage(FATAL_ERROR \"wrong dependency order: ${AUTOLIB_PREPARED_PACKAGES}\")\nendif()\nadd_subdirectory(child)", 1))
 	destination := f.release + "中文 空格"
 	if err := os.Rename(f.release, destination); err != nil {
 		t.Fatal(err)

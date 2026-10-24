@@ -47,11 +47,13 @@ cmake -P src/autolib-builder/go-sdk.cmake -- build -mod=readonly -trimpath -o bu
 
 `builder package` 必填 `--source-root`、`--install-root`、`--output-root`、`--os`、`--arch`、`--host-os`、`--host-arch`、`--importer-file`、`--cmake-command` 及重复 `--module`。输出必须在本副本 build 内且不与安装树重叠；只打包显式模块，不自动补依赖。真实示例由[本地闭环测试](testing.md#本地二进制闭环)执行。
 
-将 `src/autolib.cmake` 复制到消费者，include 后在其他库查找或子目录创建同名目标前调用 `autolib_import(URI <本地发行目录> PACKAGES flann queue lz4)`，链接 `AutoLib::queue`、`AutoLib::lz4`、`AutoLib::flann`。不混用同名库的不同来源，首次导入遇既有上游目标报错。可选 `WORK_ROOT`、`TARGET_OS`、`TARGET_ARCH`；默认工作根为消费者 build 下的 autolib。发行来源可含分号，实际工作根及搬迁包根不得含分号；默认或显式工作根含分号时，指定不含分号的 `WORK_ROOT`。系统支持 windows/linux，架构使用 x86_64/aarch64；工具按宿主选择，包按目标选择。同一次 configure 只使用一个来源。
+将 `src/autolib.cmake` 复制到消费者，include 后在其他同名库目标创建前调用 `autolib_import(LOCAL_ROOT <本地发行目录> PACKAGES flann queue)`，链接 `AutoLib::queue`、`AutoLib::lz4`、`AutoLib::flann`；lz4 从 flann 包头自动补齐。可选 `WORK_ROOT`、`TARGET_OS`、`TARGET_ARCH`，默认工作根为消费者 build 下的 autolib。系统支持 windows/linux，架构为 x86_64/aarch64；工具按宿主、库包按目标选择。同一次 configure 固定来源、工作根和目标，可增加根包，首次导入拒绝既有上游目标。
 
-发行清单严格格式见[导入设计](agent-notes/proposed/architecture/2026-10-21-go-tooling-and-offline-import.md#消费入口与数据流)。asset 为权威文件名，摘要不认证来源，信任由用户负责。调用固定为 `importer prepare --uri --work-root --os --arch --result`、可选 `--manifest` 和重复 `--package`，不查询版本或协商协议。
+LOCAL_ROOT 平铺固定名宿主工具和 `<name>-<os>-<arch>.tar.zst`；通用归档使用 any-any。准备目录为 `LOCAL_ROOT/packages/<os>-<arch>/<name>/`，优先于归档。相对根按顶层源码目录解析；本地根、工作根及实际包路径不得含分号。现有完整目录可只读复用；缺包需要本地根可写，同根写入由调用方串行，独立构建使用各自工作根。
 
-工作根下以规范化绝对来源的 SHA256 分目录，工具在 `tools/<host-os>-<host-arch>`，包在 `packages/<os>-<arch>/<name>`。已有匹配缓存不读取来源更新；工具每次按取得时清单复验，包核对身份。刷新前保护本地改动，只移走所需工具目录或包目录；异常缓存保留报错，不覆盖。缺输入、错误摘要或越界归档均失败，不加载失败调用的残留结果。FLANN 的 AutoLib 包依赖只有 lz4；OpenMP 和 C++ ABI/系统运行库仍由消费环境满足，不承诺包自包含。
+CLI 为 `importer prepare --local-root=<目录> --work-root=<目录> --os=<目标OS> --arch=<目标架构> --result=<文件> --package=<根包>`，package 可重复。CMake 接受 REMOTE_ROOT、CLI 接受 --remote-root 参数位置，但非空值明确报远端尚未启用，不联网。URI、--uri、--manifest 均拒绝，不提供兼容层；CI 中的旧调用由独立 CI 阶段同步迁移，当前不能作为新协议使用。
+
+包头及依赖格式见[包消费设计](agent-notes/proposed/architecture/2026-10-24-manifestless-package-consumption.md#包内身份与依赖)。已有目录仅核对包头，不逐文件散列；归档内容校验用于意外损坏检测，不认证来源，本地工具须由用户信任。坏目录、坏归档或缺输入直接失败，不回退低优先级来源或加载上次结果。刷新前保护本地改动，移走对应 `packages/<目标OS>-<目标架构>/<包名>/`，不删除共享依赖；本地归档仍优先，更新归档不会覆盖目录。FLANN 的包依赖仅 lz4，OpenMP、C++ ABI 和系统运行库由消费环境满足。
 
 ## 日常修改
 
