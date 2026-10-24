@@ -43,6 +43,8 @@ func init() {
 		return
 	}
 	switch mode {
+	case "run-fixture":
+		runLayerCommandFixture()
 	case "nonzero":
 		fmt.Fprint(os.Stdout, `{"system_name":"Linux"}`)
 		os.Exit(2)

@@ -55,3 +55,37 @@ type ciIdentity struct {
 	BuildID       string `json:"build_id"`
 	BuildInputsID string `json:"build_inputs_id"`
 }
+
+type ciRunOptions struct {
+	SourceRoot, PlanFile, RunIdentityFile, Platform, Layer, WorkRoot string
+	BuilderFile, ImporterFile, CMakeCommand, MakeProgram             string
+	Budget                                                           int
+}
+
+type ciSlotResult struct {
+	Slot     ciSlot `json:"slot"`
+	Asset    string `json:"asset"`
+	SHA256   string `json:"sha256"`
+	BuildID  string `json:"build_id"`
+	Commit   string `json:"commit"`
+	Reused   bool   `json:"reused"`
+	Built    bool   `json:"built"`
+	Verified bool   `json:"verified"`
+	Uploaded bool   `json:"uploaded"`
+}
+
+type ciImporterResult struct {
+	Asset    string `json:"asset"`
+	SHA256   string `json:"sha256"`
+	Verified bool   `json:"verified"`
+	Uploaded bool   `json:"uploaded"`
+}
+
+type ciPlatformResult struct {
+	Run      ciRunIdentity    `json:"run"`
+	Platform string           `json:"platform"`
+	Packages []ciSlotResult   `json:"packages"`
+	Importer ciImporterResult `json:"importer"`
+	Complete bool             `json:"complete"`
+	Error    string           `json:"error"`
+}

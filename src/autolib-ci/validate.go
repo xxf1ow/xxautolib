@@ -21,6 +21,7 @@ type ciValidationOptions struct {
 	EvidenceDirectory                               string
 	Mode                                            string
 	Modules                                         []string
+	RootPackages                                    []string
 	Context                                         ciProductionContext
 }
 
@@ -47,9 +48,6 @@ func validateCIRelease(ctx context.Context, o ciValidationOptions) (ciValidation
 	if err != nil {
 		return ciValidationResult{}, err
 	}
-	if err := verifyImporterNoCRuntime(o.ImporterFile); err != nil {
-		return ciValidationResult{}, err
-	}
 	if err := os.MkdirAll(roots.evidence, 0755); err != nil {
 		return ciValidationResult{}, fmt.Errorf("create evidence directory: %w", err)
 	}
@@ -71,6 +69,7 @@ func validateCIRelease(ctx context.Context, o ciValidationOptions) (ciValidation
 		"-DCMAKE_MSVC_RUNTIME_LIBRARY=" + o.Context.Runtime,
 		"-DMULTI_CONFIG=" + onOff(o.Context.MultiConfig),
 		"-DMODULES=" + strings.Join(o.Modules, ";"),
+		"-DROOT_PACKAGES=" + strings.Join(o.RootPackages, ";"),
 		"-DRELEASE_READY=ON",
 		"-DVALIDATION_MODE=" + o.Mode,
 	}

@@ -16,8 +16,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && args[0] == "init" {
 		return runCIInit(args[1:], stdout, stderr, productionGitHubClient(os.Getenv("GITHUB_TOKEN")))
 	}
+	if len(args) > 0 && args[0] == "run" {
+		return runCIRun(args[1:], stdout, stderr)
+	}
+	if len(args) > 0 && args[0] == "finalize" {
+		return runCIFinalize(args[1:], stdout, stderr)
+	}
 	if len(args) < 1 || args[0] != "plan" {
-		return fail(fmt.Errorf("usage: autolib-ci plan [options]"))
+		return fail(fmt.Errorf("usage: autolib-ci <plan|init|run|finalize> [options]"))
 	}
 	flags := flag.NewFlagSet("plan", flag.ContinueOnError)
 	flags.SetOutput(stderr)
