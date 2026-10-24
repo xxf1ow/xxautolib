@@ -14,6 +14,17 @@
 
 各工作副本独立维护 `.tools/go/`、`git/`、`build/` 和 `3rdparty/`，不整体跨平台传输。私有 SDK 与 Go 缓存在 `.tools/go/`，不随 build 清理，也不修改全局环境。主 Git 位于 `git/<模块>/`，Git 资源位于 `git/_resources/<模块>/<资源>/`，归档下载共用根 `git/`；解压、编译和步骤留在 `build/ep/`，builder 留在 `build/tools/`，生成结果留在 `build/generated/`。configure 检查本地 `.git` 与安装 sentinel；命中 sentinel 保留空目标及依赖顺序，声明校验仍执行。复用限制见[本地复用设计](agent-notes/implemented/architecture/2026-10-20-local-reuse-and-platform-inputs.md)。builder 同目录的 Go 测试验证公共引擎，库专用测试验证安装产物。
 
+## 工具与流水线职责
+
+构建机制与生产发布决策分别维护。三个工具使用独立源码目录和可执行入口，通过命令行协作，不互相导入或混编业务实现。
+
+- autolib-builder 维护构建与本地打包机制；CMake/ExternalProject 执行实际构建，CI 不重写构建规则。
+- autolib-importer 维护消费校验和准备，不承担生产缓存策略或远端发布。
+- autolib-ci 维护生产策略：根据 builder 提供的事实规划模块依赖层与通用包 publisher，计算 build ID，校验生产缓存，并调用既有工具完成消费验证和安装负载恢复；不重新解析模块声明或复制构建、打包和解包引擎。
+- 发布编排、Release 写入和结果汇总归 autolib-ci，触发、runner/container、环境准备、权限、job 依赖与运行串行化归 workflow；接线与验收要求由独立的 [CI 系统设计](agent-notes/proposed/architecture/2026-10-20-ci-system.md)约定，不在 builder 或 importer 中实现。
+
+普通本地构建和离线消费不依赖 CI、GitHub 或 workflow，builder 不读取 CI 配置或凭据。
+
 ## 本地二进制消费
 
 builder 的 `package` 将显式选择且提供 adapter 的安装树复制到 staging，只在副本中修正本包及声明 sibling 的生产路径，生成 tar.zst、宿主 importer 和统一 `manifest.json`，不改原安装或库编译方式。根 Go module 固定 TOML 与纯 Go zstd 依赖；生产与消费程序独立构建，不相互调用。
