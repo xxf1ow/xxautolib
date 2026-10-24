@@ -128,7 +128,7 @@ jobs:
         id: environment
         run: |
           set -euo pipefail
-          .github/scripts/prepare-linux.sh --config .github/ci-tools.json --plan build/ci-input/plan.json --platform "$PLATFORM" --work-root "$WORK_ROOT" > build/ci-input/environment.json
+          bash .github/scripts/prepare-linux.sh --config .github/ci-tools.json --plan build/ci-input/plan.json --platform "$PLATFORM" --work-root "$WORK_ROOT" > build/ci-input/environment.json
           jq -r 'to_entries[] | "\(.key)=\(.value)"' build/ci-input/environment.json >> "$GITHUB_OUTPUT"
           jq -r --arg platform "$PLATFORM" '.platforms[] | select(.id == $platform) | "layer0=" + (((.layers[0] // [])|length)>0|tostring), "layer1=" + (((.layers[1] // [])|length)>0|tostring)' build/ci-input/plan.json >> "$GITHUB_OUTPUT"
       - name: Prepare platform
@@ -212,8 +212,8 @@ jobs:
           "cmake_command=$($settings.cmake_command)" >> $env:GITHUB_OUTPUT
           $plan = Get-Content build/ci-input/plan.json -Raw | ConvertFrom-Json
           $platform = @($plan.platforms | Where-Object id -eq 'windows-x86_64')[0]
-          "layer0=$(@($platform.layers[0]).Count -gt 0)".ToLowerInvariant() >> $env:GITHUB_OUTPUT
-          "layer1=$(@($platform.layers[1]).Count -gt 0)".ToLowerInvariant() >> $env:GITHUB_OUTPUT
+          "layer0=$($platform.layers.Count -gt 0 -and @($platform.layers[0]).Count -gt 0)".ToLowerInvariant() >> $env:GITHUB_OUTPUT
+          "layer1=$($platform.layers.Count -gt 1 -and @($platform.layers[1]).Count -gt 0)".ToLowerInvariant() >> $env:GITHUB_OUTPUT
       - name: Prepare platform
         env:
           GITHUB_TOKEN: ${{ github.token }}

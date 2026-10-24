@@ -1,3 +1,5 @@
+cmake_minimum_required(VERSION 3.20)
+
 foreach(_required IN ITEMS RESULT_FILE SOURCE_ROOT INSTALL_ROOT PACKAGE_NAME EXPECTED_PACKAGES OS ARCH)
     if(NOT DEFINED ${_required} OR "${${_required}}" STREQUAL "")
         message(FATAL_ERROR "Cache restore requires ${_required}")

@@ -110,6 +110,10 @@ func TestCIWorkflowContract(t *testing.T) {
 		t.Fatal("branch check runs after checkout/tools")
 	}
 	linux := workflowSection(t, document, "  linux:")
+	preparation := workflowSection(t, linux, "      - name: Prepare native environment and tools")
+	if !strings.Contains(preparation, "bash .github/scripts/prepare-linux.sh --config") {
+		t.Fatal("Linux preparation must invoke the non-executable script with bash")
+	}
 	if !strings.Contains(linux, "fail-fast: false") || !strings.Contains(linux, "image: ${{ needs.plan.outputs.linux_image }}") {
 		t.Fatal("Linux matrix/container contract missing")
 	}
@@ -178,6 +182,48 @@ func TestCIWorkflowContract(t *testing.T) {
 			}
 		}
 	}
+	t.Run("Windows skips an absent dependency layer", func(t *testing.T) {
+		pwsh, err := exec.LookPath("pwsh")
+		if err != nil {
+			t.Skip("PowerShell is unavailable")
+		}
+		job := workflowSection(t, document, "  windows:")
+		step := workflowSection(t, job, "      - name: Prepare native environment and tools")
+		script := workflowSection(t, step, "        run: |")
+		_, script, ok := strings.Cut(script, "$plan = ")
+		if !ok {
+			t.Fatal("missing Windows layer selection")
+		}
+		script = "$plan = " + script
+		for _, tc := range []struct{ layers, want string }{
+			{`[["lz4"]]`, "layer0=true\nlayer1=false"},
+			{`[["lz4","queue"],["flann"]]`, "layer0=true\nlayer1=true"},
+		} {
+			work := t.TempDir()
+			input := filepath.Join(work, "build/ci-input")
+			if err := os.MkdirAll(input, 0755); err != nil {
+				t.Fatal(err)
+			}
+			plan := `{"platforms":[{"id":"windows-x86_64","layers":` + tc.layers + `}]}`
+			if err := os.WriteFile(filepath.Join(input, "plan.json"), []byte(plan), 0644); err != nil {
+				t.Fatal(err)
+			}
+			outputFile := filepath.Join(work, "output.txt")
+			command := exec.Command(pwsh, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script)
+			command.Dir = work
+			command.Env = append(withoutEnvironment(os.Environ(), "GITHUB_OUTPUT"), "GITHUB_OUTPUT="+outputFile)
+			if output, err := command.CombinedOutput(); err != nil {
+				t.Fatalf("Windows layer selection: %v %s", err, output)
+			}
+			data, err := os.ReadFile(outputFile)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := strings.TrimSpace(strings.ReplaceAll(string(data), "\r\n", "\n")); got != tc.want {
+				t.Fatalf("layers %s: got %q want %q", tc.layers, got, tc.want)
+			}
+		}
+	})
 	t.Run("Make configures in its build directory", func(t *testing.T) {
 		data, err := os.ReadFile(filepath.Join(root, ".github/scripts/prepare-linux.sh"))
 		if err != nil {
