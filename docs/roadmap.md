@@ -4,7 +4,7 @@
 
 工具层重建及导入链路按 [Go 工具层与离线导入设计](agent-notes/proposed/architecture/2026-10-21-go-tooling-and-offline-import.md)分阶段推进：Go 生成器替换自有 Python 路径，保留 TOML 和原生构建契约；第二阶段已实现本地打包、统一清单、独立 importer 和单文件消费入口。queue、lz4、flann 在 Windows x64/v143、Linux aarch64 完成发行与准备包搬迁后的真实链接运行，第二阶段已通过用户验收；第三阶段 HTTPS 消费暂缓。
 
-下一项工作为独立的 [CI 系统](agent-notes/proposed/architecture/2026-10-20-ci-system.md)，建立三平台原生构建与实际 Release 供给，不作为 Go 工具层的子阶段，也不要求先批量增加第三方库。其消费接口调整见[无全局清单的双来源包消费提案](agent-notes/proposed/architecture/2026-10-24-manifestless-package-consumption.md)，本地协议实现四行依赖头、目录优先、无清单依赖闭包和 CMake LOCAL_ROOT，Windows x64/v143 完成两次搬迁链接运行；本地阶段待用户验收，Linux 新协议实机复验尚缺。CI 的旧清单调用及生产缓存留下一阶段同步迁移；CI 验收后再恢复 HTTPS 消费的设计交接。
+下一项工作为独立的 [CI 系统](agent-notes/proposed/architecture/2026-10-20-ci-system.md)，建立三平台原生构建与实际 Release 供给，不作为 Go 工具层的子阶段，也不要求先批量增加第三方库。其消费接口调整见[无全局清单的双来源包消费提案](agent-notes/proposed/architecture/2026-10-24-manifestless-package-consumption.md)，本地协议实现四行依赖头、目录优先、无清单依赖闭包和 CMake LOCAL_ROOT，Windows x64/v143 完成两次搬迁链接运行；本地阶段已通过用户验收，Linux 新协议实机复验尚缺。CI 的旧清单调用及生产缓存留下一阶段同步迁移；CI 验收后再恢复 HTTPS 消费的设计交接。
 
 ## 状态与依据
 

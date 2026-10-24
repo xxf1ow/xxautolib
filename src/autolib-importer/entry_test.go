@@ -179,6 +179,9 @@ func TestCMakeBootstrapFailure(t *testing.T) {
 			if err == nil || strings.Contains(out, "STALE_RESULT_LOADED") {
 				t.Fatalf("%v\n%s", err, out)
 			}
+			if kind == "incomplete result" && !strings.Contains(out, "invalid package directory") {
+				t.Fatalf("incomplete result did not fail directory validation:\n%s", out)
+			}
 			if _, err := os.Stat(marker); !os.IsNotExist(err) {
 				t.Fatal("adapter loaded on failure", err)
 			}
@@ -314,6 +317,9 @@ func TestCMakeConfigureIdentity(t *testing.T) {
 			out, err := f.configure()
 			if (err == nil) != (kind == "same") {
 				t.Fatalf("%v\n%s", err, out)
+			}
+			if kind == "stale directory" && !strings.Contains(out, "invalid package directory") {
+				t.Fatalf("incomplete result inherited an earlier directory:\n%s", out)
 			}
 			lines := strings.Split(strings.TrimSpace(readTestFile(t, filepath.Join(f.root, "calls.jsonl"))), "\n")
 			want := 1
@@ -472,6 +478,6 @@ func main(){
  mode:=os.Getenv("AUTOLIB_TEST_MODE");if mode=="no-result" {return}
  if mode=="fail" {os.WriteFile(result,[]byte("message(FATAL_ERROR STALE_RESULT_LOADED)\n"),0644);os.Exit(7)}
  body:="set(AUTOLIB_PREPARED_PACKAGES demo)\nset(AUTOLIB_PACKAGE_DIR_demo [==["+os.Getenv("AUTOLIB_TEST_PACKAGE_DIR")+"]==])\n"
- if mode=="incomplete" {body="set(AUTOLIB_PREPARED_PACKAGES demo)\\n"}
+ if mode=="incomplete" {body="set(AUTOLIB_PREPARED_PACKAGES demo)\n"}
  if e:=os.WriteFile(result,[]byte(body),0644);e!=nil {panic(e)}
 }`

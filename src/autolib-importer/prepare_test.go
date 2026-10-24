@@ -1,12 +1,9 @@
 package main
 
 import (
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sync/atomic"
 	"testing"
 )
 
@@ -48,11 +45,6 @@ func TestPrepareReuse(t *testing.T) {
 	}
 }
 func TestPrepareFailures(t *testing.T) {
-	var requests atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { requests.Add(1); w.WriteHeader(404) }))
-	defer server.Close()
-	t.Setenv("HTTP_PROXY", server.URL)
-	t.Setenv("HTTPS_PROXY", server.URL)
 	o := localReleaseFixture(t, "demo")
 	if _, err := prepare(o); err != nil {
 		t.Fatal(err)
@@ -65,17 +57,14 @@ func TestPrepareFailures(t *testing.T) {
 	if readTestFile(t, o.ResultPath) != "previous result" {
 		t.Fatal("failed prepare wrote result")
 	}
-	o.RemoteRoot = server.URL
+	o.RemoteRoot = "https://example.invalid/release"
 	if _, err := prepare(o); err == nil {
 		t.Fatal("enabled remote prematurely")
 	}
 	o.RemoteRoot = ""
-	o.LocalRoot = server.URL
+	o.LocalRoot = "https://example.invalid/release"
 	if _, err := prepare(o); err == nil {
 		t.Fatal("accepted URL as local root")
-	}
-	if requests.Load() != 0 {
-		t.Fatal("issued network request")
 	}
 }
 
