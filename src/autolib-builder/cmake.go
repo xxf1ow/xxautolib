@@ -10,6 +10,7 @@ import (
 
 type buildContext struct {
 	SourceRoot, BuildRoot, SystemName, Architecture string
+	InstallRoot, MakeProgram                        string
 	Generator, Platform, Toolset, Instance          string
 	CMakeCommand, GitExecutable                     string
 	MultiConfig                                     bool
@@ -84,7 +85,11 @@ func unique(values []string) []string {
 
 func renderModule(module *moduleDefinition, context buildContext, dependencies []*moduleDefinition) (string, error) {
 	prefix := filepath.Join(context.BuildRoot, "ep", module.Name)
-	install := slashJoin(context.SourceRoot, "3rdparty", module.Name)
+	installRoot := context.InstallRoot
+	if installRoot == "" {
+		installRoot = filepath.Join(context.SourceRoot, "3rdparty")
+	}
+	install := slashJoin(installRoot, module.Name)
 	persistent := filepath.Join(context.SourceRoot, "git")
 	cmake := filepath.ToSlash(context.CMakeCommand)
 	driver := slashJoin(context.SourceRoot, "src/autolib-builder/apply_patch.cmake")
@@ -204,7 +209,7 @@ func renderModule(module *moduleDefinition, context buildContext, dependencies [
 				options = append(options, opt)
 			}
 		}
-		cache := map[string]any{"CMAKE_POLICY_VERSION_MINIMUM": "3.5", "CMAKE_POSITION_INDEPENDENT_CODE": true, "CMAKE_CXX_STANDARD": "17"}
+		cache := map[string]any{"CMAKE_POLICY_VERSION_MINIMUM": "3.5", "CMAKE_POSITION_INDEPENDENT_CODE": true, "CMAKE_CXX_STANDARD": "17", "CMAKE_INSTALL_LIBDIR": "lib"}
 		for key, value := range context.CMakeDefaults {
 			cache[key] = value
 		}
@@ -241,11 +246,14 @@ func renderModule(module *moduleDefinition, context buildContext, dependencies [
 		for _, key := range []string{"CMAKE_INSTALL_PREFIX", "CMAKE_BUILD_TYPE", "CMAKE_MSVC_RUNTIME_LIBRARY", "CMAKE_GENERATOR", "CMAKE_GENERATOR_PLATFORM", "CMAKE_GENERATOR_TOOLSET", "CMAKE_GENERATOR_INSTANCE"} {
 			delete(cache, key)
 		}
+		if context.Generator == "Unix Makefiles" && context.MakeProgram != "" {
+			cache["CMAKE_MAKE_PROGRAM"] = context.MakeProgram
+		}
 		prefixes := []string{}
 		callerInclude := []string{}
 		if len(dependencies) > 0 {
 			for _, dep := range dependencies {
-				location := slashJoin(context.SourceRoot, "3rdparty", dep.Name)
+				location := slashJoin(installRoot, dep.Name)
 				prefixes = append(prefixes, location)
 				if dep.ConfigDir != "" {
 					packageName := dep.PackageName

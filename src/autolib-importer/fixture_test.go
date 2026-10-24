@@ -2,9 +2,6 @@ package main
 
 import (
 	"archive/tar"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,34 +9,14 @@ import (
 	"github.com/klauspost/compress/zstd"
 )
 
-func localReleaseFixture(t *testing.T, names ...string) (prepareOptions, manifest) {
+func localReleaseFixture(t *testing.T, names ...string) prepareOptions {
 	t.Helper()
-	root := t.TempDir()
-	o := prepareOptions{URI: filepath.Join(root, "release"), WorkRoot: filepath.Join(root, "work"), ResultPath: filepath.Join(root, "result.cmake"), OS: "linux", Arch: "aarch64", Packages: names}
-	m := manifest{Importers: []importerRecord{}, Packages: []packageRecord{}}
+	o := localGraphFixture(t)
+	o.Packages = names
 	for _, name := range names {
-		id := packageIdentity{Name: name, OS: o.OS, Arch: o.Arch}
-		a := testArchive(t, []archiveMember{{Name: name + "/autolib-import.cmake", Body: identityHeader(id) + "# adapter\n"}, {Name: name + "/data", Body: "installed"}})
-		data, err := os.ReadFile(a)
-		if err != nil {
-			t.Fatal(err)
-		}
-		asset := "custom-" + name + ".tar.zst"
-		putTestFile(t, filepath.Join(o.URI, asset), string(data))
-		h := sha256.Sum256(data)
-		m.Packages = append(m.Packages, packageRecord{Name: name, OS: o.OS, Arch: o.Arch, Asset: asset, SHA256: hex.EncodeToString(h[:])})
+		graphArchive(t, o.LocalRoot, packageIdentity{name, o.OS, o.Arch}, "")
 	}
-	writeTestManifest(t, filepath.Join(o.URI, "manifest.json"), m)
-	return o, m
-}
-
-func writeTestManifest(t *testing.T, path string, m manifest) {
-	t.Helper()
-	data, err := json.Marshal(m)
-	if err != nil {
-		t.Fatal(err)
-	}
-	putTestFile(t, path, string(data))
+	return o
 }
 
 func readTestFile(t *testing.T, path string) string {
@@ -68,7 +45,7 @@ type archiveMember struct {
 }
 
 func identityHeader(id packageIdentity) string {
-	return "set(AUTOLIB_PACKAGE_NAME \"" + id.Name + "\")\nset(AUTOLIB_OS \"" + id.OS + "\")\nset(AUTOLIB_ARCH \"" + id.Arch + "\")\n"
+	return "set(AUTOLIB_PACKAGE_NAME \"" + id.Name + "\")\nset(AUTOLIB_OS \"" + id.OS + "\")\nset(AUTOLIB_ARCH \"" + id.Arch + "\")\nset(AUTOLIB_DEPENDENCIES \"\")\n"
 }
 
 func testArchive(t *testing.T, members []archiveMember) string {

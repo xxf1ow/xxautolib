@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/tar"
+	"bytes"
 	"io"
 	"os"
 	"os/exec"
@@ -11,6 +12,73 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 )
+
+func TestPackageDependencyHeader(t *testing.T) {
+	for _, tc := range []struct{ name, declaration, want string }{
+		{"flann", "depends=['lz4']\n", "lz4"},
+		{"empty", "", ""},
+		{"sorted", "depends=['zlib','lz4','zlib']\n", "lz4;zlib"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			o := stageFixture(t, tc.name)
+			definitionFile(t, o.SourceRoot, tc.name, "cmake", tc.declaration+testSource)
+			dir, err := stagePackage(o)
+			if err != nil {
+				t.Fatal(err)
+			}
+			lines := strings.Split(readFile(t, filepath.Join(dir, "autolib-import.cmake")), "\n")
+			if len(lines) < 4 || lines[3] != `set(AUTOLIB_DEPENDENCIES "`+tc.want+`")` {
+				t.Fatalf("missing direct dependency header: %q", lines)
+			}
+		})
+	}
+	for _, invalid := range []string{"CON.txt", "trailing."} {
+		t.Run(invalid, func(t *testing.T) {
+			o := stageFixture(t, "valid")
+			o.Name = invalid
+			if _, err := stagePackage(o); err == nil {
+				t.Fatal("accepted unsafe package name")
+			}
+		})
+	}
+}
+
+func TestPackageArchiveChecksum(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "demo")
+	putFile(t, filepath.Join(dir, "data"), strings.Repeat("archive content\n", 1000))
+	archive := filepath.Join(t.TempDir(), "demo.tar.zst")
+	if err := writePackageArchive(dir, archive); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var header zstd.Header
+	if err := header.Decode(data); err != nil || !header.HasCheckSum {
+		t.Fatalf("missing content checksum: %+v %v", header, err)
+	}
+	for _, kind := range []string{"valid", "corrupt", "truncated"} {
+		t.Run(kind, func(t *testing.T) {
+			input := bytes.Clone(data)
+			if kind == "corrupt" {
+				input[len(input)-1] ^= 1
+			}
+			if kind == "truncated" {
+				input = input[:len(input)-1]
+			}
+			decoder, err := zstd.NewReader(bytes.NewReader(input))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer decoder.Close()
+			_, err = io.Copy(io.Discard, decoder)
+			if (err == nil) != (kind == "valid") {
+				t.Fatalf("decode %s: %v", kind, err)
+			}
+		})
+	}
+}
 
 func stageFixture(t *testing.T, name string) stageOptions {
 	t.Helper()
@@ -40,7 +108,7 @@ func TestStagePackage(t *testing.T) {
 		t.Fatal(staged)
 	}
 	requireFile(t, filepath.Join(staged, "include/input.h"), "unchanged installation\n")
-	requireFile(t, filepath.Join(staged, "autolib-import.cmake"), "set(AUTOLIB_PACKAGE_NAME \"queue\")\nset(AUTOLIB_OS \"windows\")\nset(AUTOLIB_ARCH \"x86_64\")\n# adapter 正文\n")
+	requireFile(t, filepath.Join(staged, "autolib-import.cmake"), "set(AUTOLIB_PACKAGE_NAME \"queue\")\nset(AUTOLIB_OS \"windows\")\nset(AUTOLIB_ARCH \"x86_64\")\nset(AUTOLIB_DEPENDENCIES \"lz4\")\n# adapter 正文\n")
 	requireFile(t, input, "unchanged installation\n")
 	after, _ := os.Stat(input)
 	if !before.ModTime().Equal(after.ModTime()) {

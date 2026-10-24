@@ -1,0 +1,59 @@
+{
+  "ubuntu": {
+    "image": "ubuntu:20.04@sha256:8feb4d8ca5354def3d8fce243717141ce31e2c428701f6682bd2fafe15388214",
+    "platform_digests": {
+      "linux/amd64": "sha256:c664f8f86ed5a386b0a340d981b8f81714e21a8b9c73f658c4bea56aa179d54a",
+      "linux/arm64/v8": "sha256:722ea796ac2d57eeb3627c58a582fc1acc58be51faf815e1bce1682ae5c092f7"
+    }
+  },
+  "make": {
+    "version": "4.4.1",
+    "url": "https://ftp.gnu.org/gnu/make/make-4.4.1.tar.gz",
+    "sha256": "dd16fb1d67bfab79a72f5e8390735c49e3e8e70b4945a15ab1f81ddb78658fb3"
+  },
+  "cmake": {
+    "version": "3.31.12",
+    "checksums_url": "https://github.com/Kitware/CMake/releases/download/v3.31.12/cmake-3.31.12-SHA-256.txt",
+    "assets": [
+      {
+        "platform": "linux-aarch64",
+        "filename": "cmake-3.31.12-linux-aarch64.tar.gz",
+        "url": "https://github.com/Kitware/CMake/releases/download/v3.31.12/cmake-3.31.12-linux-aarch64.tar.gz",
+        "sha256": "83f8fd91d2038a56556e1400390fcfe42f79602940c494f6c6f1cdae7f9e7f40"
+      },
+      {
+        "platform": "linux-x86_64",
+        "filename": "cmake-3.31.12-linux-x86_64.tar.gz",
+        "url": "https://github.com/Kitware/CMake/releases/download/v3.31.12/cmake-3.31.12-linux-x86_64.tar.gz",
+        "sha256": "0dc2e9a6860f06bf10bd8fadc03e35d9eeb4df46e33763a7e480e987758f385c"
+      },
+      {
+        "platform": "windows-x86_64",
+        "filename": "cmake-3.31.12-windows-x86_64.zip",
+        "url": "https://github.com/Kitware/CMake/releases/download/v3.31.12/cmake-3.31.12-windows-x86_64.zip",
+        "sha256": "0c4baa40f28b3f8225eb3fdf6946c987b4fe901403b4eaf2fbbd9378100aaa0c"
+      }
+    ]
+  },
+  "production": {
+    "common": {
+      "configuration": "Release",
+      "cmake_defaults": {
+        "CMAKE_INSTALL_LIBDIR": "lib",
+        "CMAKE_POLICY_VERSION_MINIMUM": "3.5"
+      }
+    },
+    "linux": {
+      "distribution": "ubuntu-20.04",
+      "gcc_version": "9.4",
+      "glibc_max": "2.31",
+      "generator": "Unix Makefiles"
+    },
+    "windows": {
+      "generator": "Visual Studio 17 2022",
+      "platform": "x64",
+      "toolset": "v143,host=x64",
+      "runtime": "MultiThreadedDLL"
+    }
+  }
+}

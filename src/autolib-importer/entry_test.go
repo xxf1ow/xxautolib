@@ -17,7 +17,7 @@ type entryFixture struct {
 	t                                                              *testing.T
 	root, source, release, work, cmake, generator, buildTool, tool string
 	options                                                        prepareOptions
-	manifest                                                       manifest
+	toolAsset                                                      string
 }
 
 func buildEntryTool(t *testing.T, fake bool) string {
@@ -43,14 +43,14 @@ func buildEntryTool(t *testing.T, fake bool) string {
 
 func newEntryFixture(t *testing.T, fake bool, suffix string) *entryFixture {
 	t.Helper()
-	o, m := localReleaseFixture(t, "demo")
-	root := filepath.Dir(o.URI)
+	o := localReleaseFixture(t, "demo")
+	root := filepath.Dir(o.LocalRoot)
 	if suffix != "" {
 		destination := filepath.Join(root, suffix)
-		if err := os.Rename(o.URI, destination); err != nil {
+		if err := os.Rename(o.LocalRoot, destination); err != nil {
 			t.Fatal(err)
 		}
-		o.URI = destination
+		o.LocalRoot = destination
 		o.WorkRoot = filepath.Join(root, "work "+strings.ReplaceAll(suffix, ";", ""))
 	}
 	tool := buildEntryTool(t, fake)
@@ -58,13 +58,14 @@ func newEntryFixture(t *testing.T, fake bool, suffix string) *entryFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	hostOS := runtime.GOOS
-	hostArch := map[string]string{"amd64": "x86_64", "arm64": "aarch64"}[runtime.GOARCH]
-	putTestFile(t, filepath.Join(o.URI, "chosen-tool.bin"), string(data))
-	if err := os.Chmod(filepath.Join(o.URI, "chosen-tool.bin"), 0755); err != nil {
+	toolAsset := "autolib-importer-" + runtime.GOOS + "-" + map[string]string{"amd64": "x86_64", "arm64": "aarch64"}[runtime.GOARCH]
+	if runtime.GOOS == "windows" {
+		toolAsset += ".exe"
+	}
+	putTestFile(t, filepath.Join(o.LocalRoot, toolAsset), string(data))
+	if err := os.Chmod(filepath.Join(o.LocalRoot, toolAsset), 0755); err != nil {
 		t.Fatal(err)
 	}
-	m.Importers = []importerRecord{{OS: hostOS, Arch: hostArch, Asset: "chosen-tool.bin", SHA256: testDigest(data)}}
 	// 目标刻意不同于常用 Windows 宿主，验证工具与库槽独立。
 	id := packageIdentity{Name: "demo", OS: o.OS, Arch: o.Arch}
 	adapter := identityHeader(id) + "if(TARGET AutoLib::demo)\nreturn()\nendif()\nadd_library(AutoLib::demo INTERFACE IMPORTED GLOBAL)\n"
@@ -73,9 +74,7 @@ func newEntryFixture(t *testing.T, fake bool, suffix string) *entryFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	putTestFile(t, filepath.Join(o.URI, m.Packages[0].Asset), string(archive))
-	m.Packages[0].SHA256 = testDigest(archive)
-	writeTestManifest(t, filepath.Join(o.URI, "manifest.json"), m)
+	putTestFile(t, filepath.Join(o.LocalRoot, "demo-"+o.OS+"-"+o.Arch+".tar.zst"), string(archive))
 	source := filepath.Join(root, "consumer")
 	entry, err := os.ReadFile("../autolib.cmake")
 	if err != nil {
@@ -99,7 +98,7 @@ func newEntryFixture(t *testing.T, fake bool, suffix string) *entryFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f := &entryFixture{t: t, root: root, source: source, release: o.URI, work: o.WorkRoot, cmake: cmake, generator: generator, buildTool: buildTool, tool: tool, options: o, manifest: m}
+	f := &entryFixture{t: t, root: root, source: source, release: o.LocalRoot, work: o.WorkRoot, cmake: cmake, generator: generator, buildTool: buildTool, tool: tool, options: o, toolAsset: toolAsset}
 	if fake {
 		dir := filepath.Join(root, "fake prepared")
 		putTestFile(t, filepath.Join(dir, "autolib-import.cmake"), adapter)
@@ -126,118 +125,65 @@ func (f *entryFixture) mustConfigure() {
 
 func TestCMakeBootstrap(t *testing.T) {
 	f := newEntryFixture(t, false, "")
-	var shuffled map[string]any
-	if err := json.Unmarshal([]byte(readTestFile(t, filepath.Join(f.release, "manifest.json"))), &shuffled); err != nil {
-		t.Fatal(err)
-	}
-	data, err := json.Marshal(shuffled)
-	if err != nil {
-		t.Fatal(err)
-	}
-	putTestFile(t, filepath.Join(f.release, "manifest.json"), string(data))
 	f.mustConfigure()
-	source, err := normalizeLocalSource(f.release)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := filepath.ToSlash(packageDirectory(f.work, source, packageIdentity{Name: "demo", OS: f.options.OS, Arch: f.options.Arch}))
+	want := filepath.ToSlash(packageDirectory(f.release, packageIdentity{"demo", f.options.OS, f.options.Arch}))
 	if got := readTestFile(t, filepath.Join(f.root, "consumer-build/observed.txt")); got != want {
 		t.Fatalf("%q != %q", got, want)
 	}
-	toolDir := filepath.Join(f.work, sourceKey(source), "tools", f.manifest.Importers[0].OS+"-"+f.manifest.Importers[0].Arch)
-	toolName := "autolib-importer"
-	if runtime.GOOS == "windows" {
-		toolName += ".exe"
+	if _, err := os.Stat(filepath.Join(f.release, "manifest.json")); !os.IsNotExist(err) {
+		t.Fatal("unexpected manifest", err)
 	}
-	cached := filepath.Join(toolDir, toolName)
-	before := readTestFile(t, cached)
-	updated := before + "updated bytes"
-	putTestFile(t, filepath.Join(f.release, "chosen-tool.bin"), updated)
-	f.manifest.Importers[0].SHA256 = testDigest([]byte(updated))
-	writeTestManifest(t, filepath.Join(f.release, "manifest.json"), f.manifest)
-	f.mustConfigure()
-	if readTestFile(t, cached) != before {
-		t.Fatal("automatically refreshed tool")
-	}
-	if err := os.RemoveAll(toolDir); err != nil {
-		t.Fatal(err)
-	}
-	f.mustConfigure()
-	if readTestFile(t, cached) != updated {
-		t.Fatal("explicit tool removal did not refresh")
-	}
-	if err := os.Rename(f.release, f.release+"-unavailable"); err != nil {
+	if err := os.Rename(filepath.Join(f.release, "demo-"+f.options.OS+"-"+f.options.Arch+".tar.zst"), filepath.Join(f.release, "archive-away")); err != nil {
 		t.Fatal(err)
 	}
 	f.mustConfigure()
 }
 
+func TestUniversalPackageThroughCMakeEntry(t *testing.T) {
+	f := newEntryFixture(t, false, "")
+	id := packageIdentity{"demo", "any", "any"}
+	archive := testArchive(t, []archiveMember{{Name: "demo/autolib-import.cmake", Body: identityHeader(id) + "if(NOT TARGET AutoLib::demo)\nadd_library(AutoLib::demo INTERFACE IMPORTED GLOBAL)\nendif()\n"}})
+	if err := os.Rename(filepath.Join(f.release, "demo-"+f.options.OS+"-"+f.options.Arch+".tar.zst"), filepath.Join(f.release, "old-away")); err != nil {
+		t.Fatal(err)
+	}
+	putTestFile(t, filepath.Join(f.release, "demo-any-any.tar.zst"), readTestFile(t, archive))
+	f.mustConfigure()
+	m, err := readPackageMetadata(packageDirectory(f.release, packageIdentity{"demo", f.options.OS, f.options.Arch}))
+	if err != nil || m.Identity != id {
+		t.Fatalf("%+v %v", m, err)
+	}
+}
+
 func TestCMakeBootstrapFailure(t *testing.T) {
-	t.Run("cached tool corruption", func(t *testing.T) {
-		f := newEntryFixture(t, true, "")
-		f.mustConfigure()
-		if err := os.Remove(filepath.Join(f.root, "calls.jsonl")); err != nil {
-			t.Fatal(err)
-		}
-		source, err := normalizeLocalSource(f.release)
-		if err != nil {
-			t.Fatal(err)
-		}
-		name := "autolib-importer"
-		if runtime.GOOS == "windows" {
-			name += ".exe"
-		}
-		cached := filepath.Join(f.work, sourceKey(source), "tools", f.manifest.Importers[0].OS+"-"+f.manifest.Importers[0].Arch, name)
-		putTestFile(t, cached, "corrupt cached tool")
-		if out, err := f.configure(); err == nil || !strings.Contains(out, "SHA256 mismatch") {
-			t.Fatalf("%v\n%s", err, out)
-		}
-		if got := readTestFile(t, cached); got != "corrupt cached tool" {
-			t.Fatal("corrupted cache overwritten")
-		}
-		if _, err := os.Stat(filepath.Join(f.root, "calls.jsonl")); !os.IsNotExist(err) {
-			t.Fatal("corrupted cached tool executed")
-		}
-	})
-	for _, kind := range []string{"checksum", "missing manifest", "missing host", "missing tool", "cannot start", "prepare fails", "no result", "unknown field"} {
+	for _, kind := range []string{"missing tool", "cannot start", "prepare fails", "no result", "incomplete result"} {
 		t.Run(kind, func(t *testing.T) {
 			f := newEntryFixture(t, true, "")
+			putTestFile(t, filepath.Join(f.work, "previous-result.cmake"), "message(FATAL_ERROR STALE_RESULT_LOADED)\n")
+			marker := filepath.Join(f.root, "adapter-loaded")
+			putTestFile(t, filepath.Join(os.Getenv("AUTOLIB_TEST_PACKAGE_DIR"), "autolib-import.cmake"), "file(WRITE [==["+filepath.ToSlash(marker)+"]==] loaded)\n")
 			switch kind {
-			case "checksum":
-				f.manifest.Importers[0].SHA256 = strings.Repeat("0", 64)
-			case "missing manifest":
-				if err := os.Remove(filepath.Join(f.release, "manifest.json")); err != nil {
-					t.Fatal(err)
-				}
-			case "missing host":
-				f.manifest.Importers[0].Arch = "unsupported"
 			case "missing tool":
-				if err := os.Remove(filepath.Join(f.release, "chosen-tool.bin")); err != nil {
+				if err := os.Rename(filepath.Join(f.release, f.toolAsset), filepath.Join(f.release, "tool-away")); err != nil {
 					t.Fatal(err)
 				}
 			case "cannot start":
-				putTestFile(t, filepath.Join(f.release, "chosen-tool.bin"), "not executable")
-				f.manifest.Importers[0].SHA256 = testDigest([]byte("not executable"))
+				putTestFile(t, filepath.Join(f.release, f.toolAsset), "not executable")
 			case "prepare fails":
 				t.Setenv("AUTOLIB_TEST_MODE", "fail")
 			case "no result":
 				t.Setenv("AUTOLIB_TEST_MODE", "no-result")
-			}
-			if kind != "missing manifest" {
-				writeTestManifest(t, filepath.Join(f.release, "manifest.json"), f.manifest)
-			}
-			if kind == "unknown field" {
-				data := readTestFile(t, filepath.Join(f.release, "manifest.json"))
-				putTestFile(t, filepath.Join(f.release, "manifest.json"), strings.Replace(data, `"asset":`, `"protocol":"unused","asset":`, 1))
+			case "incomplete result":
+				t.Setenv("AUTOLIB_TEST_MODE", "incomplete")
 			}
 			out, err := f.configure()
 			if err == nil || strings.Contains(out, "STALE_RESULT_LOADED") {
-				t.Fatalf("wrong failure: %v\n%s", err, out)
+				t.Fatalf("%v\n%s", err, out)
 			}
-			if kind != "prepare fails" && kind != "no result" {
-				if _, err := os.Stat(filepath.Join(f.root, "calls.jsonl")); !os.IsNotExist(err) {
-					t.Fatal("invalid importer executed")
-				}
+			if kind == "incomplete result" && !strings.Contains(out, "invalid package directory") {
+				t.Fatalf("incomplete result did not fail directory validation:\n%s", out)
+			}
+			if _, err := os.Stat(marker); !os.IsNotExist(err) {
+				t.Fatal("adapter loaded on failure", err)
 			}
 		})
 	}
@@ -245,21 +191,16 @@ func TestCMakeBootstrapFailure(t *testing.T) {
 
 func TestCMakeEntryPaths(t *testing.T) {
 	t.Run("real importer special paths", func(t *testing.T) {
-		f := newEntryFixture(t, false, "中文 空格;${literal}")
+		f := newEntryFixture(t, false, "中文 空格${literal}")
 		f.mustConfigure()
-		source, err := normalizeLocalSource(f.release)
-		if err != nil {
-			t.Fatal(err)
-		}
-		want := filepath.ToSlash(packageDirectory(f.work, source, packageIdentity{Name: "demo", OS: f.options.OS, Arch: f.options.Arch}))
+		want := filepath.ToSlash(packageDirectory(f.release, packageIdentity{Name: "demo", OS: f.options.OS, Arch: f.options.Arch}))
 		if got := readTestFile(t, filepath.Join(f.root, "consumer-build/observed.txt")); got != want {
 			t.Fatalf("%q != %q", got, want)
 		}
 	})
-	for _, suffix := range []string{"", "中文 空格;${literal}"} {
+	for _, suffix := range []string{"", "中文 空格${literal}"} {
 		t.Run(suffix, func(t *testing.T) {
 			f := newEntryFixture(t, true, suffix)
-			t.Setenv("AUTOLIB_TEST_REMOVE_MANIFEST", "1")
 			absolute := f.release
 			rel, err := filepath.Rel(f.source, absolute)
 			if err != nil {
@@ -285,7 +226,7 @@ func TestCMakeEntryPaths(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				for _, want := range []string{"--uri=" + wantSource, "--work-root=" + filepath.ToSlash(f.work), "--os=" + f.options.OS, "--arch=" + f.options.Arch, "--package=demo"} {
+				for _, want := range []string{"--local-root=" + wantSource, "--work-root=" + filepath.ToSlash(f.work), "--os=" + f.options.OS, "--arch=" + f.options.Arch, "--package=demo"} {
 					found := false
 					for _, a := range args {
 						if a == want {
@@ -296,17 +237,15 @@ func TestCMakeEntryPaths(t *testing.T) {
 						t.Fatalf("missing %q: %#v", want, args)
 					}
 				}
-				manifestArg, resultArg := "", ""
+				resultArg := ""
 				for _, arg := range args {
-					if strings.HasPrefix(arg, "--manifest=") {
-						manifestArg = arg
-					}
+
 					if strings.HasPrefix(arg, "--result=") {
 						resultArg = arg
 					}
 				}
-				if manifestArg == "" || resultArg == "" || resultArg == previousResult {
-					t.Fatalf("missing current manifest or reused result: %#v", args)
+				if resultArg == "" || resultArg == previousResult {
+					t.Fatalf("missing current or reused result: %#v", args)
 				}
 				previousResult = resultArg
 			}
@@ -315,12 +254,14 @@ func TestCMakeEntryPaths(t *testing.T) {
 }
 
 func TestCMakeWorkRootSemicolon(t *testing.T) {
-	for _, kind := range []string{"explicit", "default"} {
+	for _, kind := range []string{"explicit", "default", "local"} {
 		t.Run(kind, func(t *testing.T) {
 			f := newEntryFixture(t, true, "")
 			work := filepath.Join(f.root, "work;literal")
 			var extra []string
-			if kind == "explicit" {
+			if kind == "local" {
+				f.release = filepath.Join(f.root, "local;literal")
+			} else if kind == "explicit" {
 				f.work = work
 			} else {
 				consumer := filepath.Join(f.source, "CMakeLists.txt")
@@ -331,7 +272,11 @@ func TestCMakeWorkRootSemicolon(t *testing.T) {
 			}
 			putTestFile(t, filepath.Join(work, "sentinel"), "preserve")
 			out, err := f.configure(extra...)
-			if err == nil || !strings.Contains(out, "WORK_ROOT must not contain semicolons") {
+			field := "WORK_ROOT"
+			if kind == "local" {
+				field = "LOCAL_ROOT"
+			}
+			if err == nil || !strings.Contains(out, field+" must not contain semicolons") {
 				t.Fatalf("unsafe work root was not rejected clearly: %v\n%s", err, out)
 			}
 			entries, err := os.ReadDir(work)
@@ -340,6 +285,49 @@ func TestCMakeWorkRootSemicolon(t *testing.T) {
 			}
 			if _, err := os.Stat(filepath.Join(f.root, "calls.jsonl")); !os.IsNotExist(err) {
 				t.Fatal("importer executed for rejected work root")
+			}
+		})
+	}
+}
+
+func TestCMakeConfigureIdentity(t *testing.T) {
+	for _, kind := range []string{"same", "local", "work", "target", "old URI", "remote", "stale directory"} {
+		t.Run(kind, func(t *testing.T) {
+			f := newEntryFixture(t, true, "")
+			consumer := filepath.Join(f.source, "CMakeLists.txt")
+			body := readTestFile(t, consumer)
+			body = strings.Replace(body, "include(\"${CMAKE_CURRENT_LIST_DIR}/autolib.cmake\")", "include(\"${CMAKE_CURRENT_LIST_DIR}/autolib.cmake\")\ninclude(\"${CMAKE_CURRENT_LIST_DIR}/autolib.cmake\")", 1)
+			index := strings.LastIndex(body, "autolib_import(")
+			second := body[index:]
+			switch kind {
+			case "local":
+				second = strings.Replace(second, "${FIXTURE_RELEASE}", "${FIXTURE_RELEASE}/other", 1)
+			case "work":
+				second = strings.Replace(second, "${FIXTURE_WORK}", "${FIXTURE_WORK}/other", 1)
+			case "target":
+				second = strings.Replace(second, "${FIXTURE_OS}", "windows", 1)
+			case "old URI":
+				second = strings.Replace(second, "LOCAL_ROOT", "URI", 1)
+			case "remote":
+				second = strings.Replace(second, "LOCAL_ROOT", `REMOTE_ROOT "https://example.invalid/release" LOCAL_ROOT`, 1)
+			case "stale directory":
+				second = "set(ENV{AUTOLIB_TEST_MODE} incomplete)\n" + second
+			}
+			putTestFile(t, consumer, body[:index]+second)
+			out, err := f.configure()
+			if (err == nil) != (kind == "same") {
+				t.Fatalf("%v\n%s", err, out)
+			}
+			if kind == "stale directory" && !strings.Contains(out, "invalid package directory") {
+				t.Fatalf("incomplete result inherited an earlier directory:\n%s", out)
+			}
+			lines := strings.Split(strings.TrimSpace(readTestFile(t, filepath.Join(f.root, "calls.jsonl"))), "\n")
+			want := 1
+			if kind == "same" || kind == "stale directory" {
+				want = 2
+			}
+			if len(lines) != want {
+				t.Fatalf("expected %d prepares, got %d: %s", want, len(lines), out)
 			}
 		})
 	}
@@ -383,15 +371,11 @@ func TestLocalConsumerNoToolchainRuntime(t *testing.T) {
 
 func newEntryMissingPackage(t *testing.T, f *entryFixture) {
 	t.Helper()
-	source, err := normalizeLocalSource(f.release)
-	if err != nil {
-		t.Fatal(err)
-	}
-	dir := packageDirectory(f.work, source, packageIdentity{Name: "demo", OS: f.options.OS, Arch: f.options.Arch})
+	dir := packageDirectory(f.release, packageIdentity{Name: "demo", OS: f.options.OS, Arch: f.options.Arch})
 	if err := os.RemoveAll(dir); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Remove(filepath.Join(f.release, f.manifest.Packages[0].Asset)); err != nil {
+	if err := os.Remove(filepath.Join(f.release, "demo-"+f.options.OS+"-"+f.options.Arch+".tar.zst")); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -399,14 +383,13 @@ func newEntryMissingPackage(t *testing.T, f *entryFixture) {
 func representativeFixture(t *testing.T, packages string) *entryFixture {
 	t.Helper()
 	f := newEntryFixture(t, false, "")
-	f.manifest.Packages = nil
 	for _, name := range []string{"queue", "lz4", "flann"} {
 		adapter, err := os.ReadFile(filepath.Join("../dependencies", name, "autolib-import.cmake"))
 		if err != nil {
 			t.Fatal(err)
 		}
 		id := packageIdentity{Name: name, OS: f.options.OS, Arch: f.options.Arch}
-		members := []archiveMember{{Name: name + "/autolib-import.cmake", Body: identityHeader(id) + string(adapter)}, {Name: name + "/include/", Kind: '5'}}
+		members := []archiveMember{{Name: name + "/autolib-import.cmake", Body: strings.Replace(identityHeader(id), `set(AUTOLIB_DEPENDENCIES "")`, `set(AUTOLIB_DEPENDENCIES "`+map[string]string{"flann": "lz4"}[name]+`")`, 1) + string(adapter)}, {Name: name + "/include/", Kind: '5'}}
 		if name == "queue" {
 			members = append(members, archiveMember{Name: "queue/include/queue/readerwriterqueue.h", Body: "// fixture header\n"})
 		}
@@ -422,19 +405,19 @@ func representativeFixture(t *testing.T, packages string) *entryFixture {
 		if err != nil {
 			t.Fatal(err)
 		}
-		asset := name + ".tar.zst"
+		asset := name + "-" + id.OS + "-" + id.Arch + ".tar.zst"
 		putTestFile(t, filepath.Join(f.release, asset), string(data))
-		f.manifest.Packages = append(f.manifest.Packages, packageRecord{Name: name, OS: id.OS, Arch: id.Arch, Asset: asset, SHA256: testDigest(data)})
 	}
-	writeTestManifest(t, filepath.Join(f.release, "manifest.json"), f.manifest)
-	putTestFile(t, filepath.Join(f.source, "CMakeLists.txt"), "cmake_minimum_required(VERSION 3.20)\nproject(representatives NONE)\ninclude(autolib.cmake)\nautolib_import(URI \"${FIXTURE_RELEASE}\" WORK_ROOT \"${FIXTURE_WORK}\" TARGET_OS \"${FIXTURE_OS}\" TARGET_ARCH \"${FIXTURE_ARCH}\" PACKAGES "+packages+")\nadd_subdirectory(child)\n")
-	putTestFile(t, filepath.Join(f.source, "child/CMakeLists.txt"), "foreach(name IN ITEMS queue lz4 flann)\nif(NOT TARGET AutoLib::${name})\nmessage(FATAL_ERROR \"target not visible: ${name}\")\nendif()\nendforeach()\nadd_library(consumer INTERFACE)\ntarget_link_libraries(consumer INTERFACE AutoLib::queue AutoLib::lz4 AutoLib::flann)\nautolib_import(URI \"${FIXTURE_RELEASE}\" WORK_ROOT \"${FIXTURE_WORK}\" TARGET_OS \"${FIXTURE_OS}\" TARGET_ARCH \"${FIXTURE_ARCH}\" PACKAGES flann queue lz4)\n")
+	putTestFile(t, filepath.Join(f.source, "CMakeLists.txt"), "cmake_minimum_required(VERSION 3.20)\nproject(representatives NONE)\ninclude(autolib.cmake)\nautolib_import(LOCAL_ROOT \"${FIXTURE_RELEASE}\" WORK_ROOT \"${FIXTURE_WORK}\" TARGET_OS \"${FIXTURE_OS}\" TARGET_ARCH \"${FIXTURE_ARCH}\" PACKAGES "+packages+")\nadd_subdirectory(child)\n")
+	putTestFile(t, filepath.Join(f.source, "child/CMakeLists.txt"), "foreach(name IN ITEMS queue lz4 flann)\nif(NOT TARGET AutoLib::${name})\nmessage(FATAL_ERROR \"target not visible: ${name}\")\nendif()\nendforeach()\nadd_library(consumer INTERFACE)\ntarget_link_libraries(consumer INTERFACE AutoLib::queue AutoLib::lz4 AutoLib::flann)\nautolib_import(LOCAL_ROOT \"${FIXTURE_RELEASE}\" WORK_ROOT \"${FIXTURE_WORK}\" TARGET_OS \"${FIXTURE_OS}\" TARGET_ARCH \"${FIXTURE_ARCH}\" PACKAGES flann queue lz4)\n")
 	return f
 }
 
 func TestRepresentativeAdapters(t *testing.T) {
-	f := representativeFixture(t, "flann queue lz4 flann")
-	destination := f.release + ";中文 空格"
+	f := representativeFixture(t, "flann queue")
+	consumer := filepath.Join(f.source, "CMakeLists.txt")
+	putTestFile(t, consumer, strings.Replace(readTestFile(t, consumer), "add_subdirectory(child)", "if(NOT AUTOLIB_PREPARED_PACKAGES STREQUAL \"lz4;flann;queue\")\nmessage(FATAL_ERROR \"wrong dependency order: ${AUTOLIB_PREPARED_PACKAGES}\")\nendif()\nadd_subdirectory(child)", 1))
+	destination := f.release + "中文 空格"
 	if err := os.Rename(f.release, destination); err != nil {
 		t.Fatal(err)
 	}
@@ -465,10 +448,18 @@ func TestAdapterExistingTargets(t *testing.T) {
 }
 
 func TestAdapterDependencyOrder(t *testing.T) {
+	t.Run("root only", func(t *testing.T) {
+		f := representativeFixture(t, "flann")
+		putTestFile(t, filepath.Join(f.source, "CMakeLists.txt"), "cmake_minimum_required(VERSION 3.20)\nproject(root_only NONE)\ninclude(autolib.cmake)\nautolib_import(LOCAL_ROOT \"${FIXTURE_RELEASE}\" WORK_ROOT \"${FIXTURE_WORK}\" TARGET_OS \"${FIXTURE_OS}\" TARGET_ARCH \"${FIXTURE_ARCH}\" PACKAGES flann)\nif(NOT TARGET AutoLib::lz4 OR NOT TARGET AutoLib::flann OR NOT AUTOLIB_PREPARED_PACKAGES STREQUAL \"lz4;flann\")\nmessage(FATAL_ERROR \"missing dependency closure\")\nendif()\n")
+		f.mustConfigure()
+	})
 	f := representativeFixture(t, "flann")
 	system := filepath.Join(f.root, "system")
 	marker := filepath.Join(f.root, "system-was-used")
 	putTestFile(t, filepath.Join(system, "lz4Config.cmake"), "file(WRITE \""+filepath.ToSlash(marker)+"\" \"unexpected system fallback\")\nadd_library(LZ4::lz4 INTERFACE IMPORTED)\n")
+	if err := os.Rename(filepath.Join(f.release, "lz4-"+f.options.OS+"-"+f.options.Arch+".tar.zst"), filepath.Join(f.release, "lz4-away")); err != nil {
+		t.Fatal(err)
+	}
 	if out, err := f.configure("-DCMAKE_PREFIX_PATH=" + system); err == nil {
 		t.Fatalf("unlisted sibling was imported: %s", out)
 	}
@@ -482,11 +473,11 @@ import("encoding/json";"flag";"fmt";"os";"strings")
 func main(){
  log:=os.Getenv("AUTOLIB_TEST_TOOL_LOG");if log!="" {f,e:=os.OpenFile(log,os.O_CREATE|os.O_APPEND|os.O_WRONLY,0644);if e!=nil {panic(e)};json.NewEncoder(f).Encode(os.Args[1:]);f.Close()}
  if len(os.Args)<2 || os.Args[1]!="prepare" {fmt.Fprintln(os.Stderr,"only prepare is supported");os.Exit(2)}
- result:="";uri:="";for _,arg:=range os.Args[2:] {if strings.HasPrefix(arg,"--result="){result=strings.TrimPrefix(arg,"--result=")};if strings.HasPrefix(arg,"--uri="){uri=strings.TrimPrefix(arg,"--uri=")}}
- if os.Getenv("AUTOLIB_TEST_REMOVE_MANIFEST")=="1" {os.Remove(uri+"/manifest.json")}
- fs:=flag.NewFlagSet("prepare",flag.ExitOnError);for _,n:=range []string{"uri","work-root","os","arch","result","manifest","package"}{fs.String(n,"",n)};fs.Parse(os.Args[2:])
+ result:="";for _,arg:=range os.Args[2:] {if strings.HasPrefix(arg,"--result="){result=strings.TrimPrefix(arg,"--result=")}}
+ fs:=flag.NewFlagSet("prepare",flag.ExitOnError);for _,n:=range []string{"local-root","remote-root","work-root","os","arch","result","package"}{fs.String(n,"",n)};fs.Parse(os.Args[2:])
  mode:=os.Getenv("AUTOLIB_TEST_MODE");if mode=="no-result" {return}
  if mode=="fail" {os.WriteFile(result,[]byte("message(FATAL_ERROR STALE_RESULT_LOADED)\n"),0644);os.Exit(7)}
  body:="set(AUTOLIB_PREPARED_PACKAGES demo)\nset(AUTOLIB_PACKAGE_DIR_demo [==["+os.Getenv("AUTOLIB_TEST_PACKAGE_DIR")+"]==])\n"
+ if mode=="incomplete" {body="set(AUTOLIB_PREPARED_PACKAGES demo)\n"}
  if e:=os.WriteFile(result,[]byte(body),0644);e!=nil {panic(e)}
 }`

@@ -188,12 +188,12 @@ func extractPackage(archivePath, stagingParent string, id packageIdentity) (dire
 			return "", err
 		}
 	}
-	actual, err := readPackageIdentity(directory)
+	metadata, err := readPackageMetadata(directory)
 	if err != nil {
 		return "", err
 	}
-	if actual != id {
-		return "", fmt.Errorf("package %s: expected identity %+v, got %+v", directory, id, actual)
+	if metadata.Identity != id {
+		return "", fmt.Errorf("package %s: expected identity %+v, got %+v", directory, id, metadata.Identity)
 	}
 	return directory, nil
 }

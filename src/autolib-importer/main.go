@@ -15,7 +15,7 @@ func (p *packageFlags) Set(value string) error { *p = append(*p, value); return 
 func run(args []string, stdout, stderr io.Writer) int {
 	fail := func(err error) int { fmt.Fprintln(stderr, err); return 1 }
 	if len(args) == 0 || args[0] != "prepare" {
-		return fail(fmt.Errorf("usage: autolib-importer prepare --uri=<local root> --work-root=<directory> --os=<target OS> --arch=<target arch> --result=<file> [--manifest=<file>] --package=<name> ..."))
+		return fail(fmt.Errorf("usage: autolib-importer prepare [--local-root=<directory>] [--remote-root=<Release URL>] --work-root=<directory> --os=<target OS> --arch=<target arch> --result=<file> --package=<name> ..."))
 	}
 	o := prepareOptions{}
 	flags := flag.NewFlagSet("prepare", flag.ContinueOnError)
@@ -23,7 +23,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	for _, field := range []struct {
 		key   string
 		value *string
-	}{{"uri", &o.URI}, {"work-root", &o.WorkRoot}, {"os", &o.OS}, {"arch", &o.Arch}, {"result", &o.ResultPath}, {"manifest", &o.ManifestPath}} {
+	}{{"local-root", &o.LocalRoot}, {"remote-root", &o.RemoteRoot}, {"work-root", &o.WorkRoot}, {"os", &o.OS}, {"arch", &o.Arch}, {"result", &o.ResultPath}} {
 		flags.StringVar(field.value, field.key, "", field.key)
 	}
 	var packages packageFlags
@@ -33,15 +33,6 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if flags.NArg() != 0 {
 		return fail(fmt.Errorf("prepare: unexpected positional argument %q", flags.Arg(0)))
-	}
-	emptyManifest := false
-	flags.Visit(func(f *flag.Flag) {
-		if f.Name == "manifest" && o.ManifestPath == "" {
-			emptyManifest = true
-		}
-	})
-	if emptyManifest {
-		return fail(fmt.Errorf("prepare: --manifest cannot be empty"))
 	}
 	o.Packages = packages
 	if _, err := prepare(o); err != nil {

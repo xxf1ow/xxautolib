@@ -77,6 +77,9 @@ sentinel='lib/DemoConfig.cmake'
 	if linux.Source.GitRepository != "" || !reflect.DeepEqual(linux.Source.URL, []string{"https://one.invalid/linux.tar.xz", "https://two.invalid/linux.tar.xz"}) {
 		t.Fatalf("source not replaced: %+v", linux.Source)
 	}
+	if linux.PlatformIndependent {
+		t.Fatal("platform_independent default must be false")
+	}
 	if linux.Resources["extra"].GitRepository != "" || linux.Resources["extra"].DownloadName != "extra.tar.xz" {
 		t.Fatal(linux.Resources)
 	}
@@ -125,6 +128,7 @@ func TestDefinitionRejectsInvalidData(t *testing.T) {
 	archive := "URL=['one','two']\nURL_HASH='SHA256=" + strings.Repeat("A", 64) + "'\n"
 	cases := []struct{ kind, body, field string }{
 		{"cmake", "unknown=true\n" + testSource, "unknown"},
+		{"copy", "platform_independent='true'\n" + testSource + "[[copy]]\nresource='extra'\nfiles=['a']\ndestination='.'\n", "platform_independent"},
 		{"cmake", "depends=[1]\n" + testSource, "depends"},
 		{"cmake", "depends=['../escape']\n" + testSource, "depends"},
 		{"cmake", "package_name='Demo'\n" + testSource, "package_name"},
@@ -252,5 +256,43 @@ func TestDefinitionPreservesInput(t *testing.T) {
 	now, _ := os.Stat(path)
 	if string(before) != string(after) || !stat.ModTime().Equal(now.ModTime()) {
 		t.Fatal("declaration modified")
+	}
+}
+
+func TestSystemDependencies(t *testing.T) {
+	path := definitionFile(t, t.TempDir(), "demo", "cmake", testSource+"[system_dependencies]\napt=['pkg-config','libgomp1','pkg-config']\nchoco=['pkgconfiglite']\n")
+	definition, err := loadDefinition(path, "Linux", "x86_64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := strings.Join(definition.SystemDependencies["apt"], ","), "pkg-config,libgomp1"; got != want {
+		t.Fatalf("APT list was not deduplicated: got %q, want %q", got, want)
+	}
+	for _, invalid := range []string{
+		"apt=['pkg-config']\nyum=['yum-only']\n",
+		"apt='pkg-config'\n",
+		"apt=['pkg-config; arbitrary-command']\n",
+		"apt=['']\n",
+		"apt=['-unsafe-option']\n",
+		"apt=['not a package']\n",
+	} {
+		path := definitionFile(t, t.TempDir(), "demo", "cmake", testSource+"[system_dependencies]\n"+invalid)
+		if _, err := loadDefinition(path, "Linux", "x86_64"); err == nil {
+			t.Fatalf("unsafe or unsupported system dependency accepted: %s", invalid)
+		}
+	}
+	root, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	flann, err := loadDefinition(filepath.Join(root, "src", "dependencies", "flann", "module.toml"), "Linux", "x86_64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := strings.Join(flann.SystemDependencies["apt"], ","), "pkg-config,libgomp1"; got != want {
+		t.Fatalf("flann APT dependencies: got %q, want %q", got, want)
+	}
+	if got, want := strings.Join(flann.SystemDependencies["choco"], ","), "pkgconfiglite"; got != want {
+		t.Fatalf("flann Chocolatey dependencies: got %q, want %q", got, want)
 	}
 }

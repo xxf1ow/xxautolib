@@ -69,6 +69,43 @@ func TestGenerationWrites(t *testing.T) {
 	}
 }
 
+func TestGenericInstall(t *testing.T) {
+	f := newFixture(t)
+	f.context.InstallRoot = filepath.Join(f.root, "isolated install")
+	depSource := f.repository("dep", map[string]string{"dep.h": "dependency header"})
+	appSource := f.repository("app", map[string]string{"app.h": "application header"})
+	dep := f.definition("dep", "copy", "[source]\n"+depSource+"[[copy]]\nfiles=['dep.h']\ndestination='include'\n")
+	app := f.definition("app", "copy", "[source]\n"+appSource+"[[copy]]\nfiles=['app.h']\ndestination='include'\n")
+	app.Depends = []string{"dep"}
+	generated, err := renderModule(app, f.context, []*moduleDefinition{dep})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(generated, filepath.ToSlash(filepath.Join(f.context.InstallRoot, "app"))) || !strings.Contains(generated, "[[dep]]") || strings.Contains(generated, "3rdparty") {
+		t.Fatalf("generated install/dependency prefix did not use isolated root:\n%s", generated)
+	}
+	f.project([]*moduleDefinition{dep, app}, "")
+	f.build()
+	requireFile(t, f.installed("dep", "include/dep.h"), "dependency header")
+	requireFile(t, f.installed("app", "include/app.h"), "application header")
+	if _, err := os.Stat(filepath.Join(f.root, "3rdparty")); !os.IsNotExist(err) {
+		t.Fatalf("default installation root was also written: %v", err)
+	}
+	entry := newEntryFixture(t)
+	installRoot := filepath.Join(entry.root, "isolated entry install")
+	t.Setenv("AUTOLIB_INSTALL_ROOT", installRoot)
+	entry.must(entry.context.GitExecutable, "init", entry.root)
+	entry.must(entry.context.GitExecutable, "-C", entry.root, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "fixture")
+	module := entry.copyModule("demo")
+	putFile(t, module.Path, "sentinel='include/x.h'\n"+readFile(t, module.Path))
+	entry.mustEntry("-DBUILD_LIST=demo")
+	if !strings.Contains(readFile(t, filepath.Join(entry.context.BuildRoot, "generated", "demo.cmake")), filepath.ToSlash(filepath.Join(installRoot, "demo", "include", "x.h"))) {
+		t.Fatal("AUTOLIB_INSTALL_ROOT did not reach the root builder sentinel path")
+	}
+	entry.build()
+	requireFile(t, filepath.Join(installRoot, "demo", "include", "x.h"), "demo")
+}
+
 func TestModuleClosureStable(t *testing.T) {
 	root := t.TempDir()
 	for _, tc := range []struct{ name, depends string }{{"shared", "[]"}, {"left", "['shared']"}, {"right", "['shared']"}, {"leaf", "['left','right']"}, {"unused", "[]"}} {

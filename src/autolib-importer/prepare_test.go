@@ -1,20 +1,15 @@
 package main
 
 import (
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
-	"sync/atomic"
 	"testing"
 )
 
 func TestPrepareLocal(t *testing.T) {
-	o, _ := localReleaseFixture(t, "queue", "lz4")
-	before := readTestFile(t, filepath.Join(o.URI, "manifest.json"))
-	o.Packages = []string{"queue", "lz4", "queue"}
+	o := localReleaseFixture(t, "queue", "lz4")
+	o.Packages = append(o.Packages, "queue")
 	got, err := prepare(o)
 	if err != nil {
 		t.Fatal(err)
@@ -27,113 +22,50 @@ func TestPrepareLocal(t *testing.T) {
 			t.Fatal(p)
 		}
 	}
-	if readTestFile(t, filepath.Join(o.URI, "manifest.json")) != before {
-		t.Fatal("source changed")
-	}
-	if _, err := os.Stat(o.ResultPath); err != nil {
-		t.Fatal(err)
-	}
 }
-
 func TestPrepareReuse(t *testing.T) {
-	o, m := localReleaseFixture(t, "queue", "lz4")
-	first, err := prepare(o)
+	o := localReleaseFixture(t, "demo")
+	got, err := prepare(o)
 	if err != nil {
 		t.Fatal(err)
 	}
-	putTestFile(t, filepath.Join(first[0].Directory, "data"), "local authority")
-	for _, asset := range []string{"manifest.json", m.Packages[0].Asset, m.Packages[1].Asset} {
-		if err := os.Rename(filepath.Join(o.URI, asset), filepath.Join(o.URI, asset+"-away")); err != nil {
-			t.Fatal(err)
-		}
+	putTestFile(t, filepath.Join(got[0].Directory, "data"), "local authority")
+	if err := os.Rename(filepath.Join(o.LocalRoot, "demo-linux-aarch64.tar.zst"), filepath.Join(o.LocalRoot, "archive-away")); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := prepare(o); err != nil {
-		t.Fatal("reuse read missing source:", err)
-	}
-	if err := os.RemoveAll(first[1].Directory); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Rename(filepath.Join(o.URI, m.Packages[1].Asset+"-away"), filepath.Join(o.URI, m.Packages[1].Asset)); err != nil {
-		t.Fatal(err)
+	if readTestFile(t, filepath.Join(got[0].Directory, "data")) != "local authority" {
+		t.Fatal("overwrote directory")
 	}
-	explicit := filepath.Join(t.TempDir(), "current.json")
-	writeTestManifest(t, explicit, m)
-	o.ManifestPath = explicit
-	if _, err := prepare(o); err != nil {
-		t.Fatal("failed explicit manifest reuse:", err)
-	}
-	if readTestFile(t, filepath.Join(first[0].Directory, "data")) != "local authority" {
-		t.Fatal("existing package replaced")
-	}
-	if err := os.RemoveAll(first[1].Directory); err != nil {
-		t.Fatal(err)
-	}
-	o.ManifestPath = ""
+	putTestFile(t, filepath.Join(got[0].Directory, "autolib-import.cmake"), identityHeader(packageIdentity{"wrong", o.OS, o.Arch}))
 	if _, err := prepare(o); err == nil {
-		t.Fatal("used a historical manifest for missing package")
+		t.Fatal("accepted wrong directory")
 	}
 }
-
 func TestPrepareFailures(t *testing.T) {
-	o, m := localReleaseFixture(t, "queue", "lz4")
-	putTestFile(t, o.ResultPath, "previous result")
-	m.Packages[1].SHA256 = strings.Repeat("0", 64)
-	writeTestManifest(t, filepath.Join(o.URI, "manifest.json"), m)
-	if _, err := prepare(o); err == nil {
-		t.Fatal("accepted checksum mismatch")
-	}
-	source, err := normalizeLocalSource(o.URI)
-	if err != nil {
-		t.Fatal(err)
-	}
-	first := packageDirectory(o.WorkRoot, source, packageIdentity{Name: "queue", OS: o.OS, Arch: o.Arch})
-	if readTestFile(t, filepath.Join(first, "data")) != "installed" || readTestFile(t, o.ResultPath) != "previous result" {
-		t.Fatal("failed prepare damaged data")
-	}
-	data, err := os.ReadFile(filepath.Join(o.URI, m.Packages[1].Asset))
-	if err != nil {
-		t.Fatal(err)
-	}
-	m.Packages[1].SHA256 = testDigest(data)
-	writeTestManifest(t, filepath.Join(o.URI, "manifest.json"), m)
+	o := localReleaseFixture(t, "demo")
 	if _, err := prepare(o); err != nil {
 		t.Fatal(err)
 	}
-	putTestFile(t, filepath.Join(first, "autolib-import.cmake"), identityHeader(packageIdentity{Name: "wrong", OS: o.OS, Arch: o.Arch}))
+	o.Packages = []string{"missing"}
+	putTestFile(t, o.ResultPath, "previous result")
 	if _, err := prepare(o); err == nil {
-		t.Fatal("replaced mismatched existing package")
+		t.Fatal("accepted missing package")
 	}
-	if id, err := readPackageIdentity(first); err != nil || id.Name != "wrong" {
-		t.Fatal("existing package changed", err)
+	if readTestFile(t, o.ResultPath) != "previous result" {
+		t.Fatal("failed prepare wrote result")
 	}
-	t.Run("no network", func(t *testing.T) {
-		var requests atomic.Int32
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { requests.Add(1); w.WriteHeader(404) }))
-		defer server.Close()
-		t.Setenv("HTTP_PROXY", server.URL)
-		t.Setenv("HTTPS_PROXY", server.URL)
-		o, m := localReleaseFixture(t, "demo")
-		for _, uri := range []string{server.URL, "https://127.0.0.1:1/release"} {
-			bad := o
-			bad.URI = uri
-			if _, err := prepare(bad); err == nil {
-				t.Fatal("accepted network source")
-			}
-		}
-		m.Packages[0].Asset = server.URL + "/archive"
-		writeTestManifest(t, filepath.Join(o.URI, "manifest.json"), m)
-		if _, err := prepare(o); err == nil {
-			t.Fatal("accepted URL asset")
-		}
-		m.Packages[0].Asset = "missing.tar.zst"
-		writeTestManifest(t, filepath.Join(o.URI, "manifest.json"), m)
-		if _, err := prepare(o); err == nil {
-			t.Fatal("accepted missing local archive")
-		}
-		if requests.Load() != 0 {
-			t.Fatal("local mode made network requests")
-		}
-	})
+	o.RemoteRoot = "https://example.invalid/release"
+	if _, err := prepare(o); err == nil {
+		t.Fatal("enabled remote prematurely")
+	}
+	o.RemoteRoot = ""
+	o.LocalRoot = "https://example.invalid/release"
+	if _, err := prepare(o); err == nil {
+		t.Fatal("accepted URL as local root")
+	}
 }
 
 func TestPreparedResult(t *testing.T) {

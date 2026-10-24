@@ -142,7 +142,11 @@ func (f *fixture) build() string {
 	return f.must(f.context.CMakeCommand, "--build", f.context.BuildRoot, "--config", "Release")
 }
 func (f *fixture) installed(name, path string) string {
-	return filepath.Join(f.root, "3rdparty", name, path)
+	root := f.context.InstallRoot
+	if root == "" {
+		root = filepath.Join(f.root, "3rdparty")
+	}
+	return filepath.Join(root, name, path)
 }
 func readFile(t *testing.T, path string) string {
 	t.Helper()
