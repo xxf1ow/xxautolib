@@ -108,6 +108,7 @@ jobs:
       run:
         shell: bash
     env:
+      LC_ALL: C.UTF-8
       PLATFORM: ${{ matrix.platform }}
       WORK_ROOT: ${{ github.workspace }}/build/ci/${{ github.run_id }}-${{ github.run_attempt }}/${{ matrix.platform }}
     steps:

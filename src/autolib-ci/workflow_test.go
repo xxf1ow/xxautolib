@@ -252,4 +252,21 @@ func TestCIWorkflowContract(t *testing.T) {
 			t.Fatalf("Make used an unconfigured source directory: %v %s", err, output)
 		}
 	})
+	t.Run("Linux job supplies UTF-8 to child processes", func(t *testing.T) {
+		command := exec.Command(bash, "-e", "-c", "locale charmap")
+		command.Env = append(withoutEnvironment(os.Environ(), "LC_ALL", "LANG", "LC_CTYPE"), "LC_ALL=C", "LANG=C", "LC_CTYPE=C")
+		for _, line := range strings.Split(workflowSection(t, linux, "    env:"), "\n") {
+			key, value, ok := strings.Cut(strings.TrimSpace(line), ": ")
+			if ok && (key == "LANG" || strings.HasPrefix(key, "LC_")) {
+				command.Env = append(command.Env, key+"="+value)
+			}
+		}
+		output, err := command.CombinedOutput()
+		if err != nil {
+			t.Fatalf("Linux job locale: %v %s", err, output)
+		}
+		if got := strings.TrimSpace(string(output)); got != "UTF-8" {
+			t.Fatalf("child process character map = %q, want UTF-8", got)
+		}
+	})
 }
