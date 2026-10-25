@@ -279,9 +279,6 @@ func downloadGitHubAsset(ctx context.Context, c *githubSourceClient, asset githu
 	if err != nil {
 		return err
 	}
-	if asset.ID <= 0 || asset.State != "uploaded" {
-		return fmt.Errorf("invalid GitHub download asset %s", asset.Name)
-	}
 	if _, err := os.Lstat(destination); err == nil {
 		return fmt.Errorf("download destination already exists: %s", destination)
 	} else if !os.IsNotExist(err) {
