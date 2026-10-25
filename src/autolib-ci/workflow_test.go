@@ -269,4 +269,35 @@ func TestCIWorkflowContract(t *testing.T) {
 			t.Fatalf("child process character map = %q, want UTF-8", got)
 		}
 	})
+	t.Run("Linux preparation trusts only its checkout for Go VCS", func(t *testing.T) {
+		data, err := os.ReadFile(filepath.Join(root, ".github/scripts/prepare-linux.sh"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, setup, ok := strings.Cut(string(data), "export PATH=")
+		if !ok {
+			t.Fatal("missing Linux tool environment")
+		}
+		setup, _, ok = strings.Cut("export PATH="+setup, `"$cmake_command" -P`)
+		if !ok {
+			t.Fatal("missing first Go build")
+		}
+		checkout := filepath.ToSlash(t.TempDir())
+		config := filepath.ToSlash(filepath.Join(t.TempDir(), "gitconfig"))
+		environment := append(withoutEnvironment(os.Environ(), "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", "GIT_TEST_ASSUME_DIFFERENT_OWNER"), "GIT_CONFIG_GLOBAL="+config, "GIT_CONFIG_NOSYSTEM=1")
+		command := exec.Command("git", "init", "--quiet", checkout)
+		command.Env = environment
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("initialize checkout: %v %s", err, output)
+		}
+		command = exec.Command(bash, "-e", "-c", setup+"\ngit -C \"$repo_root\" status --porcelain\ngit config --global --get-all safe.directory")
+		command.Env = append(environment, "GIT_TEST_ASSUME_DIFFERENT_OWNER=1", "repo_root="+checkout, "tools="+checkout, "gcc_major=9")
+		output, err := command.CombinedOutput()
+		if err != nil {
+			t.Fatalf("Git VCS query after Linux preparation: %v %s", err, output)
+		}
+		if got := strings.TrimSpace(string(output)); got != checkout {
+			t.Fatalf("trusted directories = %q, want only %q", got, checkout)
+		}
+	})
 }
