@@ -32,8 +32,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	flags.StringVar(&options.SourceRoot, "source-root", "", "repository source root")
 	flags.StringVar(&options.BuilderFile, "builder-file", "", "autolib-builder executable")
 	flags.StringVar(&output, "output", "", "plan JSON output file")
-	platforms := flags.String("platforms", "", "comma-separated target platforms")
-	modules := flags.String("modules", "", "comma-separated module selection")
+	platforms := flags.String("platforms", "", "all or comma-separated target platforms")
+	modules := flags.String("modules", "", "comma-separated representative modules; blank selects all")
 	if err := flags.Parse(args[1:]); err != nil {
 		return 1
 	}

@@ -14,11 +14,19 @@ func planCI(ctx context.Context, o ciPlanOptions) (ciPlan, error) {
 	if strings.TrimSpace(o.SourceRoot) == "" || strings.TrimSpace(o.BuilderFile) == "" {
 		return ciPlan{}, fmt.Errorf("source root and builder file are required")
 	}
-	platforms, err := ciList(o.Platforms, ciPlatforms, ciPlatforms, "platform")
+	platformSelection := o.Platforms
+	if platformSelection != nil && strings.TrimSpace(*platformSelection) == "all" {
+		platformSelection = nil
+	}
+	platforms, err := ciList(platformSelection, ciPlatforms, ciPlatforms, "platform")
 	if err != nil {
 		return ciPlan{}, err
 	}
-	selected, err := ciList(o.Modules, ciModules, ciModules, "module")
+	moduleSelection := o.Modules
+	if moduleSelection != nil && strings.TrimSpace(*moduleSelection) == "" {
+		moduleSelection = nil
+	}
+	selected, err := ciList(moduleSelection, ciModules, ciModules, "module")
 	if err != nil {
 		return ciPlan{}, err
 	}

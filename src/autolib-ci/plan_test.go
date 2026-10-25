@@ -48,6 +48,24 @@ func TestCIPlanInputs(t *testing.T) {
 	if !reflect.DeepEqual(subset.RequestedModules, []string{"flann"}) {
 		t.Fatalf("requested modules were not deduplicated: %v", subset.RequestedModules)
 	}
+	for _, value := range []string{"", " \t "} {
+		t.Run("blank modules "+value, func(t *testing.T) {
+			got, err := planCI(context.Background(), ciPlanOptions{SourceRoot: root, BuilderFile: builder, Modules: &value})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(got, plan) {
+				t.Fatalf("blank modules should select the default representative set: %+v", got)
+			}
+		})
+	}
+	all, err := planCI(context.Background(), ciPlanOptions{SourceRoot: root, BuilderFile: builder, Platforms: stringPointer("all")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(all, plan) {
+		t.Fatalf("all platforms should select the default platform set: %+v", all)
+	}
 }
 
 func TestCIPlanRejectsInvalidSelection(t *testing.T) {
@@ -65,7 +83,6 @@ func TestCIPlanRejectsInvalidSelection(t *testing.T) {
 		{name: "empty platforms", platforms: stringPointer("")},
 		{name: "empty platform item", platforms: stringPointer("linux-x86_64,")},
 		{name: "unknown platform", platforms: stringPointer("linux-x64")},
-		{name: "empty modules", modules: stringPointer("")},
 		{name: "empty module item", modules: stringPointer("queue,,lz4")},
 		{name: "unsupported module", modules: stringPointer("opencv")},
 	} {
@@ -135,9 +152,24 @@ func TestCICLI(t *testing.T) {
 		t.Fatalf("unexpected CLI output: stdout=%q json=%q", stdout.String(), data)
 	}
 	validOutput := string(data)
+	stdout.Reset()
+	stderr.Reset()
+	if code := run([]string{"plan", "--source-root", root, "--builder-file", builder, "--output", output, "--platforms=all", "--modules="}, &stdout, &stderr); code != 0 {
+		t.Fatalf("blank modules failed: %d %s", code, stderr.String())
+	}
+	data, err = os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &plan); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(plan.RequestedModules, []string{"queue", "lz4", "flann"}) || len(plan.Platforms) != 3 {
+		t.Fatalf("blank CLI modules did not select all: %+v", plan)
+	}
+	validOutput = string(data)
 	for _, bad := range [][]string{
 		{"plan", "--source-root", root, "--builder-file", builder, "--output", output, "--platforms="},
-		{"plan", "--source-root", root, "--builder-file", builder, "--output", output, "--modules="},
 		{"plan", "--source-root", root, "--builder-file", builder, "--output", output, "--force=true"},
 		append(append([]string{}, args...), "unexpected"),
 	} {

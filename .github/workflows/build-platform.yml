@@ -4,15 +4,20 @@ on:
   workflow_dispatch:
     inputs:
       platforms:
-        description: Comma-separated native platforms
-        type: string
-        default: windows-x86_64,linux-x86_64,linux-aarch64
+        description: Native platform
+        type: choice
+        options:
+          - all
+          - windows-x86_64
+          - linux-x86_64
+          - linux-aarch64
+        default: all
         required: true
       modules:
-        description: Comma-separated representative modules
+        description: Comma-separated representative modules (blank selects all)
         type: string
         default: queue,lz4,flann
-        required: true
+        required: false
 
 permissions:
   contents: read
