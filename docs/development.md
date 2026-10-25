@@ -48,7 +48,7 @@ cmake -P src/autolib-builder/go-sdk.cmake -- build -mod=readonly -trimpath -o bu
 
 `builder package` 必须显式提供源码、安装、输出根，目标和宿主身份、工具路径及重复模块选择；完整参数见[打包入口](../src/autolib-builder/release.go)。输出必须在本副本 build 内且不与安装树重叠；只打包显式模块，不自动补依赖。真实示例由[本地闭环测试](testing.md#本地二进制闭环)执行。
 
-将 `src/autolib.cmake` 复制到消费者，include 后在其他同名库目标创建前调用 `autolib_import(LOCAL_ROOT <本地发行目录> PACKAGES flann queue)`，链接 `AutoLib::queue`、`AutoLib::lz4`、`AutoLib::flann`；lz4 从 flann 包头自动补齐。可选 `WORK_ROOT`、`TARGET_OS`、`TARGET_ARCH`，默认工作根为消费者 build 下的 autolib。系统支持 windows/linux，架构为 x86_64/aarch64；工具按宿主、库包按目标选择。同一次 configure 固定来源、工作根和目标，可增加根包，首次导入拒绝既有上游目标。
+将 `src/autolib.cmake` 复制到消费者，include 后在其他同名库目标创建前调用 `autolib_import(LOCAL_ROOT <本地发行目录> PACKAGES flann queue)`，链接 `autolib::queue`、`autolib::lz4`、`autolib::flann`；lz4 从 flann 包头自动补齐。可选 `WORK_ROOT`、`TARGET_OS`、`TARGET_ARCH`，默认工作根为消费者 build 下的 autolib。系统支持 windows/linux，架构为 x86_64/aarch64；工具按宿主、库包按目标选择。同一次 configure 固定来源、工作根和目标，可增加根包，首次导入拒绝既有上游目标。
 
 LOCAL_ROOT 平铺固定名宿主工具和 `<name>-<os>-<arch>.tar.zst`；通用归档使用 any-any。准备目录为 `LOCAL_ROOT/packages/<os>-<arch>/<name>/`，优先于归档。相对根按顶层源码目录解析；本地根、工作根及实际包路径不得含分号。现有完整目录可只读复用；缺包需要本地根可写，同根写入由调用方串行，独立构建使用各自工作根。
 

@@ -31,7 +31,7 @@ CI 每轮构建所选模块及依赖，不跨运行复用 Release 包。各平�
 
 builder 的 `package` 将显式选择且提供 adapter 的安装树复制到 staging，只在副本中修正本包及声明 sibling 的生产路径，生成固定名 tar.zst 和宿主 importer，不改原安装。每包以四行头声明名称、平台和直接依赖，归档显式启用 Zstd 内容校验；无全局消费清单或外置摘要文件。
 
-下游携带单文件 [autolib.cmake](../src/autolib.cmake)，从显式 LOCAL_ROOT 直接执行固定名宿主 importer。`src/autolib-importer/` 按已解包目录、固定名归档的顺序查找，仅在候选不存在时继续；它校验包头、安全解包并按依赖先序提交完整结果，CMake 随后加载 adapter，提供全局 `AutoLib::<name>`。消费者不需要 Go、Python、uv 或 builder。
+下游携带单文件 [autolib.cmake](../src/autolib.cmake)，从显式 LOCAL_ROOT 直接执行固定名宿主 importer。`src/autolib-importer/` 按已解包目录、固定名归档的顺序查找，仅在候选不存在时继续；它校验包头、安全解包并按依赖先序提交完整结果，CMake 随后加载 adapter，提供全局 `autolib::<name>`。消费者不需要 Go、Python、uv 或 builder。
 
 queue、lz4、flann 提供精确布局 adapter；仅请求 flann 即取得 sibling lz4，不回退系统包。工具按宿主、包按目标选择；通用包使用 any/any 身份。完整本地目录权威，更新由用户显式刷新；同一本地根的写入由调用方串行。系统运行库不因此成为可下载包。来源、工作根和目标在同次 configure 固定；格式与取舍见[包消费设计](agent-notes/proposed/architecture/2026-10-24-manifestless-package-consumption.md)，调用及限制见开发、测试指南。
 

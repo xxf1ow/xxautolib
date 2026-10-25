@@ -7,7 +7,7 @@
 ## 功能与支持范围
 
 - **源码构建**：通过 `module.toml` 声明来源、补丁和依赖，由 CMake / ExternalProject 完成构建安装。
-- **本地包消费**：统一使用 `autolib_import()` 和 `AutoLib::<name>`，按包内声明自动准备依赖，支持已解包目录和 `.tar.zst` 归档。
+- **本地包消费**：统一使用 `autolib_import()` 和 `autolib::<name>`，按包内声明自动准备依赖，支持已解包目录和 `.tar.zst` 归档。
 - **二进制发布**：CI 为 Windows x86_64、Linux x86_64 和 Linux aarch64 构建发行物，各包按固定文件名更新。
 
 当前 Release 代表集包含以下三个包；其他模块的源码构建能力不等于已经提供可消费的发行包。
@@ -72,10 +72,10 @@ flann: OK
 include("${CMAKE_CURRENT_SOURCE_DIR}/autolib.cmake")
 autolib_import(LOCAL_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/dist" PACKAGES queue flann)
 
-target_link_libraries(my_app PRIVATE AutoLib::queue AutoLib::lz4 AutoLib::flann)
+target_link_libraries(my_app PRIVATE autolib::queue autolib::lz4 autolib::flann)
 ```
 
-`my_app` 是你已有的可执行或库目标。`AutoLib::flann` 提供 C++ 接口；[示例](example/CMakeLists.txt)使用 FLANN C API，因此还链接包内导出的 `flann::flann`。宿主 importer 与目标库平台分别选择，完整参数与目录规则见[本地打包与消费](docs/development.md#本地打包与消费)。
+`my_app` 是你已有的可执行或库目标。`autolib::flann` 同时提供 C/C++ 接口，并传递 lz4 的头文件和链接要求，无需额外链接上游目标。宿主 importer 与目标库平台分别选择，完整参数与目录规则见[本地打包与消费](docs/development.md#本地打包与消费)。
 
 ## 从源码构建与参与开发
 

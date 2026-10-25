@@ -53,7 +53,7 @@ func TestCIValidationMode(t *testing.T) {
 	} else {
 		production.Generator = environment.Production.Linux.Generator
 	}
-	archive := testPackageArchive(t, "queue", "any", "any", []testArchiveMember{{Name: "queue/include/queue/readerwriterqueue.h", Body: "#pragma once\nnamespace moodycamel { template<class T> class ReaderWriterQueue { T value{}; public: bool enqueue(T v) { value=v; return true; } bool try_dequeue(T& v) { v=value; return true; } }; }\n"}}, "add_library(AutoLib::queue INTERFACE IMPORTED GLOBAL)\nset_target_properties(AutoLib::queue PROPERTIES INTERFACE_INCLUDE_DIRECTORIES \"${CMAKE_CURRENT_LIST_DIR}/include\")\n")
+	archive := testPackageArchive(t, "queue", "any", "any", []testArchiveMember{{Name: "queue/include/queue/readerwriterqueue.h", Body: "#pragma once\nnamespace moodycamel { template<class T> class ReaderWriterQueue { T value{}; public: bool enqueue(T v) { value=v; return true; } bool try_dequeue(T& v) { v=value; return true; } }; }\n"}}, "add_library(autolib::queue INTERFACE IMPORTED GLOBAL)\nset_target_properties(autolib::queue PROPERTIES INTERFACE_INCLUDE_DIRECTORIES \"${CMAKE_CURRENT_LIST_DIR}/include\")\n")
 	for _, mode := range []string{"single", "relocate"} {
 		t.Run(mode, func(t *testing.T) {
 			work := filepath.Join(root, mode)

@@ -68,7 +68,7 @@ func newEntryFixture(t *testing.T, fake bool, suffix string) *entryFixture {
 	}
 	// 目标刻意不同于常用 Windows 宿主，验证工具与库槽独立。
 	id := packageIdentity{Name: "demo", OS: o.OS, Arch: o.Arch}
-	adapter := identityHeader(id) + "if(TARGET AutoLib::demo)\nreturn()\nendif()\nadd_library(AutoLib::demo INTERFACE IMPORTED GLOBAL)\n"
+	adapter := identityHeader(id) + "if(TARGET autolib::demo)\nreturn()\nendif()\nadd_library(autolib::demo INTERFACE IMPORTED GLOBAL)\n"
 	a := testArchive(t, []archiveMember{{Name: "demo/autolib-import.cmake", Body: adapter}})
 	archive, err := os.ReadFile(a)
 	if err != nil {
@@ -142,7 +142,7 @@ func TestCMakeBootstrap(t *testing.T) {
 func TestUniversalPackageThroughCMakeEntry(t *testing.T) {
 	f := newEntryFixture(t, false, "")
 	id := packageIdentity{"demo", "any", "any"}
-	archive := testArchive(t, []archiveMember{{Name: "demo/autolib-import.cmake", Body: identityHeader(id) + "if(NOT TARGET AutoLib::demo)\nadd_library(AutoLib::demo INTERFACE IMPORTED GLOBAL)\nendif()\n"}})
+	archive := testArchive(t, []archiveMember{{Name: "demo/autolib-import.cmake", Body: identityHeader(id) + "if(NOT TARGET autolib::demo)\nadd_library(autolib::demo INTERFACE IMPORTED GLOBAL)\nendif()\n"}})
 	if err := os.Rename(filepath.Join(f.release, "demo-"+f.options.OS+"-"+f.options.Arch+".tar.zst"), filepath.Join(f.release, "old-away")); err != nil {
 		t.Fatal(err)
 	}
@@ -398,7 +398,7 @@ func representativeFixture(t *testing.T, packages string) *entryFixture {
 			members = append(members, archiveMember{Name: "lz4/lib/cmake/lz4/lz4Config.cmake", Body: "if(TARGET LZ4::lz4 AND TARGET LZ4::lz4_static)\nreturn()\nendif()\nadd_library(LZ4::lz4 INTERFACE IMPORTED)\nadd_library(LZ4::lz4_static INTERFACE IMPORTED)\n"})
 		}
 		if name == "flann" {
-			members = append(members, archiveMember{Name: "flann/lib/cmake/flann/flann-config.cmake", Body: "if(NOT TARGET AutoLib::lz4)\nmessage(FATAL_ERROR \"lz4 not loaded first\")\nendif()\nif(TARGET flann::flann_cpp AND TARGET flann::flann)\nreturn()\nendif()\nadd_library(flann::flann_cpp INTERFACE IMPORTED)\nadd_library(flann::flann INTERFACE IMPORTED)\n"})
+			members = append(members, archiveMember{Name: "flann/lib/cmake/flann/flann-config.cmake", Body: "if(NOT TARGET autolib::lz4)\nmessage(FATAL_ERROR \"lz4 not loaded first\")\nendif()\nif(TARGET flann::flann_cpp AND TARGET flann::flann)\nreturn()\nendif()\nadd_library(flann::flann_cpp INTERFACE IMPORTED)\nadd_library(flann::flann INTERFACE IMPORTED)\n"})
 		}
 		a := testArchive(t, members)
 		data, err := os.ReadFile(a)
@@ -409,7 +409,7 @@ func representativeFixture(t *testing.T, packages string) *entryFixture {
 		putTestFile(t, filepath.Join(f.release, asset), string(data))
 	}
 	putTestFile(t, filepath.Join(f.source, "CMakeLists.txt"), "cmake_minimum_required(VERSION 3.20)\nproject(representatives NONE)\ninclude(autolib.cmake)\nautolib_import(LOCAL_ROOT \"${FIXTURE_RELEASE}\" WORK_ROOT \"${FIXTURE_WORK}\" TARGET_OS \"${FIXTURE_OS}\" TARGET_ARCH \"${FIXTURE_ARCH}\" PACKAGES "+packages+")\nadd_subdirectory(child)\n")
-	putTestFile(t, filepath.Join(f.source, "child/CMakeLists.txt"), "foreach(name IN ITEMS queue lz4 flann)\nif(NOT TARGET AutoLib::${name})\nmessage(FATAL_ERROR \"target not visible: ${name}\")\nendif()\nendforeach()\nadd_library(consumer INTERFACE)\ntarget_link_libraries(consumer INTERFACE AutoLib::queue AutoLib::lz4 AutoLib::flann)\nautolib_import(LOCAL_ROOT \"${FIXTURE_RELEASE}\" WORK_ROOT \"${FIXTURE_WORK}\" TARGET_OS \"${FIXTURE_OS}\" TARGET_ARCH \"${FIXTURE_ARCH}\" PACKAGES flann queue lz4)\n")
+	putTestFile(t, filepath.Join(f.source, "child/CMakeLists.txt"), "foreach(name IN ITEMS queue lz4 flann)\nif(NOT TARGET autolib::${name})\nmessage(FATAL_ERROR \"target not visible: ${name}\")\nendif()\nendforeach()\nadd_library(consumer INTERFACE)\ntarget_link_libraries(consumer INTERFACE autolib::queue autolib::lz4 autolib::flann)\nautolib_import(LOCAL_ROOT \"${FIXTURE_RELEASE}\" WORK_ROOT \"${FIXTURE_WORK}\" TARGET_OS \"${FIXTURE_OS}\" TARGET_ARCH \"${FIXTURE_ARCH}\" PACKAGES flann queue lz4)\n")
 	return f
 }
 
@@ -417,6 +417,19 @@ func TestRepresentativeAdapters(t *testing.T) {
 	f := representativeFixture(t, "flann queue")
 	consumer := filepath.Join(f.source, "CMakeLists.txt")
 	putTestFile(t, consumer, strings.Replace(readTestFile(t, consumer), "add_subdirectory(child)", "if(NOT AUTOLIB_PREPARED_PACKAGES STREQUAL \"lz4;flann;queue\")\nmessage(FATAL_ERROR \"wrong dependency order: ${AUTOLIB_PREPARED_PACKAGES}\")\nendif()\nadd_subdirectory(child)", 1))
+	putTestFile(t, consumer, readTestFile(t, consumer)+`
+foreach(name IN ITEMS queue lz4 flann)
+    if(NOT TARGET autolib::${name} OR TARGET AutoLib::${name})
+        message(FATAL_ERROR "missing unique lowercase public target: ${name}")
+    endif()
+endforeach()
+get_target_property(links autolib::flann INTERFACE_LINK_LIBRARIES)
+foreach(required IN ITEMS flann::flann_cpp flann::flann autolib::lz4)
+    if(NOT required IN_LIST links)
+        message(FATAL_ERROR "missing FLANN dependency: ${required}")
+    endif()
+endforeach()
+`)
 	destination := f.release + "中文 空格"
 	if err := os.Rename(f.release, destination); err != nil {
 		t.Fatal(err)
@@ -450,7 +463,7 @@ func TestAdapterExistingTargets(t *testing.T) {
 func TestAdapterDependencyOrder(t *testing.T) {
 	t.Run("root only", func(t *testing.T) {
 		f := representativeFixture(t, "flann")
-		putTestFile(t, filepath.Join(f.source, "CMakeLists.txt"), "cmake_minimum_required(VERSION 3.20)\nproject(root_only NONE)\ninclude(autolib.cmake)\nautolib_import(LOCAL_ROOT \"${FIXTURE_RELEASE}\" WORK_ROOT \"${FIXTURE_WORK}\" TARGET_OS \"${FIXTURE_OS}\" TARGET_ARCH \"${FIXTURE_ARCH}\" PACKAGES flann)\nif(NOT TARGET AutoLib::lz4 OR NOT TARGET AutoLib::flann OR NOT AUTOLIB_PREPARED_PACKAGES STREQUAL \"lz4;flann\")\nmessage(FATAL_ERROR \"missing dependency closure\")\nendif()\n")
+		putTestFile(t, filepath.Join(f.source, "CMakeLists.txt"), "cmake_minimum_required(VERSION 3.20)\nproject(root_only NONE)\ninclude(autolib.cmake)\nautolib_import(LOCAL_ROOT \"${FIXTURE_RELEASE}\" WORK_ROOT \"${FIXTURE_WORK}\" TARGET_OS \"${FIXTURE_OS}\" TARGET_ARCH \"${FIXTURE_ARCH}\" PACKAGES flann)\nif(NOT TARGET autolib::lz4 OR NOT TARGET autolib::flann OR NOT AUTOLIB_PREPARED_PACKAGES STREQUAL \"lz4;flann\")\nmessage(FATAL_ERROR \"missing dependency closure\")\nendif()\n")
 		f.mustConfigure()
 	})
 	f := representativeFixture(t, "flann")
