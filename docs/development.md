@@ -52,13 +52,13 @@ cmake -P src/autolib-builder/go-sdk.cmake -- build -mod=readonly -trimpath -o bu
 
 LOCAL_ROOT 平铺固定名宿主工具和 `<name>-<os>-<arch>.tar.zst`；通用归档使用 any-any。准备目录为 `LOCAL_ROOT/packages/<os>-<arch>/<name>/`，优先于归档。相对根按顶层源码目录解析；本地根、工作根及实际包路径不得含分号。现有完整目录可只读复用；缺包需要本地根可写，同根写入由调用方串行，独立构建使用各自工作根。
 
-CLI 为 `importer prepare --local-root=<目录> --work-root=<目录> --os=<目标OS> --arch=<目标架构> --result=<文件> --package=<根包>`，package 可重复。CMake 接受 REMOTE_ROOT、CLI 接受 --remote-root 参数位置，但非空值明确报远端尚未启用，不联网。URI、--uri、--manifest 均拒绝，不提供兼容层；CI 缓存恢复和消费验证也只使用本地入口。
+CLI 为 `importer prepare --local-root=<目录> --work-root=<目录> --os=<目标OS> --arch=<目标架构> --result=<文件> --package=<根包>`，package 可重复。CMake 接受 REMOTE_ROOT、CLI 接受 --remote-root 参数位置，但非空值明确报远端尚未启用，不联网。URI、--uri、--manifest 均拒绝，不提供兼容层；CI 消费验证也只使用本地入口。
 
 包头及依赖格式见[包消费设计](agent-notes/proposed/architecture/2026-10-24-manifestless-package-consumption.md#包内身份与依赖)。已有目录仅核对包头，不逐文件散列；归档内容校验用于意外损坏检测，不认证来源，本地工具须由用户信任。坏目录、坏归档或缺输入直接失败，不回退低优先级来源或加载上次结果。刷新前保护本地改动，移走对应 `packages/<目标OS>-<目标架构>/<包名>/`，不删除共享依赖；本地归档仍优先，更新归档不会覆盖目录。FLANN 的包依赖仅 lz4，OpenMP、C++ ABI 和系统运行库由消费环境满足。
 
 ## CI 开发与运行
 
-[手动流水线](../.github/workflows/build-platform.yml)只接受默认分支并检出事件提交，逐槽验证后同名替换，不备份或回滚。汇总失败保留成功槽，重跑整个流水线按资产复用；force 重建选中闭包。本地目录由用户按上节刷新。三平台代表集的真实发布、权限及缓存复用已验证，后续远端操作仍须授权；命令见[入口](../src/autolib-ci/main.go)，验证见[测试指南](testing.md#ci-验证)，固定目标和策略见 [CI 设计](agent-notes/implemented/architecture/2026-10-20-ci-system.md)。
+[手动流水线](../.github/workflows/build-platform.yml)只接受默认分支并检出事件提交，每轮构建所选模块及依赖，逐槽验证后同名替换，不备份或回滚。汇总失败保留成功槽，重跑仍重新构建；不提供 force 输入，不设置资产 label。本地消费目录由用户按上节刷新。三平台供给的既有证据及本轮收缩的远端待验证范围见[测试指南](testing.md#ci-验证)；后续远端操作仍须授权。命令见[入口](../src/autolib-ci/main.go)，固定目标和策略见 [CI 设计](agent-notes/implemented/architecture/2026-10-20-ci-system.md)。
 
 ## 日常修改
 

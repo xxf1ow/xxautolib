@@ -25,7 +25,7 @@ func TestCIPlanInputs(t *testing.T) {
 	if got, want := plan.RequestedModules, []string{"queue", "lz4", "flann"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("requested modules: want %v, got %v", want, got)
 	}
-	if len(plan.Platforms) != 3 || plan.Publisher != "linux-x86_64" || plan.Force {
+	if len(plan.Platforms) != 3 || plan.Publisher != "linux-x86_64" {
 		t.Fatalf("unexpected plan defaults: %+v", plan)
 	}
 	for _, platform := range plan.Platforms {
@@ -38,11 +38,11 @@ func TestCIPlanInputs(t *testing.T) {
 	}
 
 	modules, platforms := "flann, flann", "linux-aarch64"
-	subset, err := planCI(context.Background(), ciPlanOptions{SourceRoot: root, BuilderFile: builder, Modules: &modules, Platforms: &platforms, Force: true})
+	subset, err := planCI(context.Background(), ciPlanOptions{SourceRoot: root, BuilderFile: builder, Modules: &modules, Platforms: &platforms})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !subset.Force || subset.Publisher != "" || len(subset.Platforms) != 1 || !reflect.DeepEqual(subset.Platforms[0].Layers, [][]string{{"lz4"}, {"flann"}}) {
+	if subset.Publisher != "" || len(subset.Platforms) != 1 || !reflect.DeepEqual(subset.Platforms[0].Layers, [][]string{{"lz4"}, {"flann"}}) {
 		t.Fatalf("unexpected selected plan: %+v", subset)
 	}
 	if !reflect.DeepEqual(subset.RequestedModules, []string{"flann"}) {
@@ -116,7 +116,7 @@ func TestCICLI(t *testing.T) {
 	root := t.TempDir()
 	output := filepath.Join(root, "ci plan.json")
 	var stdout, stderr bytes.Buffer
-	args := []string{"plan", "--source-root", root, "--builder-file", builder, "--output", output, "--platforms", "linux-aarch64,linux-x86_64", "--modules", "flann", "--force=true"}
+	args := []string{"plan", "--source-root", root, "--builder-file", builder, "--output", output, "--platforms", "linux-aarch64,linux-x86_64", "--modules", "flann"}
 	if code := run(args, &stdout, &stderr); code != 0 {
 		t.Fatalf("run failed: %d %s", code, stderr.String())
 	}
@@ -128,7 +128,7 @@ func TestCICLI(t *testing.T) {
 	if err := json.Unmarshal(data, &plan); err != nil {
 		t.Fatal(err)
 	}
-	if !plan.Force || plan.Publisher != "" || !reflect.DeepEqual(plan.RequestedModules, []string{"flann"}) || len(plan.Platforms) != 2 {
+	if plan.Publisher != "" || !reflect.DeepEqual(plan.RequestedModules, []string{"flann"}) || len(plan.Platforms) != 2 {
 		t.Fatalf("unexpected CLI plan: %+v", plan)
 	}
 	if !strings.HasSuffix(string(data), "\n") || stdout.String() != output+"\n" {
@@ -138,7 +138,7 @@ func TestCICLI(t *testing.T) {
 	for _, bad := range [][]string{
 		{"plan", "--source-root", root, "--builder-file", builder, "--output", output, "--platforms="},
 		{"plan", "--source-root", root, "--builder-file", builder, "--output", output, "--modules="},
-		{"plan", "--source-root", root, "--builder-file", builder, "--output", output, "--force=maybe"},
+		{"plan", "--source-root", root, "--builder-file", builder, "--output", output, "--force=true"},
 		append(append([]string{}, args...), "unexpected"),
 	} {
 		stdout.Reset()

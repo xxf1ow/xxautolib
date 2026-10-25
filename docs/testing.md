@@ -35,9 +35,9 @@ importer覆盖四行头、优先级、共享依赖、环、通用包、安全解
 
 ## CI 验证
 
-CI 本地资产服务测试覆盖缓存恢复、同名替换、分层及失败汇总，并真实编译消费 Windows 小型依赖。`-run TestCIWorkflowContract` 执行分支检查及 Make 准备片段，不模拟完整 Actions；Windows 跳过 Linux FIFO 探针，不证明 Linux 并行。
+CI 本地资产服务测试覆盖空 label 同名替换、每轮重建、分层及失败汇总，并真实编译消费 Windows 小型依赖；已有发布资产不会短路下一轮构建。`-run TestCIWorkflowContract` 执行分支检查及 Make 准备片段，不模拟完整 Actions；Windows 跳过 Linux FIFO 探针，不证明 Linux 并行。
 
-queue、lz4、flann 的三平台供给、逐槽消费、双搬迁、全缓存复用及凭据写入已通过；ABI、-j/FIFO 和运行证据见[CI验证记录](agent-notes/implemented/architecture/2026-10-20-ci-system.md#真实运行)。缓存命中不代替编译证据，HTTPS未启用。
+queue、lz4、flann 的三平台供给、逐槽消费、双搬迁及凭据写入已有真实证据；ABI、-j/FIFO 和历史运行见[CI验证记录](agent-notes/implemented/architecture/2026-10-20-ci-system.md#真实运行)。[每轮重建与空 label 发布](agent-notes/implemented/simplification/2026-10-24-ci-rebuild-without-production-cache.md)的本地回归不替代新策略的三平台远端验收及 GitHub 页面核对；HTTPS未启用。
 
 ## 安装产物集成验证
 

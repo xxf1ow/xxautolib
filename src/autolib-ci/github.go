@@ -204,19 +204,3 @@ func nextGitHubPage(header string) string {
 	}
 	return ""
 }
-
-func (c *githubClient) downloadAsset(ctx context.Context, asset githubAsset, destination string) (string, error) {
-	address, err := c.apiURL("repos/" + ciGitHubRepository + "/releases/assets/" + strconv.FormatInt(asset.ID, 10))
-	if err != nil {
-		return "", err
-	}
-	response, err := c.request(ctx, http.MethodGet, address, "application/octet-stream")
-	if err != nil {
-		return "", err
-	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		return "", githubStatusError(response)
-	}
-	return writeDigestFile(destination, response.Body, asset.Digest)
-}

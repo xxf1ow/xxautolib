@@ -24,7 +24,7 @@ type layerFixture struct {
 	reads   int
 }
 
-func newLayerFixture(t *testing.T, modules []string, force bool) *layerFixture {
+func newLayerFixture(t *testing.T, modules []string) *layerFixture {
 	t.Helper()
 	if runtime.GOOS != "windows" {
 		t.Skip("command fixture emits native Windows consumer evidence")
@@ -38,12 +38,12 @@ func newLayerFixture(t *testing.T, modules []string, force bool) *layerFixture {
 	if err := os.MkdirAll(filepath.Dir(tool), 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := copyCacheFile(executable, tool); err != nil {
+	if err := copyCIFile(executable, tool); err != nil {
 		t.Fatal(err)
 	}
 	executable = tool
 	f := &layerFixture{run: identity}
-	f.plan = ciPlan{RequestedModules: modules, Force: force, Publisher: "windows-x86_64"}
+	f.plan = ciPlan{RequestedModules: modules, Publisher: "windows-x86_64"}
 	description := moduleDescription{SystemName: "Windows", Architecture: "x86_64", GoModuleFiles: []string{}, BuilderFiles: []string{}}
 	for _, name := range modules {
 		m := describedModule{Name: name, Depends: []string{}, PlatformIndependent: name == "queue", Configuration: json.RawMessage(`{}`), InputFiles: []string{}, AdapterFile: "src/dependencies/" + name + "/autolib-import.cmake"}
@@ -51,7 +51,7 @@ func newLayerFixture(t *testing.T, modules []string, force bool) *layerFixture {
 			m.Depends = []string{"lz4"}
 		}
 		description.Modules = append(description.Modules, m)
-		writeIdentityFixture(t, root, m.AdapterFile, "# fixture adapter\n")
+		writeCIFixture(t, root, m.AdapterFile, "# fixture adapter\n")
 	}
 	layers, err := ciLayers(description.Modules)
 	if err != nil {
@@ -62,11 +62,10 @@ func newLayerFixture(t *testing.T, modules []string, force bool) *layerFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeIdentityFixture(t, root, ".github/ci-tools.json", string(config))
-	writeIdentityFixture(t, root, "src/autolib-ci/identity.go", "fixture identity algorithm")
+	writeCIFixture(t, root, ".github/ci-tools.json", string(config))
 	for file, value := range map[string]any{"plan.json": f.plan, "run.json": identity} {
 		data, _ := json.Marshal(value)
-		writeIdentityFixture(t, root, file, string(data))
+		writeCIFixture(t, root, file, string(data))
 	}
 	work := filepath.Join(root, "build", "ci", identity.RunID+"-"+identity.Attempt, "windows-x86_64")
 	f.options = ciRunOptions{SourceRoot: root, PlanFile: filepath.Join(root, "plan.json"), RunIdentityFile: filepath.Join(root, "run.json"), Platform: "windows-x86_64", WorkRoot: work, BuilderFile: executable, ImporterFile: executable, CMakeCommand: executable}
@@ -118,7 +117,7 @@ func (f *layerFixture) result(t *testing.T) ciPlatformResult {
 
 func TestCIRunLayers(t *testing.T) {
 	t.Run("real local dependency", testRealCILocalDependency)
-	f := newLayerFixture(t, []string{"lz4", "flann"}, false)
+	f := newLayerFixture(t, []string{"lz4", "flann"})
 	for _, layer := range []string{"prepare", "layer0", "layer1", "verify"} {
 		if err := f.layer(t, layer); err != nil {
 			t.Fatalf("%s: %v", layer, err)
@@ -135,6 +134,11 @@ func TestCIRunLayers(t *testing.T) {
 	if strings.Index(commands, `"-DBUILD_LIST=lz4"`) >= strings.Index(commands, `"-DBUILD_LIST=flann"`) {
 		t.Fatalf("dependency not built first: %s", commands)
 	}
+	for _, name := range []string{"lz4", "flann"} {
+		if strings.Count(commands, `"--target","`+name+`"`) != 1 {
+			t.Fatalf("module %s was not built exactly once: %s", name, commands)
+		}
+	}
 	if len(result.Packages) != 2 || !result.Packages[0].Uploaded || !result.Packages[1].Uploaded {
 		t.Fatalf("missing uploaded results: %+v", result)
 	}
@@ -144,7 +148,7 @@ func testRealCILocalDependency(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		t.Skip("local integration fixture uses Windows import libraries")
 	}
-	f := newLayerFixture(t, []string{"lz4"}, true)
+	f := newLayerFixture(t, []string{"lz4"})
 	t.Setenv("AUTOLIB_CI_HELPER_MODE", "")
 	repository, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
@@ -172,12 +176,12 @@ func testRealCILocalDependency(t *testing.T) {
 	}
 	f.run.SHA = strings.TrimSpace(string(sha))
 	f.run.CheckoutSHA = f.run.SHA
-	for _, name := range []string{"go.mod", "go.sum", ".github/ci-tools.json", "src/autolib-ci/identity.go", "src/autolib-ci/restore-cache.cmake", "src/autolib.cmake", "tests/autolib/CMakeLists.txt", "tests/autolib/run-local.cmake"} {
+	for _, name := range []string{"go.mod", "go.sum", ".github/ci-tools.json", "src/autolib.cmake", "tests/autolib/CMakeLists.txt", "tests/autolib/run-local.cmake"} {
 		data, err := os.ReadFile(filepath.Join(repository, name))
 		if err != nil {
 			t.Fatal(err)
 		}
-		writeIdentityFixture(t, root, name, string(data))
+		writeCIFixture(t, root, name, string(data))
 	}
 	files, err := filepath.Glob(filepath.Join(repository, "src", "autolib-builder", "*.cmake"))
 	if err != nil {
@@ -188,7 +192,7 @@ func testRealCILocalDependency(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		writeIdentityFixture(t, root, "src/autolib-builder/"+filepath.Base(file), string(data))
+		writeCIFixture(t, root, "src/autolib-builder/"+filepath.Base(file), string(data))
 	}
 	cmake, err := exec.LookPath("cmake")
 	if err != nil {
@@ -208,7 +212,7 @@ func testRealCILocalDependency(t *testing.T) {
 	f.options.CMakeCommand = cmake
 	f.options.PlanFile = filepath.Join(root, "plan.json")
 	f.options.RunIdentityFile = filepath.Join(root, "run.json")
-	writeIdentityFixture(t, root, "CMakeLists.txt", `cmake_minimum_required(VERSION 3.20)
+	writeCIFixture(t, root, "CMakeLists.txt", `cmake_minimum_required(VERSION 3.20)
 project(local_ci LANGUAGES C CXX)
 include(ExternalProject)
 foreach(name IN ITEMS lz4 flann)
@@ -223,7 +227,7 @@ endforeach()
 		if name == "flann" {
 			depends = "depends=['lz4']\n"
 		}
-		writeIdentityFixture(t, root, "src/dependencies/"+name+"/module.toml", "name='"+name+"'\ntype='cmake'\nsentinel='include/"+name+".h'\n"+depends+"[source]\nGIT_REPOSITORY='local-fixture'\nGIT_TAG='fixed'\n")
+		writeCIFixture(t, root, "src/dependencies/"+name+"/module.toml", "name='"+name+"'\ntype='cmake'\nsentinel='include/"+name+".h'\n"+depends+"[source]\nGIT_REPOSITORY='local-fixture'\nGIT_TAG='fixed'\n")
 		kind := "STATIC"
 		code := "int lz4_value(void) { return 7; }\n"
 		link := ""
@@ -232,21 +236,21 @@ endforeach()
 			code = "int lz4_value(void); int flann_value(void) { return lz4_value()+35; }\n"
 			link = "target_link_libraries(flann PRIVATE \"${SUPPORT}\")\n"
 		}
-		writeIdentityFixture(t, root, "upstream/"+name+"/CMakeLists.txt", "cmake_minimum_required(VERSION 3.20)\nproject(local_"+name+" LANGUAGES C)\nadd_library("+name+" "+kind+" fixture.c)\nset_target_properties("+name+" PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)\n"+link+"install(TARGETS "+name+" RUNTIME DESTINATION bin LIBRARY DESTINATION lib ARCHIVE DESTINATION lib)\ninstall(FILES "+name+".h DESTINATION include)\n")
-		writeIdentityFixture(t, root, "upstream/"+name+"/fixture.c", code)
-		writeIdentityFixture(t, root, "upstream/"+name+"/"+name+".h", "int "+name+"_value(void);\n")
+		writeCIFixture(t, root, "upstream/"+name+"/CMakeLists.txt", "cmake_minimum_required(VERSION 3.20)\nproject(local_"+name+" LANGUAGES C)\nadd_library("+name+" "+kind+" fixture.c)\nset_target_properties("+name+" PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)\n"+link+"install(TARGETS "+name+" RUNTIME DESTINATION bin LIBRARY DESTINATION lib ARCHIVE DESTINATION lib)\ninstall(FILES "+name+".h DESTINATION include)\n")
+		writeCIFixture(t, root, "upstream/"+name+"/fixture.c", code)
+		writeCIFixture(t, root, "upstream/"+name+"/"+name+".h", "int "+name+"_value(void);\n")
 	}
-	writeIdentityFixture(t, root, "src/dependencies/lz4/autolib-import.cmake", `add_library(LZ4::lz4_static STATIC IMPORTED GLOBAL)
+	writeCIFixture(t, root, "src/dependencies/lz4/autolib-import.cmake", `add_library(LZ4::lz4_static STATIC IMPORTED GLOBAL)
 set_target_properties(LZ4::lz4_static PROPERTIES IMPORTED_CONFIGURATIONS RELEASE IMPORTED_LOCATION_RELEASE "${CMAKE_CURRENT_LIST_DIR}/lib/lz4.lib" INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_LIST_DIR}/include")
 add_library(AutoLib::lz4 ALIAS LZ4::lz4_static)
 `)
-	writeIdentityFixture(t, root, "src/dependencies/flann/autolib-import.cmake", `add_library(flann::flann SHARED IMPORTED GLOBAL)
+	writeCIFixture(t, root, "src/dependencies/flann/autolib-import.cmake", `add_library(flann::flann SHARED IMPORTED GLOBAL)
 set_target_properties(flann::flann PROPERTIES IMPORTED_CONFIGURATIONS RELEASE IMPORTED_LOCATION_RELEASE "${CMAKE_CURRENT_LIST_DIR}/bin/flann.dll" IMPORTED_IMPLIB_RELEASE "${CMAKE_CURRENT_LIST_DIR}/lib/flann.lib" INTERFACE_LINK_LIBRARIES "${CMAKE_CURRENT_LIST_DIR}/../lz4/lib/lz4.lib" INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_LIST_DIR}/include")
 add_library(flann::flann_cpp STATIC IMPORTED GLOBAL)
 set_target_properties(flann::flann_cpp PROPERTIES IMPORTED_CONFIGURATIONS RELEASE IMPORTED_LOCATION_RELEASE "${CMAKE_CURRENT_LIST_DIR}/../lz4/lib/lz4.lib")
 add_library(AutoLib::flann ALIAS flann::flann)
 `)
-	writeIdentityFixture(t, root, "tests/autolib/smoke.cpp", `#include <windows.h>
+	writeCIFixture(t, root, "tests/autolib/smoke.cpp", `#include <windows.h>
 #include <iostream>
 #include <filesystem>
 extern "C" int lz4_value(void);
@@ -265,7 +269,7 @@ int main() {
 }
 `)
 	assets := []githubAsset{}
-	payloads := map[int64][]byte{}
+	var nextAssetID int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/repos/xxf1ow/xxautolib":
@@ -279,16 +283,12 @@ int main() {
 			if err != nil {
 				t.Error(err)
 			}
-			id := int64(len(payloads) + 1)
-			payloads[id] = data
-			asset := githubAsset{ID: id, Name: r.URL.Query().Get("name"), Label: r.URL.Query().Get("label"), State: "uploaded", Digest: "sha256:" + cacheTestDigest(data)}
+			nextAssetID++
+			id := nextAssetID
+			asset := githubAsset{ID: id, Name: r.URL.Query().Get("name"), Label: r.URL.Query().Get("label"), State: "uploaded", Digest: "sha256:" + testDigest(data)}
 			assets = append(assets, asset)
 			w.WriteHeader(201)
 			json.NewEncoder(w).Encode(asset)
-		case r.Method == "GET" && strings.Contains(r.URL.Path, "/releases/assets/"):
-			var id int64
-			fmt.Sscanf(filepath.Base(r.URL.Path), "%d", &id)
-			w.Write(payloads[id])
 		case r.Method == "DELETE":
 			var id int64
 			fmt.Sscanf(filepath.Base(r.URL.Path), "%d", &id)
@@ -307,12 +307,11 @@ int main() {
 	f.client = &githubClient{BaseURL: server.URL, UploadURL: server.URL, Token: "fixture", HTTP: server.Client()}
 	for _, attempt := range []string{"1", "2"} {
 		modules := "lz4"
-		f.plan.Force = attempt == "1"
 		if attempt == "2" {
 			modules = "flann"
 		}
 		platform := "windows-x86_64"
-		plan, err := planCI(context.Background(), ciPlanOptions{SourceRoot: root, BuilderFile: f.options.BuilderFile, Modules: &modules, Platforms: &platform, Force: f.plan.Force})
+		plan, err := planCI(context.Background(), ciPlanOptions{SourceRoot: root, BuilderFile: f.options.BuilderFile, Modules: &modules, Platforms: &platform})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -339,8 +338,8 @@ int main() {
 		if err := finalizeCI(plan, f.run, []ciPlatformResult{result}); err != nil {
 			t.Fatal(err)
 		}
-		if attempt == "2" && (!result.Packages[0].Reused || !result.Packages[1].Built) {
-			t.Fatalf("dependency cache not restored before consumer build: %+v", result)
+		if attempt == "2" && (!result.Packages[0].Built || !result.Packages[1].Built) {
+			t.Fatalf("selected dependency closure was not rebuilt: %+v", result)
 		}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -351,28 +350,28 @@ int main() {
 	}
 }
 
-func TestCIForceClosure(t *testing.T) {
-	f := newLayerFixture(t, []string{"lz4", "flann"}, true)
-	writeIdentityFixture(t, f.options.SourceRoot, "3rdparty/lz4/sentinel", "old installation")
+func TestCIRebuildClosure(t *testing.T) {
+	f := newLayerFixture(t, []string{"lz4", "flann"})
+	writeCIFixture(t, f.options.SourceRoot, "3rdparty/lz4/sentinel", "old installation")
 	for _, layer := range []string{"prepare", "layer0", "layer1", "verify"} {
 		if err := f.layer(t, layer); err != nil {
 			t.Fatal(err)
 		}
 	}
 	if f.reads != 3 {
-		t.Fatalf("force consulted package cache: release reads=%d want 3 uploads", f.reads)
+		t.Fatalf("build consulted package cache: release reads=%d want 3 uploads", f.reads)
 	}
 	commands := mustReadText(t, os.Getenv("AUTOLIB_CI_COMMAND_LOG"))
 	if !strings.Contains(commands, filepath.ToSlash(filepath.Join(f.options.WorkRoot, "install"))) && !strings.Contains(commands, strings.ReplaceAll(filepath.Join(f.options.WorkRoot, "install"), `\`, `\\`)) {
 		t.Fatalf("isolated install root not passed: %s", commands)
 	}
 	if got := mustReadText(t, filepath.Join(f.options.SourceRoot, "3rdparty/lz4/sentinel")); got != "old installation" {
-		t.Fatal("force modified existing installation")
+		t.Fatal("build modified existing installation")
 	}
 }
 
 func TestCIPartialFailure(t *testing.T) {
-	f := newLayerFixture(t, []string{"lz4", "flann"}, false)
+	f := newLayerFixture(t, []string{"lz4", "flann"})
 	if err := f.layer(t, "prepare"); err != nil {
 		t.Fatal(err)
 	}
@@ -393,7 +392,7 @@ func TestCIPartialFailure(t *testing.T) {
 }
 
 func TestCIPublisherFailure(t *testing.T) {
-	f := newLayerFixture(t, []string{"queue"}, false)
+	f := newLayerFixture(t, []string{"queue"})
 	f.plan.Publisher = "linux-x86_64"
 	data, _ := json.Marshal(f.plan)
 	if err := os.WriteFile(f.options.PlanFile, data, 0644); err != nil {

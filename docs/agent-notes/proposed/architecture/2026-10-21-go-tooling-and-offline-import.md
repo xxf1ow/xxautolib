@@ -14,7 +14,7 @@ Status: proposed
 
 以 Go 统一本仓库自有工具层，保留 CMake 构建与导入、TOML 模块声明和每库的包内导入脚本。Go 工具使用纯 Go 依赖，正式二进制禁用 cgo。用户使用发布好的对应宿主平台程序，不在导入时编译工具或准备语言环境。
 
-本设计覆盖生产端工具替换、打包、消费者入口、获取协议和工具发行，按阶段实现。生产端替换及本地二进制链路已实现，HTTPS 消费暂缓；CI 是独立系统，其范围与验收由[CI 系统设计](../../implemented/architecture/2026-10-20-ci-system.md)拥有，不纳入本文的阶段交付。当前接口由[架构](../../../architecture.md)和[开发指南](../../../development.md#本地打包与消费)说明；按名称消费、可搬迁适配、固定槽、生产缓存和远端发布的完整约束仍由[二进制交付设计](2026-10-20-name-only-artifact-delivery.md)拥有。本文补充其语言实现、引导过程和严格来源规则，不引入另一套发布坐标。
+本设计覆盖生产端工具替换、打包、消费者入口、获取协议和工具发行，按阶段实现。生产端替换及本地二进制链路已实现，HTTPS 消费暂缓；CI 是独立系统，其范围与验收由[CI 系统设计](../../implemented/architecture/2026-10-20-ci-system.md)拥有，不纳入本文的阶段交付。当前接口由[架构](../../../architecture.md)和[开发指南](../../../development.md#本地打包与消费)说明；按名称消费、可搬迁适配、固定槽和远端发布的完整约束仍由[二进制交付设计](2026-10-20-name-only-artifact-delivery.md)拥有。本文补充其语言实现、引导过程和严格来源规则，不引入另一套发布坐标。
 
 ### 职责划分
 
@@ -22,7 +22,7 @@ Status: proposed
 | --- | --- | --- |
 | 模块目录 | `module.toml`、补丁、专用构建文件、`autolib-import.cmake` | 通用下载器、环境管理器、共享生成逻辑 |
 | `autolib-builder` | 声明解析、校验、平台选择、生产依赖闭包、路径编码、原生 CMake 生成、暂存修正、打包及本地发行元数据生成 | 自行执行源码下载、补丁、编译、安装或跟踪构建 stamp；为下游准备二进制包；CI 编排、GitHub API 或远端发布 |
-| `autolib-ci` | 通过独立 CLI 调用生产与消费能力，执行 CI 计划、生产缓存、发布和汇总；完整职责由 [CI 系统设计](../../implemented/architecture/2026-10-20-ci-system.md#组件职责与数据流)拥有 | 混编 builder/importer 源码、复制声明解析与打包引擎、替代消费工具 |
+| `autolib-ci` | 通过独立 CLI 调用生产与消费能力，执行 CI 计划、构建编排、发布和汇总；完整职责由 [CI 系统设计](../../implemented/architecture/2026-10-20-ci-system.md#组件职责与数据流)拥有 | 混编 builder/importer 源码、复制声明解析与打包引擎、替代消费工具 |
 | CMake / ExternalProject | 生产端实际获取、补丁、配置、编译、安装和增量步骤 | Go 模块解析、二进制发行选择 |
 | `src/autolib.cmake` | 单文件 CMake 入口，识别宿主、按 JSON 清单获取并校验 importer、调用 importer，准备后加载全部包内 adapter | 解析完整模块定义、实现库包获取协议、依赖旁置 CMake helper 或安装语言环境 |
 | `autolib-importer` | manifest 校验、二进制包获取、校验和解包，返回准备好的包目录 | 生产端生成与打包、代替 CMake 执行 `include`、猜测上游导出 target、编译消费者或自动获取消费依赖闭包 |
@@ -159,9 +159,9 @@ importer 严格匹配 manifest 的名称、目标平台、唯一记录和摘要�
 
 adapter 只能在本包或显式 sibling 包中选择交付设计允许的精确导入机制。所有包就绪后才导入，不依赖调用者列出包名的顺序；需要依赖 target 时，adapter 显式加载已准备好的 sibling adapter，不下载它，也不从系统环境补齐。必须有 include guard，重复加载不创建冲突目标。调用者漏列依赖包时明确报错。
 
-固定槽、manifest 包记录的五字段、内部 build ID、缓存命中检查、发布先资产后 manifest、镜像顺序和默认分支限制继续由交付设计拥有。Go 替换对应自有工具时直接调用宿主命令或标准 HTTP 能力，不因语言变化引入 GitHub SDK、后台服务或新的远端状态数据库。GitHub/Gitee 地址、凭据和远端写操作不从参考仓库继承。
+统一 manifest 及其发布顺序属于前述历史协议；当前固定槽和默认分支发布由独立 CI 设计拥有，生产缓存和 build ID 已由[每轮重建决定](../../implemented/simplification/2026-10-24-ci-rebuild-without-production-cache.md)替代。Go 替换对应自有工具时直接调用宿主命令或标准 HTTP 能力，不因语言变化引入 GitHub SDK、后台服务或新的远端状态数据库。GitHub/Gitee 地址、凭据和远端写操作不从参考仓库继承。
 
-本地发行与消费不依赖远端 CI。后续先建立代表集 CI 和 Release 供给，再推进受控 HTTPS fixture 与真实发行根的消费验证；CI 通过 GitHub API 获取生产缓存不等于开放消费入口的网络能力。真实上传、触发远端 CI 或镜像写入均需明确授权，不能以发布目标的确认视为隐含远端授权。
+本地发行与消费不依赖远端 CI。后续先建立代表集 CI 和 Release 供给，再推进受控 HTTPS fixture 与真实发行根的消费验证；CI 的 GitHub 发布能力不等于开放消费入口的网络能力。真实上传、触发远端 CI 或镜像写入均需明确授权，不能以发布目标的确认视为隐含远端授权。
 
 ### 分阶段交付
 

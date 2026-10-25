@@ -13,10 +13,6 @@ on:
         type: string
         default: queue,lz4,flann
         required: true
-      force:
-        description: Rebuild the selected dependency closure
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -54,13 +50,12 @@ jobs:
         env:
           SELECTED_PLATFORMS: ${{ inputs.platforms }}
           SELECTED_MODULES: ${{ inputs.modules }}
-          FORCE: ${{ inputs.force }}
         run: |
           set -euo pipefail
           mkdir -p build/ci-input build/tools
           cmake -P src/autolib-builder/go-sdk.cmake -- build -mod=readonly -trimpath -o build/tools/autolib-builder ./src/autolib-builder
           cmake -P src/autolib-builder/go-sdk.cmake -- build -mod=readonly -trimpath -o build/tools/autolib-ci ./src/autolib-ci
-          build/tools/autolib-ci plan --source-root "$GITHUB_WORKSPACE" --builder-file "$GITHUB_WORKSPACE/build/tools/autolib-builder" --output build/ci-input/plan.json --platforms "$SELECTED_PLATFORMS" --modules "$SELECTED_MODULES" --force="$FORCE"
+          build/tools/autolib-ci plan --source-root "$GITHUB_WORKSPACE" --builder-file "$GITHUB_WORKSPACE/build/tools/autolib-builder" --output build/ci-input/plan.json --platforms "$SELECTED_PLATFORMS" --modules "$SELECTED_MODULES"
           jq -n --arg repository "$GITHUB_REPOSITORY" --arg ref "$GITHUB_REF" --arg sha "$GITHUB_SHA" --arg checkout "$(git rev-parse HEAD)" --arg run "$GITHUB_RUN_ID" --arg attempt "$GITHUB_RUN_ATTEMPT" '{repository:$repository,ref:$ref,sha:$sha,checkout_sha:$checkout,run_id:$run,attempt:$attempt}' > build/ci-input/run.json
           jq -cr '"windows=" + (any(.platforms[]; .id == "windows-x86_64")|tostring), "linux=" + (any(.platforms[]; .id|startswith("linux-"))|tostring), "linux_matrix=" + ({include:[.platforms[] | select(.id|startswith("linux-")) | {platform:.id,runner:({"linux-x86_64":"ubuntu-24.04","linux-aarch64":"ubuntu-24.04-arm"}[.id])}]}|tojson)' build/ci-input/plan.json >> "$GITHUB_OUTPUT"
           echo "linux_image=$(jq -er '.ubuntu.image' .github/ci-tools.json)" >> "$GITHUB_OUTPUT"

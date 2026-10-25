@@ -22,7 +22,7 @@ func planCI(ctx context.Context, o ciPlanOptions) (ciPlan, error) {
 	if err != nil {
 		return ciPlan{}, err
 	}
-	plan := ciPlan{Platforms: []ciPlatformPlan{}, RequestedModules: selected, Force: o.Force}
+	plan := ciPlan{Platforms: []ciPlatformPlan{}, RequestedModules: selected}
 	for _, platform := range platforms {
 		systemName, architecture, err := ciTarget(platform)
 		if err != nil {

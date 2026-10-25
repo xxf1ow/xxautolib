@@ -103,7 +103,7 @@ func TestRootConfigureDoesNotBuildCIOrWatchCISource(t *testing.T) {
 		t.Fatalf("root configure unexpectedly built autolib-ci: stat err=%v", err)
 	}
 
-	ciSource := filepath.Join(root, "src", "autolib-ci", "identity.go")
+	ciSource := filepath.Join(root, "src", "autolib-ci", "run.go")
 	info, err := os.Stat(ciSource)
 	if err != nil {
 		t.Fatal(err)

@@ -31,7 +31,7 @@ func TestCIValidationMode(t *testing.T) {
 	}
 	t.Cleanup(func() { os.RemoveAll(root) })
 	importer := filepath.Join(root, "importer"+executableSuffix())
-	if err := copyCacheFile(buildCacheTestImporter(t), importer); err != nil {
+	if err := copyCIFile(buildTestImporter(t), importer); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Chmod(importer, 0755); err != nil {
@@ -45,7 +45,7 @@ func TestCIValidationMode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	osName, arch := cacheTestPlatform()
+	osName, arch := testPlatform()
 	production := ciProductionContext{OS: osName, Arch: arch, Configuration: "Release", CMakeDefaults: environment.Production.Common.CMakeDefaults}
 	if osName == "windows" {
 		w := environment.Production.Windows
@@ -53,7 +53,7 @@ func TestCIValidationMode(t *testing.T) {
 	} else {
 		production.Generator = environment.Production.Linux.Generator
 	}
-	archive := cacheTestPackageArchiveWithAdapterExtra(t, "queue", "any", "any", []cacheArchiveMember{{Name: "queue/include/queue/readerwriterqueue.h", Body: "#pragma once\nnamespace moodycamel { template<class T> class ReaderWriterQueue { T value{}; public: bool enqueue(T v) { value=v; return true; } bool try_dequeue(T& v) { v=value; return true; } }; }\n"}}, "add_library(AutoLib::queue INTERFACE IMPORTED GLOBAL)\nset_target_properties(AutoLib::queue PROPERTIES INTERFACE_INCLUDE_DIRECTORIES \"${CMAKE_CURRENT_LIST_DIR}/include\")\n")
+	archive := testPackageArchive(t, "queue", "any", "any", []testArchiveMember{{Name: "queue/include/queue/readerwriterqueue.h", Body: "#pragma once\nnamespace moodycamel { template<class T> class ReaderWriterQueue { T value{}; public: bool enqueue(T v) { value=v; return true; } bool try_dequeue(T& v) { v=value; return true; } }; }\n"}}, "add_library(AutoLib::queue INTERFACE IMPORTED GLOBAL)\nset_target_properties(AutoLib::queue PROPERTIES INTERFACE_INCLUDE_DIRECTORIES \"${CMAKE_CURRENT_LIST_DIR}/include\")\n")
 	for _, mode := range []string{"single", "relocate"} {
 		t.Run(mode, func(t *testing.T) {
 			work := filepath.Join(root, mode)
@@ -65,7 +65,7 @@ func TestCIValidationMode(t *testing.T) {
 				t.Fatal(err)
 			}
 			tool := filepath.Join(release, "autolib-importer-"+osName+"-"+arch+executableSuffix())
-			if err := copyCacheFile(importer, tool); err != nil {
+			if err := copyCIFile(importer, tool); err != nil {
 				t.Fatal(err)
 			}
 			if err := os.Chmod(tool, 0755); err != nil {
@@ -142,9 +142,9 @@ func TestCILinuxABIRecordsRealSymbolRequirements(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	writeIdentityFixture(t, root, "first/prepared-root.txt", packages+"\n")
-	writeIdentityFixture(t, root, "consumer.cpp", "#include <cstdio>\nint main() { return std::puts(\"ABI fixture\") < 0; }\n")
-	writeIdentityFixture(t, root, "library.cpp", "#include <cstdio>\n#include <string>\nextern \"C\" int abi_fixture() { std::string text(128, 'x'); return std::puts(text.c_str()); }\n")
+	writeCIFixture(t, root, "first/prepared-root.txt", packages+"\n")
+	writeCIFixture(t, root, "consumer.cpp", "#include <cstdio>\nint main() { return std::puts(\"ABI fixture\") < 0; }\n")
+	writeCIFixture(t, root, "library.cpp", "#include <cstdio>\n#include <string>\nextern \"C\" int abi_fixture() { std::string text(128, 'x'); return std::puts(text.c_str()); }\n")
 	for _, args := range [][]string{
 		{filepath.Join(root, "consumer.cpp"), "-o", filepath.Join(first, "autolib_smoke")},
 		{"-fPIC", "-shared", filepath.Join(root, "library.cpp"), "-o", filepath.Join(libraryRoot, "libflann.so")},
@@ -325,7 +325,7 @@ func testQueueArchive(t *testing.T, osName, arch string) []byte {
 	}
 	archive := tar.NewWriter(encoder)
 	files := map[string]string{
-		"queue/autolib-import.cmake":              cacheTestIdentityHeader("queue", osName, arch),
+		"queue/autolib-import.cmake":              testIdentityHeader("queue", osName, arch),
 		"queue/include/queue/readerwriterqueue.h": "// fixture header\n",
 	}
 	for name, body := range files {

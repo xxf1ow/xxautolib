@@ -34,7 +34,6 @@ func run(args []string, stdout, stderr io.Writer) int {
 	flags.StringVar(&output, "output", "", "plan JSON output file")
 	platforms := flags.String("platforms", "", "comma-separated target platforms")
 	modules := flags.String("modules", "", "comma-separated module selection")
-	flags.BoolVar(&options.Force, "force", false, "force rebuild of selected dependency closure")
 	if err := flags.Parse(args[1:]); err != nil {
 		return 1
 	}

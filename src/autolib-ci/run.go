@@ -82,10 +82,6 @@ func runCILayerWithClient(ctx context.Context, o ciRunOptions, client *githubCli
 	if err := validateCIProductionIdentity(production, environment); err != nil {
 		return err
 	}
-	identities, err := computeBuildIdentities(ciBuildInputs{SourceRoot: source, BaselineFile: ".github/ci-tools.json", Context: production}, platform.Description)
-	if err != nil {
-		return err
-	}
 	resultFile := filepath.Join(work, "results", o.Platform+".json")
 	result := ciPlatformResult{Run: run, Platform: o.Platform, Packages: []ciSlotResult{}}
 	if o.Layer != "prepare" {
@@ -96,8 +92,8 @@ func runCILayerWithClient(ctx context.Context, o ciRunOptions, client *githubCli
 			return errors.New("platform result does not describe current prepared work")
 		}
 		for _, item := range result.Packages {
-			if identities[item.Slot.Name].BuildID != item.BuildID || !item.Verified || plan.Force && item.Reused {
-				return errors.New("package result does not match current plan inputs")
+			if !item.Built || !item.Verified {
+				return errors.New("package result does not describe a current verified build")
 			}
 		}
 	} else if _, err := os.Lstat(resultFile); !os.IsNotExist(err) {
@@ -147,7 +143,7 @@ func runCILayerWithClient(ctx context.Context, o ciRunOptions, client *githubCli
 			fmt.Printf("Make FIFO budget=%d peak=%d overlap=%t\n", evidence.Budget, evidence.Peak, evidence.Overlap)
 		}
 		tool := filepath.Join(releaseRoot, ciImporterAsset(o.Platform))
-		if err := copyCacheFile(o.ImporterFile, tool); err != nil {
+		if err := copyCIFile(o.ImporterFile, tool); err != nil {
 			return err
 		}
 		if err := os.Chmod(tool, 0755); err != nil {
@@ -218,53 +214,33 @@ func runCILayerWithClient(ctx context.Context, o ciRunOptions, client *githubCli
 			return fmt.Errorf("layer contains unselected module %s", name)
 		}
 		slot := ciModuleSlot(module, o.Platform)
-		item := ciSlotResult{Slot: slot, Asset: ciPackageAssetName(slot), BuildID: identities[name].BuildID, Commit: run.SHA}
-		var dependencies []ciReadyArchive
+		item := ciSlotResult{Slot: slot, Asset: ciPackageAssetName(slot)}
 		consumerModules := []string{}
 		for _, dependency := range module.Depends {
 			ready := findResult(dependency)
 			if ready == nil || !ready.Verified {
 				return fmt.Errorf("dependency %s is not verified", dependency)
 			}
-			dependencies = append(dependencies, ciReadyArchive{Name: dependency, File: filepath.Join(releaseRoot, ready.Asset)})
 			consumerModules = append(consumerModules, dependency)
 		}
 		consumerModules = append(consumerModules, name)
-		if !plan.Force {
-			cached, err := lookupCICache(ctx, client, ciCacheOptions{SourceRoot: source, WorkRoot: filepath.Join(work, "cache"), InstallRoot: install, ReleaseRoot: releaseRoot, ImporterFile: o.ImporterFile, CMakeCommand: o.CMakeCommand, BuildID: item.BuildID, TargetOS: production.OS, TargetArch: production.Arch, Slot: slot, DependencyArchives: dependencies})
-			if err != nil {
-				return err
-			}
-			if cached.Hit {
-				item.Reused = true
-				var label ciAssetLabel
-				if err := decodeStrictJSON(strings.NewReader(cached.Asset.Label), &label); err != nil {
-					return err
-				}
-				item.Commit = label.Commit
-			} else {
-				fmt.Printf("%s: cache miss: %s\n", name, cached.Reason)
-			}
-		}
 		archive := filepath.Join(releaseRoot, item.Asset)
-		if !item.Reused {
-			if err := buildCIModule(ctx, o, production, name, install); err != nil {
-				return err
-			}
-			packageRoot, err := os.MkdirTemp(work, "package-"+name+"-")
-			if err != nil {
-				return err
-			}
-			args := []string{"package", "--source-root", source, "--install-root", install, "--output-root", packageRoot, "--os", production.OS, "--arch", production.Arch, "--host-os", production.OS, "--host-arch", production.Arch, "--importer-file", o.ImporterFile, "--cmake-command", o.CMakeCommand}
-			args = append(args, "--module", name)
-			if err := ciCommand(ctx, o.BuilderFile, args, source, nil, filepath.Join(work, "logs", "package-"+name+".log")); err != nil {
-				return err
-			}
-			if err := copyCacheFile(filepath.Join(packageRoot, item.Asset), archive); err != nil {
-				return err
-			}
-			item.Built = true
+		if err := buildCIModule(ctx, o, production, name, install); err != nil {
+			return err
 		}
+		packageRoot, err := os.MkdirTemp(work, "package-"+name+"-")
+		if err != nil {
+			return err
+		}
+		args := []string{"package", "--source-root", source, "--install-root", install, "--output-root", packageRoot, "--os", production.OS, "--arch", production.Arch, "--host-os", production.OS, "--host-arch", production.Arch, "--importer-file", o.ImporterFile, "--cmake-command", o.CMakeCommand}
+		args = append(args, "--module", name)
+		if err := ciCommand(ctx, o.BuilderFile, args, source, nil, filepath.Join(work, "logs", "package-"+name+".log")); err != nil {
+			return err
+		}
+		if err := copyCIFile(filepath.Join(packageRoot, item.Asset), archive); err != nil {
+			return err
+		}
+		item.Built = true
 		digest, err := ciFileSHA256(archive)
 		if err != nil {
 			return err
@@ -278,13 +254,12 @@ func runCILayerWithClient(ctx context.Context, o ciRunOptions, client *githubCli
 		if err := writeCIJSON(resultFile, result); err != nil {
 			return err
 		}
-		if item.Built && (!module.PlatformIndependent || plan.Publisher == o.Platform) {
+		if !module.PlatformIndependent || plan.Publisher == o.Platform {
 			release, err := existingCIRelease(ctx, client)
 			if err != nil {
 				return err
 			}
-			label, _ := json.Marshal(ciAssetLabel{BuildID: item.BuildID, Commit: run.SHA})
-			if _, err := uploadCIAsset(ctx, client, auth, release, ciUploadOptions{File: archive, Name: item.Asset, Label: string(label), SHA256: digest}); err != nil {
+			if _, err := uploadCIAsset(ctx, client, auth, release, ciUploadOptions{File: archive, Name: item.Asset, SHA256: digest}); err != nil {
 				return err
 			}
 			result.Packages[len(result.Packages)-1].Uploaded = true

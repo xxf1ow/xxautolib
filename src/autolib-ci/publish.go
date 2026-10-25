@@ -31,10 +31,10 @@ type ciWriteAuthorization struct {
 	sha    string
 }
 
-type ciUploadOptions struct{ File, Name, Label, SHA256 string }
+type ciUploadOptions struct{ File, Name, SHA256 string }
 
 func authorizeCIWrite(ctx context.Context, client *githubClient, sourceRoot string, run ciRunIdentity) (*ciWriteAuthorization, error) {
-	if client == nil || run.Repository != ciGitHubRepository || !cacheCommitPattern.MatchString(run.SHA) || run.CheckoutSHA != run.SHA {
+	if client == nil || run.Repository != ciGitHubRepository || !commitPattern.MatchString(run.SHA) || run.CheckoutSHA != run.SHA {
 		return nil, errors.New("Release write requires the target repository and matching event/checkout SHA")
 	}
 	command := exec.CommandContext(ctx, "git", "-C", sourceRoot, "rev-parse", "HEAD")
@@ -66,7 +66,7 @@ func authorizeCIWrite(ctx context.Context, client *githubClient, sourceRoot stri
 }
 
 func requireCIWrite(client *githubClient, auth *ciWriteAuthorization) error {
-	if client == nil || auth == nil || auth.client != client || !cacheCommitPattern.MatchString(auth.sha) || client.Token == "" {
+	if client == nil || auth == nil || auth.client != client || !commitPattern.MatchString(auth.sha) || client.Token == "" {
 		return errors.New("Release write authorization is required")
 	}
 	return nil
@@ -134,7 +134,7 @@ func initCIRelease(ctx context.Context, client *githubClient, auth *ciWriteAutho
 		if !errors.As(err, &status) || status.Status != http.StatusNotFound {
 			return githubRelease{}, err
 		}
-	} else if tag.Ref != "refs/tags/"+ciGitHubReleaseTag || !cacheCommitPattern.MatchString(tag.Object.SHA) {
+	} else if tag.Ref != "refs/tags/"+ciGitHubReleaseTag || !commitPattern.MatchString(tag.Object.SHA) {
 		return githubRelease{}, errors.New("fixed Release tag metadata is invalid")
 	}
 	// Creating a Release binds a missing tag; GitHub leaves an existing tag unchanged.
@@ -152,14 +152,14 @@ func initCIRelease(ctx context.Context, client *githubClient, auth *ciWriteAutho
 	return release, nil
 }
 
-func ciPublishAssetKind(name string) (isPackage, valid bool) {
+func validCIPublishAsset(name string) bool {
 	if name == "queue-any-any.tar.zst" {
-		return true, true
+		return true
 	}
 	for _, platform := range ciPlatforms {
 		for _, module := range []string{"lz4", "flann"} {
 			if name == module+"-"+platform+".tar.zst" {
-				return true, true
+				return true
 			}
 		}
 		suffix := ""
@@ -167,30 +167,21 @@ func ciPublishAssetKind(name string) (isPackage, valid bool) {
 			suffix = ".exe"
 		}
 		if name == "autolib-importer-"+platform+suffix {
-			return false, true
+			return true
 		}
 	}
-	return false, false
+	return false
 }
 
 func uploadCIAsset(ctx context.Context, client *githubClient, auth *ciWriteAuthorization, release githubRelease, o ciUploadOptions) (githubAsset, error) {
 	if err := requireCIWrite(client, auth); err != nil {
 		return githubAsset{}, err
 	}
-	isPackage, valid := ciPublishAssetKind(o.Name)
-	if !valid || filepath.Base(o.File) != o.Name || !cacheDigestPattern.MatchString(o.SHA256) {
+	if !validCIPublishAsset(o.Name) || filepath.Base(o.File) != o.Name || !sha256Pattern.MatchString(o.SHA256) {
 		return githubAsset{}, errors.New("upload requires a fixed asset name and local SHA256")
 	}
 	if release.ID <= 0 || release.TagName != ciGitHubReleaseTag || !sameOrigin(client.BaseURL, release.AssetsURL) {
 		return githubAsset{}, errors.New("upload requires the fixed Release")
-	}
-	if isPackage {
-		var label ciAssetLabel
-		if err := decodeStrictJSON(strings.NewReader(o.Label), &label); err != nil || strings.TrimSpace(label.BuildID) == "" || label.Commit != auth.sha {
-			return githubAsset{}, errors.New("package upload requires build ID and authorized commit label")
-		}
-	} else if o.Label != "" {
-		return githubAsset{}, errors.New("importer upload must not carry package production metadata")
 	}
 	file, err := os.Open(o.File)
 	if err != nil {
@@ -243,16 +234,12 @@ func uploadCIAsset(ctx context.Context, client *githubClient, auth *ciWriteAutho
 	if err != nil {
 		return githubAsset{}, err
 	}
-	query := url.Values{"name": {o.Name}}
-	if o.Label != "" {
-		query.Set("label", o.Label)
-	}
-	address.RawQuery = query.Encode()
+	address.RawQuery = url.Values{"name": {o.Name}}.Encode()
 	var asset githubAsset
 	if err := client.write(ctx, auth, http.MethodPost, address.String(), "application/octet-stream", file, info.Size(), &asset); err != nil {
 		return githubAsset{}, err
 	}
-	if asset.ID <= 0 || asset.Name != o.Name || asset.State != "uploaded" || asset.Label != o.Label || !digestMatches(asset.Digest, digest) {
+	if asset.ID <= 0 || asset.Name != o.Name || asset.State != "uploaded" || asset.Label != "" || !digestMatches(asset.Digest, digest) {
 		return githubAsset{}, errors.New("uploaded asset facts differ from verified input")
 	}
 	return asset, nil

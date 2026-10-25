@@ -18,7 +18,7 @@ func finalizeFixture() (ciPlan, ciRunIdentity, []ciPlatformResult) {
 		if strings.HasPrefix(platform.ID, "windows-") {
 			tool += ".exe"
 		}
-		results = append(results, ciPlatformResult{Run: run, Platform: platform.ID, Complete: true, Importer: ciImporterResult{Asset: tool, SHA256: strings.Repeat("b", 64), Verified: true, Uploaded: true}, Packages: []ciSlotResult{{Slot: ciSlot{Name: "queue", OS: "any", Arch: "any"}, Asset: "queue-any-any.tar.zst", SHA256: strings.Repeat("c", 64), BuildID: "build-1", Commit: run.SHA, Built: true, Verified: true, Uploaded: platform.ID == plan.Publisher}}})
+		results = append(results, ciPlatformResult{Run: run, Platform: platform.ID, Complete: true, Importer: ciImporterResult{Asset: tool, SHA256: strings.Repeat("b", 64), Verified: true, Uploaded: true}, Packages: []ciSlotResult{{Slot: ciSlot{Name: "queue", OS: "any", Arch: "any"}, Asset: "queue-any-any.tar.zst", SHA256: strings.Repeat("c", 64), Built: true, Verified: true, Uploaded: platform.ID == plan.Publisher}}})
 	}
 	return plan, run, results
 }
@@ -39,9 +39,8 @@ func TestCIFinalize(t *testing.T) {
 		t.Fatal("publisher build without upload accepted")
 	}
 	results[0].Packages[0].Built = false
-	results[0].Packages[0].Reused = true
-	if err := finalizeCI(plan, run, results); err != nil {
-		t.Fatalf("verified cache reuse rejected: %v", err)
+	if err := finalizeCI(plan, run, results); err == nil {
+		t.Fatal("package without current build accepted")
 	}
 }
 

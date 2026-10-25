@@ -46,7 +46,7 @@ func finalizeCI(plan ciPlan, run ciRunIdentity, results []ciPlatformResult) erro
 		if platform == nil {
 			return fmt.Errorf("unexpected platform result %s", result.Platform)
 		}
-		if !result.Importer.Verified || !result.Importer.Uploaded || result.Importer.Asset != ciImporterAsset(result.Platform) || !cacheDigestPattern.MatchString(result.Importer.SHA256) {
+		if !result.Importer.Verified || !result.Importer.Uploaded || result.Importer.Asset != ciImporterAsset(result.Platform) || !sha256Pattern.MatchString(result.Importer.SHA256) {
 			return fmt.Errorf("platform %s importer is not verified and published", result.Platform)
 		}
 		if len(result.Packages) != len(platform.Description.Modules) {
@@ -64,11 +64,11 @@ func finalizeCI(plan ciPlan, run ciRunIdentity, results []ciPlatformResult) erro
 					module = &platform.Description.Modules[i]
 				}
 			}
-			if module == nil || item.Slot != ciModuleSlot(*module, result.Platform) || item.Asset != ciPackageAssetName(item.Slot) || !item.Verified || item.Built == item.Reused || item.BuildID == "" || !cacheCommitPattern.MatchString(item.Commit) || !cacheDigestPattern.MatchString(item.SHA256) {
+			if module == nil || item.Slot != ciModuleSlot(*module, result.Platform) || item.Asset != ciPackageAssetName(item.Slot) || !item.Verified || !item.Built || !sha256Pattern.MatchString(item.SHA256) {
 				return fmt.Errorf("invalid package result %s on %s", item.Slot.Name, result.Platform)
 			}
 			publisher := !module.PlatformIndependent || result.Platform == plan.Publisher
-			if item.Built && item.Commit != run.SHA || plan.Force && item.Reused || item.Built && publisher && !item.Uploaded || !publisher && item.Uploaded {
+			if publisher && !item.Uploaded || !publisher && item.Uploaded {
 				return fmt.Errorf("package %s has incomplete or unauthorized publication", item.Slot.Name)
 			}
 		}
@@ -110,7 +110,7 @@ func runCIFinalize(args []string, stdout, stderr io.Writer) int {
 		results = append(results, result)
 		fmt.Fprintf(stdout, "%s: complete=%t packages=%d error=%s\n", result.Platform, result.Complete, len(result.Packages), result.Error)
 		for _, item := range result.Packages {
-			fmt.Fprintf(stdout, "  %s: reused=%t built=%t verified=%t uploaded=%t\n", item.Asset, item.Reused, item.Built, item.Verified, item.Uploaded)
+			fmt.Fprintf(stdout, "  %s: built=%t verified=%t uploaded=%t\n", item.Asset, item.Built, item.Verified, item.Uploaded)
 		}
 	}
 	if err := finalizeCI(plan, identity, results); err != nil {

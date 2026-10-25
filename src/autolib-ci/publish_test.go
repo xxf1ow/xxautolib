@@ -87,7 +87,7 @@ func TestCIPublishAuthorization(t *testing.T) {
 
 func TestCIReplaceAsset(t *testing.T) {
 	root, identity := publishTestIdentity(t)
-	for _, scenario := range []string{"replace", "upload-fails", "wrong-digest", "response-interrupted", "bad-local-digest", "invalid-label", "duplicate"} {
+	for _, scenario := range []string{"replace", "upload-fails", "wrong-digest", "response-interrupted", "bad-local-digest", "unexpected-label", "duplicate"} {
 		t.Run(scenario, func(t *testing.T) {
 			data := []byte("verified archive bytes")
 			name := "queue-any-any.tar.zst"
@@ -95,8 +95,7 @@ func TestCIReplaceAsset(t *testing.T) {
 			if err := os.WriteFile(file, data, 0644); err != nil {
 				t.Fatal(err)
 			}
-			label, _ := json.Marshal(ciAssetLabel{BuildID: "build-1", Commit: identity.SHA})
-			old := githubAsset{ID: 7, Name: name, State: "uploaded", Label: string(label), Digest: "sha256:" + cacheTestDigest([]byte("old"))}
+			old := githubAsset{ID: 7, Name: name, State: "uploaded", Label: "old display label", Digest: "sha256:" + testDigest([]byte("old"))}
 			other := githubAsset{ID: 8, Name: "lz4-linux-aarch64.tar.zst", State: "uploaded", Label: "untouched", Digest: "sha256:" + strings.Repeat("a", 64)}
 			assets := []githubAsset{old, other}
 			if scenario == "duplicate" {
@@ -117,14 +116,14 @@ func TestCIReplaceAsset(t *testing.T) {
 					w.WriteHeader(204)
 				case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/releases/42/assets"):
 					body, _ := io.ReadAll(r.Body)
-					if !bytes.Equal(body, data) || r.URL.Query().Get("name") != name || r.URL.Query().Get("label") != string(label) {
+					if !bytes.Equal(body, data) || r.URL.Query().Get("name") != name || r.URL.Query().Has("label") {
 						t.Errorf("upload changed payload/name/label: %s", r.URL)
 					}
 					if scenario == "upload-fails" {
 						http.Error(w, "secret", 500)
 						return
 					}
-					asset := githubAsset{ID: 9, Name: name, State: "uploaded", Label: string(label), Digest: "sha256:" + cacheTestDigest(data)}
+					asset := githubAsset{ID: 9, Name: name, State: "uploaded", Digest: "sha256:" + testDigest(data)}
 					assets = append(assets, asset)
 					if scenario == "response-interrupted" {
 						w.WriteHeader(201)
@@ -133,6 +132,9 @@ func TestCIReplaceAsset(t *testing.T) {
 					}
 					if scenario == "wrong-digest" {
 						asset.Digest = "sha256:" + strings.Repeat("b", 64)
+					}
+					if scenario == "unexpected-label" {
+						asset.Label = "unexpected display label"
 					}
 					w.WriteHeader(201)
 					json.NewEncoder(w).Encode(asset)
@@ -146,12 +148,9 @@ func TestCIReplaceAsset(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			o := ciUploadOptions{File: file, Name: name, Label: string(label), SHA256: cacheTestDigest(data)}
+			o := ciUploadOptions{File: file, Name: name, SHA256: testDigest(data)}
 			if scenario == "bad-local-digest" {
 				o.SHA256 = strings.Repeat("0", 64)
-			}
-			if scenario == "invalid-label" {
-				o.Label = `{}`
 			}
 			release := githubRelease{ID: 42, TagName: "autolib-release", AssetsURL: server.URL + "/repos/xxf1ow/xxautolib/releases/42/assets"}
 			got, err := uploadCIAsset(context.Background(), client, auth, release, o)
@@ -162,7 +161,7 @@ func TestCIReplaceAsset(t *testing.T) {
 			} else if err == nil || strings.Contains(err.Error(), "secret") {
 				t.Fatalf("expected safe failure: %v", err)
 			}
-			if scenario == "bad-local-digest" || scenario == "invalid-label" || scenario == "duplicate" {
+			if scenario == "bad-local-digest" || scenario == "duplicate" {
 				if len(writes) != 0 {
 					t.Fatalf("invalid input wrote: %v", writes)
 				}
@@ -177,16 +176,6 @@ func TestCIReplaceAsset(t *testing.T) {
 			}
 			if !otherUnchanged {
 				t.Fatalf("unselected asset changed: %+v", assets)
-			}
-			if scenario == "response-interrupted" {
-				current, err := client.releaseAssets(context.Background(), release)
-				if err != nil {
-					t.Fatal(err)
-				}
-				asset, reason, err := selectCICacheAsset(current, ciSlot{Name: "queue", OS: "any", Arch: "any"}, "build-1")
-				if err != nil || reason != "" || asset.ID != 9 {
-					t.Fatalf("explicit rerun cannot use completed asset: %+v %s %v", asset, reason, err)
-				}
 			}
 		})
 	}

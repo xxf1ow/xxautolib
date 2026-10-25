@@ -5,13 +5,12 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
 )
 
 func TestGitHubProtocol(t *testing.T) {
-	digestText := cacheTestDigest([]byte("archive bytes"))
+	digestText := testDigest([]byte("archive bytes"))
 	var requests []string
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -30,8 +29,6 @@ func TestGitHubProtocol(t *testing.T) {
 			} else {
 				fmt.Fprint(w, `[{"id":2,"name":"flann-linux-x86_64.tar.zst","state":"uploaded","digest":"sha256:`+digestText+`"},{"id":3,"name":"queue-any-any.tar.zst","state":"uploaded","digest":"sha256:`+digestText+`"}]`)
 			}
-		case "/repos/xxf1ow/xxautolib/releases/assets/3":
-			fmt.Fprint(w, "archive bytes")
 		default:
 			http.NotFound(w, r)
 		}
@@ -55,15 +52,12 @@ func TestGitHubProtocol(t *testing.T) {
 	if assets[0].State != "uploaded" || assets[0].Label != "producer" {
 		t.Fatalf("lost asset facts: %+v", assets[0])
 	}
-	if digest, err := client.downloadAsset(context.Background(), assets[2], filepath.Join(t.TempDir(), "asset")); err != nil || digest != digestText {
-		t.Fatalf("download by ID failed: %q %v", digest, err)
-	}
 	if len(requests) < 3 || !strings.Contains(strings.Join(requests, "\n"), "page=2") {
 		t.Fatalf("release assets were not fully paginated: %v", requests)
 	}
 	for _, request := range requests {
 		if strings.Contains(request, "upload") {
-			t.Fatalf("read-only cache lookup called an upload endpoint: %s", request)
+			t.Fatalf("asset enumeration called an upload endpoint: %s", request)
 		}
 	}
 
@@ -85,13 +79,13 @@ func TestGitHubProtocol(t *testing.T) {
 	defer missing.Close()
 	_, found, err = (&githubClient{BaseURL: missing.URL, HTTP: missing.Client()}).release(context.Background())
 	if err != nil || found {
-		t.Fatalf("missing tagged release must be a miss, found=%v err=%v", found, err)
+		t.Fatalf("missing tagged release must be reported absent, found=%v err=%v", found, err)
 	}
 	t.Run("malformed response", func(t *testing.T) {
 		broken := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, `{broken`) }))
 		defer broken.Close()
 		if _, _, err := (&githubClient{BaseURL: broken.URL, HTTP: broken.Client()}).release(context.Background()); err == nil {
-			t.Fatal("malformed API response became an empty cache")
+			t.Fatal("malformed API response became an absent release")
 		}
 	})
 
