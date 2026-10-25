@@ -273,4 +273,4 @@ TOML 提高常见模块的可读性，但复杂库仍可能需要专用 CMakeLis
 
 短目录布局只能降低 Windows 路径长度风险，不能替代所有工具的长路径支持。对冲突补丁采取失败并人工重新准备源码的处理，放弃自动升级已修改源码的能力，以避免扩大数据修改范围和维护恢复状态。
 
-后续能力按[路线图](../../../roadmap.md)分批设计和接入。[模块扩展决定](../../proposed/architecture/2026-10-20-module-expansion.md)、[二进制交付决定](../../proposed/architecture/2026-10-20-name-only-artifact-delivery.md)和[CI 系统设计](../../proposed/architecture/2026-10-20-ci-system.md)不扩大本批已经验收的范围。
+后续能力按[路线图](../../../roadmap.md)分批设计和接入。[模块扩展决定](../../proposed/architecture/2026-10-20-module-expansion.md)、[二进制交付决定](../../proposed/architecture/2026-10-20-name-only-artifact-delivery.md)和[CI 系统设计](2026-10-20-ci-system.md)不扩大本批已经验收的范围。

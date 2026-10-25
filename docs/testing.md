@@ -15,7 +15,7 @@ cmake -P src/autolib-builder/go-sdk.cmake -- vet ./src/autolib-builder ./src/aut
 
 测试源码与各工具同目录。CMake 包装入口自动准备私有 SDK 和缓存；fixture 不下载真实依赖。builder 在 `build/tests/` 创建含空格和中文的隔离副本，importer 使用 Go 临时目录，结束时仅清理自身目录。SDK 获取、失败及离线复用、根入口与环境隔离由 [builder 测试](../src/autolib-builder/fixture_test.go)覆盖。定向验证用 `-run TestDefinition`；依赖接线用 `-run TestDirectDependencies`，资源补丁用 `-run TestPatch`，真实模块声明用 `-run TestRealModuleDeclarations`。修改公共入口或跨文件接线时运行全集；同批定向验证后在批末运行一次全集。
 
-仅修改文档时使用 doc-standards、agent-notes 技能校验链接、归属和 `scripts/doc-budgets.manifest.json` 预算；校验器不是构建依赖。仓库没有自动 Git hook 或覆盖率门槛；CI 的接线与实机验收由独立的 [CI 系统设计](agent-notes/proposed/architecture/2026-10-20-ci-system.md)拥有。
+仅修改文档时使用 doc-standards、agent-notes 技能校验链接、归属和 `scripts/doc-budgets.manifest.json` 预算；校验器不是构建依赖。仓库没有自动 Git hook 或覆盖率门槛；CI 的接线与实机验收由独立的 [CI 系统设计](agent-notes/implemented/architecture/2026-10-20-ci-system.md)拥有。
 
 ## 本地二进制闭环
 
@@ -29,15 +29,15 @@ Linux aarch64 将绝对根和程序名替换为本机值，使用 `-DTARGET_OS=l
 
 本地阶段验证使用builder的 `-run 'Test(PackageDependencyHeader|PackageArchiveChecksum|StagePackage|StageFixup|PackageArchive|LocalPackageAssets|PackageCLI|UniversalIdentity|UniversalPackageAcrossTargets|DescribeParity|DescribeInputs|DescribeCLI)$'`、importer全集和三工具vet；经上述SDK包装执行，test加`-count=1 -v`。全部受影响阶段完成后做全量回归。
 
-MODULES表示生产和链接集合，ROOT_PACKAGES默认等于MODULES，只控制首次请求。根包结果必须为 `lz4;flann;queue`；RELEASE_READY=ON核对固定工具和归档，无需manifest。Windows x64/v143已复验，两次CTest各1/1；Linux aarch64既有证据不代替新协议复验。
+MODULES表示生产和链接集合，ROOT_PACKAGES默认等于MODULES，只控制首次请求。根包结果必须为 `lz4;flann;queue`；RELEASE_READY=ON核对固定工具和归档，无需manifest。三平台闭环结果见[CI验证](#ci-验证)。
 
-importer覆盖四行头、优先级、共享依赖、环、通用包、安全解包及CRC失败清理。真实CMake检查同次configure输入固定、当前结果完整才加载及同名目标拒绝。本地根和工作根拒绝分号，UNC仅词法覆盖；受控PATH阻断语言运行时和下载器，首次完整/缺包路径HTTP与代理请求为零。不含HTTPS、Linux x86_64工具执行或三宿主发行证据。
+importer覆盖四行头、优先级、共享依赖、环、通用包、安全解包及CRC失败清理。真实CMake检查同次configure输入固定、当前结果完整才加载及同名目标拒绝。本地根和工作根拒绝分号，UNC仅词法覆盖；受控PATH阻断语言运行时和下载器，首次完整/缺包路径HTTP与代理请求为零。这些本地回归不代替三宿主发行验证，HTTPS 未启用。
 
 ## CI 验证
 
-CI 测试使用本地资产服务验证缓存恢复、同名替换、逐层结果和失败汇总，并真实编译、消费 Windows 小型依赖。接线定向项为 `-run TestCIWorkflowContract`，执行分支检查和 Make 准备片段，不模拟完整 Actions；Windows 跳过 Linux FIFO 探针，不证明 Linux 并行。
+CI 本地资产服务测试覆盖缓存恢复、同名替换、分层及失败汇总，并真实编译消费 Windows 小型依赖。`-run TestCIWorkflowContract` 执行分支检查及 Make 准备片段，不模拟完整 Actions；Windows 跳过 Linux FIFO 探针，不证明 Linux 并行。
 
-真实触发、token 写权限、三平台供给及 Linux 新协议尚待另获授权验收；首次真实编译即核验 `-j`、FIFO 预算和重叠，缓存命中不能替代。实机门槛见 [CI 系统设计](agent-notes/proposed/architecture/2026-10-20-ci-system.md#验收标准)；HTTPS 未启用。
+queue、lz4、flann 的三平台供给、逐槽消费、双搬迁、全缓存复用及凭据写入已通过；ABI、-j/FIFO 和运行证据见[CI验证记录](agent-notes/implemented/architecture/2026-10-20-ci-system.md#真实运行)。缓存命中不代替编译证据，HTTPS未启用。
 
 ## 安装产物集成验证
 
@@ -63,4 +63,4 @@ lz4 从根入口真实构建安装，检查公开头文件、Windows `lib/lz4.li
 
 FLANN、HarfBuzz、OpenCV 在 Windows x64/v143、Linux aarch64 完成真实构建；Go 入口另以全新状态、禁止 Python 探测验证 FreeType→HarfBuzz→OpenCV，两端 OpenCV smoke 各 1/1。显式依赖的 cache、pkg-config 与链接输入、FFmpeg/KleidiCV 状态及系统传递依赖见[验证记录](agent-notes/implemented/architecture/2026-10-20-flann-opencv-dependencies.md#验证结果)。
 
-测试不验证上游算法、并发、性能或模型推理；不强制每库专用工程。Linux x86_64 仅验证声明选择；v142 仅验证参数保留，均缺实机验收。
+测试不验证上游算法、并发、性能或模型推理；不强制每库专用工程。除 CI 代表集外，Linux x86_64 仅验证声明选择；v142 仅验证参数保留，仍缺实机验收。

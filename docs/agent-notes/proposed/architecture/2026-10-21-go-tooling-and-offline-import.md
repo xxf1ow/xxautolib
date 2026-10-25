@@ -14,7 +14,7 @@ Status: proposed
 
 以 Go 统一本仓库自有工具层，保留 CMake 构建与导入、TOML 模块声明和每库的包内导入脚本。Go 工具使用纯 Go 依赖，正式二进制禁用 cgo。用户使用发布好的对应宿主平台程序，不在导入时编译工具或准备语言环境。
 
-本设计覆盖生产端工具替换、打包、消费者入口、获取协议和工具发行，按阶段实现。生产端替换及本地二进制链路已实现，HTTPS 消费暂缓；CI 是独立系统，其范围与验收由[CI 系统设计](2026-10-20-ci-system.md)拥有，不纳入本文的阶段交付。当前接口由[架构](../../../architecture.md)和[开发指南](../../../development.md#本地打包与消费)说明；按名称消费、可搬迁适配、固定槽、生产缓存和远端发布的完整约束仍由[二进制交付设计](2026-10-20-name-only-artifact-delivery.md)拥有。本文补充其语言实现、引导过程和严格来源规则，不引入另一套发布坐标。
+本设计覆盖生产端工具替换、打包、消费者入口、获取协议和工具发行，按阶段实现。生产端替换及本地二进制链路已实现，HTTPS 消费暂缓；CI 是独立系统，其范围与验收由[CI 系统设计](../../implemented/architecture/2026-10-20-ci-system.md)拥有，不纳入本文的阶段交付。当前接口由[架构](../../../architecture.md)和[开发指南](../../../development.md#本地打包与消费)说明；按名称消费、可搬迁适配、固定槽、生产缓存和远端发布的完整约束仍由[二进制交付设计](2026-10-20-name-only-artifact-delivery.md)拥有。本文补充其语言实现、引导过程和严格来源规则，不引入另一套发布坐标。
 
 ### 职责划分
 
@@ -22,7 +22,7 @@ Status: proposed
 | --- | --- | --- |
 | 模块目录 | `module.toml`、补丁、专用构建文件、`autolib-import.cmake` | 通用下载器、环境管理器、共享生成逻辑 |
 | `autolib-builder` | 声明解析、校验、平台选择、生产依赖闭包、路径编码、原生 CMake 生成、暂存修正、打包及本地发行元数据生成 | 自行执行源码下载、补丁、编译、安装或跟踪构建 stamp；为下游准备二进制包；CI 编排、GitHub API 或远端发布 |
-| `autolib-ci` | 通过独立 CLI 调用生产与消费能力，执行 CI 计划、生产缓存、发布和汇总；完整职责由 [CI 系统设计](2026-10-20-ci-system.md#组件职责与数据流)拥有 | 混编 builder/importer 源码、复制声明解析与打包引擎、替代消费工具 |
+| `autolib-ci` | 通过独立 CLI 调用生产与消费能力，执行 CI 计划、生产缓存、发布和汇总；完整职责由 [CI 系统设计](../../implemented/architecture/2026-10-20-ci-system.md#组件职责与数据流)拥有 | 混编 builder/importer 源码、复制声明解析与打包引擎、替代消费工具 |
 | CMake / ExternalProject | 生产端实际获取、补丁、配置、编译、安装和增量步骤 | Go 模块解析、二进制发行选择 |
 | `src/autolib.cmake` | 单文件 CMake 入口，识别宿主、按 JSON 清单获取并校验 importer、调用 importer，准备后加载全部包内 adapter | 解析完整模块定义、实现库包获取协议、依赖旁置 CMake helper 或安装语言环境 |
 | `autolib-importer` | manifest 校验、二进制包获取、校验和解包，返回准备好的包目录 | 生产端生成与打包、代替 CMake 执行 `include`、猜测上游导出 target、编译消费者或自动获取消费依赖闭包 |
@@ -30,7 +30,7 @@ Status: proposed
 
 消费端保留 `autolib.cmake` 与 `autolib-importer` 两层：CMake 只处理最小引导及目标加载，可测试的文件与获取逻辑集中在 Go 中。importer 是原生可执行文件，而不是复杂 CMake 脚本集合。入口自身完整保存在 `src/autolib.cmake`，不拆成需要一起分发的 helper；每库 adapter 仍随各自归档发布，不搬到 importer 维护一份按库名分支的适配表。
 
-Go 源码采用一个根 Go module。本文覆盖 `autolib-builder` 和 `autolib-importer` 两个独立可执行目标；[CI 系统设计](2026-10-20-ci-system.md)另定义第三个独立目标 `autolib-ci`，不作为 builder 子命令。三个目标的业务源码和入口严格分离，布局如下；只在实现对应能力时创建文件和目录：
+Go 源码采用一个根 Go module。本文覆盖 `autolib-builder` 和 `autolib-importer` 两个独立可执行目标；[CI 系统设计](../../implemented/architecture/2026-10-20-ci-system.md)另定义第三个独立目标 `autolib-ci`，不作为 builder 子命令。三个目标的业务源码和入口严格分离，布局如下；只在实现对应能力时创建文件和目录：
 
 ```text
 go.mod / go.sum                 根 Go module 的依赖声明与内容校验
@@ -42,7 +42,7 @@ src/dependencies/<name>/        既有声明、补丁及每包导入适配
 build/                         Git 忽略：可执行程序、生成文件、staging 和发行包
 ```
 
-builder 提供生成与打包能力，importer 提供消费端准备能力；两者不相互调用业务命令，也不依赖 CI，不增加进程间服务或插件框架。CI 通过通用 CLI 组合调用二者，模块信息复用与失败规则由 [CI 调用设计](2026-10-20-ci-system.md#独立命令之间的调用)拥有。生产端的产物处理源码归 builder，消费端的获取与解包源码归 importer，不设独立 `src/artifacts/` 或预建 `common/shared` 层；遵守同一发行协议不等于混编业务实现。源码目录不保存生成产物，暂存和归档均进入忽略的构建目录。
+builder 提供生成与打包能力，importer 提供消费端准备能力；两者不相互调用业务命令，也不依赖 CI，不增加进程间服务或插件框架。CI 通过通用 CLI 组合调用二者，模块信息复用与失败规则由 [CI 调用设计](../../implemented/architecture/2026-10-20-ci-system.md#独立命令之间的调用)拥有。生产端的产物处理源码归 builder，消费端的获取与解包源码归 importer，不设独立 `src/artifacts/` 或预建 `common/shared` 层；遵守同一发行协议不等于混编业务实现。源码目录不保存生成产物，暂存和归档均进入忽略的构建目录。
 
 ### 生产端：替换工具代码，保留业务契约
 
@@ -137,13 +137,13 @@ JSON 只用于生成的发行信息，模块声明继续使用带注释的 TOML�
 
 ### 宿主平台、目标平台与发行
 
-importer 根据运行 CMake 的宿主平台选择，不根据 C++ 库目标平台选择。内部平台名继续统一为 `windows`、`linux` 与 `x86_64`、`aarch64`，Go 编译参数分别映射到 `windows`、`linux` 与 `amd64`、`arm64`。首批 importer 发行矩阵为 Windows x86_64、Linux x86_64、Linux aarch64；不支持的平台报错，不下载“最接近”的程序。库包的显式 any/any 扩展由[CI 系统设计](2026-10-20-ci-system.md#平台无关头文件单槽位)拥有，不适用于 importer 宿主记录。
+importer 根据运行 CMake 的宿主平台选择，不根据 C++ 库目标平台选择。内部平台名继续统一为 `windows`、`linux` 与 `x86_64`、`aarch64`，Go 编译参数分别映射到 `windows`、`linux` 与 `amd64`、`arm64`。首批 importer 发行矩阵为 Windows x86_64、Linux x86_64、Linux aarch64；不支持的平台报错，不下载“最接近”的程序。库包的显式 any/any 扩展由[CI 系统设计](../../implemented/architecture/2026-10-20-ci-system.md#平台无关头文件单槽位)拥有，不适用于 importer 宿主记录。
 
 两个 Go 目标的正式构建均使用 `CGO_ENABLED=0`，依赖不得通过本地 C/C++ 动态库破坏各自的单二进制交付。importer 可以从一个宿主交叉编译到该矩阵；每个承诺支持的平台仍需执行工具 smoke 和消费 fixture，交叉编译成功不代替运行验证。builder 随生产端入口在开发或构建环境本地构建验证，不要求向下游发布第二套工具矩阵。SDK 版本在构建配置固定，依赖版本纳入仓库；发布构建不依赖自动选择新工具链。
 
 纯 Go importer 不应动态依赖 glibc 或 libstdc++；它仍受所选 Go 版本的操作系统、内核和 CPU 下限约束。首版使用保守 CPU 基线，不用发布机本机优化替代通用目标。具体最低系统要求在工具发行阶段记录并验收，不能根据 C++ 库的 ABI 基线推定 importer 的最低系统版本。
 
-Go 工具交叉编译不扩大 C++ 库的交叉编译范围。库继续按[CI 系统设计](2026-10-20-ci-system.md)中的原生构建与 ABI 要求构建；importer 可运行不保证库包的 glibc、GLIBCXX、CRT 或系统依赖兼容。打包和消费验证必须继续核对库本身的运行要求。
+Go 工具交叉编译不扩大 C++ 库的交叉编译范围。库继续按[CI 系统设计](../../implemented/architecture/2026-10-20-ci-system.md)中的原生构建与 ABI 要求构建；importer 可运行不保证库包的 glibc、GLIBCXX、CRT 或系统依赖兼容。打包和消费验证必须继续核对库本身的运行要求。
 
 ### 打包、导入与发布
 

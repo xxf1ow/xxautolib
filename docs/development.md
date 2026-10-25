@@ -58,7 +58,7 @@ CLI 为 `importer prepare --local-root=<目录> --work-root=<目录> --os=<目�
 
 ## CI 开发与运行
 
-[手动流水线](../.github/workflows/build-platform.yml)只接受默认分支并检出事件提交，逐槽验证后同名替换，不备份或回滚。汇总失败保留成功槽，重跑整个流水线按资产复用；force 重建选中闭包。本地目录由用户按上节刷新。真实发布及权限待另获授权验收；命令见[入口](../src/autolib-ci/main.go)，验证见[测试指南](testing.md#ci-验证)，固定目标和策略见 [CI 设计](agent-notes/proposed/architecture/2026-10-20-ci-system.md)。
+[手动流水线](../.github/workflows/build-platform.yml)只接受默认分支并检出事件提交，逐槽验证后同名替换，不备份或回滚。汇总失败保留成功槽，重跑整个流水线按资产复用；force 重建选中闭包。本地目录由用户按上节刷新。三平台代表集的真实发布、权限及缓存复用已验证，后续远端操作仍须授权；命令见[入口](../src/autolib-ci/main.go)，验证见[测试指南](testing.md#ci-验证)，固定目标和策略见 [CI 设计](agent-notes/implemented/architecture/2026-10-20-ci-system.md)。
 
 ## 日常修改
 
