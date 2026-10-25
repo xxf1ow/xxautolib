@@ -14,7 +14,7 @@ Status: proposed
 
 本设计拥有 CMake 公共接口、来源默认值、公共目标封装及后续交付阶段，部分替代[无全局清单的双来源包消费](2026-10-24-manifestless-package-consumption.md)中的 CMake 调用形式、无远端默认值及后续阶段安排。包内四行头、固定资产名、本地布局、依赖遍历、来源优先级、失败保护、损坏检测及 GitHub 资产发现仍由该记录拥有，不复制另一套协议。[固定槽交付设计](2026-10-20-name-only-artifact-delivery.md)和[Go 工具层设计](2026-10-21-go-tooling-and-offline-import.md)的可搬迁打包、adapter 与纯 Go 运行约束继续有效，公共目标命名以本文为准。
 
-CI 仍是独立系统，其构建编排、发布权限、并发和运行汇总由[CI 系统设计](../../implemented/architecture/2026-10-20-ci-system.md)拥有。Gitee 阶段实施前修订该独立设计，不把发布实现写入 builder 或 importer。新接口及远端消费尚未实现，普通架构、开发指南和 README 仅在对应实现完成时更新为实际行为。
+CI 仍是独立系统，其构建编排、发布权限、并发和运行汇总由[CI 系统设计](../../implemented/architecture/2026-10-20-ci-system.md)拥有。Gitee 阶段实施前修订该独立设计，不把发布实现写入 builder 或 importer。本地接口已实现，远端消费尚未实现；普通架构、开发指南和 README 按对应阶段的实际行为维护。
 
 ### CMake 公共接口
 
@@ -77,7 +77,7 @@ builder 负责声明解析、包内依赖生成、暂存修正和本地打包，
 
 每阶段验收后再规划下一阶段，不提前编写后续全部实施计划。各阶段复用固定资产名、四行包头和平台身份，不引入全局清单、版本管理、锁文件、build ID、跨运行生产缓存或自动更新。GitHub 下载消费不自动授权远端上传、触发 CI 或 Gitee 写入。
 
-本次不安排 example 改造，不增加 example 专用 cmake 目录、重复跟踪单文件入口、自动 DLL 复制或 CTest 接线，保留用户已有 example 修改。真实消费验证由现有测试承担，构建成功不能代替运行成功；Windows 运行仍需通过 PATH 等满足实际 DLL 查找要求。
+用户已有 example 修改代表预期用法，随本地 target 接口一并验证和提交，不另行改造示例结构。不增加 example 专用 cmake 目录、重复跟踪单文件入口、自动 DLL 复制或 CTest 接线。真实消费验证由现有测试承担，构建成功不能代替运行成功；Windows 运行仍需通过 PATH 等满足实际 DLL 查找要求。
 
 README 仅另补“使用本仓库前后对比”，不作为本地接口阶段的实现项，也不扩为整体重写。对比采用相同消费需求：不使用本仓库时自行准备第三方库、处理依赖和链接目标；使用本仓库时设置来源并通过 `autolib_import(TARGET app PRIVATE queue flann)` 完成依赖准备与链接。不得虚构性能或耗时收益，不省略消费环境仍须满足的工具链和系统运行库要求；用法和下载说明在对应能力验收后按实际行为写入。
 

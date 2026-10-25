@@ -180,8 +180,8 @@ if(DEFINED CMAKE_MSVC_RUNTIME_LIBRARY AND NOT "${CMAKE_MSVC_RUNTIME_LIBRARY}" ST
     list(APPEND consumer_runtime_args "-DCMAKE_MSVC_RUNTIME_LIBRARY=${CMAKE_MSVC_RUNTIME_LIBRARY}")
 endif()
 run_logged(first-configure "${CMAKE_COMMAND}" -S "${consumer}" -B "${run}/first" ${generator_args}
-    "-DAUTOLIB_ENTRY=${consumer}/autolib.cmake" "-DRELEASE_ROOT=${release}" "-DWORK_ROOT=${run}/empty work"
-    "-DTARGET_OS=${TARGET_OS}" "-DTARGET_ARCH=${TARGET_ARCH}" "-DINSTALL_ROOT=${INSTALL_ROOT}" "-DMODULES=${module_argument}" "-DROOT_PACKAGES=${root_argument}"
+    "-DAUTOLIB_ENTRY=${consumer}/autolib.cmake" "-DRELEASE_ROOT=${release}"
+    "-DINSTALL_ROOT=${INSTALL_ROOT}" "-DMODULES=${module_argument}" "-DROOT_PACKAGES=${root_argument}"
     "-DCMAKE_BUILD_TYPE=${CONFIGURATION}" ${consumer_runtime_args} ${cmake_default_args})
 file(READ "${run}/first/prepared-root.txt" prepared_root)
 get_filename_component(prepared_root "${prepared_root}" ABSOLUTE)

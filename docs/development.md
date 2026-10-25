@@ -48,11 +48,11 @@ cmake -P src/autolib-builder/go-sdk.cmake -- build -mod=readonly -trimpath -o bu
 
 `builder package` 必须显式提供源码、安装、输出根，目标和宿主身份、工具路径及重复模块选择；完整参数见[打包入口](../src/autolib-builder/release.go)。输出必须在本副本 build 内且不与安装树重叠；只打包显式模块，不自动补依赖。真实示例由[本地闭环测试](testing.md#本地二进制闭环)执行。
 
-将 `src/autolib.cmake` 复制到消费者，include 后在其他同名库目标创建前调用 `autolib_import(LOCAL_ROOT <本地发行目录> PACKAGES flann queue)`，链接 `autolib::queue`、`autolib::lz4`、`autolib::flann`；lz4 从 flann 包头自动补齐。可选 `WORK_ROOT`、`TARGET_OS`、`TARGET_ARCH`，默认工作根为消费者 build 下的 autolib。系统支持 windows/linux，架构为 x86_64/aarch64；工具按宿主、库包按目标选择。同一次 configure 固定来源、工作根和目标，可增加根包，首次导入拒绝既有上游目标。
+复制 `src/autolib.cmake`，创建消费者后调用 `autolib_import(TARGET app PRIVATE queue flann)`；在其他同名库发现之前导入，不再手工链接包目标。来源默认值及覆盖用法见 [README](../README.md#接入自己的-cmake-工程)。来源首次加载捕获、跨作用域固定；工作根为 `${CMAKE_BINARY_DIR}/autolib`，平台从当前 CMake 目标归一，VS 显式平台优先；工具按宿主选择。可增加根包或消费者，共享目标由 adapter guard 复用；旧函数参数拒绝，CLI 输入不变。空本地跳过本地，两源均空失败。
 
 LOCAL_ROOT 平铺固定名宿主工具和 `<name>-<os>-<arch>.tar.zst`；通用归档使用 any-any。准备目录为 `LOCAL_ROOT/packages/<os>-<arch>/<name>/`，优先于归档。相对根按顶层源码目录解析；本地根、工作根及实际包路径不得含分号。现有完整目录可只读复用；缺包需要本地根可写，同根写入由调用方串行，独立构建使用各自工作根。
 
-CLI 为 `importer prepare --local-root=<目录> --work-root=<目录> --os=<目标OS> --arch=<目标架构> --result=<文件> --package=<根包>`，package 可重复。CMake 接受 REMOTE_ROOT、CLI 接受 --remote-root 参数位置，但非空值明确报远端尚未启用，不联网。URI、--uri、--manifest 均拒绝，不提供兼容层；CI 消费验证也只使用本地入口。
+CLI 为 `importer prepare --local-root=<目录> --work-root=<目录> --os=<目标OS> --arch=<目标架构> --result=<文件> --package=<根包>`，package 可重复。当前 CMake 仅调用本地 prepare：配置远端且本地完整仍成功，实际缺工具或包才报远端尚未启用；直接 CLI 的非空 --remote-root 仍明确拒绝。URI、--uri、--manifest 不兼容；CI 验证也只使用本地入口。
 
 包头及依赖格式见[包消费设计](agent-notes/proposed/architecture/2026-10-24-manifestless-package-consumption.md#包内身份与依赖)。已有目录仅核对包头，不逐文件散列；归档内容校验用于意外损坏检测，不认证来源，本地工具须由用户信任。坏目录、坏归档或缺输入直接失败，不回退低优先级来源或加载上次结果。刷新前保护本地改动，移走对应 `packages/<目标OS>-<目标架构>/<包名>/`，不删除共享依赖；本地归档仍优先，更新归档不会覆盖目录。FLANN 的包依赖仅 lz4，OpenMP、C++ ABI 和系统运行库由消费环境满足。
 

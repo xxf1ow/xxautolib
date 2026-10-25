@@ -68,7 +68,7 @@ func prepare(o prepareOptions) ([]preparedPackage, error) {
 				return err
 			}
 			if archive == "" {
-				return fmt.Errorf("missing local package %s for %s/%s in %s", name, o.OS, o.Arch, local)
+				return fmt.Errorf("missing local package %s for %s/%s in %s; remote consumption is not enabled", name, o.OS, o.Arch, local)
 			}
 			if err := prepareMissingPackage(archive, directory, identity); err != nil {
 				return err

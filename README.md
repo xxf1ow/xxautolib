@@ -26,7 +26,7 @@ Windows 发行使用 Visual Studio 2022、v143、x64、Release 和动态 CRT（`
 
 ### 1. 准备本地发行目录
 
-从 [GitHub Release](https://github.com/xxf1ow/xxautolib/releases/tag/autolib-release) 下载下列四个文件，保持文件名不变，放入本地 `dist/`。归档不需要手动解包，也不需要清单或额外的摘要文件。
+准备与当前入口配套的下列四个发行文件，保持文件名不变，放入本地 `dist/`。发行入口为 [GitHub Release](https://github.com/xxf1ow/xxautolib/releases/tag/autolib-release)；本地打包方式见[开发指南](docs/development.md#本地打包与消费)。含旧 `AutoLib::` adapter 的包须重新打包或取得新版，入口不改写旧缓存。归档不需要手动解包、清单或额外摘要文件。
 
 ```text
 dist/
@@ -41,6 +41,8 @@ dist/
 ### 2. 编译示例
 
 ```powershell
+New-Item -ItemType Directory -Force example/3rdparty | Out-Null
+Copy-Item src/autolib.cmake example/3rdparty/autolib.cmake
 cmake -S example -B build/example -G "Visual Studio 17 2022" -A x64 -T "v143,host=x64" "-DAUTOLIB_LOCAL_ROOT=$PWD/dist"
 cmake --build build/example --config Release
 ```
@@ -50,11 +52,11 @@ cmake --build build/example --config Release
 ### 3. 运行并验证
 
 ```powershell
-ctest --test-dir build/example -C Release --output-on-failure
+$env:PATH = "$PWD/dist/packages/windows-x86_64/flann/bin;$env:PATH"
 ./build/example/Release/autolib_example.exe
 ```
 
-CTest 应通过 `1/1` 项；直接运行示例应输出：
+直接运行示例应输出：
 
 ```text
 queue: OK
@@ -62,20 +64,22 @@ lz4: OK
 flann: OK
 ```
 
-示例实际执行队列入队/出队、LZ4 压缩/解压和 FLANN 最近邻查询；任一步失败均以非零状态退出。Windows 构建会将目标依赖的 FLANN DLL 复制到可执行文件旁。
+示例实际执行队列入队/出队、LZ4 压缩/解压和 FLANN 最近邻查询；任一步失败均以非零状态退出。Windows 运行需按上例通过 PATH 提供 FLANN DLL，不自动复制运行库。
 
 ## 接入自己的 CMake 工程
 
-将 [src/autolib.cmake](src/autolib.cmake) 复制到你的工程，准备本地发行目录，并在发现其他同名库目标之前调用：
+将 [src/autolib.cmake](src/autolib.cmake) 复制到工程的 `3rdparty/`，准备本地发行目录，并在发现其他同名库目标之前调用：
 
 ```cmake
-include("${CMAKE_CURRENT_SOURCE_DIR}/autolib.cmake")
-autolib_import(LOCAL_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/dist" PACKAGES queue flann)
-
-target_link_libraries(my_app PRIVATE autolib::queue autolib::lz4 autolib::flann)
+set(AUTOLIB_LOCAL_ROOT "${PROJECT_SOURCE_DIR}/dist")
+include("${PROJECT_SOURCE_DIR}/3rdparty/autolib.cmake")
+add_executable(my_app src/main.cpp)
+autolib_import(TARGET my_app PRIVATE queue flann)
 ```
 
 `my_app` 是你已有的可执行或库目标。`autolib::flann` 同时提供 C/C++ 接口，并传递 lz4 的头文件和链接要求，无需额外链接上游目标。宿主 importer 与目标库平台分别选择，完整参数与目录规则见[本地打包与消费](docs/development.md#本地打包与消费)。
+
+本地来源默认 `${PROJECT_SOURCE_DIR}/3rdparty`，远端默认专用 Gitee 镜像地址；仅在变量未定义时填入默认值，include 前赋值或 `-D` 可覆盖。首次 include 固定来源，之后修改变量不生效；显式空远端保证禁网。当前仅启用本地消费，配置远端不影响本地完整命中，缺包或工具则失败，不下载补齐。
 
 ## 从源码构建与参与开发
 

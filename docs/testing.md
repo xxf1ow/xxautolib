@@ -31,7 +31,7 @@ Linux aarch64 将绝对根和程序名替换为本机值，使用 `-DTARGET_OS=l
 
 MODULES表示生产和链接集合，ROOT_PACKAGES默认等于MODULES，只控制首次请求。根包结果必须为 `lz4;flann;queue`；RELEASE_READY=ON核对固定工具和归档，无需manifest。三平台闭环结果见[CI验证](#ci-验证)。
 
-importer覆盖四行头、优先级、共享依赖、环、通用包、安全解包及CRC失败清理。真实CMake检查同次configure输入固定、当前结果完整才加载及同名目标拒绝。本地根和工作根拒绝分号，UNC仅词法覆盖；受控PATH阻断语言运行时和下载器，首次完整/缺包路径HTTP与代理请求为零。这些本地回归不代替三宿主发行验证，HTTPS 未启用。
+importer覆盖包头、优先级、依赖图、通用包、安全解包及CRC失败清理。[入口测试](../src/autolib-importer/entry_test.go)覆盖接口、作用域、多个消费者、平台及失败保护；UNC仅词法覆盖。受控PATH阻断运行时和下载器，验证本地消费零网络。真实消费验证FLANN两种API及LZ4，无需补链。本地回归不代替三宿主发行验证，HTTPS未启用。
 
 ## CI 验证
 
