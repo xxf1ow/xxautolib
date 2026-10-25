@@ -117,6 +117,54 @@ func TestCIWorkflowContract(t *testing.T) {
 	if !strings.Contains(linux, "fail-fast: false") || !strings.Contains(linux, "image: ${{ needs.plan.outputs.linux_image }}") {
 		t.Fatal("Linux matrix/container contract missing")
 	}
+	t.Run("Linux diagnostics paths find every evidence file from the checkout", func(t *testing.T) {
+		checkout := t.TempDir()
+		hostWorkRoot := filepath.ToSlash(filepath.Join(t.TempDir(), "unmounted-host-work"))
+		prefix := "build/ci/42-1/linux-x86_64/"
+		expected := []string{"logs/build-lz4.log", "evidence/lz4/consumer.json", "evidence/lz4/ctest.log", "evidence/lz4/abi.txt", "jobserver.json"}
+		for _, name := range expected {
+			file := filepath.Join(checkout, filepath.FromSlash(prefix+name))
+			if err := os.MkdirAll(filepath.Dir(file), 0755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(file, []byte("evidence"), 0644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		step := workflowSection(t, linux, "      - name: Retain diagnostics")
+		paths := workflowSection(t, step, "          path: |")
+		paths = strings.NewReplacer("${{ env.WORK_ROOT }}", hostWorkRoot, "${{ github.run_id }}", "42", "${{ github.run_attempt }}", "1", "${{ matrix.platform }}", "linux-x86_64").Replace(paths)
+		found := map[string]bool{}
+		for _, line := range strings.Split(paths, "\n") {
+			pattern := filepath.FromSlash(strings.TrimSpace(line))
+			if pattern == "" {
+				continue
+			}
+			if !filepath.IsAbs(pattern) {
+				pattern = filepath.Join(checkout, pattern)
+			}
+			matches, err := filepath.Glob(pattern)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, match := range matches {
+				err := filepath.WalkDir(match, func(file string, entry os.DirEntry, err error) error {
+					if err == nil && !entry.IsDir() {
+						found[file] = true
+					}
+					return err
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+		for _, name := range expected {
+			if !found[filepath.Join(checkout, filepath.FromSlash(prefix+name))] {
+				t.Errorf("Linux diagnostics omit %s from the container checkout", name)
+			}
+		}
+	})
 	for _, pair := range []string{"linux-x86_64", "linux-aarch64", "ubuntu-24.04", "ubuntu-24.04-arm", ".ubuntu.image"} {
 		if !strings.Contains(plan, pair) {
 			t.Fatalf("missing planned native runner/image %s", pair)

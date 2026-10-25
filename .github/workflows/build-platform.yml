@@ -179,11 +179,11 @@ jobs:
         with:
           name: ci-evidence-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.platform }}
           path: |
-            ${{ env.WORK_ROOT }}/logs/
-            ${{ env.WORK_ROOT }}/evidence/**/*.json
-            ${{ env.WORK_ROOT }}/evidence/**/*.log
-            ${{ env.WORK_ROOT }}/evidence/**/*.txt
-            ${{ env.WORK_ROOT }}/jobserver.json
+            build/ci/${{ github.run_id }}-${{ github.run_attempt }}/${{ matrix.platform }}/logs/
+            build/ci/${{ github.run_id }}-${{ github.run_attempt }}/${{ matrix.platform }}/evidence/**/*.json
+            build/ci/${{ github.run_id }}-${{ github.run_attempt }}/${{ matrix.platform }}/evidence/**/*.log
+            build/ci/${{ github.run_id }}-${{ github.run_attempt }}/${{ matrix.platform }}/evidence/**/*.txt
+            build/ci/${{ github.run_id }}-${{ github.run_attempt }}/${{ matrix.platform }}/jobserver.json
           if-no-files-found: warn
 
   windows:
