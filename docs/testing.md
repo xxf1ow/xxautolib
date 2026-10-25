@@ -31,13 +31,21 @@ Linux aarch64 将绝对根和程序名替换为本机值，使用 `-DTARGET_OS=l
 
 MODULES表示生产和链接集合，ROOT_PACKAGES默认等于MODULES，只控制首次请求。根包结果必须为 `lz4;flann;queue`；RELEASE_READY=ON核对固定工具和归档，无需manifest。三平台闭环结果见[CI验证](#ci-验证)。
 
-importer覆盖四行头、优先级、共享依赖、环、通用包、安全解包及CRC失败清理。真实CMake检查同次configure输入固定、当前结果完整才加载及同名目标拒绝。本地根和工作根拒绝分号，UNC仅词法覆盖；受控PATH阻断语言运行时和下载器，首次完整/缺包路径HTTP与代理请求为零。这些本地回归不代替三宿主发行验证，HTTPS 未启用。
+importer覆盖包头、优先级、依赖图、通用包、安全解包及CRC失败清理。[入口测试](../src/autolib-importer/entry_test.go)覆盖接口、作用域、多个消费者、平台及失败保护；UNC仅词法覆盖。受控PATH阻断运行时和下载器，验证本地消费零网络。真实消费验证FLANN两种API及LZ4，无需补链。本地回归不代替三宿主发行验证。
+
+## GitHub 下载验证
+
+[远端入口测试](../src/autolib-importer/remote_entry_test.go)通过本机 HTTPS 代理运行真实入口，覆盖引导、异常资产、摘要失败不执行工具、分页及枚举复用。定向命令：`cmake -P src/autolib-builder/go-sdk.cmake -- test ./src/autolib-importer -run 'Test(CMakeGitHub.*|GitHubValidationDriver)$' -count=1 -v`。CMake 接受原生重定向；importer 拒绝降级。Windows 测试需正常用户 TLS 凭据。
+
+真实验收运行 `cmake -DSOURCE_ROOT=<仓库绝对路径> -DVALIDATION_ROOT=<仓库绝对路径>/build/validation/github -DREMOTE_ROOT=https://github.com/xxf1ow/xxautolib/releases/tag/autolib-release -P tests/autolib/run-github.cmake`，生成器参数沿用本地 driver。[下载 driver](../tests/autolib/run-github.cmake)从空根下载工具及 flann、queue，构建、运行 smoke 并重新配置；不编译第三方源码或发布。
+
+真实供给须更新工具和 adapter 后再验收三平台运行；现有十个资产摘要通过，但工具缺内部响应参数、包仍提供大写目标且 FLANN 只含 C++ 库，不能用于新版闭环。
 
 ## CI 验证
 
 CI 本地资产服务测试覆盖空 label 同名替换、每轮重建、分层及失败汇总，并真实编译消费 Windows 小型依赖；已有发布资产不会短路下一轮构建。`-run TestCIWorkflowContract` 执行分支检查及 Make 准备片段，不模拟完整 Actions；Windows 跳过 Linux FIFO 探针，不证明 Linux 并行。
 
-queue、lz4、flann 的三平台供给、逐槽消费、双搬迁及凭据写入已有真实证据；ABI、-j/FIFO 和历史运行见[CI验证记录](agent-notes/implemented/architecture/2026-10-20-ci-system.md#真实运行)。[每轮重建与空 label 发布](agent-notes/implemented/simplification/2026-10-24-ci-rebuild-without-production-cache.md)的本地回归不替代新策略的三平台远端验收及 GitHub 页面核对；HTTPS未启用。
+queue、lz4、flann 的三平台供给、逐槽消费、双搬迁及凭据写入已有真实证据；ABI、-j/FIFO 和历史运行见[CI验证记录](agent-notes/implemented/architecture/2026-10-20-ci-system.md#真实运行)。[每轮重建与空 label 发布](agent-notes/implemented/simplification/2026-10-24-ci-rebuild-without-production-cache.md)的本地回归不替代新策略的三平台远端验收及 GitHub 页面核对；下载消费另按上节验收。
 
 ## 安装产物集成验证
 

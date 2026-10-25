@@ -6,6 +6,7 @@
 #endif
 #ifdef AUTOLIB_TEST_FLANN
 #include <flann/flann.h>
+#include <flann/flann.hpp>
 #endif
 
 #ifdef AUTOLIB_TEST_LZ4
@@ -51,6 +52,19 @@ int main()
         return 3;
     if (flann_free_index_float(index, &parameters) < 0)
         return 4;
+
+    flann::Matrix<float> points(dataset, 3, 2);
+    flann::Index<flann::L2<float>> cpp_index(points, flann::LinearIndexParams());
+    cpp_index.buildIndex();
+    float query[] = {1, 1};
+    int neighbor = -1;
+    float distance = -1;
+    flann::Matrix<float> queries(query, 1, 2);
+    flann::Matrix<int> neighbors(&neighbor, 1, 1);
+    flann::Matrix<float> distances(&distance, 1, 1);
+    if (cpp_index.knnSearch(queries, neighbors, distances, 1, flann::SearchParams(-1)) != 1
+        || neighbor != 1 || distance != 0)
+        return 8;
 
     std::filesystem::path module_path;
 #ifdef _WIN32

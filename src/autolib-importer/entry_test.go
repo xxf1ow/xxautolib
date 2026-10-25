@@ -68,7 +68,7 @@ func newEntryFixture(t *testing.T, fake bool, suffix string) *entryFixture {
 	}
 	// 目标刻意不同于常用 Windows 宿主，验证工具与库槽独立。
 	id := packageIdentity{Name: "demo", OS: o.OS, Arch: o.Arch}
-	adapter := identityHeader(id) + "if(TARGET AutoLib::demo)\nreturn()\nendif()\nadd_library(AutoLib::demo INTERFACE IMPORTED GLOBAL)\n"
+	adapter := identityHeader(id) + "if(TARGET autolib::demo)\nreturn()\nendif()\nadd_library(autolib::demo INTERFACE IMPORTED GLOBAL)\n"
 	a := testArchive(t, []archiveMember{{Name: "demo/autolib-import.cmake", Body: adapter}})
 	archive, err := os.ReadFile(a)
 	if err != nil {
@@ -98,6 +98,7 @@ func newEntryFixture(t *testing.T, fake bool, suffix string) *entryFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	o.WorkRoot = filepath.Join(root, "consumer-build", "autolib")
 	f := &entryFixture{t: t, root: root, source: source, release: o.LocalRoot, work: o.WorkRoot, cmake: cmake, generator: generator, buildTool: buildTool, tool: tool, options: o, toolAsset: toolAsset}
 	if fake {
 		dir := filepath.Join(root, "fake prepared")
@@ -110,7 +111,10 @@ func newEntryFixture(t *testing.T, fake bool, suffix string) *entryFixture {
 
 func (f *entryFixture) configure(extra ...string) (string, error) {
 	f.t.Helper()
-	args := []string{"-S", f.source, "-B", filepath.Join(f.root, "consumer-build"), "-G", f.generator, "-DCMAKE_MAKE_PROGRAM=" + f.buildTool, "-DFIXTURE_RELEASE=" + f.release, "-DFIXTURE_WORK=" + f.work, "-DFIXTURE_OS=" + f.options.OS, "-DFIXTURE_ARCH=" + f.options.Arch}
+	args := []string{"-S", f.source, "-B", filepath.Join(f.root, "consumer-build"), "-G", f.generator, "-DFIXTURE_RELEASE=" + f.release, "-DCMAKE_SYSTEM_NAME=Linux", "-DCMAKE_SYSTEM_PROCESSOR=" + f.options.Arch}
+	if !strings.HasPrefix(f.generator, "Visual Studio") {
+		args = append(args, "-DCMAKE_MAKE_PROGRAM="+f.buildTool)
+	}
 	args = append(args, extra...)
 	out, err := exec.Command(f.cmake, args...).CombinedOutput()
 	return string(out), err
@@ -142,7 +146,7 @@ func TestCMakeBootstrap(t *testing.T) {
 func TestUniversalPackageThroughCMakeEntry(t *testing.T) {
 	f := newEntryFixture(t, false, "")
 	id := packageIdentity{"demo", "any", "any"}
-	archive := testArchive(t, []archiveMember{{Name: "demo/autolib-import.cmake", Body: identityHeader(id) + "if(NOT TARGET AutoLib::demo)\nadd_library(AutoLib::demo INTERFACE IMPORTED GLOBAL)\nendif()\n"}})
+	archive := testArchive(t, []archiveMember{{Name: "demo/autolib-import.cmake", Body: identityHeader(id) + "if(NOT TARGET autolib::demo)\nadd_library(autolib::demo INTERFACE IMPORTED GLOBAL)\nendif()\n"}})
 	if err := os.Rename(filepath.Join(f.release, "demo-"+f.options.OS+"-"+f.options.Arch+".tar.zst"), filepath.Join(f.release, "old-away")); err != nil {
 		t.Fatal(err)
 	}
@@ -254,18 +258,14 @@ func TestCMakeEntryPaths(t *testing.T) {
 }
 
 func TestCMakeWorkRootSemicolon(t *testing.T) {
-	for _, kind := range []string{"explicit", "default", "local"} {
+	for _, kind := range []string{"default", "local"} {
 		t.Run(kind, func(t *testing.T) {
 			f := newEntryFixture(t, true, "")
 			work := filepath.Join(f.root, "work;literal")
 			var extra []string
 			if kind == "local" {
 				f.release = filepath.Join(f.root, "local;literal")
-			} else if kind == "explicit" {
-				f.work = work
 			} else {
-				consumer := filepath.Join(f.source, "CMakeLists.txt")
-				putTestFile(t, consumer, strings.ReplaceAll(readTestFile(t, consumer), ` WORK_ROOT "${FIXTURE_WORK}"`, ""))
 				build := filepath.Join(f.root, "build;literal")
 				work = filepath.Join(build, "autolib")
 				extra = []string{"-B", build}
@@ -291,7 +291,7 @@ func TestCMakeWorkRootSemicolon(t *testing.T) {
 }
 
 func TestCMakeConfigureIdentity(t *testing.T) {
-	for _, kind := range []string{"same", "local", "work", "target", "old URI", "remote", "stale directory"} {
+	for _, kind := range []string{"same", "target", "old URI", "stale directory"} {
 		t.Run(kind, func(t *testing.T) {
 			f := newEntryFixture(t, true, "")
 			consumer := filepath.Join(f.source, "CMakeLists.txt")
@@ -300,16 +300,10 @@ func TestCMakeConfigureIdentity(t *testing.T) {
 			index := strings.LastIndex(body, "autolib_import(")
 			second := body[index:]
 			switch kind {
-			case "local":
-				second = strings.Replace(second, "${FIXTURE_RELEASE}", "${FIXTURE_RELEASE}/other", 1)
-			case "work":
-				second = strings.Replace(second, "${FIXTURE_WORK}", "${FIXTURE_WORK}/other", 1)
 			case "target":
-				second = strings.Replace(second, "${FIXTURE_OS}", "windows", 1)
+				second = "set(CMAKE_SYSTEM_NAME Windows)\n" + second
 			case "old URI":
-				second = strings.Replace(second, "LOCAL_ROOT", "URI", 1)
-			case "remote":
-				second = strings.Replace(second, "LOCAL_ROOT", `REMOTE_ROOT "https://example.invalid/release" LOCAL_ROOT`, 1)
+				second = "autolib_import(URI /old PACKAGES demo)\n"
 			case "stale directory":
 				second = "set(ENV{AUTOLIB_TEST_MODE} incomplete)\n" + second
 			}
@@ -357,9 +351,22 @@ func TestLocalConsumerNoToolchainRuntime(t *testing.T) {
 	t.Setenv("HTTP_PROXY", server.URL)
 	t.Setenv("HTTPS_PROXY", server.URL)
 	f.mustConfigure()
+	if out, err := f.configure("-DAUTOLIB_REMOTE_ROOT=https://example.invalid/release"); err != nil {
+		t.Fatalf("configured remote blocked local consumption: %v\n%s", err, out)
+	}
 	newEntryMissingPackage(t, f)
-	if out, err := f.configure(); err == nil {
+	if out, err := f.configure("-DAUTOLIB_REMOTE_ROOT="); err == nil {
 		t.Fatalf("missing package accepted: %s", out)
+	}
+	putTestFile(t, filepath.Join(f.release, "packages/linux-aarch64/demo/autolib-import.cmake"), "invalid metadata")
+	if out, err := f.configure("-DAUTOLIB_REMOTE_ROOT=https://example.invalid/release"); err == nil || !strings.Contains(out, "package metadata") {
+		t.Fatalf("bad local candidate was not rejected: %v\n%s", err, out)
+	}
+	if err := os.Rename(filepath.Join(f.release, f.toolAsset), filepath.Join(f.release, "tool-away")); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := f.configure(); err == nil || !strings.Contains(strings.Join(strings.Fields(out), " "), "unsupported remote source") {
+		t.Fatalf("missing tool was not rejected: %v\n%s", err, out)
 	}
 	if _, err := os.Stat(log); !os.IsNotExist(err) {
 		t.Fatal("consumer invoked forbidden runtime")
@@ -398,7 +405,7 @@ func representativeFixture(t *testing.T, packages string) *entryFixture {
 			members = append(members, archiveMember{Name: "lz4/lib/cmake/lz4/lz4Config.cmake", Body: "if(TARGET LZ4::lz4 AND TARGET LZ4::lz4_static)\nreturn()\nendif()\nadd_library(LZ4::lz4 INTERFACE IMPORTED)\nadd_library(LZ4::lz4_static INTERFACE IMPORTED)\n"})
 		}
 		if name == "flann" {
-			members = append(members, archiveMember{Name: "flann/lib/cmake/flann/flann-config.cmake", Body: "if(NOT TARGET AutoLib::lz4)\nmessage(FATAL_ERROR \"lz4 not loaded first\")\nendif()\nif(TARGET flann::flann_cpp AND TARGET flann::flann)\nreturn()\nendif()\nadd_library(flann::flann_cpp INTERFACE IMPORTED)\nadd_library(flann::flann INTERFACE IMPORTED)\n"})
+			members = append(members, archiveMember{Name: "flann/lib/cmake/flann/flann-config.cmake", Body: "if(NOT TARGET autolib::lz4)\nmessage(FATAL_ERROR \"lz4 not loaded first\")\nendif()\nif(TARGET flann::flann_cpp AND TARGET flann::flann)\nreturn()\nendif()\nadd_library(flann::flann_cpp INTERFACE IMPORTED)\nadd_library(flann::flann INTERFACE IMPORTED)\n"})
 		}
 		a := testArchive(t, members)
 		data, err := os.ReadFile(a)
@@ -408,8 +415,8 @@ func representativeFixture(t *testing.T, packages string) *entryFixture {
 		asset := name + "-" + id.OS + "-" + id.Arch + ".tar.zst"
 		putTestFile(t, filepath.Join(f.release, asset), string(data))
 	}
-	putTestFile(t, filepath.Join(f.source, "CMakeLists.txt"), "cmake_minimum_required(VERSION 3.20)\nproject(representatives NONE)\ninclude(autolib.cmake)\nautolib_import(LOCAL_ROOT \"${FIXTURE_RELEASE}\" WORK_ROOT \"${FIXTURE_WORK}\" TARGET_OS \"${FIXTURE_OS}\" TARGET_ARCH \"${FIXTURE_ARCH}\" PACKAGES "+packages+")\nadd_subdirectory(child)\n")
-	putTestFile(t, filepath.Join(f.source, "child/CMakeLists.txt"), "foreach(name IN ITEMS queue lz4 flann)\nif(NOT TARGET AutoLib::${name})\nmessage(FATAL_ERROR \"target not visible: ${name}\")\nendif()\nendforeach()\nadd_library(consumer INTERFACE)\ntarget_link_libraries(consumer INTERFACE AutoLib::queue AutoLib::lz4 AutoLib::flann)\nautolib_import(LOCAL_ROOT \"${FIXTURE_RELEASE}\" WORK_ROOT \"${FIXTURE_WORK}\" TARGET_OS \"${FIXTURE_OS}\" TARGET_ARCH \"${FIXTURE_ARCH}\" PACKAGES flann queue lz4)\n")
+	putTestFile(t, filepath.Join(f.source, "CMakeLists.txt"), "cmake_minimum_required(VERSION 3.20)\nproject(representatives NONE)\nset(AUTOLIB_LOCAL_ROOT \"${FIXTURE_RELEASE}\")\ninclude(autolib.cmake)\nadd_library(root_consumer INTERFACE)\nautolib_import(TARGET root_consumer INTERFACE "+packages+")\nadd_subdirectory(child)\n")
+	putTestFile(t, filepath.Join(f.source, "child/CMakeLists.txt"), "foreach(name IN ITEMS queue lz4 flann)\nif(NOT TARGET autolib::${name})\nmessage(FATAL_ERROR \"target not visible: ${name}\")\nendif()\nendforeach()\nadd_library(consumer INTERFACE)\nautolib_import(TARGET consumer INTERFACE flann queue lz4)\n")
 	return f
 }
 
@@ -417,6 +424,19 @@ func TestRepresentativeAdapters(t *testing.T) {
 	f := representativeFixture(t, "flann queue")
 	consumer := filepath.Join(f.source, "CMakeLists.txt")
 	putTestFile(t, consumer, strings.Replace(readTestFile(t, consumer), "add_subdirectory(child)", "if(NOT AUTOLIB_PREPARED_PACKAGES STREQUAL \"lz4;flann;queue\")\nmessage(FATAL_ERROR \"wrong dependency order: ${AUTOLIB_PREPARED_PACKAGES}\")\nendif()\nadd_subdirectory(child)", 1))
+	putTestFile(t, consumer, readTestFile(t, consumer)+`
+foreach(name IN ITEMS queue lz4 flann)
+    if(NOT TARGET autolib::${name} OR TARGET AutoLib::${name})
+        message(FATAL_ERROR "missing unique lowercase public target: ${name}")
+    endif()
+endforeach()
+get_target_property(links autolib::flann INTERFACE_LINK_LIBRARIES)
+foreach(required IN ITEMS flann::flann_cpp flann::flann autolib::lz4)
+    if(NOT required IN_LIST links)
+        message(FATAL_ERROR "missing FLANN dependency: ${required}")
+    endif()
+endforeach()
+`)
 	destination := f.release + "中文 空格"
 	if err := os.Rename(f.release, destination); err != nil {
 		t.Fatal(err)
@@ -450,7 +470,7 @@ func TestAdapterExistingTargets(t *testing.T) {
 func TestAdapterDependencyOrder(t *testing.T) {
 	t.Run("root only", func(t *testing.T) {
 		f := representativeFixture(t, "flann")
-		putTestFile(t, filepath.Join(f.source, "CMakeLists.txt"), "cmake_minimum_required(VERSION 3.20)\nproject(root_only NONE)\ninclude(autolib.cmake)\nautolib_import(LOCAL_ROOT \"${FIXTURE_RELEASE}\" WORK_ROOT \"${FIXTURE_WORK}\" TARGET_OS \"${FIXTURE_OS}\" TARGET_ARCH \"${FIXTURE_ARCH}\" PACKAGES flann)\nif(NOT TARGET AutoLib::lz4 OR NOT TARGET AutoLib::flann OR NOT AUTOLIB_PREPARED_PACKAGES STREQUAL \"lz4;flann\")\nmessage(FATAL_ERROR \"missing dependency closure\")\nendif()\n")
+		putTestFile(t, filepath.Join(f.source, "CMakeLists.txt"), "cmake_minimum_required(VERSION 3.20)\nproject(root_only NONE)\nset(AUTOLIB_LOCAL_ROOT \"${FIXTURE_RELEASE}\")\ninclude(autolib.cmake)\nadd_library(consumer INTERFACE)\nautolib_import(TARGET consumer INTERFACE flann)\nif(NOT TARGET autolib::lz4 OR NOT TARGET autolib::flann OR NOT AUTOLIB_PREPARED_PACKAGES STREQUAL \"lz4;flann\")\nmessage(FATAL_ERROR \"missing dependency closure\")\nendif()\n")
 		f.mustConfigure()
 	})
 	f := representativeFixture(t, "flann")
@@ -468,13 +488,203 @@ func TestAdapterDependencyOrder(t *testing.T) {
 	}
 }
 
+func TestCMakeImportTargetContract(t *testing.T) {
+	for _, call := range []string{
+		"TARGET consumer INTERFACE demo demo", "TARGET absent INTERFACE demo",
+		"TARGET consumer demo", "TARGET consumer INTERFACE", "TARGET consumer INTERFACE demo PRIVATE other",
+		"TARGET consumer PRIVATE demo", "TARGET consumer INTERFACE demo LOCAL_ROOT /old",
+		"LOCAL_ROOT /old PACKAGES demo",
+	} {
+		t.Run(call, func(t *testing.T) {
+			f := newEntryFixture(t, true, "")
+			putTestFile(t, filepath.Join(f.source, "CMakeLists.txt"), `cmake_minimum_required(VERSION 3.20)
+project(contract NONE)
+set(AUTOLIB_LOCAL_ROOT "${FIXTURE_RELEASE}")
+include(autolib.cmake)
+add_library(consumer INTERFACE)
+autolib_import(`+call+`)
+get_target_property(links consumer INTERFACE_LINK_LIBRARIES)
+if(NOT links STREQUAL "autolib::demo")
+    message(FATAL_ERROR "incorrect root links: ${links}")
+endif()
+`)
+			out, err := f.configure()
+			if (err == nil) != (call == "TARGET consumer INTERFACE demo demo") {
+				t.Fatalf("target contract: %v\n%s", err, out)
+			}
+		})
+	}
+}
+
+func TestCMakeConsumerVisibility(t *testing.T) {
+	for _, visibility := range []string{"PRIVATE", "PUBLIC"} {
+		t.Run(visibility, func(t *testing.T) {
+			f := newEntryFixture(t, true, "")
+			var extra []string
+			if runtime.GOOS == "windows" {
+				f.generator = "Visual Studio 17 2022"
+				extra = []string{"-DCMAKE_SYSTEM_NAME=Windows", "-DCMAKE_SYSTEM_PROCESSOR=AMD64"}
+			}
+			putTestFile(t, filepath.Join(f.source, "empty.cpp"), "int value() { return 1; }\n")
+			putTestFile(t, filepath.Join(f.source, "CMakeLists.txt"), `cmake_minimum_required(VERSION 3.20)
+project(visibility LANGUAGES CXX)
+set(AUTOLIB_LOCAL_ROOT "${FIXTURE_RELEASE}")
+include(autolib.cmake)
+add_library(consumer STATIC empty.cpp)
+autolib_import(TARGET consumer `+visibility+` demo)
+get_target_property(own_links consumer LINK_LIBRARIES)
+get_target_property(propagated consumer INTERFACE_LINK_LIBRARIES)
+if(NOT own_links STREQUAL "autolib::demo")
+    message(FATAL_ERROR "missing own usage: ${own_links}")
+endif()
+if("`+visibility+`" STREQUAL "PUBLIC" AND NOT propagated STREQUAL "autolib::demo")
+    message(FATAL_ERROR "missing public usage: ${propagated}")
+endif()
+if("`+visibility+`" STREQUAL "PRIVATE" AND propagated STREQUAL "autolib::demo")
+    message(FATAL_ERROR "private compile usage leaked")
+endif()
+`)
+			if out, err := f.configure(extra...); err != nil {
+				t.Fatalf("%v\n%s", err, out)
+			}
+		})
+	}
+}
+
+func TestCMakeSourceConfiguration(t *testing.T) {
+	for _, kind := range []string{"default", "command line", "function", "subdirectory", "empty remote", "empty local", "both empty"} {
+		t.Run(kind, func(t *testing.T) {
+			f := newEntryFixture(t, false, "")
+			setup := "include(autolib.cmake)\n"
+			var extra []string
+			switch kind {
+			case "default":
+				destination := filepath.Join(f.source, "3rdparty")
+				if err := os.Rename(f.release, destination); err != nil {
+					t.Fatal(err)
+				}
+				f.release = destination
+			case "command line":
+				extra = []string{"-DAUTOLIB_LOCAL_ROOT=" + f.release}
+			case "function":
+				setup = "function(load_entry)\nset(AUTOLIB_LOCAL_ROOT \"${FIXTURE_RELEASE}\")\ninclude(\"${CMAKE_CURRENT_SOURCE_DIR}/autolib.cmake\")\nendfunction()\nload_entry()\n"
+			case "subdirectory":
+				putTestFile(t, filepath.Join(f.source, "loader/CMakeLists.txt"), "set(AUTOLIB_LOCAL_ROOT \"${FIXTURE_RELEASE}\")\ninclude(\"${CMAKE_CURRENT_LIST_DIR}/../autolib.cmake\")\n")
+				setup = "add_subdirectory(loader)\n"
+			case "empty remote":
+				extra = []string{"-DAUTOLIB_LOCAL_ROOT=" + f.release, "-DAUTOLIB_REMOTE_ROOT="}
+			case "empty local":
+				extra = []string{"-DAUTOLIB_LOCAL_ROOT="}
+			case "both empty":
+				extra = []string{"-DAUTOLIB_LOCAL_ROOT=", "-DAUTOLIB_REMOTE_ROOT="}
+			}
+			putTestFile(t, filepath.Join(f.source, "CMakeLists.txt"), "cmake_minimum_required(VERSION 3.20)\nproject(sources NONE)\n"+setup+`
+set(AUTOLIB_LOCAL_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/not-the-source")
+set(AUTOLIB_REMOTE_ROOT "https://example.invalid/not-the-source")
+include(autolib.cmake)
+add_library(consumer INTERFACE)
+autolib_import(TARGET consumer INTERFACE demo)
+file(WRITE "${CMAKE_BINARY_DIR}/observed.txt" "${AUTOLIB_PACKAGE_DIR_demo}")
+get_property(remote GLOBAL PROPERTY _AUTOLIB_REMOTE_ROOT)
+file(WRITE "${CMAKE_BINARY_DIR}/remote.txt" "${remote}")
+`)
+			out, err := f.configure(extra...)
+			if kind == "empty local" || kind == "both empty" {
+				if err == nil {
+					t.Fatal("empty sources accepted", out)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("source scope: %v\n%s", err, out)
+			}
+			want := filepath.ToSlash(filepath.Join(f.release, "packages/linux-aarch64/demo"))
+			if got := readTestFile(t, filepath.Join(f.root, "consumer-build/observed.txt")); got != want {
+				t.Fatalf("%q != %q", got, want)
+			}
+			wantRemote := "https://gitee.com/xxf1ow/autolib-release/releases/download/autolib-release"
+			if kind == "empty remote" {
+				wantRemote = ""
+			}
+			if got := readTestFile(t, filepath.Join(f.root, "consumer-build/remote.txt")); got != wantRemote {
+				t.Fatalf("%q != %q", got, wantRemote)
+			}
+		})
+	}
+}
+
+func TestCMakeMultipleConsumers(t *testing.T) {
+	for _, kind := range []string{"success", "missing", "adapter failure"} {
+		t.Run(kind, func(t *testing.T) {
+			f := representativeFixture(t, "lz4")
+			if kind == "adapter failure" {
+				id := packageIdentity{"flann", "linux", "aarch64"}
+				a := testArchive(t, []archiveMember{{Name: "flann/autolib-import.cmake", Body: strings.Replace(identityHeader(id), `set(AUTOLIB_DEPENDENCIES "")`, `set(AUTOLIB_DEPENDENCIES "lz4")`, 1) + "add_library(autolib::partial INTERFACE IMPORTED GLOBAL)\nmessage(FATAL_ERROR EXPECTED_ADAPTER_FAILURE)\n"}})
+				putTestFile(t, filepath.Join(f.release, "flann-linux-aarch64.tar.zst"), readTestFile(t, a))
+			}
+			second := "flann queue"
+			if kind == "missing" {
+				second = "absent"
+			}
+			putTestFile(t, filepath.Join(f.source, "CMakeLists.txt"), `cmake_minimum_required(VERSION 3.20)
+project(multiple NONE)
+set(AUTOLIB_LOCAL_ROOT "${FIXTURE_RELEASE}")
+include(autolib.cmake)
+add_library(first INTERFACE)
+autolib_import(TARGET first INTERFACE lz4)
+add_subdirectory(second)
+`)
+			putTestFile(t, filepath.Join(f.source, "second/CMakeLists.txt"), `add_library(second INTERFACE)
+autolib_import(TARGET second INTERFACE `+second+`)
+get_target_property(first_links first INTERFACE_LINK_LIBRARIES)
+get_target_property(second_links second INTERFACE_LINK_LIBRARIES)
+if(NOT first_links STREQUAL "autolib::lz4" OR NOT second_links STREQUAL "autolib::flann;autolib::queue" OR NOT AUTOLIB_PREPARED_PACKAGES STREQUAL "lz4;flann;queue")
+    message(FATAL_ERROR "incorrect independent consumers")
+endif()
+file(WRITE "${CMAKE_BINARY_DIR}/after-second" reached)
+`)
+			out, err := f.configure()
+			if (err == nil) != (kind == "success") {
+				t.Fatalf("%v\n%s", err, out)
+			}
+			_, markerErr := os.Stat(filepath.Join(f.root, "consumer-build/after-second"))
+			if kind != "success" && !os.IsNotExist(markerErr) {
+				t.Fatal("continued after failed import")
+			}
+			if kind == "adapter failure" && !strings.Contains(out, "EXPECTED_ADAPTER_FAILURE") {
+				t.Fatal(out)
+			}
+		})
+	}
+}
+
+func TestCMakeTargetPlatform(t *testing.T) {
+	for _, tc := range []struct{ processor, generatorPlatform, want string }{
+		{"AMD64", "", "x86_64"}, {"arm64", "", "aarch64"}, {"aarch64", "x64,version=10.0", "x86_64"}, {"unknown", "", ""},
+	} {
+		t.Run(tc.processor+tc.generatorPlatform, func(t *testing.T) {
+			f := newEntryFixture(t, true, "")
+			body := readTestFile(t, filepath.Join(f.source, "CMakeLists.txt"))
+			body = strings.Replace(body, "autolib_import(", "set(CMAKE_GENERATOR_PLATFORM \""+tc.generatorPlatform+"\")\nautolib_import(", 1)
+			putTestFile(t, filepath.Join(f.source, "CMakeLists.txt"), body)
+			out, err := f.configure("-DCMAKE_SYSTEM_PROCESSOR=" + tc.processor)
+			if (err == nil) != (tc.want != "") {
+				t.Fatalf("%v\n%s", err, out)
+			}
+			if tc.want != "" && !strings.Contains(readTestFile(t, filepath.Join(f.root, "calls.jsonl")), "--arch="+tc.want) {
+				t.Fatal("wrong target architecture")
+			}
+		})
+	}
+}
+
 const fakeImporterSource = `package main
 import("encoding/json";"flag";"fmt";"os";"strings")
 func main(){
  log:=os.Getenv("AUTOLIB_TEST_TOOL_LOG");if log!="" {f,e:=os.OpenFile(log,os.O_CREATE|os.O_APPEND|os.O_WRONLY,0644);if e!=nil {panic(e)};json.NewEncoder(f).Encode(os.Args[1:]);f.Close()}
  if len(os.Args)<2 || os.Args[1]!="prepare" {fmt.Fprintln(os.Stderr,"only prepare is supported");os.Exit(2)}
  result:="";for _,arg:=range os.Args[2:] {if strings.HasPrefix(arg,"--result="){result=strings.TrimPrefix(arg,"--result=")}}
- fs:=flag.NewFlagSet("prepare",flag.ExitOnError);for _,n:=range []string{"local-root","remote-root","work-root","os","arch","result","package"}{fs.String(n,"",n)};fs.Parse(os.Args[2:])
+ fs:=flag.NewFlagSet("prepare",flag.ExitOnError);for _,n:=range []string{"local-root","remote-root","github-response","work-root","os","arch","result","package"}{fs.String(n,"",n)};fs.Parse(os.Args[2:])
  mode:=os.Getenv("AUTOLIB_TEST_MODE");if mode=="no-result" {return}
  if mode=="fail" {os.WriteFile(result,[]byte("message(FATAL_ERROR STALE_RESULT_LOADED)\n"),0644);os.Exit(7)}
  body:="set(AUTOLIB_PREPARED_PACKAGES demo)\nset(AUTOLIB_PACKAGE_DIR_demo [==["+os.Getenv("AUTOLIB_TEST_PACKAGE_DIR")+"]==])\n"

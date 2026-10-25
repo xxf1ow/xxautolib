@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 
 type prepareOptions struct {
 	LocalRoot, RemoteRoot, WorkRoot, OS, Arch, ResultPath string
+	GitHubResponse                                        string
 	Packages                                              []string
 }
 
@@ -17,15 +19,19 @@ func prepare(o prepareOptions) ([]preparedPackage, error) {
 	if err := validatePlatform(o.OS, o.Arch); err != nil {
 		return nil, err
 	}
-	if o.RemoteRoot != "" {
-		return nil, fmt.Errorf("remote consumption is not enabled: %s", o.RemoteRoot)
+	if o.LocalRoot == "" && o.RemoteRoot == "" {
+		return nil, fmt.Errorf("prepare requires a local or remote source")
 	}
 	if o.WorkRoot == "" || o.ResultPath == "" || len(o.Packages) == 0 {
 		return nil, fmt.Errorf("prepare requires work-root, result and at least one package")
 	}
-	local, err := normalizeLocalSource(o.LocalRoot)
-	if err != nil {
-		return nil, err
+	local := ""
+	if o.LocalRoot != "" {
+		var err error
+		local, err = normalizeLocalSource(o.LocalRoot)
+		if err != nil {
+			return nil, err
+		}
 	}
 	work, err := filepath.Abs(o.WorkRoot)
 	if err != nil {
@@ -41,6 +47,51 @@ func prepare(o prepareOptions) ([]preparedPackage, error) {
 	}
 	if err := os.MkdirAll(work, 0755); err != nil {
 		return nil, err
+	}
+	destinationRoot := local
+	if local == "" {
+		destinationRoot, err = os.MkdirTemp(work, ".prepare-")
+		if err != nil {
+			return nil, err
+		}
+	}
+	var remote *githubSourceClient
+	var snapshot githubSnapshot
+	acquire := func(id packageIdentity, directory string) error {
+		if o.RemoteRoot == "" {
+			return fmt.Errorf("missing local package %s for %s/%s in %s; no remote source configured", id.Name, id.OS, id.Arch, local)
+		}
+		if remote == nil {
+			source, err := parseGitHubSource(o.RemoteRoot)
+			if err != nil {
+				return err
+			}
+			remote = &githubSourceClient{Source: source}
+			snapshot, err = loadGitHubSnapshot(context.Background(), remote, o.GitHubResponse)
+			if err != nil {
+				return err
+			}
+		}
+		platformName := id.Name + "-" + id.OS + "-" + id.Arch + ".tar.zst"
+		universalName := id.Name + "-any-any.tar.zst"
+		asset, err := selectGitHubAsset(snapshot, []string{platformName, universalName})
+		if err != nil {
+			return err
+		}
+		identity := id
+		if asset.Name == universalName {
+			identity.OS, identity.Arch = "any", "any"
+		}
+		download, err := os.MkdirTemp(work, ".fetch-")
+		if err != nil {
+			return err
+		}
+		defer os.RemoveAll(download)
+		archive := filepath.Join(download, asset.Name)
+		if err := downloadGitHubAsset(context.Background(), remote, asset, archive); err != nil {
+			return err
+		}
+		return prepareMissingPackage(archive, directory, identity)
 	}
 	packages := []preparedPackage{}
 	state := map[string]uint8{}
@@ -60,18 +111,25 @@ func prepare(o prepareOptions) ([]preparedPackage, error) {
 		}
 		state[name] = 1
 		id := packageIdentity{name, o.OS, o.Arch}
-		directory := packageDirectory(local, id)
+		directory := packageDirectory(destinationRoot, id)
 		info, err := os.Lstat(directory)
 		if os.IsNotExist(err) {
-			archive, identity, err := selectLocalArchive(local, id)
-			if err != nil {
-				return err
+			var archive string
+			var identity packageIdentity
+			if local != "" {
+				archive, identity, err = selectLocalArchive(local, id)
+				if err != nil {
+					return err
+				}
 			}
 			if archive == "" {
-				return fmt.Errorf("missing local package %s for %s/%s in %s", name, o.OS, o.Arch, local)
-			}
-			if err := prepareMissingPackage(archive, directory, identity); err != nil {
-				return err
+				if err := acquire(id, directory); err != nil {
+					return err
+				}
+			} else {
+				if err := prepareMissingPackage(archive, directory, identity); err != nil {
+					return err
+				}
 			}
 		} else if err != nil {
 			return err

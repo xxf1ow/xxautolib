@@ -14,6 +14,8 @@ Status: proposed
 
 本文拥有双来源查找、包内消费依赖、无清单发现和损坏检测，部分替代[固定槽交付设计](2026-10-20-name-only-artifact-delivery.md)与[Go 工具层设计](2026-10-21-go-tooling-and-offline-import.md)中的单一来源、统一清单及调用者列全包规则。两份记录继续拥有可搬迁打包、adapter、纯 Go 工具和平台运行约束，并保留历史离线接口的验证基线。[CI 系统设计](../../implemented/architecture/2026-10-20-ci-system.md)独立拥有构建编排、上传和运行汇总。
 
+后续 CMake target 接口、来源默认值、每包公共目标及交付阶段由[按目标导入与分阶段 Release 消费](2026-10-25-target-import-and-release-consumption.md)独立设计。该设计部分替代本文的 CMake 调用形式、无远端默认值及后续阶段安排；本文继续拥有包协议、查找顺序、依赖遍历、损坏校验及 GitHub 资产发现规则。未受替代的约束继续有效，本文保留的本地接口与阶段证据不表示新接口已经实现。
+
 ### 来源与查找顺序
 
 入口分别接收 `LOCAL_ROOT`、`REMOTE_ROOT` 和用户请求的根包名；两个来源分别可省略，不同时省略。一次调用只处理一个目标 OS/架构，目标平台、工作目录和结果位置继续显式传给 importer，不由包内代码改变。CMake 使用 `autolib_import(LOCAL_ROOT <目录> REMOTE_ROOT <Release地址> PACKAGES <根包...> [WORK_ROOT <目录>] [TARGET_OS <os>] [TARGET_ARCH <arch>])`，其中两个来源关键字按需省略。CLI 使用 `prepare`、可选 `--local-root`、`--remote-root`，必填 `--work-root`、`--os`、`--arch`、`--result` 及至少一个可重复的 `--package`。显式空来源、空包名、未知参数及位置参数失败；根包重复保留首次出现。旧 `URI`、`--uri`、`--manifest` 明确报错，不维护两套入口兼容层。
@@ -85,7 +87,7 @@ adapter 仍只负责将已准备的本包及声明 sibling 接到真实导出 ta
 
 首次工具引导由单文件 CMake 入口完成，按宿主而非库目标平台选择 importer。已有本地工具继续复用；本地根中的对应宿主工具可直接取得，缺失时才按显式远端来源下载。联网下载在执行工具前核对 API 提供的 SHA256；本地工具作为用户提供的可信可执行输入，不以临时计算自身哈希冒充来源校验。工具缺失、不能执行或准备失败均明确失败，不回退 Go SDK、Python、builder 或系统同名程序。
 
-CMake 引导和 importer 均校验证书，初始请求与资产重定向使用 HTTPS，拒绝降级。公开 Release 消费不要求用户配置发布 token，不将 CI 凭据或发布授权交给消费端。工具运行要求与库 ABI 分别验证，不因为工具可运行就视为库兼容。
+CMake 引导和 importer 均从 HTTPS 地址请求并校验证书。首次 CMake 引导通过 FetchContent 下载工具，执行前核对 API 提供的 SHA256，接受 CMake 原生重定向行为，不额外检测或阻断 HTTPS→HTTP；importer 的请求及重定向仍拒绝降级。入口不增加自定义重试、备用下载器或失败恢复，失败即终止 configure。公开 Release 消费不要求用户配置发布 token，不将 CI 凭据或发布授权交给消费端。工具运行要求与库 ABI 分别验证，不因为工具可运行就视为库兼容。
 
 ### 单归档损坏检测
 

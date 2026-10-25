@@ -61,6 +61,6 @@ Git 与归档复用根 git/；本地 `.git` 存在即保留当前源码，不自
 
 ## 可选的二进制交付资格
 
-仅在任务明确包含打包或下游消费时提供同目录 `autolib-import.cmake`；本地构建无需 adapter。正文以包实际目录定位，使用目标存在性 guard，建立 `AutoLib::<name>` 全局 INTERFACE IMPORTED 目标。参考 queue 的固定 include、lz4 的精确 Config、flann 的显式 sibling 依赖；不扫描任意 Config、不回退系统包、不在 adapter 下载或编译。
+仅在任务明确包含打包或下游消费时提供同目录 `autolib-import.cmake`；本地构建无需 adapter。正文以包实际目录定位，使用目标存在性 guard，每包只建立一个 `autolib::<name>` 全局 INTERFACE IMPORTED 公共目标，统一封装所支持的上游库及声明依赖的公共目标，不保留大写兼容别名。参考 queue 的固定 include、lz4 的精确 Config、flann 的 C/C++ 封装及显式 sibling 依赖；实际使用的直接包依赖必须在模块声明中列出。不得聚合互斥静动态产物，不扫描任意 Config、不回退系统包、不在 adapter 下载或编译。
 
 builder 生成固定身份头并只在 staging 修正生产前缀，adapter 不回写解包元数据，也不为搬迁更改第三方编译方式。按[测试指南](../../../docs/testing.md#本地二进制闭环)验证真实链接、动态运行及搬迁后字节不变；OpenMP 等系统运行要求按实际产物说明。打包及消费参数、缓存人工刷新由[开发指南](../../../docs/development.md#本地打包与消费)拥有，远端发布仍须独立授权。

@@ -59,7 +59,7 @@ func TestPrepareFailures(t *testing.T) {
 	}
 	o.RemoteRoot = "https://example.invalid/release"
 	if _, err := prepare(o); err == nil {
-		t.Fatal("enabled remote prematurely")
+		t.Fatal("accepted unsupported remote source for missing package")
 	}
 	o.RemoteRoot = ""
 	o.LocalRoot = "https://example.invalid/release"

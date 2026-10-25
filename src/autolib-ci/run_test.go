@@ -242,13 +242,13 @@ endforeach()
 	}
 	writeCIFixture(t, root, "src/dependencies/lz4/autolib-import.cmake", `add_library(LZ4::lz4_static STATIC IMPORTED GLOBAL)
 set_target_properties(LZ4::lz4_static PROPERTIES IMPORTED_CONFIGURATIONS RELEASE IMPORTED_LOCATION_RELEASE "${CMAKE_CURRENT_LIST_DIR}/lib/lz4.lib" INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_LIST_DIR}/include")
-add_library(AutoLib::lz4 ALIAS LZ4::lz4_static)
+add_library(autolib::lz4 ALIAS LZ4::lz4_static)
 `)
 	writeCIFixture(t, root, "src/dependencies/flann/autolib-import.cmake", `add_library(flann::flann SHARED IMPORTED GLOBAL)
 set_target_properties(flann::flann PROPERTIES IMPORTED_CONFIGURATIONS RELEASE IMPORTED_LOCATION_RELEASE "${CMAKE_CURRENT_LIST_DIR}/bin/flann.dll" IMPORTED_IMPLIB_RELEASE "${CMAKE_CURRENT_LIST_DIR}/lib/flann.lib" INTERFACE_LINK_LIBRARIES "${CMAKE_CURRENT_LIST_DIR}/../lz4/lib/lz4.lib" INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_LIST_DIR}/include")
 add_library(flann::flann_cpp STATIC IMPORTED GLOBAL)
 set_target_properties(flann::flann_cpp PROPERTIES IMPORTED_CONFIGURATIONS RELEASE IMPORTED_LOCATION_RELEASE "${CMAKE_CURRENT_LIST_DIR}/../lz4/lib/lz4.lib")
-add_library(AutoLib::flann ALIAS flann::flann)
+add_library(autolib::flann ALIAS flann::flann)
 `)
 	writeCIFixture(t, root, "tests/autolib/smoke.cpp", `#include <windows.h>
 #include <iostream>

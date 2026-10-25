@@ -35,7 +35,7 @@ func TestUniversalPackageAcrossTargets(t *testing.T) {
 		"[[copy]]\nresource='readerwriterqueue'\nfiles=['atomicops.h','readerwriterqueue.h','readerwritercircularbuffer.h']\ndestination='include/queue'\n" +
 		"[[copy]]\nresource='concurrentqueue'\nfiles=['concurrentqueue.h','lightweightsemaphore.h','blockingconcurrentqueue.h']\ndestination='include/queue'\n"
 	putFile(t, filepath.Join(o.SourceRoot, "src/dependencies/queue/module.toml"), module)
-	putFile(t, filepath.Join(o.SourceRoot, "src/dependencies/queue/autolib-import.cmake"), "add_library(AutoLib::queue INTERFACE IMPORTED GLOBAL)\n")
+	putFile(t, filepath.Join(o.SourceRoot, "src/dependencies/queue/autolib-import.cmake"), "add_library(autolib::queue INTERFACE IMPORTED GLOBAL)\n")
 	want := map[string]string{
 		"atomicops.h": "readerwriterqueue", "readerwriterqueue.h": "readerwriterqueue", "readerwritercircularbuffer.h": "readerwriterqueue",
 		"concurrentqueue.h": "concurrentqueue", "lightweightsemaphore.h": "concurrentqueue", "blockingconcurrentqueue.h": "concurrentqueue",
@@ -68,7 +68,7 @@ func TestUniversalPackageAcrossTargets(t *testing.T) {
 				t.Fatalf("header bytes differ for %s: %v", name, err)
 			}
 		}
-		requireTextFile(t, filepath.Join(staged, "autolib-import.cmake"), "set(AUTOLIB_PACKAGE_NAME \"queue\")\nset(AUTOLIB_OS \"any\")\nset(AUTOLIB_ARCH \"any\")\nset(AUTOLIB_DEPENDENCIES \"\")\nadd_library(AutoLib::queue INTERFACE IMPORTED GLOBAL)\n")
+		requireTextFile(t, filepath.Join(staged, "autolib-import.cmake"), "set(AUTOLIB_PACKAGE_NAME \"queue\")\nset(AUTOLIB_OS \"any\")\nset(AUTOLIB_ARCH \"any\")\nset(AUTOLIB_DEPENDENCIES \"\")\nadd_library(autolib::queue INTERFACE IMPORTED GLOBAL)\n")
 	}
 	o.OS, o.Arch = "linux", "x86_64"
 	putFile(t, filepath.Join(o.InstallRoot, "queue/generated/platform.cmake"), "platform generated")
