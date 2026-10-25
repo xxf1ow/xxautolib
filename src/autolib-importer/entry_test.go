@@ -365,7 +365,7 @@ func TestLocalConsumerNoToolchainRuntime(t *testing.T) {
 	if err := os.Rename(filepath.Join(f.release, f.toolAsset), filepath.Join(f.release, "tool-away")); err != nil {
 		t.Fatal(err)
 	}
-	if out, err := f.configure(); err == nil || !strings.Contains(strings.Join(strings.Fields(out), " "), "remote consumption is not enabled") {
+	if out, err := f.configure(); err == nil || !strings.Contains(strings.Join(strings.Fields(out), " "), "unsupported remote source") {
 		t.Fatalf("missing tool was not rejected: %v\n%s", err, out)
 	}
 	if _, err := os.Stat(log); !os.IsNotExist(err) {
@@ -684,7 +684,7 @@ func main(){
  log:=os.Getenv("AUTOLIB_TEST_TOOL_LOG");if log!="" {f,e:=os.OpenFile(log,os.O_CREATE|os.O_APPEND|os.O_WRONLY,0644);if e!=nil {panic(e)};json.NewEncoder(f).Encode(os.Args[1:]);f.Close()}
  if len(os.Args)<2 || os.Args[1]!="prepare" {fmt.Fprintln(os.Stderr,"only prepare is supported");os.Exit(2)}
  result:="";for _,arg:=range os.Args[2:] {if strings.HasPrefix(arg,"--result="){result=strings.TrimPrefix(arg,"--result=")}}
- fs:=flag.NewFlagSet("prepare",flag.ExitOnError);for _,n:=range []string{"local-root","remote-root","work-root","os","arch","result","package"}{fs.String(n,"",n)};fs.Parse(os.Args[2:])
+ fs:=flag.NewFlagSet("prepare",flag.ExitOnError);for _,n:=range []string{"local-root","remote-root","github-response","work-root","os","arch","result","package"}{fs.String(n,"",n)};fs.Parse(os.Args[2:])
  mode:=os.Getenv("AUTOLIB_TEST_MODE");if mode=="no-result" {return}
  if mode=="fail" {os.WriteFile(result,[]byte("message(FATAL_ERROR STALE_RESULT_LOADED)\n"),0644);os.Exit(7)}
  body:="set(AUTOLIB_PREPARED_PACKAGES demo)\nset(AUTOLIB_PACKAGE_DIR_demo [==["+os.Getenv("AUTOLIB_TEST_PACKAGE_DIR")+"]==])\n"

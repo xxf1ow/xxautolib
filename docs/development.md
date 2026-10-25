@@ -52,7 +52,9 @@ cmake -P src/autolib-builder/go-sdk.cmake -- build -mod=readonly -trimpath -o bu
 
 LOCAL_ROOT 平铺固定名宿主工具和 `<name>-<os>-<arch>.tar.zst`；通用归档使用 any-any。准备目录为 `LOCAL_ROOT/packages/<os>-<arch>/<name>/`，优先于归档。相对根按顶层源码目录解析；本地根、工作根及实际包路径不得含分号。现有完整目录可只读复用；缺包需要本地根可写，同根写入由调用方串行，独立构建使用各自工作根。
 
-CLI 为 `importer prepare --local-root=<目录> --work-root=<目录> --os=<目标OS> --arch=<目标架构> --result=<文件> --package=<根包>`，package 可重复。当前 CMake 仅调用本地 prepare：配置远端且本地完整仍成功，实际缺工具或包才报远端尚未启用；直接 CLI 的非空 --remote-root 仍明确拒绝。URI、--uri、--manifest 不兼容；CI 验证也只使用本地入口。
+CLI 为 `importer prepare --local-root=<目录> --work-root=<目录> --os=<目标OS> --arch=<目标架构> --result=<文件> --package=<根包>`，package 可重复。可选 `--remote-root=<公开GitHub Release tag URL>` 在本地缺包时补齐；省略本地来源跳过本地查找，省略远端来源禁网，不能同时省略或显式传空来源。CMake 内部共享本次 configure 的原始 API 响应，用户不需传响应文件。URI、--uri、--manifest 不兼容；CI 验证仍使用本地入口。
+
+GitHub 消费在 include 前将 `AUTOLIB_REMOTE_ROOT` 设为 `https://github.com/xxf1ow/xxautolib/releases/tag/autolib-release`；默认 Gitee 未接通，不自动回退。工具缺失时 FetchContent 校验证书及摘要后执行；已有坏工具直接失败。入口接受原生重定向，importer 拒绝降级。供给要求与验收见[测试指南](testing.md#github-下载验证)。
 
 包头及依赖格式见[包消费设计](agent-notes/proposed/architecture/2026-10-24-manifestless-package-consumption.md#包内身份与依赖)。已有目录仅核对包头，不逐文件散列；归档内容校验用于意外损坏检测，不认证来源，本地工具须由用户信任。坏目录、坏归档或缺输入直接失败，不回退低优先级来源或加载上次结果。刷新前保护本地改动，移走对应 `packages/<目标OS>-<目标架构>/<包名>/`，不删除共享依赖；本地归档仍优先，更新归档不会覆盖目录。FLANN 的包依赖仅 lz4，OpenMP、C++ ABI 和系统运行库由消费环境满足。
 

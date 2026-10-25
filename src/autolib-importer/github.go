@@ -146,7 +146,8 @@ func githubPage(raw json.RawMessage) ([]json.RawMessage, error) {
 }
 
 func validateGitHubSnapshot(snapshot githubSnapshot, source githubSource) error {
-	if snapshot.Source != source.releaseURL() || len(snapshot.Pages) == 0 {
+	actualSource, err := parseGitHubSource(snapshot.Source)
+	if err != nil || actualSource != source || len(snapshot.Pages) == 0 {
 		return fmt.Errorf("GitHub response has mismatched source or missing asset pages")
 	}
 	if _, err := githubReleaseID(snapshot.Release, source); err != nil {
