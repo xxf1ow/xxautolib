@@ -23,7 +23,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	for _, field := range []struct {
 		key   string
 		value *string
-	}{{"local-root", &o.LocalRoot}, {"remote-root", &o.RemoteRoot}, {"work-root", &o.WorkRoot}, {"os", &o.OS}, {"arch", &o.Arch}, {"result", &o.ResultPath}} {
+	}{{"local-root", &o.LocalRoot}, {"remote-root", &o.RemoteRoot}, {"github-response", &o.GitHubResponse}, {"work-root", &o.WorkRoot}, {"os", &o.OS}, {"arch", &o.Arch}, {"result", &o.ResultPath}} {
 		flags.StringVar(field.value, field.key, "", field.key)
 	}
 	var packages packageFlags
@@ -33,6 +33,15 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if flags.NArg() != 0 {
 		return fail(fmt.Errorf("prepare: unexpected positional argument %q", flags.Arg(0)))
+	}
+	var emptyOption string
+	flags.Visit(func(f *flag.Flag) {
+		if (f.Name == "local-root" || f.Name == "remote-root" || f.Name == "github-response") && f.Value.String() == "" {
+			emptyOption = f.Name
+		}
+	})
+	if emptyOption != "" {
+		return fail(fmt.Errorf("prepare: --%s must not be empty; omit the option instead", emptyOption))
 	}
 	o.Packages = packages
 	if _, err := prepare(o); err != nil {
