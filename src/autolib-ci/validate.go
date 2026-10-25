@@ -353,7 +353,7 @@ func verifyLinuxABIEvidence(root, glibcMax, mode string) error {
 	return nil
 }
 
-var abiVersionPattern = regexp.MustCompile(`\((GLIBC_[0-9.]+|GLIBCXX_[0-9.]+|CXXABI_[0-9.]+|GCC_[0-9.]+)\)`)
+var abiVersionPattern = regexp.MustCompile(`(?:^|\s)\(?(GLIBC_[0-9.]+|GLIBCXX_[0-9.]+|CXXABI_[0-9.]+|GCC_[0-9.]+)\)?(?:\s|$)`)
 
 func validationPackagePaths(root, mode string) (string, string, error) {
 	if mode == "single" {

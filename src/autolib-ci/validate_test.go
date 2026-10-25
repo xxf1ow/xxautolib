@@ -129,6 +129,44 @@ func TestCIABIGate(t *testing.T) {
 	}
 }
 
+func TestCILinuxABIRecordsRealSymbolRequirements(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("requires native Linux compiler and objdump")
+	}
+	root := t.TempDir()
+	packages := filepath.Join(root, "packages")
+	libraryRoot := filepath.Join(packages, "flann", "lib")
+	first := filepath.Join(root, "first")
+	for _, directory := range []string{libraryRoot, first} {
+		if err := os.MkdirAll(directory, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeIdentityFixture(t, root, "first/prepared-root.txt", packages+"\n")
+	writeIdentityFixture(t, root, "consumer.cpp", "#include <cstdio>\nint main() { return std::puts(\"ABI fixture\") < 0; }\n")
+	writeIdentityFixture(t, root, "library.cpp", "#include <cstdio>\n#include <string>\nextern \"C\" int abi_fixture() { std::string text(128, 'x'); return std::puts(text.c_str()); }\n")
+	for _, args := range [][]string{
+		{filepath.Join(root, "consumer.cpp"), "-o", filepath.Join(first, "autolib_smoke")},
+		{"-fPIC", "-shared", filepath.Join(root, "library.cpp"), "-o", filepath.Join(libraryRoot, "libflann.so")},
+	} {
+		if output, err := exec.Command("g++", args...).CombinedOutput(); err != nil {
+			t.Fatalf("compile ABI fixture: %v\n%s", err, output)
+		}
+	}
+	if err := verifyLinuxABIEvidence(root, "2.99", "single"); err != nil {
+		t.Fatal(err)
+	}
+	report := mustReadText(t, filepath.Join(root, "abi-requirements.txt"))
+	for _, prefix := range []string{"GLIBC_", "GLIBCXX_", "CXXABI_", "GCC_"} {
+		if !strings.Contains(report, prefix) {
+			t.Errorf("real consumer/library %s requirements missing from ABI report: %q", prefix, report)
+		}
+	}
+	if err := verifyLinuxABIEvidence(root, "2.0", "single"); err == nil {
+		t.Fatal("accepted real GLIBC requirements above the configured maximum")
+	}
+}
+
 func TestCIWindowsIdentity(t *testing.T) {
 	config, err := loadCIEnvironment(filepath.Join("..", "..", ".github", "ci-tools.json"))
 	if err != nil {

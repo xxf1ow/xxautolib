@@ -3,10 +3,52 @@ package main
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestCIIdentityStableAcrossGitCheckoutLineEndings(t *testing.T) {
+	root, description, inputs := identityFixture(t)
+	inputs.SourceRoot = root
+	attributes, err := os.ReadFile(filepath.Join("..", "..", ".gitattributes"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeIdentityFixture(t, root, ".gitattributes", string(attributes))
+	writeIdentityFixture(t, root, "go.sum", "example.invalid/module v1.0.0 h1:fixture\n")
+	git := func(args ...string) {
+		t.Helper()
+		command := exec.Command("git", args...)
+		command.Dir = root
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, output)
+		}
+	}
+	git("init", "--quiet")
+	git("-c", "core.autocrlf=false", "add", ".")
+	description.Modules = []describedModule{identityModule("queue", nil, true)}
+	want := identitiesForTest(t, inputs, description)["queue"]
+	for _, autocrlf := range []string{"true", "false"} {
+		t.Run(autocrlf, func(t *testing.T) {
+			for _, name := range []string{"go.mod", "go.sum", "src/autolib-builder/generate.go", "src/autolib-ci/identity.go"} {
+				if err := os.Remove(filepath.Join(root, filepath.FromSlash(name))); err != nil {
+					t.Fatal(err)
+				}
+			}
+			git("-c", "core.autocrlf="+autocrlf, "checkout-index", "--force", "--all")
+			for _, name := range []string{"go.mod", "go.sum", "src/autolib-builder/generate.go", "src/autolib-ci/identity.go"} {
+				if data := mustReadText(t, filepath.Join(root, filepath.FromSlash(name))); strings.Contains(data, "\r") {
+					t.Errorf("%s has CRLF with core.autocrlf=%s", name, autocrlf)
+				}
+			}
+			if got := identitiesForTest(t, inputs, description)["queue"]; got != want {
+				t.Errorf("universal package identity changed with core.autocrlf=%s: got %+v, want %+v", autocrlf, got, want)
+			}
+		})
+	}
+}
 
 func TestCIIdentityOwnership(t *testing.T) {
 	root, description, inputs := identityFixture(t)
