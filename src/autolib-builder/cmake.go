@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -10,7 +11,7 @@ import (
 
 type buildContext struct {
 	SourceRoot, BuildRoot, SystemName, Architecture string
-	InstallRoot, MakeProgram                        string
+	InstallRoot, MakeProgram, BuilderFile           string
 	Generator, Platform, Toolset, Instance          string
 	CMakeCommand, GitExecutable                     string
 	MultiConfig                                     bool
@@ -101,8 +102,24 @@ func renderModule(module *moduleDefinition, context buildContext, dependencies [
 		separator += "_"
 	}
 	lines := []string{"# Generated from module.toml; do not edit.", ""}
+	adapterPath := filepath.Join(filepath.Dir(module.Path), "autolib-import.cmake")
+	_, adapterErr := os.Stat(adapterPath)
+	if adapterErr != nil && !os.IsNotExist(adapterErr) {
+		return "", adapterErr
+	}
+	consumable := adapterErr == nil
+	prepare := func(phase string) []string {
+		return []string{filepath.ToSlash(context.BuilderFile), "prepare-consumption", "--source-root=" + filepath.ToSlash(context.SourceRoot), "--install-root=" + filepath.ToSlash(installRoot), "--name=" + module.Name, "--os=" + strings.ToLower(context.SystemName), "--arch=" + normalizeArchitecture(context.Architecture), "--phase=" + phase}
+	}
 	if module.Sentinel != "" {
 		lines = append(lines, "if(EXISTS "+cmakeArgument(slashJoin(install, module.Sentinel))+")", "    message(STATUS "+cmakeArgument("  [Info] ["+module.Name+"] cached")+")", "    add_custom_target("+cmakeArgument(module.Name)+" ALL)")
+		if consumable {
+			arguments := []string{}
+			for _, arg := range prepare("reuse") {
+				arguments = append(arguments, cmakeArgument(arg))
+			}
+			lines = append(lines, "    add_custom_command(TARGET "+cmakeArgument(module.Name)+" POST_BUILD COMMAND "+strings.Join(arguments, " ")+" VERBATIM)")
+		}
 		if len(dependencies) > 0 {
 			args := []string{cmakeArgument(module.Name)}
 			for _, dep := range dependencies {
@@ -324,9 +341,17 @@ func renderModule(module *moduleDefinition, context buildContext, dependencies [
 		} else {
 			options = append(options, option("CMAKE_ARGS", args...))
 		}
-		options = append(options, option("BUILD_COMMAND", cmake, "--build", "<BINARY_DIR>", "--config", "Release"), option("INSTALL_COMMAND", cmake, "--build", "<BINARY_DIR>", "--target", "install", "--config", "Release"))
+		options = append(options, option("BUILD_COMMAND", cmake, "--build", "<BINARY_DIR>", "--config", "Release"))
+		if consumable {
+			options = append(options, option("INSTALL_COMMAND", prepare("begin")...), option("COMMAND", cmake, "--build", "<BINARY_DIR>", "--target", "install", "--config", "Release"), option("COMMAND", prepare("installed")...))
+		} else {
+			options = append(options, option("INSTALL_COMMAND", cmake, "--build", "<BINARY_DIR>", "--target", "install", "--config", "Release"))
+		}
 	} else {
 		options = append(options, option("CONFIGURE_COMMAND", ""), option("BUILD_COMMAND", ""))
+		if consumable {
+			options = append(options, option("INSTALL_COMMAND", prepare("begin")...))
+		}
 		for i, mapping := range module.Copies {
 			destination := slashJoin(install, mapping.Destination)
 			source := sourceDirectory(module.Source, local, prefix)
@@ -334,7 +359,7 @@ func renderModule(module *moduleDefinition, context buildContext, dependencies [
 				source = resourceDirectory(mapping.Resource)
 			}
 			key := "COMMAND"
-			if i == 0 {
+			if i == 0 && !consumable {
 				key = "INSTALL_COMMAND"
 			}
 			options = append(options, option(key, cmake, "-E", "make_directory", destination))
@@ -351,9 +376,15 @@ func renderModule(module *moduleDefinition, context buildContext, dependencies [
 			args = append(args, destination)
 			options = append(options, option("COMMAND", args...))
 		}
+		if consumable {
+			options = append(options, option("COMMAND", prepare("installed")...))
+		}
 	}
 	options = append(options, patchOptions("")...)
 	emit("ExternalProject_Add", []string{module.Name}, options)
+	if consumable {
+		emit("add_custom_command", []string{"TARGET", module.Name, "POST_BUILD"}, []cmakeOption{option("COMMAND", prepare("reuse")...), option("VERBATIM")})
+	}
 	if len(dependencies) > 0 && module.Kind == "cmake" {
 		emit("ExternalProject_Add_StepDependencies", []string{module.Name, "configure", setupPath, proxy}, nil)
 	}

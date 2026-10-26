@@ -49,6 +49,12 @@ func generate(context buildContext, names []string) error {
 		}
 		outputs = append(outputs, output{slashJoin(context.BuildRoot, "generated", m.Name+".cmake"), content})
 		inputs = append(inputs, filepath.ToSlash(m.Path))
+		adapter := slashJoin(filepath.Dir(m.Path), "autolib-import.cmake")
+		if _, err := os.Stat(adapter); err == nil {
+			inputs = append(inputs, adapter)
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
 	}
 	engine := filepath.Join(context.SourceRoot, "src/autolib-builder")
 	files, err := os.ReadDir(engine)

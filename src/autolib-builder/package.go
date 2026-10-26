@@ -248,6 +248,12 @@ func validateUniversalPackage(module *moduleDefinition, installRoot string, adap
 		if err != nil {
 			return err
 		}
+		if filepath.ToSlash(rel) == "autolib-import.cmake" {
+			if !entry.Type().IsRegular() {
+				return fmt.Errorf("queue consumption file must be regular: %s", path)
+			}
+			return nil
+		}
 		actual[filepath.ToSlash(rel)] = true
 		return nil
 	}); err != nil {

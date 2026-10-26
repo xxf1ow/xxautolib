@@ -26,8 +26,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && args[0] == "describe" {
 		return runDescribe(args[1:], stdout, stderr)
 	}
+	if len(args) > 0 && args[0] == "prepare-consumption" {
+		return runConsumption(args[1:], stderr)
+	}
 	if len(args) == 0 || args[0] != "generate" {
-		return fail(fmt.Errorf("usage: autolib-builder version | generate [options] | describe [options] | package [options]"))
+		return fail(fmt.Errorf("usage: autolib-builder version | generate [options] | describe [options] | prepare-consumption [options] | package [options]"))
 	}
 	flags := flag.NewFlagSet("generate", flag.ContinueOnError)
 	flags.SetOutput(stderr)
@@ -76,6 +79,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 		context.CMakeDefaults[key] = value
 	}
 	var err error
+	if context.BuilderFile, err = os.Executable(); err != nil {
+		return fail(err)
+	}
 	if context.SourceRoot, err = filepath.Abs(context.SourceRoot); err != nil {
 		return fail(err)
 	}

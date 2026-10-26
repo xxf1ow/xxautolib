@@ -7,6 +7,7 @@ function(xxautolib_generate_modules)
 
     # GLOB 检测源码增删；文件内容变化统一由生成器的输入清单登记。
     file(GLOB go_sources CONFIGURE_DEPENDS "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/*.go")
+    file(GLOB module_adapters CONFIGURE_DEPENDS "${root}/src/dependencies/*/autolib-import.cmake")
     set(builder "${CMAKE_BINARY_DIR}/tools/autolib-builder")
     if(CMAKE_HOST_WIN32)
         string(APPEND builder ".exe")
