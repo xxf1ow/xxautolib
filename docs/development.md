@@ -38,7 +38,7 @@ Git 主来源复用 `git/<模块名>/`，资源复用 `git/_resources/<模块名
 
 ## 本地打包与消费
 
-普通根 configure/build 已输出 builder、安装根的宿主 importer，以及提供 adapter 模块的消费文件，可直接导入，无需打包。自定义安装根通过 `-DAUTOLIB_INSTALL_ROOT=<目录>` 设置；相对值以顶层源码目录解析，含空格路径须作为一个参数传入。更换根需重新 configure。
+普通根 configure/build 已输出 builder、安装根的宿主 importer，以及提供 adapter 模块的消费文件，可直接导入，无需打包。自定义安装根在 configure 前设置进程环境变量 `AUTOLIB_INSTALL_ROOT`，不是同名 `-D` 参数；相对值以顶层源码目录解析，含空格路径须保持完整。更换根需重新 configure。
 
 下游在 include 前将 `AUTOLIB_LOCAL_ROOT` 指向该安装根、`AUTOLIB_REMOTE_ROOT` 设为空，然后正常调用 `autolib_import(TARGET app PRIVATE queue flann)`。所需闭包完整时消费不联网；生产端准备 SDK、模块及三方源码不受此约束。Windows importer 为 `autolib-importer-windows-x86_64.exe`，Linux 按宿主架构命名且须可执行。没有 adapter 的模块不能快捷导入。
 
