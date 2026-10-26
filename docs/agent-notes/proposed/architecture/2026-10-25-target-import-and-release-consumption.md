@@ -24,6 +24,8 @@ Windows x86_64 的真实 GitHub 验证从空消费根引导工具、下载依赖
 
 这里验收的是本地发行包与 GitHub Release 消费，不包含直接导入 builder 原始安装树。后者需要单独设计；Gitee 镜像与默认来源消费继续后置，不由 GitHub 验收推定可用。
 
+[本地安装产物直接消费](2026-10-25-direct-install-consumption.md)独立拥有安装后消费准备、宿主工具输出及扁平目录的提案，实施后替代本文继承的嵌套本地布局。本文继续拥有 CMake 公共接口、来源默认值、唯一公共目标和 Gitee 阶段，不将该提案视为 GitHub 阶段的未完成项。
+
 ### CMake 公共接口
 
 消费者携带单文件入口，不需要旁置 CMake helper：

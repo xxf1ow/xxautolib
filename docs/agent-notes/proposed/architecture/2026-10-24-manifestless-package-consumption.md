@@ -16,6 +16,8 @@ Status: proposed
 
 后续 CMake target 接口、来源默认值、每包公共目标及交付阶段由[按目标导入与分阶段 Release 消费](2026-10-25-target-import-and-release-consumption.md)独立设计。该设计部分替代本文的 CMake 调用形式、无远端默认值及后续阶段安排；本文继续拥有包协议、查找顺序、依赖遍历、损坏校验及 GitHub 资产发现规则。未受替代的约束继续有效，本文保留的本地接口与阶段证据不表示新接口已经实现。
 
+[本地安装产物直接消费](2026-10-25-direct-install-consumption.md)提出将本地目录统一为 `<本地根>/<包名>/`，并在 builder 安装后生成消费文件和输出宿主 importer。该提案实施后替代本文的嵌套准备目录与打包时生成包头的规则，其余包协议继续由本文拥有；本文中的嵌套布局不构成该提案的实施要求。
+
 ### 来源与查找顺序
 
 入口分别接收 `LOCAL_ROOT`、`REMOTE_ROOT` 和用户请求的根包名；两个来源分别可省略，不同时省略。一次调用只处理一个目标 OS/架构，目标平台、工作目录和结果位置继续显式传给 importer，不由包内代码改变。CMake 使用 `autolib_import(LOCAL_ROOT <目录> REMOTE_ROOT <Release地址> PACKAGES <根包...> [WORK_ROOT <目录>] [TARGET_OS <os>] [TARGET_ARCH <arch>])`，其中两个来源关键字按需省略。CLI 使用 `prepare`、可选 `--local-root`、`--remote-root`，必填 `--work-root`、`--os`、`--arch`、`--result` 及至少一个可重复的 `--package`。显式空来源、空包名、未知参数及位置参数失败；根包重复保留首次出现。旧 `URI`、`--uri`、`--manifest` 明确报错，不维护两套入口兼容层。
