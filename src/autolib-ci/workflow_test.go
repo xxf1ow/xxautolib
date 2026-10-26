@@ -224,10 +224,13 @@ func TestCIWorkflowContract(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, target := range []string{"autolib-builder", "autolib-importer", "autolib-ci"} {
+		for _, target := range []string{"autolib-builder", "autolib-ci"} {
 			if strings.Count(string(data), "./src/"+target) != 1 {
 				t.Fatalf("%s must build %s exactly once", file, target)
 			}
+		}
+		if strings.Contains(string(data), "./src/autolib-importer") {
+			t.Fatalf("%s independently builds the importer instead of using production configure", file)
 		}
 	}
 	t.Run("Windows skips an absent dependency layer", func(t *testing.T) {

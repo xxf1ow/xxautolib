@@ -68,7 +68,7 @@ func newLayerFixture(t *testing.T, modules []string) *layerFixture {
 		writeCIFixture(t, root, file, string(data))
 	}
 	work := filepath.Join(root, "build", "ci", identity.RunID+"-"+identity.Attempt, "windows-x86_64")
-	f.options = ciRunOptions{SourceRoot: root, PlanFile: filepath.Join(root, "plan.json"), RunIdentityFile: filepath.Join(root, "run.json"), Platform: "windows-x86_64", WorkRoot: work, BuilderFile: executable, ImporterFile: executable, CMakeCommand: executable}
+	f.options = ciRunOptions{SourceRoot: root, PlanFile: filepath.Join(root, "plan.json"), RunIdentityFile: filepath.Join(root, "run.json"), Platform: "windows-x86_64", WorkRoot: work, BuilderFile: executable, ImporterFile: filepath.Join(work, "install", ciImporterAsset("windows-x86_64")), CMakeCommand: executable}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" {
 			f.writes = append(f.writes, r.Method+" "+r.URL.Path)
@@ -128,6 +128,9 @@ func TestCIRunLayers(t *testing.T) {
 		t.Fatal(err)
 	}
 	commands := mustReadText(t, os.Getenv("AUTOLIB_CI_COMMAND_LOG"))
+	if strings.Index(commands, `"-DBUILD_LIST=lz4,flann"`) < 0 || strings.Index(commands, `"-DBUILD_LIST=lz4,flann"`) > strings.Index(commands, `"--package=ci-smoke"`) {
+		t.Fatalf("ordinary production configure did not prepare the host importer before verification: %s", commands)
+	}
 	if strings.Count(commands, `"--package=ci-smoke"`) != 1 || strings.Count(commands, `"-DVALIDATION_MODE=single"`) != 2 || strings.Contains(commands, `"-DVALIDATION_MODE=relocate"`) {
 		t.Fatalf("unexpected prepare/validation count: %s", commands)
 	}
@@ -176,7 +179,7 @@ func testRealCILocalDependency(t *testing.T) {
 	}
 	f.run.SHA = strings.TrimSpace(string(sha))
 	f.run.CheckoutSHA = f.run.SHA
-	for _, name := range []string{"go.mod", "go.sum", ".github/ci-tools.json", "src/autolib.cmake", "tests/autolib/CMakeLists.txt", "tests/autolib/run-local.cmake"} {
+	for _, name := range []string{"CMakeLists.txt", "go.mod", "go.sum", ".github/ci-tools.json", "src/autolib.cmake", "tests/autolib/CMakeLists.txt", "tests/autolib/run-local.cmake"} {
 		data, err := os.ReadFile(filepath.Join(repository, name))
 		if err != nil {
 			t.Fatal(err)
@@ -194,11 +197,28 @@ func testRealCILocalDependency(t *testing.T) {
 		}
 		writeCIFixture(t, root, "src/autolib-builder/"+filepath.Base(file), string(data))
 	}
+	for _, tool := range []string{"autolib-builder", "autolib-importer"} {
+		files, err := filepath.Glob(filepath.Join(repository, "src", tool, "*.go"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, file := range files {
+			if !strings.HasSuffix(file, "_test.go") {
+				writeCIFixture(t, root, "src/"+tool+"/"+filepath.Base(file), mustReadText(t, file))
+			}
+		}
+	}
+	if err := os.MkdirAll(filepath.Join(root, ".tools"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command("cmd", "/c", "mklink", "/J", filepath.Join(root, ".tools/go"), filepath.Join(repository, ".tools/go")).CombinedOutput(); err != nil {
+		t.Fatalf("fixture SDK: %v %s", err, out)
+	}
 	cmake, err := exec.LookPath("cmake")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, tool := range []string{"autolib-builder", "autolib-importer", "autolib-ci"} {
+	for _, tool := range []string{"autolib-builder", "autolib-ci"} {
 		output := filepath.Join(root, "tools", tool+".exe")
 		cmd := exec.Command(cmake, "-P", filepath.Join(repository, "src/autolib-builder/go-sdk.cmake"), "--", "build", "-mod=readonly", "-trimpath", "-o", output, "./src/"+tool)
 		cmd.Dir = repository
@@ -208,26 +228,19 @@ func testRealCILocalDependency(t *testing.T) {
 	}
 	f.options.SourceRoot = root
 	f.options.BuilderFile = filepath.Join(root, "tools/autolib-builder.exe")
-	f.options.ImporterFile = filepath.Join(root, "tools/autolib-importer.exe")
 	f.options.CMakeCommand = cmake
 	f.options.PlanFile = filepath.Join(root, "plan.json")
 	f.options.RunIdentityFile = filepath.Join(root, "run.json")
-	writeCIFixture(t, root, "CMakeLists.txt", `cmake_minimum_required(VERSION 3.20)
-project(local_ci LANGUAGES C CXX)
-include(ExternalProject)
-foreach(name IN ITEMS lz4 flann)
- if(name STREQUAL BUILD_LIST)
-  ExternalProject_Add(${name} SOURCE_DIR "${CMAKE_SOURCE_DIR}/upstream/${name}" DOWNLOAD_COMMAND ""
-   CMAKE_ARGS "-DCMAKE_INSTALL_PREFIX=$ENV{AUTOLIB_INSTALL_ROOT}/${name}" "-DSUPPORT=$ENV{AUTOLIB_INSTALL_ROOT}/lz4/lib/lz4.lib" "-DCMAKE_MSVC_RUNTIME_LIBRARY=${CMAKE_MSVC_RUNTIME_LIBRARY}")
- endif()
-endforeach()
-`)
 	for _, name := range []string{"lz4", "flann"} {
 		depends := ""
 		if name == "flann" {
 			depends = "depends=['lz4']\n"
 		}
-		writeCIFixture(t, root, "src/dependencies/"+name+"/module.toml", "name='"+name+"'\ntype='cmake'\nsentinel='include/"+name+".h'\n"+depends+"[source]\nGIT_REPOSITORY='local-fixture'\nGIT_TAG='fixed'\n")
+		cache := ""
+		if name == "flann" {
+			cache = "[cmake.cache]\nSUPPORT='<INSTALL_DIR>/../lz4/lib/lz4.lib'\n"
+		}
+		writeCIFixture(t, root, "src/dependencies/"+name+"/module.toml", "name='"+name+"'\ntype='cmake'\nsentinel='include/"+name+".h'\n"+depends+"[source]\nGIT_REPOSITORY='local-fixture'\nGIT_TAG='fixed'\n"+cache)
 		kind := "STATIC"
 		code := "int lz4_value(void) { return 7; }\n"
 		link := ""
@@ -236,9 +249,12 @@ endforeach()
 			code = "int lz4_value(void); int flann_value(void) { return lz4_value()+35; }\n"
 			link = "target_link_libraries(flann PRIVATE \"${SUPPORT}\")\n"
 		}
-		writeCIFixture(t, root, "upstream/"+name+"/CMakeLists.txt", "cmake_minimum_required(VERSION 3.20)\nproject(local_"+name+" LANGUAGES C)\nadd_library("+name+" "+kind+" fixture.c)\nset_target_properties("+name+" PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)\n"+link+"install(TARGETS "+name+" RUNTIME DESTINATION bin LIBRARY DESTINATION lib ARCHIVE DESTINATION lib)\ninstall(FILES "+name+".h DESTINATION include)\n")
-		writeCIFixture(t, root, "upstream/"+name+"/fixture.c", code)
-		writeCIFixture(t, root, "upstream/"+name+"/"+name+".h", "int "+name+"_value(void);\n")
+		writeCIFixture(t, root, "git/"+name+"/CMakeLists.txt", "cmake_minimum_required(VERSION 3.20)\nproject(local_"+name+" LANGUAGES C)\nadd_library("+name+" "+kind+" fixture.c)\nset_target_properties("+name+" PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)\n"+link+"install(TARGETS "+name+" RUNTIME DESTINATION bin LIBRARY DESTINATION lib ARCHIVE DESTINATION lib)\ninstall(FILES "+name+".h DESTINATION include)\n")
+		writeCIFixture(t, root, "git/"+name+"/fixture.c", code)
+		writeCIFixture(t, root, "git/"+name+"/"+name+".h", "int "+name+"_value(void);\n")
+		if out, err := exec.Command("git", "init", filepath.Join(root, "git", name)).CombinedOutput(); err != nil {
+			t.Fatalf("fixture source: %v %s", err, out)
+		}
 	}
 	writeCIFixture(t, root, "src/dependencies/lz4/autolib-import.cmake", `add_library(LZ4::lz4_static STATIC IMPORTED GLOBAL)
 set_target_properties(LZ4::lz4_static PROPERTIES IMPORTED_CONFIGURATIONS RELEASE IMPORTED_LOCATION_RELEASE "${CMAKE_CURRENT_LIST_DIR}/lib/lz4.lib" INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_LIST_DIR}/include")
@@ -318,6 +334,7 @@ int main() {
 		f.plan = plan
 		f.run.Attempt = attempt
 		f.options.WorkRoot = filepath.Join(root, "build/ci", f.run.RunID+"-"+attempt, platform)
+		f.options.ImporterFile = filepath.Join(f.options.WorkRoot, "install", ciImporterAsset(platform))
 		if err := writeCIJSON(f.options.PlanFile, plan); err != nil {
 			t.Fatal(err)
 		}
@@ -351,6 +368,14 @@ int main() {
 }
 
 func TestCIRebuildClosure(t *testing.T) {
+	t.Run("configure fails before old tool publication", func(t *testing.T) {
+		f := newLayerFixture(t, []string{"lz4"})
+		f.options.ImporterFile = f.options.BuilderFile
+		t.Setenv("AUTOLIB_CI_FAIL_CONFIGURE", "1")
+		if err := f.layer(t, "prepare"); err == nil || len(f.writes) != 0 || f.result(t).Importer.Verified {
+			t.Fatalf("failed production configure published an old executable: %v writes=%v", err, f.writes)
+		}
+	})
 	f := newLayerFixture(t, []string{"lz4", "flann"})
 	writeCIFixture(t, f.options.SourceRoot, "3rdparty/lz4/sentinel", "old installation")
 	for _, layer := range []string{"prepare", "layer0", "layer1", "verify"} {
@@ -443,6 +468,19 @@ func runLayerCommandFixture() {
 	if len(args) > 0 && args[0] == "prepare" {
 		fmt.Fprintln(os.Stderr, "package ci-smoke not found")
 		os.Exit(1)
+	}
+	if value("-DBUILD_LIST") != "" {
+		if os.Getenv("AUTOLIB_CI_FAIL_CONFIGURE") != "" {
+			os.Exit(4)
+		}
+		output := filepath.Join(os.Getenv("AUTOLIB_INSTALL_ROOT"), "autolib-importer-windows-x86_64.exe")
+		os.MkdirAll(filepath.Dir(output), 0755)
+		if _, err := os.Stat(output); os.IsNotExist(err) {
+			executable, _ := os.Executable()
+			if err := copyCIFile(executable, output); err != nil {
+				os.Exit(81)
+			}
+		}
 	}
 	if value("-DBUILD_LIST") == os.Getenv("AUTOLIB_CI_FAIL_MODULE") && value("-DBUILD_LIST") != "" {
 		os.Exit(3)

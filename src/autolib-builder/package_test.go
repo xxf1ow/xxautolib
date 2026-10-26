@@ -7,8 +7,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/klauspost/compress/zstd"
 )
@@ -22,6 +24,16 @@ func TestPackageDependencyHeader(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			o := stageFixture(t, tc.name)
 			definitionFile(t, o.SourceRoot, tc.name, "cmake", tc.declaration+testSource)
+			if tc.name == "sorted" {
+				f := &fixture{t: t, root: o.SourceRoot}
+				consumptionModule(f, "zlib", "")
+				if err := consumptionCommand(f, "zlib", "reuse"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := prepareConsumption(consumptionOptions{SourceRoot: o.SourceRoot, InstallRoot: o.InstallRoot, Name: tc.name, OS: o.OS, Arch: o.Arch, Phase: "reuse"}); err != nil {
+				t.Fatal(err)
+			}
 			dir, err := stagePackage(o)
 			if err != nil {
 				t.Fatal(err)
@@ -83,9 +95,16 @@ func TestPackageArchiveChecksum(t *testing.T) {
 func stageFixture(t *testing.T, name string) stageOptions {
 	t.Helper()
 	f := newFixture(t)
+	consumptionModule(f, "lz4", "")
+	if err := consumptionCommand(f, "lz4", "reuse"); err != nil {
+		t.Fatal(err)
+	}
 	definitionFile(t, f.root, name, "cmake", "depends=['lz4']\n"+testSource)
 	putFile(t, filepath.Join(f.root, "src/dependencies", name, "autolib-import.cmake"), "# adapter 正文\n")
 	putFile(t, filepath.Join(f.root, "3rdparty", name, "include/input.h"), "unchanged installation\n")
+	if err := consumptionCommand(f, name, "reuse"); err != nil {
+		t.Fatal(err)
+	}
 	script, err := os.ReadFile("fixup-metadata.cmake")
 	if err == nil {
 		putFile(t, filepath.Join(f.root, "src/autolib-builder/fixup-metadata.cmake"), string(script))
@@ -100,6 +119,7 @@ func TestStagePackage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	putFile(t, filepath.Join(o.SourceRoot, "src/dependencies/queue/autolib-import.cmake"), "# template changed after installation\n")
 	staged, err := stagePackage(o)
 	if err != nil {
 		t.Fatal(err)
@@ -114,7 +134,7 @@ func TestStagePackage(t *testing.T) {
 	if !before.ModTime().Equal(after.ModTime()) {
 		t.Fatal("installation mtime changed")
 	}
-	for _, tc := range []string{"missing adapter", "missing installation", "overlap", "existing stage", "invalid platform", "invalid name"} {
+	for _, tc := range []string{"missing adapter", "missing installation", "overlap", "existing stage", "invalid platform", "invalid name", "missing descriptor", "invalid descriptor", "incomplete descriptor", "wrong identity", "wrong dependencies"} {
 		t.Run(tc, func(t *testing.T) {
 			o := stageFixture(t, "demo")
 			switch tc {
@@ -132,6 +152,21 @@ func TestStagePackage(t *testing.T) {
 				o.OS = "other"
 			case "invalid name":
 				o.Name = "../demo"
+			case "missing descriptor":
+				if err := os.Remove(filepath.Join(o.InstallRoot, "demo/autolib-import.cmake")); err != nil {
+					t.Fatal(err)
+				}
+			case "invalid descriptor":
+				putFile(t, filepath.Join(o.InstallRoot, "demo/autolib-import.cmake"), "invalid")
+			case "incomplete descriptor":
+				putFile(t, filepath.Join(o.InstallRoot, "demo/autolib-import.cmake"), "# AutoLib installation incomplete\n")
+			case "wrong identity", "wrong dependencies":
+				path := filepath.Join(o.InstallRoot, "demo/autolib-import.cmake")
+				old, replacement := `"demo"`, `"other"`
+				if tc == "wrong dependencies" {
+					old, replacement = `"lz4"`, `"other"`
+				}
+				putFile(t, path, strings.Replace(readFile(t, path), old, replacement, 1))
 			}
 			if _, err := stagePackage(o); err == nil {
 				t.Fatal("accepted invalid staging input")
@@ -141,6 +176,62 @@ func TestStagePackage(t *testing.T) {
 				requireFile(t, filepath.Join(o.StageRoot, "demo/sentinel"), "preserve")
 			}
 		})
+	}
+}
+
+func TestStageInstallationUnchanged(t *testing.T) {
+	o := stageFixture(t, "flann")
+	putFile(t, filepath.Join(o.InstallRoot, "flann/lib/cmake/flann/config.cmake"), "set(PREFIX \""+filepath.ToSlash(o.InstallRoot)+"/flann\")\n")
+	putFile(t, filepath.Join(o.InstallRoot, "flann/lib/pkgconfig/flann.pc"), "prefix="+filepath.ToSlash(o.InstallRoot)+"/flann\n")
+	if err := os.Symlink("include/input.h", filepath.Join(o.InstallRoot, "flann/link")); err != nil {
+		t.Logf("symlink unavailable: %v", err)
+	}
+	type entry struct {
+		Mode     os.FileMode
+		Modified time.Time
+		Content  string
+	}
+	snapshot := func() map[string]entry {
+		t.Helper()
+		entries := map[string]entry{}
+		err := filepath.WalkDir(o.InstallRoot, func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			info, err := os.Lstat(path)
+			if err != nil {
+				return err
+			}
+			rel, err := filepath.Rel(o.InstallRoot, path)
+			if err != nil {
+				return err
+			}
+			item := entry{Mode: info.Mode(), Modified: info.ModTime()}
+			if info.Mode()&os.ModeSymlink != 0 {
+				item.Content, err = os.Readlink(path)
+			} else if info.Mode().IsRegular() {
+				var data []byte
+				data, err = os.ReadFile(path)
+				item.Content = string(data)
+			}
+			entries[rel] = item
+			return err
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return entries
+	}
+	before := snapshot()
+	if _, err := stagePackage(o); err != nil {
+		t.Fatal(err)
+	}
+	after := snapshot()
+	if !reflect.DeepEqual(before, after) {
+		for path, previous := range before {
+			if !reflect.DeepEqual(previous, after[path]) { t.Errorf("installation entry %s: before %+v, after %+v", path, previous, after[path]) }
+		}
+		t.Fatal("packaging modified installation entries, bytes or metadata")
 	}
 }
 

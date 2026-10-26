@@ -14,6 +14,9 @@ func releaseFixture(t *testing.T) packageOptions {
 	definitionFile(t, o.SourceRoot, "lz4", "cmake", testSource)
 	putFile(t, filepath.Join(o.SourceRoot, "src/dependencies/lz4/autolib-import.cmake"), "# lz4\n")
 	putFile(t, filepath.Join(o.InstallRoot, "lz4/lib/lz4.lib"), "library bytes")
+	if err := prepareConsumption(consumptionOptions{SourceRoot: o.SourceRoot, InstallRoot: o.InstallRoot, Name: "lz4", OS: o.OS, Arch: o.Arch, Phase: "reuse"}); err != nil {
+		t.Fatal(err)
+	}
 	tool := putFile(t, filepath.Join(o.SourceRoot, "build/tool.exe"), "actual importer bytes")
 	return packageOptions{SourceRoot: o.SourceRoot, InstallRoot: o.InstallRoot, OutputRoot: filepath.Join(o.SourceRoot, "build/release"), OS: o.OS, Arch: o.Arch, HostOS: "windows", HostArch: "x86_64", ImporterFile: tool, CMakeCommand: o.CMakeCommand, Modules: []string{"queue", "lz4", "queue"}}
 }
