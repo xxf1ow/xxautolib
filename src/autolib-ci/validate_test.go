@@ -311,7 +311,7 @@ func TestCIImporterSmoke(t *testing.T) {
 	if data, err := os.ReadFile(result); err != nil || !strings.Contains(string(data), "AUTOLIB_PREPARED_PACKAGES [[queue]]") {
 		t.Fatalf("prepare did not produce the queue result: %v\n%s", err, data)
 	}
-	if _, err := os.Stat(filepath.Join(release, "packages", targetOS+"-"+targetArch, "queue", "autolib-import.cmake")); err != nil {
+	if _, err := os.Stat(filepath.Join(release, "queue", "autolib-import.cmake")); err != nil {
 		t.Fatalf("prepare did not install the local package: %v", err)
 	}
 }

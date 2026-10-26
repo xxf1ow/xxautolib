@@ -37,7 +37,7 @@ description: >-
 2. 为主来源或 `[resources.<资源名>]` 选择一种来源：Git 仓库与完整固定提交成对；归档使用有序非空 `URL` 数组和 `URL_HASH="SHA256=..."`。需要统一镜像文件名时填写 `DOWNLOAD_NAME`；升级同步核对版本、地址、摘要与布局。平台表可声明 source、resources；architectures 只支持 x86_64、aarch64 下的 source、resources。按公共→平台→架构整组替换来源，不混合 Git/URL 字段；无当前目标来源应报错。各资源独立固定版本。
 3. 只保留实际需要的库特定 cache、patches、steps 或 copy 数据。非默认选项、固定版本、补丁与专用步骤写明中文维护约束；公共生成器、工具集、instance、CRT、Release 和路径由公共入口与引擎拥有，policy/PIC/C++ 标准兜底值由引擎的 CMake 子项目参数组装处提供，不逐库重复。模块 cache 优先于父级已定义值，父级值优先于引擎兜底值；具体规则见开发指南。
 4. 补丁、专用 CMakeLists 和执行文件放在同一模块目录。文件补丁使用 `[[patches]]`，可用 `resource` 指向本模块资源；主库配置等待资源补丁完成。cache 用 `<RESOURCE_SOURCE_DIR:资源名>` 引用所选源码根，不硬编码 build 布局。其他时机的修改使用原生 `[[steps]]`，按 DEPENDEES、DEPENDERS 排序，需要输入跟踪时声明 DEPENDS。显式 shell 命令才依赖 bash/sed，不假设 Windows 自带这些工具。
-5. `copy` 使用互斥的非空 files 或 directories 和相对安装前缀的 destination；`directories=["."]`、`destination="."` 复制完整归档内容。核对同目录 include、库和运行文件；资源在 build 时才准备，不以 configure 时路径尚未存在判断失败。可选 sentinel 登记参考安装文件的相对路径；存在时只定义同名空目标，跳过所有资源和执行步骤，但保留直接模块依赖顺序与查找元数据，不验证版本、ABI 或完整性。
+5. `copy` 使用互斥的非空 files 或 directories 和相对安装前缀的 destination；`directories=["."]`、`destination="."` 复制完整归档内容。核对同目录 include、库和运行文件；资源在 build 时才准备，不以 configure 时路径尚未存在判断失败。可选 sentinel 登记参考安装文件的相对路径；存在时跳过资源和安装步骤，但保留直接模块依赖顺序、查找元数据及消费准备，不验证版本、ABI 或完整性。
 6. 按[开发指南](../../../docs/development.md)通过普通根 CMake 入口选择模块并 configure/build，不要求 preset 或 IDE 设置；再按[测试指南](../../../docs/testing.md)完成实际构建安装与产物检查。configure 成功只证明发现和目标生成，不替代构建安装。
 
 Git 与归档复用根 git/；本地 `.git` 存在即保留当前源码，不自动校准提交。已有来源更换前，先保护本地修改并按开发指南准备受影响持久来源、build 状态和安装树；不迁移或删除旧 build 来源，不清空其他模块，不把重新 configure 或 sentinel 存在当成升级完成。包输入按[取源规则](../../../docs/agent-notes/implemented/process/2026-10-19-repository-foundation.md#验证授权)先在 Windows 下载校验再传 ARM，包括上游 Git bundle 和原生内部源码缓存；不传宿主构建产物。
@@ -63,4 +63,6 @@ Git 与归档复用根 git/；本地 `.git` 存在即保留当前源码，不自
 
 仅在任务明确包含打包或下游消费时提供同目录 `autolib-import.cmake`；本地构建无需 adapter。正文以包实际目录定位，使用目标存在性 guard，每包只建立一个 `autolib::<name>` 全局 INTERFACE IMPORTED 公共目标，统一封装所支持的上游库及声明依赖的公共目标，不保留大写兼容别名。参考 queue 的固定 include、lz4 的精确 Config、flann 的 C/C++ 封装及显式 sibling 依赖；实际使用的直接包依赖必须在模块声明中列出。不得聚合互斥静动态产物，不扫描任意 Config、不回退系统包、不在 adapter 下载或编译。
 
-builder 生成固定身份头并只在 staging 修正生产前缀，adapter 不回写解包元数据，也不为搬迁更改第三方编译方式。按[测试指南](../../../docs/testing.md#本地二进制闭环)验证真实链接、动态运行及搬迁后字节不变；OpenMP 等系统运行要求按实际产物说明。打包及消费参数、缓存人工刷新由[开发指南](../../../docs/development.md#本地打包与消费)拥有，远端发布仍须独立授权。
+提供 adapter 的模块由 builder 在普通安装后生成带身份及依赖头的消费文件，sentinel/stamp 复用不跳过准备；所声明依赖也必须有 adapter。没有 adapter 的独立模块照常构建。打包及 CI 复用安装中的描述，不另行生成；仅在 staging 修正生产前缀。产物布局及时序由[架构](../../../docs/architecture.md#二进制消费)拥有，adapter 不回写解包元数据，也不为搬迁更改第三方编译方式。
+
+按[测试指南](../../../docs/testing.md#本地二进制闭环)验证原安装直接消费、真实链接、动态运行及打包搬迁；OpenMP 等系统运行要求按实际产物说明。消费、打包及人工刷新由[开发指南](../../../docs/development.md#本地打包与消费)拥有，远端发布仍须独立授权。
