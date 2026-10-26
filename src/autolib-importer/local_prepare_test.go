@@ -24,11 +24,11 @@ func graphArchive(t *testing.T, root string, id packageIdentity, dependencies st
 }
 
 func graphSlot(o prepareOptions, name string) string {
-	return filepath.Join(o.LocalRoot, "packages", o.OS+"-"+o.Arch, name)
+	return filepath.Join(o.LocalRoot, name)
 }
 
 func TestLocalCandidatePriority(t *testing.T) {
-	for _, kind := range []string{"directory wins", "bad directory", "bad archive", "archive directory", "wrong identity"} {
+	for _, kind := range []string{"directory wins", "bad directory", "wrong platform directory", "old nested directory", "bad archive", "archive directory", "wrong identity"} {
 		t.Run(kind, func(t *testing.T) {
 			o := localGraphFixture(t)
 			o.Packages = []string{"demo"}
@@ -40,6 +40,10 @@ func TestLocalCandidatePriority(t *testing.T) {
 				putTestFile(t, archive, "broken archive")
 			case "bad directory":
 				putTestFile(t, filepath.Join(graphSlot(o, "demo"), "autolib-import.cmake"), "invalid")
+			case "wrong platform directory":
+				putTestFile(t, filepath.Join(graphSlot(o, "demo"), "autolib-import.cmake"), identityHeader(packageIdentity{"demo", "windows", "x86_64"}))
+			case "old nested directory":
+				putTestFile(t, filepath.Join(o.LocalRoot, "packages/linux-aarch64/demo/autolib-import.cmake"), "invalid")
 			case "bad archive":
 				putTestFile(t, archive, "invalid")
 			case "archive directory":
@@ -54,8 +58,13 @@ func TestLocalCandidatePriority(t *testing.T) {
 				putTestFile(t, archive, readTestFile(t, wrong))
 			}
 			_, err := prepare(o)
-			if (err == nil) != (kind == "directory wins") {
+			if (err == nil) != (kind == "directory wins" || kind == "old nested directory") {
 				t.Fatalf("%s: %v", kind, err)
+			}
+			if kind == "wrong identity" {
+				if _, err := os.Stat(graphSlot(o, "demo")); !os.IsNotExist(err) {
+					t.Fatal("failed identity check polluted the final directory", err)
+				}
 			}
 			if kind == "directory wins" {
 				if readTestFile(t, archive) != "broken archive" {
@@ -87,7 +96,7 @@ func TestPrepareDependencyOrder(t *testing.T) {
 		t.Fatal(names)
 	}
 	entries, err := os.ReadDir(filepath.Dir(graphSlot(o, "core")))
-	if err != nil || len(entries) != 5 {
+	if err != nil || len(entries) != 10 {
 		t.Fatalf("%v %v", entries, err)
 	}
 	for _, p := range got {
@@ -146,8 +155,8 @@ func TestUniversalLocalSlots(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first[0].Directory == second[0].Directory {
-		t.Fatal("target slots overlap")
+	if first[0].Directory != second[0].Directory || first[0].Directory != filepath.Join(o.LocalRoot, "queue") {
+		t.Fatal("universal installation was not shared")
 	}
 	for _, p := range []preparedPackage{first[0], second[0]} {
 		m, err := readPackageMetadata(p.Directory)

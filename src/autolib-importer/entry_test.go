@@ -358,7 +358,7 @@ func TestLocalConsumerNoToolchainRuntime(t *testing.T) {
 	if out, err := f.configure("-DAUTOLIB_REMOTE_ROOT="); err == nil {
 		t.Fatalf("missing package accepted: %s", out)
 	}
-	putTestFile(t, filepath.Join(f.release, "packages/linux-aarch64/demo/autolib-import.cmake"), "invalid metadata")
+	putTestFile(t, filepath.Join(f.release, "demo/autolib-import.cmake"), "invalid metadata")
 	if out, err := f.configure("-DAUTOLIB_REMOTE_ROOT=https://example.invalid/release"); err == nil || !strings.Contains(out, "package metadata") {
 		t.Fatalf("bad local candidate was not rejected: %v\n%s", err, out)
 	}
@@ -598,7 +598,7 @@ file(WRITE "${CMAKE_BINARY_DIR}/remote.txt" "${remote}")
 			if err != nil {
 				t.Fatalf("source scope: %v\n%s", err, out)
 			}
-			want := filepath.ToSlash(filepath.Join(f.release, "packages/linux-aarch64/demo"))
+			want := filepath.ToSlash(filepath.Join(f.release, "demo"))
 			if got := readTestFile(t, filepath.Join(f.root, "consumer-build/observed.txt")); got != want {
 				t.Fatalf("%q != %q", got, want)
 			}

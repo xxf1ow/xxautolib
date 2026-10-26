@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -109,8 +110,91 @@ func newEntryFixture(t *testing.T) *fixture {
 			putFile(t, filepath.Join(f.root, "src/autolib-builder", name), string(data))
 		}
 	}
+	importerSources, err := filepath.Glob("../autolib-importer/*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range importerSources {
+		if !strings.HasSuffix(path, "_test.go") {
+			putFile(t, filepath.Join(f.root, "src/autolib-importer", filepath.Base(path)), readFile(t, path))
+		}
+	}
 	seedManagedGo(f)
 	return f
+}
+
+func installedImporter(root string) string {
+	arch := map[string]string{"amd64": "x86_64", "arm64": "aarch64"}[runtime.GOARCH]
+	name := "autolib-importer-" + runtime.GOOS + "-" + arch
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	return filepath.Join(root, name)
+}
+
+func TestEntryInstalledImporter(t *testing.T) {
+	for _, custom := range []bool{false, true} {
+		t.Run(map[bool]string{false: "default", true: "relative with spaces"}[custom], func(t *testing.T) {
+			f := newEntryFixture(t)
+			f.copyModule("demo")
+			root := filepath.Join(f.root, "3rdparty")
+			if custom {
+				t.Setenv("AUTOLIB_INSTALL_ROOT", "relative install/../install with spaces")
+				root = filepath.Join(f.root, "install with spaces")
+			} else {
+				t.Setenv("AUTOLIB_INSTALL_ROOT", "")
+			}
+			f.mustEntry("-DBUILD_LIST=demo")
+			tool := installedImporter(root)
+			if _, stderr, err := f.command(tool); err == nil || !strings.Contains(stderr, "usage: autolib-importer") {
+				t.Fatalf("installed host tool cannot execute: %v %s", err, stderr)
+			}
+			command := exec.Command(f.context.CMakeCommand, "-S", f.root, "-B", f.context.BuildRoot)
+			command.Dir = f.root
+			if out, err := command.CombinedOutput(); err != nil {
+				t.Fatalf("configure from another directory: %v\n%s", err, out)
+			}
+			other := filepath.Join(f.root, "must not install here")
+			t.Setenv("AUTOLIB_INSTALL_ROOT", other)
+			f.build()
+			requireFile(t, filepath.Join(root, "demo/include/x.h"), "demo")
+			if _, err := os.Stat(other); !os.IsNotExist(err) {
+				t.Fatal("build re-read installation environment", err)
+			}
+		})
+	}
+}
+
+func TestEntryImporterInputs(t *testing.T) {
+	f := newEntryFixture(t)
+	f.copyModule("demo")
+	f.mustEntry("-DBUILD_LIST=demo")
+	tool := installedImporter(filepath.Join(f.root, "3rdparty"))
+	for _, path := range []string{"go.mod", "go.sum", "src/autolib-importer/main.go"} {
+		if !strings.Contains(readFile(t, filepath.Join(f.context.BuildRoot, "generated/inputs.cmake")), filepath.ToSlash(filepath.Join(f.root, path))) {
+			t.Fatalf("untracked importer input: %s", path)
+		}
+	}
+	input := filepath.Join(f.root, "src/autolib-importer/fixture_input.go")
+	for _, marker := range []string{"added importer", "changed importer", ""} {
+		if marker == "" {
+			if err := os.Remove(input); err != nil {
+				t.Fatal(err)
+			}
+		} else {
+			putFile(t, input, "package main\nimport (\"fmt\"; \"os\")\nfunc init() {fmt.Fprintln(os.Stderr, \""+marker+"\")}\n")
+		}
+		f.build()
+		_, stderr, _ := f.command(tool)
+		if marker != "" && !strings.Contains(stderr, marker) || marker == "" && strings.Contains(stderr, "changed importer") {
+			t.Fatalf("importer source change ignored: %q %s", marker, stderr)
+		}
+	}
+	putFile(t, input, "package main\ninvalid Go source\n")
+	stdout, stderr, err := f.command(f.context.CMakeCommand, "--build", f.context.BuildRoot, "--config", "Release")
+	if err == nil || !strings.Contains(stdout+stderr, "autolib-importer compilation failed") {
+		t.Fatalf("old executable hid compilation failure: %v %s%s", err, stdout, stderr)
+	}
 }
 
 func (f *fixture) entry(args ...string) (string, error) {
@@ -149,8 +233,8 @@ func TestEntrySDK(t *testing.T) {
 			t.Fatal(heading, out)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(f.root, "3rdparty")); !os.IsNotExist(err) {
-		t.Fatal("empty selection installed files")
+	if entries, err := os.ReadDir(filepath.Join(f.root, "3rdparty")); err != nil || len(entries) != 1 || entries[0].Name() != filepath.Base(installedImporter("")) {
+		t.Fatal("empty selection did not install only the host tool", entries, err)
 	}
 	requireFile(t, filepath.Join(f.root, "go.mod"), mod)
 	requireFile(t, filepath.Join(f.root, "go.sum"), sum)

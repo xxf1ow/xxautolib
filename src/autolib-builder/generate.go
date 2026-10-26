@@ -67,6 +67,16 @@ func generate(context buildContext, names []string) error {
 			inputs = append(inputs, slashJoin(engine, name))
 		}
 	}
+	importer := filepath.Join(context.SourceRoot, "src/autolib-importer")
+	files, err = os.ReadDir(importer)
+	if err != nil {
+		return fmt.Errorf("%s: %w", importer, err)
+	}
+	for _, file := range files {
+		if name := file.Name(); !file.IsDir() && strings.HasSuffix(name, ".go") && !strings.HasSuffix(name, "_test.go") {
+			inputs = append(inputs, slashJoin(importer, name))
+		}
+	}
 	slices.Sort(inputs)
 	var manifest strings.Builder
 	manifest.WriteString("set(XXAUTOLIB_GENERATED_MODULES\n")

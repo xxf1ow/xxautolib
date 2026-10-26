@@ -7,6 +7,7 @@ function(xxautolib_generate_modules)
 
     # GLOB 检测源码增删；文件内容变化统一由生成器的输入清单登记。
     file(GLOB go_sources CONFIGURE_DEPENDS "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/*.go")
+    file(GLOB importer_sources CONFIGURE_DEPENDS "${root}/src/autolib-importer/*.go")
     file(GLOB module_adapters CONFIGURE_DEPENDS "${root}/src/dependencies/*/autolib-import.cmake")
     set(builder "${CMAKE_BINARY_DIR}/tools/autolib-builder")
     if(CMAKE_HOST_WIN32)
@@ -21,6 +22,26 @@ function(xxautolib_generate_modules)
             "autolib-builder compilation failed: ${compilation_result}\n"
             "${compilation_output}${compilation_error}\n"
             "Pinned modules are downloaded automatically when needed; check network access or the cache in ${root}/.tools/go/gopath/pkg/mod.")
+    endif()
+
+    string(TOLOWER "${CMAKE_HOST_SYSTEM_NAME}" importer_os)
+    cmake_host_system_information(RESULT importer_arch QUERY OS_PLATFORM)
+    string(TOLOWER "${importer_arch}" importer_arch)
+    if(importer_arch MATCHES "^(amd64|x86_64|x64)$")
+        set(importer_arch x86_64)
+    elseif(importer_arch MATCHES "^(aarch64|arm64)$")
+        set(importer_arch aarch64)
+    endif()
+    set(importer "${CMAKE_INSTALL_PREFIX}/autolib-importer-${importer_os}-${importer_arch}")
+    if(CMAKE_HOST_WIN32)
+        string(APPEND importer ".exe")
+    endif()
+    execute_process(COMMAND ${go_environment} "${go_executable}" build -mod=readonly -trimpath
+        -o "${importer}" ./src/autolib-importer
+        WORKING_DIRECTORY "${root}" RESULT_VARIABLE compilation_result
+        OUTPUT_VARIABLE compilation_output ERROR_VARIABLE compilation_error)
+    if(NOT compilation_result STREQUAL "0")
+        message(FATAL_ERROR "autolib-importer compilation failed: ${compilation_result}\n${compilation_output}${compilation_error}")
     endif()
 
     set(module_arguments)

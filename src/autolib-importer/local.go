@@ -27,7 +27,7 @@ func normalizeLocalSource(uri string) (string, error) {
 }
 
 func packageDirectory(localRoot string, id packageIdentity) string {
-	return filepath.Join(localRoot, "packages", id.OS+"-"+id.Arch, id.Name)
+	return filepath.Join(localRoot, id.Name)
 }
 
 func selectLocalArchive(localRoot string, target packageIdentity) (archivePath string, archiveIdentity packageIdentity, err error) {

@@ -180,7 +180,7 @@ func TestPrepareRemoteFailureCleanup(t *testing.T) {
 				f.assets[0].status = 404
 			case "write failure":
 				o.Packages = []string{"queue"}
-				putTestFile(t, filepath.Join(o.LocalRoot, "packages"), "not a directory")
+				putTestFile(t, filepath.Join(o.LocalRoot, "queue"), "not a directory")
 			case "response":
 				putTestFile(t, o.GitHubResponse, "{invalid")
 			}
@@ -217,7 +217,7 @@ func TestPrepareRemoteOnly(t *testing.T) {
 	o.LocalRoot = ""
 	o.Packages = []string{"flann"}
 	// A stale directory at the ordinary work path must not become an undeclared cache source.
-	putTestFile(t, filepath.Join(o.WorkRoot, "packages", o.OS+"-"+o.Arch, "flann", "autolib-import.cmake"), "invalid")
+	putTestFile(t, filepath.Join(o.WorkRoot, "flann", "autolib-import.cmake"), "invalid")
 	got, err := prepare(o)
 	if err != nil {
 		t.Fatal(err)
