@@ -54,7 +54,7 @@ Git 来源沿用参考的本地优先判断：已有 `.git` 文件或目录时�
 | lz4 | `include/lz4.h` |
 | onnxruntime | `include/onnxruntime_c_api.h` |
 
-生成 CMake 在 configure 时使用参考的 `if(EXISTS ...)` 语义。命中时定义同名复用目标并显示 cached 摘要，不定义该模块的资源目标、ExternalProject、补丁或自定义步骤；提供 adapter 的模块仍执行[安装消费准备](../../proposed/architecture/2026-10-25-direct-install-consumption.md)，不重新安装。未命中时生成正常执行流程。判断留在生成的 CMake 中，不把当次文件存在性烘焙为 Go 生成结果。普通 TOML 声明校验仍执行，sentinel 不允许使用无效声明。
+生成 CMake 在 configure 时使用参考的 `if(EXISTS ...)` 语义。命中时定义同名复用目标并显示 cached 摘要，不定义该模块的资源目标、ExternalProject、补丁或自定义步骤；提供 adapter 的模块仍执行[安装消费准备](2026-10-25-direct-install-consumption.md)，不重新安装。未命中时生成正常执行流程。判断留在生成的 CMake 中，不把当次文件存在性烘焙为 Go 生成结果。普通 TOML 声明校验仍执行，sentinel 不允许使用无效声明。
 
 安装后需重新 configure 才切换为复用目标；同一 build 的普通重复构建仍使用原生 stamp，消费准备不因 stamp 命中而跳过。单文件存在性不校验版本、工具链、ABI 或其余安装文件，不增加指纹、文件全集校验或状态数据库。文件缺失只意味着不采用 sentinel 短路，不承诺自动修复已有 stamp 对应的残缺安装。换版本、改构建选项或重建安装时仍由维护者人工准备受影响状态。
 

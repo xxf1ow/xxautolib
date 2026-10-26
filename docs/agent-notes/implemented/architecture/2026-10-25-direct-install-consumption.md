@@ -1,6 +1,6 @@
 # Agent Note: 本地安装产物直接消费与统一目录
 
-Status: proposed
+Status: implemented
 
 ## 问题
 
@@ -8,11 +8,11 @@ Status: proposed
 
 本地构建安装应首先交付可直接消费的产物，Release 是这些产物的后续分发方式。消费描述的生成属于 builder，不能由 importer 推测，也不能由 CI 维护另一套生成规则。
 
-## 方案
+## 决定
 
 普通本地构建自动生成宿主 importer，并为提供消费 adapter 的模块生成包内身份、依赖及 CMake 导入文件。消费者将本地根指向安装根即可导入，不需要移动库目录、创建归档或手工复制工具。下载解包与源码安装使用相同的 `<本地根>/<包名>/` 布局。
 
-本设计拥有安装产物的消费准备时机、宿主工具输出和扁平本地目录，部分替代[无全局清单包消费](2026-10-24-manifestless-package-consumption.md)的 `packages/<平台>/` 准备位置与打包时生成包头的规则，以及[按目标导入设计](2026-10-25-target-import-and-release-consumption.md)继承的本地布局。四行包头、名称依赖遍历、损坏校验、远端发现和 CMake 公共接口仍由这两份记录拥有。[Go 工具层设计](2026-10-21-go-tooling-and-offline-import.md)与[固定槽交付设计](2026-10-20-name-only-artifact-delivery.md)继续约束独立可执行目标、安全解包及 staging 搬迁修正；本文只将消费文件生成提前到安装完成。
+本设计拥有安装产物的消费准备时机、宿主工具输出和扁平本地目录，部分替代[无全局清单包消费](../../proposed/architecture/2026-10-24-manifestless-package-consumption.md)的 `packages/<平台>/` 准备位置与打包时生成包头的规则，以及[按目标导入设计](../../proposed/architecture/2026-10-25-target-import-and-release-consumption.md)继承的本地布局。四行包头、名称依赖遍历、损坏校验、远端发现和 CMake 公共接口仍由这两份记录拥有。[Go 工具层设计](../../proposed/architecture/2026-10-21-go-tooling-and-offline-import.md)与[固定槽交付设计](../../proposed/architecture/2026-10-20-name-only-artifact-delivery.md)继续约束独立可执行目标、安全解包及 staging 搬迁修正；本文只将消费文件生成提前到安装完成。
 
 GitHub 下载阶段已经验收，其证据与 Gitee 后置安排保留在按目标导入设计中。本设计不重做远端协议，不实施 Gitee，不新增清单、版本求解、工具链变体、自动更新、恢复服务或跨运行生产缓存。
 
@@ -87,11 +87,11 @@ CI 通过 builder/CMake 获得同样的安装结果，再调用 builder 打包�
 
 `autolib_import(TARGET app PRIVATE queue flann)`、一次性来源变量及其默认值保持不变。用户将 `AUTOLIB_LOCAL_ROOT` 指向生产安装根即可复用；宿主工具和所需包依赖闭包均在本地时，CMake 消费入口与 importer 不请求远端，显式空远端保证消费流程不联网。该承诺不覆盖生产端首次准备 Go SDK、Go 模块或第三方源码，也不覆盖用户工程自己的联网操作。缺包且配置 GitHub 时仍按原协议补齐，默认 Gitee 未实现时不隐式回退。
 
-实现涉及 builder 安装后消费准备及宿主工具输出、importer 的最终目录计算、CI 与本地/远端验证夹具的接线。同步更新当前架构、开发测试指南、README 的本地使用说明及新增模块技能中的产物约定；不改 example 的调用形式，不新增 example 专用 helper 或 README。文档在实现时按实际行为更新，不提前将本提案写成已可用功能。
+builder 负责安装后消费准备及宿主工具输出，importer 使用扁平最终目录，CI 与本地/远端验证夹具复用这些产物。当前架构、开发测试指南、README 的本地使用说明及新增模块技能描述相同的产物约定；example 保持原调用形式，没有专用 helper 或 README。
 
 当前架构拥有组件职责与目录布局，开发指南拥有生产和消费操作，测试指南拥有验收命令及证据；README 提供用户接入示例并链接指南，新增模块技能描述贡献步骤并引用产物规范。四行包头和获取协议继续由已有包消费设计拥有，本文拥有安装时机与扁平布局；其他文档不各自维护协议副本。
 
-本设计作为一个可验收的本地消费闭环实施，先证明正常本地构建可直接消费，再验证打包及下载链路。没有独立的后续功能阶段，不将 Gitee 或其他库接入混入计划。真实远端写入、CI 触发和新机器验证仍须另行授权，既有目录内的验证继续遵守数据保护约束。
+交付范围为本地直接消费及其打包、下载回归，不包含 Gitee 或其他库接入。真实远端写入、CI 触发和新机器验证仍须另行授权，既有目录内的验证继续遵守数据保护约束。
 
 ## 备选方案
 
@@ -101,7 +101,7 @@ CI 通过 builder/CMake 获得同样的安装结果，再调用 builder 打包�
 
 **将库专用链接规则塞进 importer，取消包内 CMake 文件。** 每接入一个库都需要修改并重新发布工具，且 Go 获取程序仍不能替代 CMake 创建链接目标。选择通用 importer 读取数据头、CMake 执行随包 adapter，同一个文件同时承载身份和链接规则。
 
-## 验收标准
+## 验证约束
 
 - 普通根 configure/build 选择 queue、flann 后，安装根具有宿主 importer、三个模块的完整安装和消费文件。消费者不执行 package、不移动目录、不手工复制工具，设置空远端后直接构建运行；通过既有真实消费夹具验证 queue、LZ4 和 FLANN C/C++ API，不额外补链。Windows 与原生 Linux 验证本地闭环，未执行的平台如实记录。
 - 定向 fixture 以并行构建验证依赖安装及消费准备、本模块安装、消费文件准备的顺序；直接构建单模块不能漏执行。初装及重装失败都不交付有效描述，残留 sentinel 不能让未完成文件被补成有效包。sentinel 命中及原生成功 stamp 复用时可补齐真正缺失的文件且不重编第三方库。
@@ -117,9 +117,9 @@ CI 通过 builder/CMake 获得同样的安装结果，再调用 builder 打包�
 
 Windows x86_64、VS 2022/v143 通过普通根入口选择 `queue,flann`，命中已有安装并补齐三库消费文件，输出 `3rdparty/autolib-importer-windows-x86_64.exe`。直接消费 driver 使用原安装根、空远端，不打包或移动产物，CTest 1/1 实际验证 queue、LZ4、FLANN C/C++ API。打包复用该安装及工具，双搬迁两次 CTest 均为 1/1，安装、归档与消费包字节未变。三个独立工具的完整 Go 测试与 vet 均通过；builder 全集累计超过默认十分钟，验证使用 `-timeout=30m`。命令由[测试指南](../../../testing.md#本地二进制闭环)拥有。
 
-原生 Linux 直接消费尚未验收。授权机器 `lxx@192.168.0.127` 的 `/home/lxx/xxautolib` 当前为 example 消费工程，缺少生产源码、Go SDK 和三库安装树；本轮未写入、传输或覆盖它。本记录保留 proposed，等待用户准备生产环境后验证 Linux 执行权限、并行依赖时序及真实链接运行；既有 GitHub 下载验收不替代本项。
+实现已交付，用户确认验收通过。可复核的实机证据限于上述 Windows 范围；用户未提供本地直接消费的 Linux 验收明细。原生 Linux 的执行权限、并行依赖时序及真实链接运行仍无实测记录，不宣称三平台整体验收完成。授权机器 `lxx@192.168.0.127` 的 `/home/lxx/xxautolib` 为 example 消费工程，缺少生产源码、Go SDK 和三库安装树，未被写入、传输或覆盖；既有 GitHub 下载验收不替代本项。
 
-## 风险
+## 影响
 
 扁平目录不同时容纳同名库的不同平台或版本。平台错误由包头拒绝，目录不自动切换、覆盖或删除。嵌套缓存不自动迁移，用户保有其原始数据；本地编译使用已有 sentinel 的存在性假设，缺失包头的历史安装不能凭补写描述证明机器码身份或 ABI。
 

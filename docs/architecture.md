@@ -12,7 +12,7 @@
 
 子项目沿用父生成器身份、显式 CRT，固定 Release；模块 cache 优先于父级值，再采用引擎 policy、PIC、C++ 标准兜底值，不向父级 cache 写默认值。
 
-各工作副本独立维护 `.tools/go/`、`git/`、`build/` 和 `3rdparty/`，不整体跨平台传输。私有 SDK 与 Go 缓存在 `.tools/go/`，不随 build 清理，也不修改全局环境。主 Git 位于 `git/<模块>/`，Git 资源位于 `git/_resources/<模块>/<资源>/`，归档下载共用根 `git/`；解压、编译和步骤留在 `build/ep/`，builder 留在 `build/tools/`，生成结果留在 `build/generated/`。configure 检查本地 `.git` 与安装 sentinel；命中 sentinel 保留空目标及依赖顺序，声明校验仍执行。复用限制见[本地复用设计](agent-notes/implemented/architecture/2026-10-20-local-reuse-and-platform-inputs.md)。builder 同目录的 Go 测试验证公共引擎，库专用测试验证安装产物。
+各工作副本独立维护 `.tools/go/`、`git/`、`build/` 和 `3rdparty/`，不整体跨平台传输。私有 SDK 与 Go 缓存在 `.tools/go/`，不随 build 清理，也不修改全局环境。主 Git 位于 `git/<模块>/`，Git 资源位于 `git/_resources/<模块>/<资源>/`，归档下载共用根 `git/`；解压、编译和步骤留在 `build/ep/`，builder 留在 `build/tools/`，生成结果留在 `build/generated/`。configure 检查本地 `.git` 与安装 sentinel；命中 sentinel 保留同名复用目标及依赖顺序，仍执行声明校验及可消费模块的消费准备。复用限制见[本地复用设计](agent-notes/implemented/architecture/2026-10-20-local-reuse-and-platform-inputs.md)。builder 同目录的 Go 测试验证公共引擎，库专用测试验证安装产物。
 
 ## 工具与流水线职责
 
@@ -37,7 +37,7 @@ builder 的 `package` 核对并复制已有消费描述及安装树到 staging�
 
 CMake 与 importer 共用本次 configure 的临时 API 响应，不跨配置缓存远端信息；默认 Gitee 未接通，GitHub 需显式覆盖。
 
-queue、lz4、flann 提供精确布局 adapter；flann 传递 sibling lz4，不回退系统包。安装与解包统一使用 `<本地根>/<包名>/`，包头核对平台，通用包使用 any/any；不探测旧嵌套缓存。完整本地目录权威，更新由用户显式刷新；同根写入由调用方串行，不与消费交错。系统运行库不作为包下载。来源、工作根和目标在同次 configure 固定。协议见[包消费设计](agent-notes/proposed/architecture/2026-10-24-manifestless-package-consumption.md)，安装及布局见[直接消费设计](agent-notes/proposed/architecture/2026-10-25-direct-install-consumption.md)，用法见开发、测试指南。
+queue、lz4、flann 提供精确布局 adapter；flann 传递 sibling lz4，不回退系统包。安装与解包统一使用 `<本地根>/<包名>/`，包头核对平台，通用包使用 any/any；不探测旧嵌套缓存。完整本地目录权威，更新由用户显式刷新；同根写入由调用方串行，不与消费交错。系统运行库不作为包下载。来源、工作根和目标在同次 configure 固定。协议见[包消费设计](agent-notes/proposed/architecture/2026-10-24-manifestless-package-consumption.md)，安装及布局见[直接消费设计](agent-notes/implemented/architecture/2026-10-25-direct-install-consumption.md)，用法见开发、测试指南。
 
 ## 文档职责
 

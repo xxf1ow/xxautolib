@@ -23,7 +23,7 @@ cmake -P src/autolib-builder/go-sdk.cmake -- vet ./src/autolib-builder ./src/aut
 cmake -DSOURCE_ROOT=D:/Work/xxautolib -DINSTALL_ROOT=D:/Work/xxautolib/3rdparty -DVALIDATION_ROOT=D:/Work/xxautolib/build/validation/direct-installed "-DGENERATOR=Visual Studio 17 2022" -DGENERATOR_PLATFORM=x64 "-DGENERATOR_TOOLSET=v143,host=x64" -P tests/autolib/run-installed.cmake
 ```
 
-[直接消费 driver](../tests/autolib/run-installed.cmake)只配置、构建、运行消费者，不打包、不搬库、不复制工具，显式空远端。Windows 真实 API 验证通过；原生 Linux 仍须用户准备生产环境后验收，现有授权目录未被覆盖，证据与缺口见[直接消费设计](agent-notes/proposed/architecture/2026-10-25-direct-install-consumption.md#验证结果)。Linux 使用本机绝对根和 Unix Makefiles、不传 VS 参数，并检查 importer 执行位、并行依赖时序及真实链接运行。
+[直接消费 driver](../tests/autolib/run-installed.cmake)只配置、构建、运行消费者，不打包、不搬库、不复制工具，显式空远端。Windows 真实 API 验证通过；原生 Linux 直接消费尚无实测记录，现有授权目录未被覆盖，证据与缺口见[直接消费设计](agent-notes/implemented/architecture/2026-10-25-direct-install-consumption.md#验证结果)。Linux 使用本机绝对根和 Unix Makefiles、不传 VS 参数，并检查 importer 执行位、并行依赖时序及真实链接运行。
 
 再验证打包双搬迁（完整命令）：
 

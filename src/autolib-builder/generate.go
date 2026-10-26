@@ -56,25 +56,17 @@ func generate(context buildContext, names []string) error {
 			return err
 		}
 	}
-	engine := filepath.Join(context.SourceRoot, "src/autolib-builder")
-	files, err := os.ReadDir(engine)
-	if err != nil {
-		return fmt.Errorf("%s: %w", engine, err)
-	}
-	for _, file := range files {
-		name := file.Name()
-		if !file.IsDir() && ((strings.HasSuffix(name, ".go") && !strings.HasSuffix(name, "_test.go")) || strings.HasSuffix(name, ".cmake")) {
-			inputs = append(inputs, slashJoin(engine, name))
+	for _, tool := range []string{"autolib-builder", "autolib-importer"} {
+		directory := filepath.Join(context.SourceRoot, "src", tool)
+		files, err := os.ReadDir(directory)
+		if err != nil {
+			return fmt.Errorf("%s: %w", directory, err)
 		}
-	}
-	importer := filepath.Join(context.SourceRoot, "src/autolib-importer")
-	files, err = os.ReadDir(importer)
-	if err != nil {
-		return fmt.Errorf("%s: %w", importer, err)
-	}
-	for _, file := range files {
-		if name := file.Name(); !file.IsDir() && strings.HasSuffix(name, ".go") && !strings.HasSuffix(name, "_test.go") {
-			inputs = append(inputs, slashJoin(importer, name))
+		for _, file := range files {
+			name := file.Name()
+			if !file.IsDir() && ((strings.HasSuffix(name, ".go") && !strings.HasSuffix(name, "_test.go")) || (tool == "autolib-builder" && strings.HasSuffix(name, ".cmake"))) {
+				inputs = append(inputs, slashJoin(directory, name))
+			}
 		}
 	}
 	slices.Sort(inputs)
