@@ -39,7 +39,7 @@ importer覆盖包头、优先级、依赖图、通用包、安全解包及CRC失
 
 真实验收运行 `cmake -DSOURCE_ROOT=<仓库绝对路径> -DVALIDATION_ROOT=<仓库绝对路径>/build/validation/github -DREMOTE_ROOT=https://github.com/xxf1ow/xxautolib/releases/tag/autolib-release -P tests/autolib/run-github.cmake`，生成器参数沿用本地 driver。[下载 driver](../tests/autolib/run-github.cmake)从空根下载工具及 flann、queue，构建、运行 smoke 并重新配置；不编译第三方源码或发布。
 
-真实供给须更新工具和 adapter 后再验收三平台运行；现有十个资产摘要通过，但工具缺内部响应参数、包仍提供大写目标且 FLANN 只含 C++ 库，不能用于新版闭环。
+代表集的三平台供给和真实 GitHub 消费已通过验收；Windows 由下载 driver 验证，Linux 由用户确认通过。供给摘要、公共目标及验收依据集中记录在[消费设计](agent-notes/proposed/architecture/2026-10-25-target-import-and-release-consumption.md#已验收范围)。Gitee 不在该验收范围内。
 
 ## CI 验证
 

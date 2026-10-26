@@ -14,7 +14,15 @@ Status: proposed
 
 本设计拥有 CMake 公共接口、来源默认值、公共目标封装及后续交付阶段，部分替代[无全局清单的双来源包消费](2026-10-24-manifestless-package-consumption.md)中的 CMake 调用形式、无远端默认值及后续阶段安排。包内四行头、固定资产名、本地布局、依赖遍历、来源优先级、失败保护、损坏检测及 GitHub 资产发现仍由该记录拥有，不复制另一套协议。[固定槽交付设计](2026-10-20-name-only-artifact-delivery.md)和[Go 工具层设计](2026-10-21-go-tooling-and-offline-import.md)的可搬迁打包、adapter 与纯 Go 运行约束继续有效，公共目标命名以本文为准。
 
-CI 仍是独立系统，其构建编排、发布权限、并发和运行汇总由[CI 系统设计](../../implemented/architecture/2026-10-20-ci-system.md)拥有。Gitee 阶段实施前修订该独立设计，不把发布实现写入 builder 或 importer。本地接口与 GitHub 下载已实现；GitHub 三平台真实下载、链接及运行验收仍待新版 Release 供给，Gitee 后置。架构及开发、测试指南记录当前行为与验收范围。
+CI 仍是独立系统，其构建编排、发布权限、并发和运行汇总由[CI 系统设计](../../implemented/architecture/2026-10-20-ci-system.md)拥有。Gitee 阶段实施前修订该独立设计，不把发布实现写入 builder 或 importer。本地接口与 GitHub 下载阶段已通过用户验收，Gitee 阶段尚未实施，因此本整体设计保留 proposed。架构及开发、测试指南记录当前行为与验收范围。
+
+### 已验收范围
+
+[三平台 CI 运行 40208173445](https://github.com/xxf1ow/xxautolib/actions/runs/40208173445)完成 queue、lz4、flann 和宿主 importer 的构建、消费验证及同名发布。十个实际 Release 资产的 SHA256 与 API 摘要逐一匹配；包使用小写公共目标，FLANN 聚合 C/C++ API 并传递 lz4。
+
+Windows x86_64 的真实 GitHub 验证从空消费根引导工具、下载依赖、编译并运行，CTest 1/1 及再次 configure 通过。用户确认远程方式可用，并确认 Linux 验收通过；结合前述 Windows 证据，GitHub 阶段按三平台验收完成。Linux 结论采用用户验收，不附未提供的命令、日志或运行指标。
+
+这里验收的是本地发行包与 GitHub Release 消费，不包含直接导入 builder 原始安装树。后者需要单独设计；Gitee 镜像与默认来源消费继续后置，不由 GitHub 验收推定可用。
 
 ### CMake 公共接口
 

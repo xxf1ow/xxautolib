@@ -2,9 +2,9 @@
 
 本仓库按能力分批接入模块，先完成本地构建安装，再建立下游导入、二进制交付和 CI。本文维护阶段目标与迁移范围；各阶段的理由和约束由链接的 Agent Note 拥有，具体实现开始前再确认该批设计。
 
-工具层重建及导入链路按 [Go 工具层与离线导入设计](agent-notes/proposed/architecture/2026-10-21-go-tooling-and-offline-import.md)分阶段推进：Go 生成器替换自有 Python 路径，保留 TOML 和原生构建契约；第二阶段实现本地打包、独立 importer 和单文件消费入口。queue、lz4、flann 在 Windows x64/v143、Linux aarch64 完成发行与准备包搬迁后的真实链接运行，第二阶段已通过用户验收。当前按[分阶段消费设计](agent-notes/proposed/architecture/2026-10-25-target-import-and-release-consumption.md)接入 GitHub 下载；真实验收需先更新旧版 Release 工具和 adapter，Gitee 阶段后置。
+工具层重建及导入链路按 [Go 工具层与离线导入设计](agent-notes/proposed/architecture/2026-10-21-go-tooling-and-offline-import.md)分阶段推进：Go 生成器替换自有 Python 路径，保留 TOML 和原生构建契约；第二阶段实现本地打包、独立 importer 和单文件消费入口。queue、lz4、flann 在 Windows x64/v143、Linux aarch64 完成发行与准备包搬迁后的真实链接运行，第二阶段已通过用户验收。[分阶段消费设计](agent-notes/proposed/architecture/2026-10-25-target-import-and-release-consumption.md#已验收范围)的本地接口与三平台 GitHub 下载阶段已通过用户验收；builder 安装产物直接复用进入独立设计，Gitee 阶段后置。
 
-独立的 [CI 系统](agent-notes/implemented/architecture/2026-10-20-ci-system.md)完成三平台代表库的原生构建、Release 供给，不作为 Go 工具层的子阶段，也不要求先批量增加第三方库。[无全局清单包消费](agent-notes/proposed/architecture/2026-10-24-manifestless-package-consumption.md)的本地协议已通过用户验收，三平台新协议均完成搬迁链接运行。CI 的同名替换、分层编排、手动 workflow 和 token 写入已有真实证据；[每轮重建与文件名发布](agent-notes/implemented/simplification/2026-10-24-ci-rebuild-without-production-cache.md)替代跨运行生产缓存，新策略的远端验证尚待授权；后续远端操作仍须授权。HTTPS 消费的设计交接及扩库由用户确认，不自动推进。
+独立的 [CI 系统](agent-notes/implemented/architecture/2026-10-20-ci-system.md)完成三平台代表库的原生构建、Release 供给，不作为 Go 工具层的子阶段，也不要求先批量增加第三方库。[无全局清单包消费](agent-notes/proposed/architecture/2026-10-24-manifestless-package-consumption.md)的本地协议已通过用户验收，三平台新协议均完成搬迁链接运行。CI 的同名替换、分层编排、手动 workflow 和 token 写入已有真实证据；[每轮重建与文件名发布](agent-notes/implemented/simplification/2026-10-24-ci-rebuild-without-production-cache.md)替代跨运行生产缓存，三平台远端验证及文件名展示已核对；后续远端操作仍须授权。后续设计交接及扩库由用户确认，不自动推进。
 
 ## 状态与依据
 
@@ -49,4 +49,4 @@ FLANN、HarfBuzz 与 OpenCV 4.14.0 的具体取舍和双平台安装证据见[�
 
 ## 保留的范围限制
 
-不新增源码原地自动升级、补丁自动回滚、独立构建状态数据库、通用恢复服务、交叉编译或硬件自动探测。根 CMake 保持已确认的参考骨架；未来扩展只作该批必要适配。README 暂缓，历史发布资产不自动迁移或删除。每一批按实际风险验证，不为每库强制新增专用测试工程。
+不新增源码原地自动升级、补丁自动回滚、独立构建状态数据库、通用恢复服务、交叉编译或硬件自动探测。根 CMake 保持已确认的参考骨架；未来扩展只作该批必要适配。历史发布资产不自动迁移或删除。每一批按实际风险验证，不为每库强制新增专用测试工程。
