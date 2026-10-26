@@ -29,6 +29,9 @@ func TestUniversalPackageAcrossTargets(t *testing.T) {
 	if err := os.Remove(filepath.Join(o.InstallRoot, "queue/include/input.h")); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Remove(filepath.Join(o.InstallRoot, "queue/autolib-import.cmake")); err != nil {
+		t.Fatal(err)
+	}
 	module := "name='queue'\ntype='copy'\nplatform_independent=true\n" +
 		"[resources.readerwriterqueue]\nGIT_REPOSITORY='fixture'\nGIT_TAG='fixed'\n" +
 		"[resources.concurrentqueue]\nGIT_REPOSITORY='fixture'\nGIT_TAG='fixed'\n" +
@@ -47,6 +50,9 @@ func TestUniversalPackageAcrossTargets(t *testing.T) {
 	}
 	for _, target := range [][2]string{{"windows", "x86_64"}, {"linux", "x86_64"}, {"linux", "aarch64"}} {
 		o.OS, o.Arch, o.Modules = target[0], target[1], []string{"queue"}
+		if err := prepareConsumption(consumptionOptions{SourceRoot: o.SourceRoot, InstallRoot: o.InstallRoot, Name: "queue", OS: o.OS, Arch: o.Arch, Phase: "reuse"}); err != nil {
+			t.Fatal(err)
+		}
 		if err := packageRelease(o); err != nil {
 			t.Fatal(err)
 		}

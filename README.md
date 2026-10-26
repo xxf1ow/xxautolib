@@ -10,7 +10,7 @@ autolib_import(TARGET app PRIVATE queue flann)
 
 只请求 queue、flann，就能使用队列、FLANN C/C++ 和它依赖的 LZ4；不需要再列一遍链接目标。首次配置按需下载，后续优先复用本地包。消费预编译包不需要安装 Go、Python，也不需要重新编译第三方库。
 
-[快速开始](#快速开始) · [完整示例](example/CMakeLists.txt) · [开发指南](docs/development.md) · [参与贡献](CONTRIBUTING.md) · [发行下载](https://github.com/xxf1ow/xxautolib/releases/tag/autolib-release)
+[快速开始](#快速开始) · [完整示例](example/CMakeLists.txt) · [开发](docs/development.md) · [测试](docs/testing.md) · [架构](docs/architecture.md) · [参与贡献](CONTRIBUTING.md) · [发行下载](https://github.com/xxf1ow/xxautolib/releases/tag/autolib-release)
 
 ## 使用前后对比
 
@@ -47,7 +47,7 @@ lz4: OK
 flann: OK
 ```
 
-[示例源码](example/src/main.cpp)实际执行队列入出队、LZ4 压缩解压和 FLANN 最近邻查询，失败时返回非零退出码。准备好的包保留在 `example/3rdparty/packages/<os>-<arch>/`，后续配置直接复用。
+[示例源码](example/src/main.cpp)实际执行队列入出队、LZ4 压缩解压和 FLANN 最近邻查询，失败时返回非零退出码。准备好的包保留在 `example/3rdparty/<包名>/`，后续配置直接复用。
 
 ## 接入自己的 CMake 工程
 
@@ -87,7 +87,7 @@ cmake --build build --parallel
 
 通用 CMake 参数通过 `-D` 或 toolchain 设置；库特定选项修改对应 `src/dependencies/<name>/module.toml`，模块显式配置优先于父级参数。变更版本或选项后，按[重建说明](docs/development.md#准备与配置)处理受影响的源码、构建状态和安装树；已有安装标记可能跳过构建。
 
-安装树不是 importer 的包缓存。要快捷导入自编译产物，还需[使用 builder 打包](docs/development.md#本地打包与消费)，再将包放入消费工程的本地根。
+提供消费适配的模块在安装后即可快捷导入，宿主 importer 也自动输出到安装根。将消费工程的 `AUTOLIB_LOCAL_ROOT` 指向该根即可复用，无需移动库、打包或解包；纯本地消费可将 `AUTOLIB_REMOTE_ROOT` 设为空。自定义根、重建和分发操作见[开发指南](docs/development.md#本地打包与消费)。
 
 ## 二进制发布
 
@@ -106,12 +106,6 @@ Windows 包使用 VS 2022、v143、Release、动态 CRT（`/MD`），运行时�
 欢迎修复问题、改进文档或接入第三方库。先搜索已有 [Issue](https://github.com/xxf1ow/xxautolib/issues)；涉及公共接口或较大改动时，先说明场景与方案。
 
 Fork 后从 `master` 新建任务分支，完成针对性测试，再向本仓库 `master` 提交 PR。PR 请说明改动目的、验证命令与结果、实际验证的平台及未验证项；不要提交下载缓存、编译产物或凭据。完整步骤见[贡献指南](CONTRIBUTING.md)。
-
-## 开发文档
-
-- [开发指南](docs/development.md)：环境准备、源码构建、本地打包。
-- [测试指南](docs/testing.md)：测试选择、执行命令与真实消费验证。
-- [架构说明](docs/architecture.md)：builder、importer 与 CI 的职责。
 
 ## 许可证
 

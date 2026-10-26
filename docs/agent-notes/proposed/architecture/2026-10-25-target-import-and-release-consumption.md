@@ -22,7 +22,9 @@ CI 仍是独立系统，其构建编排、发布权限、并发和运行汇总�
 
 Windows x86_64 的真实 GitHub 验证从空消费根引导工具、下载依赖、编译并运行，CTest 1/1 及再次 configure 通过。用户确认远程方式可用，并确认 Linux 验收通过；结合前述 Windows 证据，GitHub 阶段按三平台验收完成。Linux 结论采用用户验收，不附未提供的命令、日志或运行指标。
 
-这里验收的是本地发行包与 GitHub Release 消费，不包含直接导入 builder 原始安装树。后者需要单独设计；Gitee 镜像与默认来源消费继续后置，不由 GitHub 验收推定可用。
+这里验收的是本地发行包与 GitHub Release 消费，不包含由下述独立设计拥有的原始安装树直接消费。Gitee 镜像与默认来源消费继续后置，不由 GitHub 验收推定可用。
+
+[本地安装产物直接消费](../../implemented/architecture/2026-10-25-direct-install-consumption.md)独立拥有安装后消费准备、宿主工具输出及扁平目录，替代本文继承的嵌套本地布局。本文继续拥有 CMake 公共接口、来源默认值、唯一公共目标和 Gitee 阶段；本地直接消费不属于 GitHub 阶段的未完成项。
 
 ### CMake 公共接口
 

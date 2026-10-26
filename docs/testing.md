@@ -1,15 +1,13 @@
 # 测试
 
-公共 Go 测试验证声明校验、参数传递、生成器身份、补丁、步骤依赖、增量构建及真实根入口。Git 与 tar.xz fixture 在本地创建，HTTP 服务使用动态端口并在退出时释放，不下载真实依赖；需要固定 Go SDK、模块缓存和 C/C++ 工具链。回归覆盖平台/架构整组选源、跨 build 输入复用与人工修改保留、隐藏文件目录保护、sentinel 全流程短路、源码子目录和完整目录复制；归档包括镜像失败、摘要错误、缓存复用及资源解压。公共 CMake 默认值、父级覆盖和模块覆盖均从真实子项目结果检查。
+公共 Go 测试通过受控 Git、归档及本机 HTTP/HTTPS fixture 验证声明、原生构建、安装、打包、消费和 CI 接线，不下载真实三方库。需要固定 Go SDK、模块缓存及 C/C++ 工具链；真实库与跨平台结果由下文独立验收，不从 fixture 推定。
 
 ## 执行
 
 先按 [开发指南](development.md) 准备环境，再在仓库根目录运行：
 
 ```text
-cmake -P src/autolib-builder/go-sdk.cmake -- test ./src/autolib-builder -count=1 -v
-cmake -P src/autolib-builder/go-sdk.cmake -- test ./src/autolib-importer -count=1 -v
-cmake -P src/autolib-builder/go-sdk.cmake -- test ./src/autolib-ci -count=1 -v
+cmake -P src/autolib-builder/go-sdk.cmake -- test ./src/autolib-builder ./src/autolib-importer ./src/autolib-ci -timeout=30m -count=1 -v
 cmake -P src/autolib-builder/go-sdk.cmake -- vet ./src/autolib-builder ./src/autolib-importer ./src/autolib-ci
 ```
 
@@ -19,17 +17,23 @@ cmake -P src/autolib-builder/go-sdk.cmake -- vet ./src/autolib-builder ./src/aut
 
 ## 本地二进制闭环
 
-先准备真实 queue、lz4、flann 安装树，再按[开发指南](development.md#本地打包与消费)构建两个宿主工具。Windows x64/v143 在本仓库目录执行：
+先通过[普通根入口](development.md#准备与配置)选择 queue、flann 完成 configure/build，自动准备三库、消费描述及宿主工具。先直接消费原安装根，Windows x64/v143 在本仓库目录执行：
 
 ```text
-cmake -DSOURCE_ROOT=D:/Work/xxautolib -DINSTALL_ROOT=D:/Work/xxautolib/3rdparty -DRELEASE_DIR=D:/Work/xxautolib/build/validation/manifestless-local/release -DVALIDATION_ROOT=D:/Work/xxautolib/build/validation/manifestless-local -DEVIDENCE_DIRECTORY=D:/Work/xxautolib/build/validation/manifestless-local -DBUILDER_FILE=D:/Work/xxautolib/build/tools/autolib-builder.exe -DIMPORTER_FILE=D:/Work/xxautolib/build/tools/autolib-importer.exe -DTARGET_OS=windows -DTARGET_ARCH=x86_64 "-DGENERATOR=Visual Studio 17 2022" -DGENERATOR_PLATFORM=x64 "-DGENERATOR_TOOLSET=v143,host=x64" "-DROOT_PACKAGES=flann;queue" -P tests/autolib/run-local.cmake
+cmake -DSOURCE_ROOT=D:/Work/xxautolib -DINSTALL_ROOT=D:/Work/xxautolib/3rdparty -DVALIDATION_ROOT=D:/Work/xxautolib/build/validation/direct-installed "-DGENERATOR=Visual Studio 17 2022" -DGENERATOR_PLATFORM=x64 "-DGENERATOR_TOOLSET=v143,host=x64" -P tests/autolib/run-installed.cmake
 ```
 
-Linux aarch64 将绝对根和程序名替换为本机值，使用 `-DTARGET_OS=linux -DTARGET_ARCH=aarch64 "-DGENERATOR=Unix Makefiles"`，不传 VS 平台或工具集。INSTALL_ROOT 必须对应元数据中的真实生产前缀，不能先搬动未修正的安装输入。driver 不构建源码；它在 `build/validation/manifestless-local/` 新建运行目录，记录打包、安装摘要、导入属性、链接输入和 CTest 日志。发行根搬迁后空缓存导入，再搬迁准备好的包并重新编译运行；两次 CTest 各 1/1，实际 FLANN 动态库来自搬迁包，生产安装及消费包字节不变。
+[直接消费 driver](../tests/autolib/run-installed.cmake)只配置、构建、运行消费者，不打包、不搬库、不复制工具，显式空远端。Windows 真实 API 验证通过；原生 Linux 直接消费尚无实测记录，现有授权目录未被覆盖，证据与缺口见[直接消费设计](agent-notes/implemented/architecture/2026-10-25-direct-install-consumption.md#验证结果)。Linux 使用本机绝对根和 Unix Makefiles、不传 VS 参数，并检查 importer 执行位、并行依赖时序及真实链接运行。
 
-本地阶段验证使用builder的 `-run 'Test(PackageDependencyHeader|PackageArchiveChecksum|StagePackage|StageFixup|PackageArchive|LocalPackageAssets|PackageCLI|UniversalIdentity|UniversalPackageAcrossTargets|DescribeParity|DescribeInputs|DescribeCLI)$'`、importer全集和三工具vet；经上述SDK包装执行，test加`-count=1 -v`。全部受影响阶段完成后做全量回归。
+再验证打包双搬迁（完整命令）：
 
-MODULES表示生产和链接集合，ROOT_PACKAGES默认等于MODULES，只控制首次请求。根包结果必须为 `lz4;flann;queue`；RELEASE_READY=ON核对固定工具和归档，无需manifest。三平台闭环结果见[CI验证](#ci-验证)。
+```text
+cmake -DSOURCE_ROOT=D:/Work/xxautolib -DINSTALL_ROOT=D:/Work/xxautolib/3rdparty -DRELEASE_DIR=D:/Work/xxautolib/build/validation/direct-distribution/release -DVALIDATION_ROOT=D:/Work/xxautolib/build/validation/direct-distribution -DEVIDENCE_DIRECTORY=D:/Work/xxautolib/build/validation/direct-distribution -DBUILDER_FILE=D:/Work/xxautolib/build/tools/autolib-builder.exe -DIMPORTER_FILE=D:/Work/xxautolib/3rdparty/autolib-importer-windows-x86_64.exe -DTARGET_OS=windows -DTARGET_ARCH=x86_64 "-DGENERATOR=Visual Studio 17 2022" -DGENERATOR_PLATFORM=x64 "-DGENERATOR_TOOLSET=v143,host=x64" "-DROOT_PACKAGES=flann;queue" -P tests/autolib/run-local.cmake
+```
+
+Linux aarch64 使用本机绝对根及 `autolib-importer-linux-aarch64`，参数为 `-DTARGET_OS=linux -DTARGET_ARCH=aarch64 "-DGENERATOR=Unix Makefiles"`，不传 VS 平台或工具集。INSTALL_ROOT 必须对应真实生产前缀，不能先搬动未修正的安装输入。driver 不构建源码，在 VALIDATION_ROOT 新建运行目录记录打包、安装摘要、导入属性、链接输入及 CTest。Windows 本轮双搬迁两次 CTest 各 1/1，实际 FLANN 动态库来自搬迁包，生产安装及消费包字节不变；安装树的类型、权限、链接及修改时间另由 `TestStageInstallationUnchanged` 检查。
+
+MODULES表示生产和链接集合，ROOT_PACKAGES只控制首次请求、默认等于MODULES；flann、queue的闭包为 `lz4;flann;queue`。RELEASE_READY=ON使用已有固定名资产。三平台历史闭环见[CI验证](#ci-验证)。
 
 importer覆盖包头、优先级、依赖图、通用包、安全解包及CRC失败清理。[入口测试](../src/autolib-importer/entry_test.go)覆盖接口、作用域、多个消费者、平台及失败保护；UNC仅词法覆盖。受控PATH阻断运行时和下载器，验证本地消费零网络。真实消费验证FLANN两种API及LZ4，无需补链。本地回归不代替三宿主发行验证。
 

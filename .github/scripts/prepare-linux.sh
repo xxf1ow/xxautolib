@@ -89,7 +89,6 @@ fi
 export PATH="$tools/bin:$PATH" CC="gcc-$gcc_major" CXX="g++-$gcc_major"
 git config --global --add safe.directory "$repo_root"
 "$cmake_command" -P "$repo_root/src/autolib-builder/go-sdk.cmake" -- build -mod=readonly -trimpath -o "$work_root/autolib-builder" ./src/autolib-builder
-"$cmake_command" -P "$repo_root/src/autolib-builder/go-sdk.cmake" -- build -mod=readonly -trimpath -o "$work_root/autolib-importer" ./src/autolib-importer
 "$cmake_command" -P "$repo_root/src/autolib-builder/go-sdk.cmake" -- build -mod=readonly -trimpath -o "$work_root/autolib-ci" ./src/autolib-ci
 if [[ -n "${GITHUB_PATH:-}" ]]; then printf '%s\n' "$tools/bin" >>"$GITHUB_PATH"; fi
 if [[ -n "${GITHUB_ENV:-}" ]]; then printf 'CC=gcc-%s\nCXX=g++-%s\n' "$gcc_major" "$gcc_major" >>"$GITHUB_ENV"; fi

@@ -158,6 +158,22 @@ func stagePackage(o stageOptions) (staged string, err error) {
 	if !info.IsDir() {
 		return "", fmt.Errorf("installation must be a directory: %s", input)
 	}
+	metadata, err := readConsumptionMetadata(filepath.Join(input, "autolib-import.cmake"))
+	if err != nil {
+		return "", err
+	}
+	packageOS, packageArch := packagePlatform(module, o.OS, o.Arch)
+	dependencies := slices.Clone(module.Depends)
+	slices.Sort(dependencies)
+	dependencies = slices.Compact(dependencies)
+	if metadata.Name != o.Name || metadata.OS != packageOS || metadata.Arch != packageArch || !slices.Equal(metadata.Dependencies, dependencies) {
+		return "", fmt.Errorf("%s: installed consumption identity or dependencies do not match module declaration", input)
+	}
+	if module.PlatformIndependent {
+		if err = validateUniversalPackage(module, installRoot, adapter); err != nil {
+			return "", err
+		}
+	}
 	if err := os.MkdirAll(stageRoot, 0755); err != nil {
 		return "", err
 	}
@@ -172,24 +188,6 @@ func stagePackage(o stageOptions) (staged string, err error) {
 		}
 	}()
 	if err = copyPackageTree(input, staged); err != nil {
-		return "", err
-	}
-	packageOS, packageArch := packagePlatform(module, o.OS, o.Arch)
-	if module.PlatformIndependent {
-		if err = validateUniversalPackage(module, installRoot, adapter); err != nil {
-			return "", err
-		}
-	}
-	dependencies := slices.Clone(module.Depends)
-	for _, dependency := range dependencies {
-		if err = validatePackageName(dependency); err != nil {
-			return "", err
-		}
-	}
-	slices.Sort(dependencies)
-	dependencies = slices.Compact(dependencies)
-	header := fmt.Sprintf("set(AUTOLIB_PACKAGE_NAME %q)\nset(AUTOLIB_OS %q)\nset(AUTOLIB_ARCH %q)\nset(AUTOLIB_DEPENDENCIES %q)\n", o.Name, packageOS, packageArch, strings.Join(dependencies, ";"))
-	if err = os.WriteFile(filepath.Join(staged, "autolib-import.cmake"), append([]byte(header), adapter...), 0644); err != nil {
 		return "", err
 	}
 	allowed := append([]string{o.Name}, module.Depends...)
@@ -247,6 +245,12 @@ func validateUniversalPackage(module *moduleDefinition, installRoot string, adap
 		rel, err := filepath.Rel(root, path)
 		if err != nil {
 			return err
+		}
+		if filepath.ToSlash(rel) == "autolib-import.cmake" {
+			if !entry.Type().IsRegular() {
+				return fmt.Errorf("queue consumption file must be regular: %s", path)
+			}
+			return nil
 		}
 		actual[filepath.ToSlash(rel)] = true
 		return nil

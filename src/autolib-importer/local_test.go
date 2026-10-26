@@ -66,7 +66,7 @@ func TestLocalSource(t *testing.T) {
 	}
 	a := packageDirectory(want, packageIdentity{Name: "lz4", OS: "linux", Arch: "aarch64"})
 	c := packageDirectory(want, packageIdentity{Name: "lz4", OS: "windows", Arch: "x86_64"})
-	if a == c || filepath.Base(a) != "lz4" || filepath.Base(filepath.Dir(a)) != "linux-aarch64" {
+	if a != c || a != filepath.Join(want, "lz4") {
 		t.Fatal(a, c)
 	}
 }

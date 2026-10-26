@@ -115,6 +115,13 @@ func runCILayerWithClient(ctx context.Context, o ciRunOptions, client *githubCli
 		if err := os.Mkdir(install, 0755); err != nil {
 			return fmt.Errorf("prepare requires a fresh isolated installation: %w", err)
 		}
+		selected := make([]string, 0, len(platform.Description.Modules))
+		for _, module := range platform.Description.Modules {
+			selected = append(selected, module.Name)
+		}
+		if err := configureCIProduction(ctx, o, production, selected, install); err != nil {
+			return err
+		}
 		if err := verifyImporterNoCRuntime(o.ImporterFile); err != nil {
 			return err
 		}
@@ -339,9 +346,9 @@ func ciCommand(ctx context.Context, executable string, args []string, directory 
 	return nil
 }
 
-func buildCIModule(ctx context.Context, o ciRunOptions, c ciProductionContext, name, install string) error {
+func configureCIProduction(ctx context.Context, o ciRunOptions, c ciProductionContext, modules []string, install string) error {
 	build := filepath.Join(o.WorkRoot, "build")
-	args := []string{"-S", o.SourceRoot, "-B", build, "-G", c.Generator, "-DBUILD_LIST=" + name, "-DCMAKE_BUILD_TYPE=" + c.Configuration}
+	args := []string{"-S", o.SourceRoot, "-B", build, "-G", c.Generator, "-DBUILD_LIST=" + strings.Join(modules, ","), "-DCMAKE_BUILD_TYPE=" + c.Configuration}
 	if c.OS == "windows" {
 		args = append(args, "-A", c.Platform, "-T", c.Toolset, "-DCMAKE_MSVC_RUNTIME_LIBRARY="+c.Runtime)
 	} else {
@@ -358,10 +365,19 @@ func buildCIModule(ctx context.Context, o ciRunOptions, c ciProductionContext, n
 	if c.OS == "linux" {
 		environment = prependPath(environment, filepath.Dir(o.MakeProgram))
 	}
-	if err := ciCommand(ctx, o.CMakeCommand, args, o.SourceRoot, environment, filepath.Join(o.WorkRoot, "logs", "configure-"+name+".log")); err != nil {
+	return ciCommand(ctx, o.CMakeCommand, args, o.SourceRoot, environment, filepath.Join(o.WorkRoot, "logs", "configure-"+strings.Join(modules, "+")+".log"))
+}
+
+func buildCIModule(ctx context.Context, o ciRunOptions, c ciProductionContext, name, install string) error {
+	if err := configureCIProduction(ctx, o, c, []string{name}, install); err != nil {
 		return err
 	}
-	args = []string{"--build", build, "--config", c.Configuration, "--target", name, "--verbose"}
+	environment := withoutEnvironment(os.Environ(), "AUTOLIB_INSTALL_ROOT", "MAKEFLAGS", "CMAKE_BUILD_PARALLEL_LEVEL")
+	environment = append(environment, "AUTOLIB_INSTALL_ROOT="+install)
+	if c.OS == "linux" {
+		environment = prependPath(environment, filepath.Dir(o.MakeProgram))
+	}
+	args := []string{"--build", filepath.Join(o.WorkRoot, "build"), "--config", c.Configuration, "--target", name, "--verbose"}
 	if c.OS == "linux" {
 		args = append(args, "--", fmt.Sprintf("-j%d", o.Budget), "--jobserver-style=fifo")
 	}
