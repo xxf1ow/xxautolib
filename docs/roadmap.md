@@ -24,7 +24,7 @@
 | 复杂模块与专用文件 | 已实现 | 已验证 OpenCV 4.14.0 contrib 路径引用、资源补丁、平台安装布局与链接运行；oneTBB HWLOC、ImGui 专用文件仍待接入。 |
 | 下游导入与可搬迁包 | 已实现 | queue、lz4、flann 的显式包内 adapter 已完成双端搬迁链接运行，原安装树不变；其他模块按需提供 adapter，本地构建资格与发布资格分离。 |
 | 固定槽交付 | 已实现 | 本地消费和 GitHub 发布已验证；CI 每轮重建，不维护跨运行生产包缓存，各槽独立更新、无全局发行清单，汇总只报告结果。Gitee 镜像暂缓，后续远端写操作仍须授权。 |
-| 三平台原生 CI | 已实现 | queue、lz4、flann 的三平台原生单 job、统一环境、FIFO 预算、真实供给已有验证证据。仅手动触发、默认分支运行；OpenCV 等其余库按需另行确认。 |
+| 三平台原生 CI | 已实现 | queue、lz4、flann 的三平台原生单 job、统一环境、FIFO 预算、真实供给已有验证证据。任意分支可手动运行；OpenCV 等其余库按需另行确认。 |
 | 平台无关头文件槽位 | 已实现 | queue-any-any 的打包、导入、唯一 publisher 和三平台消费已验证，只有一个通用资产；机器码包与 importer 仍限定平台。 |
 
 本地能力的既有决定见[模块扩展](agent-notes/proposed/architecture/2026-10-20-module-expansion.md)，本批方案见[本地复用与平台输入设计](agent-notes/implemented/architecture/2026-10-20-local-reuse-and-platform-inputs.md)；导入、打包和固定槽见[二进制交付](agent-notes/proposed/architecture/2026-10-20-name-only-artifact-delivery.md)；流水线、环境、ABI、并行和通用槽位见独立的[CI 系统设计](agent-notes/implemented/architecture/2026-10-20-ci-system.md)。

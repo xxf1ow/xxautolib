@@ -118,6 +118,14 @@ func (f *layerFixture) result(t *testing.T) ciPlatformResult {
 func TestCIRunLayers(t *testing.T) {
 	t.Run("real local dependency", testRealCILocalDependency)
 	f := newLayerFixture(t, []string{"lz4", "flann"})
+	f.run.Ref = "refs/heads/feat/gitee-release-mirroring"
+	data, err := json.Marshal(f.run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(f.options.RunIdentityFile, data, 0644); err != nil {
+		t.Fatal(err)
+	}
 	for _, layer := range []string{"prepare", "layer0", "layer1", "verify"} {
 		if err := f.layer(t, layer); err != nil {
 			t.Fatalf("%s: %v", layer, err)
@@ -433,16 +441,16 @@ func TestCIPublisherFailure(t *testing.T) {
 		t.Fatalf("nonpublisher did not validate independently: %+v writes=%v", result, f.writes)
 	}
 	identity := f.run
-	identity.Ref = "refs/heads/topic"
+	identity.Ref = "refs/tags/master"
 	data, _ = json.Marshal(identity)
 	os.WriteFile(f.options.RunIdentityFile, data, 0644)
 	before := len(f.writes)
 	commandsBefore := mustReadText(t, os.Getenv("AUTOLIB_CI_COMMAND_LOG"))
 	if err := f.layer(t, "layer0"); err == nil || len(f.writes) != before {
-		t.Fatal("nondefault run was not rejected before writes")
+		t.Fatal("tag run was not rejected before writes")
 	}
 	if after := mustReadText(t, os.Getenv("AUTOLIB_CI_COMMAND_LOG")); after != commandsBefore {
-		t.Fatal("nondefault run launched a build or validation command")
+		t.Fatal("tag run launched a build or validation command")
 	}
 }
 
