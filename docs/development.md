@@ -1,6 +1,6 @@
 # 开发
 
-先准备 Git、CMake（3.20+）和 C/C++ 编译器，通过根入口构建安装。Go SDK 和固定模块自动准备；FLANN、OpenCV 还需可被找到的 pkg-config，FLANN 使用 OpenMP，FFmpeg 按机器开发环境探测。builder 和公共测试不需要 Python 或 uv；个人技能校验器自行准备其环境。
+先准备 Git、CMake（3.20+）和 C/C++ 编译器，通过根入口构建安装。Go SDK 和固定模块自动准备；FLANN、OpenCV 还需可被找到的 pkg-config，FLANN 使用 OpenMP，FFmpeg 按机器开发环境探测。builder 和 Go 测试不需要 Python 或 uv；独立 Gitee 同步使用 Python，个人技能校验器自行准备其环境。
 
 ## 准备与配置
 
@@ -65,6 +65,12 @@ GitHub 消费在 include 前将 `AUTOLIB_REMOTE_ROOT` 设为 `https://github.com
 ## CI 开发与运行
 
 [手动流水线](../.github/workflows/build-platform.yml)接受同仓库任意分支、拒绝tag，检出事件提交；平台单选默认all，模块列表留空选择首期全部三库。每轮构建所选模块及依赖，逐槽验证后同名替换，不备份或回滚。汇总失败保留成功槽，重跑仍重新构建；不提供 force 输入，不设置资产 label。本地消费目录由用户按上节刷新。验证范围见[测试指南](testing.md#ci-验证)，后续远端操作仍须授权。命令见[入口](../src/autolib-ci/main.go)，固定目标和策略见 [CI 设计](agent-notes/implemented/architecture/2026-10-20-ci-system.md)。
+
+### 独立 Gitee 同步
+
+[同步 workflow](../.github/workflows/sync-gitee.yml)需要 secret `GITEE_TOKEN`；repository variables `GITEE_REPOSITORY`、`GITEE_RELEASE_TAG` 默认分别为 `xxf1ow/autolib-release`、`autolib-release`，两端使用同 tag。自动入口检查全部现存来源附件，包括历史遗漏；手动 `packages` 留空选全部，或填 `lz4,queue` 精确选择各包全部平台，importer 须显式选择 `autolib-importer`。任一包未匹配会在创建 Release 等写入前失败。
+
+手动执行前必须信任所选分支提交：同步代码可读取和外传令牌，脱敏不是沙箱。人工修改 Gitee 正文或附件须避开同步，区块外描述也可能被覆盖。部分失败后重跑独立同步，无需重建；成功索引可跳过，未确认项可能重传，同名重复须人工处理。该入口尚需[真实验收](testing.md#独立-gitee-同步验证)，不接通 Gitee 消费；适配入口见 [Action 说明](../.github/actions/gitee-release/UPSTREAM.md#同步适配)。
 
 ## 日常修改
 

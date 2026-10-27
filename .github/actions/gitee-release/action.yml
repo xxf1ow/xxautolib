@@ -1,102 +1,25 @@
-name: 'action-gitee-release'
-description: '在Gitee项目发布release(可以上传附件)'
+name: Gitee Release synchronization
+description: Synchronize a fixed GitHub Release using a body digest index
 inputs:
-  gitee_action:
-    description: '执行的操作类型: create_release, upload_asset, delete_release, delete_asset, update_asset'
-    required: true
-
-  gitee_owner:
-    description: 'Gitee 用户名, 项目URL中可获取'
-    required: true
-  gitee_repo:
-    description: 'Gitee 项目名, 项目URL中可获取'
-    required: true
-  gitee_token:
-    description: 'Gitee api token'
-    required: true
-    
-  gitee_tag_name:
-    description: 'Gitee Tag 名称, 提倡以v字母为前缀做为Release名称，例如v1.0或者v2.3.4'
+  packages:
+    description: Comma-separated package names; blank checks all assets
     required: false
-  gitee_release_name:
-    description: 'Gitee release 名称'
+    default: ''
+  repository:
+    description: Target Gitee owner/repository
     required: false
-  gitee_release_body:
-    description: 'Gitee release 描述'
+    default: xxf1ow/autolib-release
+  tag:
+    description: Shared GitHub and Gitee Release tag
     required: false
-  gitee_target_commitish:
-    description: 'Gitee 分支名称或者commit SHA'
-    required: false
-
-  gitee_files:
-    description: '上传的附件列表(多个文件)'
-    required: false
-    
-  gitee_file_name:
-    description: '上传的附件名称(单个文件)'
-    required: false
-  gitee_file_path:
-    description: '上传的附件的本地路径(单个文件)'
-    required: false
-    
-  gitee_release_id:
-    description: '指定的release ID (upload_asset操作时可选，优先级高于tag_name)'
-    required: false
-    
-  gitee_upload_retry_times:
-    description: '上传附件失败后的尝试次数'
-    required: false
-
-  gitee_delete_asset:
-    description: '要删除的单个附件名称 (delete_asset操作时使用)'
-    required: false
-  gitee_delete_assets:
-    description: '要删除的多个附件名称，每行一个文件名 (delete_asset操作时使用)'
-    required: false
-    
-  gitee_old_asset_name:
-    description: '要更新的旧附件名称 (update_asset操作时使用)'
-    required: false
-  gitee_new_file_path:
-    description: '新附件的本地路径 (update_asset操作时使用)'
-    required: false
-    
-outputs:
-  release-id:
-    description: '创建的release的id'
-    value: ${{ steps.release.outputs.release-id }}
-  download-url:
-    description: '附件的下载地址'
-    value: ${{ steps.release.outputs.download-url }}
+    default: autolib-release
 runs:
-  using: "composite"
+  using: composite
   steps:
-    - name: Execute Gitee Release Action
-      id: release
+    - name: Synchronize Release
       shell: bash
       env:
-        gitee_action: ${{ inputs.gitee_action }}
-        gitee_owner: ${{ inputs.gitee_owner }}
-        gitee_repo: ${{ inputs.gitee_repo }}
-        gitee_token: ${{ inputs.gitee_token }}
-        gitee_tag_name: ${{ inputs.gitee_tag_name }}
-        gitee_release_name: ${{ inputs.gitee_release_name }}
-        gitee_release_body: ${{ inputs.gitee_release_body }}
-        gitee_target_commitish: ${{ inputs.gitee_target_commitish }}
-        gitee_files: ${{ inputs.gitee_files }}
-        gitee_file_name: ${{ inputs.gitee_file_name }}
-        gitee_file_path: ${{ inputs.gitee_file_path }}
-        gitee_release_id: ${{ inputs.gitee_release_id }}
-        gitee_upload_retry_times: ${{ inputs.gitee_upload_retry_times }}
-        gitee_delete_asset: ${{ inputs.gitee_delete_asset }}
-        gitee_delete_assets: ${{ inputs.gitee_delete_assets }}
-        gitee_old_asset_name: ${{ inputs.gitee_old_asset_name }}
-        gitee_new_file_path: ${{ inputs.gitee_new_file_path }}
-      run: |
-        pip install -r "${{ github.action_path }}/requirements.txt"
-        python "${{ github.action_path }}/gitee_release.py"
-
-# Ref: https://haya14busa.github.io/github-action-brandings/
-branding:
-  icon: "square"
-  color: "blue"
+        SYNC_PACKAGES: ${{ inputs.packages }}
+        GITEE_REPOSITORY: ${{ inputs.repository }}
+        GITEE_RELEASE_TAG: ${{ inputs.tag }}
+      run: python "${{ github.action_path }}/sync.py"
