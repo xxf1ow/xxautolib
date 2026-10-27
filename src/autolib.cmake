@@ -152,8 +152,8 @@ function(_autolib_bootstrap_importer output remote name local_root work response
     if(IS_DIRECTORY "${archive}")
         message(FATAL_ERROR "AutoLib importer archive must be a file: ${archive}")
     endif()
-    string(RANDOM LENGTH 16 ALPHABET 0123456789abcdef nonce)
-    set(extracted "${work}/bootstrap/extracted-${nonce}")
+    get_filename_component(extracted "${response_file}" DIRECTORY)
+    string(APPEND extracted "/importer")
     file(MAKE_DIRECTORY "${extracted}")
     execute_process(COMMAND "${CMAKE_COMMAND}" -E tar xf "${archive}"
         WORKING_DIRECTORY "${extracted}" RESULT_VARIABLE status ERROR_VARIABLE diagnostic)

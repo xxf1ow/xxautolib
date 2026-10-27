@@ -260,6 +260,30 @@ func testCMakeGitHubEntry(t *testing.T, kind string) {
 			t.Fatalf("complete local cache used network: %s -> %s", before, after)
 		}
 	}
+	if kind == "remote only" {
+		for configure := 1; configure <= 2; configure++ {
+			if configure > 1 {
+				if out, err := f.configure(args...); err != nil {
+					t.Fatalf("remote-only reconfigure: %v\n%s", err, out)
+				}
+			}
+			var tools []string
+			if err := filepath.WalkDir(f.work, func(path string, entry os.DirEntry, err error) error {
+				if err != nil {
+					return err
+				}
+				if !entry.IsDir() && entry.Name() == f.toolAsset {
+					tools = append(tools, path)
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if len(tools) != 0 {
+				t.Errorf("configure %d retained temporary importer programs: %v", configure, tools)
+			}
+		}
+	}
 }
 
 func TestGitHubValidationDriver(t *testing.T) {

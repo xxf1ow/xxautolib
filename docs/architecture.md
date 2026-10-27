@@ -23,7 +23,7 @@
 - autolib-ci 维护生产策略：根据 builder 提供的事实规划模块依赖层与通用包 publisher，调用既有工具完成构建、打包和消费验证；不重新解析模块声明或复制构建、打包和解包引擎。
 - 发布编排、Release 写入和结果汇总归 autolib-ci，触发、runner/container、环境准备、权限、job 依赖与运行串行化归 [workflow](../.github/workflows/build-platform.yml)；接线与验收要求由独立的 [CI 系统设计](agent-notes/implemented/architecture/2026-10-20-ci-system.md)约定，不在 builder 或 importer 中实现。
 
-普通本地构建和离线消费不依赖 CI 或远端，builder 不读取 CI 配置或凭据。importer 按固定宿主名输出到 configure 确定的绝对安装根；正式构建去符号，本地安装和打包附带裸程序，CI 发布单程序 tar.xz。命名见[压缩分发约定](agent-notes/proposed/architecture/2026-10-27-importer-distribution-and-branch-release.md#importer-瘦身与生产)。
+普通本地构建和离线消费不依赖 CI 发布流程，builder 不读取 CI 配置或凭据。importer 按固定宿主名输出到 configure 确定的绝对安装根；正式构建去符号，本地安装和打包附带裸程序，CI 发布单程序 tar.xz。命名见[压缩分发约定](agent-notes/proposed/architecture/2026-10-27-importer-distribution-and-branch-release.md#importer-瘦身与生产)。
 
 CI 每轮构建所选模块及依赖，不跨运行复用 Release 包。各平台按依赖层共用本轮隔离安装根，共享依赖只构建一次；逐槽消费验证后按固定文件名同名替换，不设置显示 label，finalize 只汇总、不写发行清单。取舍见[生产缓存收缩决定](agent-notes/implemented/simplification/2026-10-24-ci-rebuild-without-production-cache.md)。
 
