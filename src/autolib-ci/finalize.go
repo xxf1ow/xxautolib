@@ -19,12 +19,16 @@ func ciModuleSlot(module describedModule, platform string) ciSlot {
 	return ciSlot{Name: module.Name, OS: strings.ToLower(osName), Arch: arch}
 }
 
-func ciImporterAsset(platform string) string {
+func ciImporterExecutable(platform string) string {
 	name := "autolib-importer-" + platform
 	if platform == "windows-x86_64" {
 		name += ".exe"
 	}
 	return name
+}
+
+func ciImporterAsset(platform string) string {
+	return ciImporterExecutable(platform) + ".tar.xz"
 }
 
 func finalizeCI(plan ciPlan, run ciRunIdentity, results []ciPlatformResult) error {

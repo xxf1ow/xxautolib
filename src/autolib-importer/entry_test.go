@@ -127,6 +127,101 @@ func (f *entryFixture) mustConfigure() {
 	}
 }
 
+func (f *entryFixture) importerArchive(member, body string) string {
+	f.t.Helper()
+	root := f.t.TempDir()
+	path := putTestFile(f.t, filepath.Join(root, member), body)
+	if err := os.Chmod(path, 0755); err != nil {
+		f.t.Fatal(err)
+	}
+	archive := filepath.Join(root, f.toolAsset+".tar.xz")
+	command := exec.Command(f.cmake, "-E", "tar", "cJf", archive, "--format=gnutar", member)
+	command.Dir = root
+	if out, err := command.CombinedOutput(); err != nil {
+		f.t.Fatalf("create importer archive: %v\n%s", err, out)
+	}
+	return archive
+}
+
+func TestCMakeImporterArchive(t *testing.T) {
+	for _, kind := range []string{"bare first", "offline", "invalid remote", "directory", "corrupt", "truncated", "missing program"} {
+		t.Run(kind, func(t *testing.T) {
+			f := newEntryFixture(t, false, "中文 空格${literal}")
+			tool := filepath.Join(f.release, f.toolAsset)
+			original := readTestFile(t, tool)
+			member := f.toolAsset
+			if kind == "missing program" {
+				member = "other-program"
+			}
+			body := readTestFile(t, f.importerArchive(member, original))
+			if kind == "corrupt" || kind == "bare first" {
+				body = "not an archive"
+			} else if kind == "truncated" {
+				body = body[:len(body)/2]
+			}
+			archive := filepath.Join(f.release, f.toolAsset+".tar.xz")
+			if kind == "directory" {
+				if err := os.Mkdir(archive, 0755); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				putTestFile(t, archive, body)
+			}
+			if kind != "bare first" {
+				if err := os.Remove(tool); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var requests atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests.Add(1)
+				w.WriteHeader(503)
+			}))
+			defer server.Close()
+			remote := ""
+			if kind != "offline" {
+				remote = server.URL
+			}
+			t.Setenv("PATH", t.TempDir())
+			out, err := f.configure("-DAUTOLIB_REMOTE_ROOT=" + remote)
+			success := kind == "bare first" || kind == "offline" || kind == "invalid remote"
+			if (err == nil) != success {
+				t.Fatalf("configure: %v\n%s", err, out)
+			}
+			if requests.Load() != 0 {
+				t.Fatal("local candidate triggered remote request")
+			}
+			if kind != "directory" && readTestFile(t, archive) != body {
+				t.Fatal("bootstrap modified archive input")
+			}
+			if !success {
+				if !strings.Contains(out, "importer archive") {
+					t.Fatalf("archive was not diagnosed: %s", out)
+				}
+				if _, err := os.Stat(tool); !os.IsNotExist(err) {
+					t.Fatal("failed archive committed a tool", err)
+				}
+				if _, err := os.Stat(filepath.Join(f.root, "consumer-build/observed.txt")); !os.IsNotExist(err) {
+					t.Fatal("failed archive loaded adapter", err)
+				}
+				return
+			}
+			if readTestFile(t, tool) != original {
+				t.Fatal("extracted importer bytes differ")
+			}
+			if info, err := os.Stat(tool); err != nil || (runtime.GOOS != "windows" && info.Mode().Perm()&0111 == 0) {
+				t.Fatalf("importer not executable: %v %v", info, err)
+			}
+			if err := os.Remove(archive); err != nil {
+				t.Fatal(err)
+			}
+			if out, err := f.configure("-DAUTOLIB_REMOTE_ROOT=" + remote); err != nil {
+				t.Fatalf("bare tool reuse: %v\n%s", err, out)
+			}
+		})
+	}
+}
+
 func TestCMakeBootstrap(t *testing.T) {
 	f := newEntryFixture(t, false, "")
 	f.mustConfigure()

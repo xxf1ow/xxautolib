@@ -149,18 +149,22 @@ func runCILayerWithClient(ctx context.Context, o ciRunOptions, client *githubCli
 			}
 			fmt.Printf("Make FIFO budget=%d peak=%d overlap=%t\n", evidence.Budget, evidence.Peak, evidence.Overlap)
 		}
-		tool := filepath.Join(releaseRoot, ciImporterAsset(o.Platform))
+		tool := filepath.Join(releaseRoot, ciImporterExecutable(o.Platform))
 		if err := copyCIFile(o.ImporterFile, tool); err != nil {
 			return err
 		}
 		if err := os.Chmod(tool, 0755); err != nil {
 			return err
 		}
-		digest, err := ciFileSHA256(tool)
+		archive := filepath.Join(releaseRoot, ciImporterAsset(o.Platform))
+		if err := ciCommand(ctx, o.CMakeCommand, []string{"-E", "tar", "cJf", archive, "--format=gnutar", filepath.Base(tool)}, releaseRoot, nil, filepath.Join(work, "logs", "importer-archive.log")); err != nil {
+			return err
+		}
+		digest, err := ciFileSHA256(archive)
 		if err != nil {
 			return err
 		}
-		result.Importer = ciImporterResult{Asset: filepath.Base(tool), SHA256: digest, Verified: true}
+		result.Importer = ciImporterResult{Asset: filepath.Base(archive), SHA256: digest, Verified: true}
 		if err := writeCIJSON(resultFile, result); err != nil {
 			return err
 		}
@@ -168,7 +172,7 @@ func runCILayerWithClient(ctx context.Context, o ciRunOptions, client *githubCli
 		if err != nil {
 			return err
 		}
-		if _, err := uploadCIAsset(ctx, client, auth, release, ciUploadOptions{File: tool, Name: filepath.Base(tool), SHA256: digest}); err != nil {
+		if _, err := uploadCIAsset(ctx, client, auth, release, ciUploadOptions{File: archive, Name: filepath.Base(archive), SHA256: digest}); err != nil {
 			return err
 		}
 		result.Importer.Uploaded = true

@@ -164,11 +164,7 @@ func validCIPublishAsset(name string) bool {
 				return true
 			}
 		}
-		suffix := ""
-		if strings.HasPrefix(platform, "windows-") {
-			suffix = ".exe"
-		}
-		if name == "autolib-importer-"+platform+suffix {
+		if name == ciImporterAsset(platform) {
 			return true
 		}
 	}

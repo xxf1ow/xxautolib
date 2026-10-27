@@ -8,6 +8,8 @@
 
 ## 状态与依据
 
+[importer 压缩分发与功能分支手动发布](agent-notes/proposed/architecture/2026-10-27-importer-distribution-and-branch-release.md)已迁入本地实现：正式工具去符号、CI 单程序 tar.xz 和 CMake 原生引导成套提供。压缩格式的跨平台、最低 CMake 及本分支真实 CI 验收仍待完成；Gitee 独立同步 workflow 的交接约定保存在[后续消费设计](agent-notes/proposed/architecture/2026-10-25-target-import-and-release-consumption.md#独立同步-workflow-的交接约定)，不在本批实现。
+
 本仓库支持 TOML 定义、Go builder、原生 ExternalProject、固定来源、多资源、补丁、自定义步骤、平台输入及依赖闭包。下表已验证模块均通过 Windows x64、Linux aarch64 本地安装；除 CI 代表集外，Linux x86_64 实机及全部 v142 实机仍待验收。流程由[模块技能](../.agents/skills/add-third-party-module/SKILL.md)维护；当前职责见[架构](architecture.md)，验证入口见[测试](testing.md)。
 
 “参考已实现”指参考实现中存在对应代码或模块，并有相关决定；不表示本仓库支持，也不表示本轮重新验证了参考实现的全部模块。“参考待实施”指已有方向但尚未落地。迁移不导入历史提交、旧发布数据或所有辅助机制。

@@ -86,7 +86,7 @@ func entryHTTPSProxy(t *testing.T, handler http.Handler) string {
 }
 
 func TestCMakeGitHubBootstrap(t *testing.T) {
-	for _, kind := range []string{"success", "encoded tag", "remote only", "hash mismatch", "invalid digest", "duplicate tool", "not uploaded", "deleted tool", "untrusted certificate", "existing broken tool"} {
+	for _, kind := range []string{"success", "encoded tag", "remote only", "hash mismatch", "invalid digest", "duplicate tool", "not uploaded", "deleted tool", "untrusted certificate", "existing broken tool", "corrupt archive", "missing program", "bare remote only"} {
 		t.Run(kind, func(t *testing.T) {
 			testCMakeGitHubEntry(t, kind)
 		})
@@ -100,11 +100,24 @@ func TestCMakeGitHubEnumerationReuse(t *testing.T) {
 func testCMakeGitHubEntry(t *testing.T, kind string) {
 	t.Helper()
 	f := newEntryFixture(t, false, "")
-	tool := readTestFile(t, filepath.Join(f.release, f.toolAsset))
+	originalTool := readTestFile(t, filepath.Join(f.release, f.toolAsset))
+	member := f.toolAsset
+	if kind == "missing program" {
+		member = "other-program"
+	}
+	tool := readTestFile(t, f.importerArchive(member, originalTool))
+	if kind == "corrupt archive" {
+		tool = "not an archive"
+	}
+	assetName := f.toolAsset + ".tar.xz"
+	if kind == "bare remote only" {
+		assetName = f.toolAsset
+		tool = originalTool
+	}
 	tampered := ""
 	marker := filepath.Join(f.root, "wrong-tool-executed")
 	if kind == "hash mismatch" {
-		tampered = readTestFile(t, buildEntryTool(t, true))
+		tampered = readTestFile(t, f.importerArchive(f.toolAsset, readTestFile(t, buildEntryTool(t, true))))
 		t.Setenv("AUTOLIB_TEST_TOOL_LOG", marker)
 	}
 	archive := readTestFile(t, filepath.Join(f.release, "demo-linux-aarch64.tar.zst"))
@@ -143,7 +156,7 @@ func testCMakeGitHubEntry(t *testing.T, kind string) {
 			if kind == "not uploaded" {
 				state = "new"
 			}
-			assets := []map[string]any{{"id": 1, "name": f.toolAsset, "state": state, "digest": digest}, {"id": 2, "name": "demo-linux-aarch64.tar.zst", "state": "uploaded", "digest": fmt.Sprintf("sha256:%x", sha256.Sum256([]byte(archive)))}}
+			assets := []map[string]any{{"id": 1, "name": assetName, "state": state, "digest": digest}, {"id": 2, "name": "demo-linux-aarch64.tar.zst", "state": "uploaded", "digest": fmt.Sprintf("sha256:%x", sha256.Sum256([]byte(archive)))}}
 			if kind == "duplicate tool" {
 				assets = append(assets, assets[0])
 			}

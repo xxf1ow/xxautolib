@@ -65,7 +65,7 @@ GitHub 下载阶段已经验收，其证据与 Gitee 后置安排保留在按目
 
 ### 本地构建输出宿主 importer
 
-生产端入口使用既有固定 Go SDK、模块缓存及禁用 cgo 的环境，独立编译 `src/autolib-builder` 和 `src/autolib-importer`。importer 输出到实际安装根，采用发行时相同的 `autolib-importer-<宿主OS>-<宿主架构>` 文件名，Windows 加 `.exe`；自定义安装根同样生效。它是普通本地构建输出，不要求用户复制 `build/tools` 中的程序，也不从 Release 下载。
+生产端入口使用既有固定 Go SDK、模块缓存及禁用 cgo 的环境，独立编译 `src/autolib-builder` 和 `src/autolib-importer`。importer 输出到实际安装根，采用 `autolib-importer-<宿主OS>-<宿主架构>` 裸程序名，Windows 加 `.exe`；自定义安装根同样生效。正式 importer 用 `-ldflags="-s -w"` 去符号；Release 的 tar.xz 分发不改变本地裸程序约定，见[压缩分发设计](../../proposed/architecture/2026-10-27-importer-distribution-and-branch-release.md)。它是普通本地构建输出，不要求用户复制 `build/tools` 中的程序，也不从 Release 下载。
 
 生产入口在配置阶段将实际安装根确定为绝对规范路径，作为库安装、宿主 importer 输出及 builder 调用的同一个值。`AUTOLIB_INSTALL_ROOT` 相对值以顶层源码目录为基准，含空格路径作为单个参数传递；构建阶段不按另一工作目录重新解析，也不重新读取环境改根。更换根须重新 configure。
 

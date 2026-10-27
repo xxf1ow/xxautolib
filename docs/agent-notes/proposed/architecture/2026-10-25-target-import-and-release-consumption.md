@@ -18,7 +18,7 @@ CI 仍是独立系统，其构建编排、发布权限、并发和运行汇总�
 
 ### 已验收范围
 
-[三平台 CI 运行 40208173445](https://github.com/xxf1ow/xxautolib/actions/runs/40208173445)完成 queue、lz4、flann 和宿主 importer 的构建、消费验证及同名发布。十个实际 Release 资产的 SHA256 与 API 摘要逐一匹配；包使用小写公共目标，FLANN 聚合 C/C++ API 并传递 lz4。
+[三平台 CI 运行 40208173445](https://github.com/xxf1ow/xxautolib/actions/runs/40208173445)完成 queue、lz4、flann 和裸宿主 importer 的构建、消费验证及同名发布。十个实际 Release 资产的 SHA256 与 API 摘要逐一匹配；包使用小写公共目标，FLANN 聚合 C/C++ API 并传递 lz4。该历史记录不证明后续[压缩工具格式](2026-10-27-importer-distribution-and-branch-release.md)已通过三平台验收。
 
 Windows x86_64 的真实 GitHub 验证从空消费根引导工具、下载依赖、编译并运行，CTest 1/1 及再次 configure 通过。用户确认远程方式可用，并确认 Linux 验收通过；结合前述 Windows 证据，GitHub 阶段按三平台验收完成。Linux 结论采用用户验收，不附未提供的命令、日志或运行指标。
 
@@ -77,7 +77,7 @@ adapter 不联网、不编译源码、不回退系统同名包，不在消费时
 
 builder 负责声明解析、包内依赖生成、暂存修正和本地打包，不认识 Release 地址、CI 凭据或远端发布策略。importer 负责包查找、依赖遍历、下载、校验和安全准备，不执行 CMake adapter，也不发布产物。CMake 入口负责一次性来源配置、最小工具引导、结果核对、adapter 加载及消费 target 链接，不重写 importer 的包获取和解包能力。
 
-首次工具引导使用 FetchContent，只下载宿主 importer，不编译源码；显式开启证书校验并通过 URL_HASH 核对 GitHub API 摘要，成功后才执行。CMake 请求接受原生重定向行为，不增加降级检测、自定义重试、外部下载器或自动恢复；已识别的错误直接终止 configure。包下载仍由 importer 执行，保留其拒绝非 HTTPS 重定向的规则。
+首次工具引导优先本地裸程序，再本地 tar.xz；均缺失时用 FetchContent 下载宿主 importer 的 tar.xz，不编译源码。GitHub 下载显式开启证书校验并通过 URL_HASH 核对 API 摘要，CMake 原生解包且检查完整性后才执行；坏候选直接失败，不回退远端裸程序。格式及验证范围由[压缩分发设计](2026-10-27-importer-distribution-and-branch-release.md)拥有。CMake 请求接受原生重定向行为，不增加降级检测、自定义重试、外部下载器或自动恢复；已识别的错误直接终止 configure。包下载仍由 importer 执行，保留其拒绝非 HTTPS 重定向的规则。
 
 架构、开发和测试指南分别保留远端消费职责、来源配置与安全限制、验证命令及供给前提；它们不再只描述本地导入。对应文档预算扩展以容纳这些必要说明及余量，协议细节仍集中在本设计和包消费设计，不重复维护资产规则。
 

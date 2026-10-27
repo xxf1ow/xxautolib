@@ -23,7 +23,7 @@
 - autolib-ci 维护生产策略：根据 builder 提供的事实规划模块依赖层与通用包 publisher，调用既有工具完成构建、打包和消费验证；不重新解析模块声明或复制构建、打包和解包引擎。
 - 发布编排、Release 写入和结果汇总归 autolib-ci，触发、runner/container、环境准备、权限、job 依赖与运行串行化归 [workflow](../.github/workflows/build-platform.yml)；接线与验收要求由独立的 [CI 系统设计](agent-notes/implemented/architecture/2026-10-20-ci-system.md)约定，不在 builder 或 importer 中实现。
 
-普通本地构建和离线消费不依赖 CI、GitHub 或 workflow，builder 不读取 CI 配置或凭据。安装根在 configure 时确定为绝对路径；importer 输出到该根，采用 `autolib-importer-<宿主OS>-<宿主架构>` 文件名，Windows 加 `.exe`。
+普通本地构建和离线消费不依赖 CI 或远端，builder 不读取 CI 配置或凭据。importer 按固定宿主名输出到 configure 确定的绝对安装根；正式构建去符号，本地安装和打包附带裸程序，CI 发布单程序 tar.xz。命名见[压缩分发约定](agent-notes/proposed/architecture/2026-10-27-importer-distribution-and-branch-release.md#importer-瘦身与生产)。
 
 CI 每轮构建所选模块及依赖，不跨运行复用 Release 包。各平台按依赖层共用本轮隔离安装根，共享依赖只构建一次；逐槽消费验证后按固定文件名同名替换，不设置显示 label，finalize 只汇总、不写发行清单。取舍见[生产缓存收缩决定](agent-notes/implemented/simplification/2026-10-24-ci-rebuild-without-production-cache.md)。
 
@@ -33,7 +33,7 @@ CI 每轮构建所选模块及依赖，不跨运行复用 Release 包。各平�
 
 builder 的 `package` 核对并复制已有消费描述及安装树到 staging，只在副本中修正本包及声明 sibling 的生产路径，生成固定名 tar.zst 并复制宿主 importer，不改原安装或补齐描述。归档显式启用 Zstd 内容校验；无全局消费清单或外置摘要文件。
 
-下游携带单文件 [autolib.cmake](../src/autolib.cmake)，首次加载固定来源，通过 target 接口准备并链接根包。`src/autolib-importer/` 按已解包目录、固定名归档、显式公开 GitHub Release 查找，仅不存在时继续；校验、安全解包并提交依赖在前的完整结果，CMake 再加载每包唯一的全局 `autolib::<name>`。本地齐全不联网；缺宿主工具时入口用 FetchContent 下载并校验工具，其他缺包由 importer 补齐。消费者无需语言运行时或 builder。
+下游携带单文件 [autolib.cmake](../src/autolib.cmake)，首次加载固定来源，通过 target 接口准备并链接根包。`src/autolib-importer/` 按已解包目录、固定名归档、显式公开 GitHub Release 查找，仅不存在时继续；校验、安全解包并提交依赖在前的完整结果，CMake 再加载每包唯一的全局 `autolib::<name>`。宿主工具依次查找本地程序、本地 `.tar.xz`、远端同名归档；CMake 原生解包，GitHub 下载用 FetchContent 校验归档摘要。其他缺包由 importer 补齐；本地齐全不联网，消费者无需外部解压工具、语言运行时或 builder。
 
 CMake 与 importer 共用本次 configure 的临时 API 响应，不跨配置缓存远端信息；默认 Gitee 未接通，GitHub 需显式覆盖。
 
