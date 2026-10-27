@@ -1,0 +1,6 @@
+# 原样上游文件保留原始字节，不执行仓库的换行转换。
+action.yml -text
+gitee_release.py -text
+requirements.txt -text
+LICENSE -text
+README.md -text
