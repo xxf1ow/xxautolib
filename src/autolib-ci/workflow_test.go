@@ -85,7 +85,7 @@ func TestCIWorkflowContract(t *testing.T) {
 		}
 	}
 	plan := workflowSection(t, document, "  plan:")
-	guard := workflowSection(t, plan, "      - name: Require default branch")
+	guard := workflowSection(t, plan, "      - name: Require branch ref")
 	script := workflowSection(t, guard, "        run: |")
 	var commands []string
 	for _, line := range strings.Split(script, "\n") {
@@ -98,15 +98,15 @@ func TestCIWorkflowContract(t *testing.T) {
 	for _, tc := range []struct {
 		ref string
 		ok  bool
-	}{{"refs/heads/master", true}, {"refs/heads/topic", false}, {"refs/tags/master", false}} {
+	}{{"refs/heads/master", true}, {"refs/heads/topic", true}, {"refs/heads/feat/gitee-release-mirroring", true}, {"refs/tags/master", false}, {"refs/heads/", false}, {"refs/pull/1/merge", false}} {
 		command := exec.Command(bash, "-c", strings.Join(commands, "\n"))
-		command.Env = append(withoutEnvironment(os.Environ(), "GITHUB_REF", "DEFAULT_BRANCH"), "GITHUB_REF="+tc.ref, "DEFAULT_BRANCH=master")
+		command.Env = append(withoutEnvironment(os.Environ(), "GITHUB_REF"), "GITHUB_REF="+tc.ref)
 		output, err := command.CombinedOutput()
 		if (err == nil) != tc.ok {
 			t.Fatalf("branch %s: %v %s", tc.ref, err, output)
 		}
 	}
-	if strings.Index(plan, "name: Require default branch") > strings.Index(plan, "uses: actions/checkout@") {
+	if strings.Index(plan, "name: Require branch ref") > strings.Index(plan, "uses: actions/checkout@") {
 		t.Fatal("branch check runs after checkout/tools")
 	}
 	linux := workflowSection(t, document, "  linux:")

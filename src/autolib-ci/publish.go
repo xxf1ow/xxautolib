@@ -37,6 +37,9 @@ func authorizeCIWrite(ctx context.Context, client *githubClient, sourceRoot stri
 	if client == nil || run.Repository != ciGitHubRepository || !commitPattern.MatchString(run.SHA) || run.CheckoutSHA != run.SHA {
 		return nil, errors.New("Release write requires the target repository and matching event/checkout SHA")
 	}
+	if !strings.HasPrefix(run.Ref, "refs/heads/") || run.Ref == "refs/heads/" {
+		return nil, errors.New("Release write requires a branch ref; tags are not supported")
+	}
 	command := exec.CommandContext(ctx, "git", "-C", sourceRoot, "rev-parse", "HEAD")
 	output, err := command.Output()
 	if err != nil {
@@ -50,14 +53,13 @@ func authorizeCIWrite(ctx context.Context, client *githubClient, sourceRoot stri
 		return nil, err
 	}
 	var repo struct {
-		FullName      string `json:"full_name"`
-		DefaultBranch string `json:"default_branch"`
+		FullName string `json:"full_name"`
 	}
 	if err := client.getJSON(ctx, address, &repo); err != nil {
 		return nil, err
 	}
-	if repo.FullName != ciGitHubRepository || repo.DefaultBranch == "" || run.Ref != "refs/heads/"+repo.DefaultBranch {
-		return nil, errors.New("Release write is restricted to the repository default branch")
+	if repo.FullName != ciGitHubRepository {
+		return nil, errors.New("Release write requires the target repository")
 	}
 	if client.Token == "" {
 		return nil, errors.New("Release write requires GITHUB_TOKEN")
@@ -162,11 +164,7 @@ func validCIPublishAsset(name string) bool {
 				return true
 			}
 		}
-		suffix := ""
-		if strings.HasPrefix(platform, "windows-") {
-			suffix = ".exe"
-		}
-		if name == "autolib-importer-"+platform+suffix {
+		if name == ciImporterAsset(platform) {
 			return true
 		}
 	}

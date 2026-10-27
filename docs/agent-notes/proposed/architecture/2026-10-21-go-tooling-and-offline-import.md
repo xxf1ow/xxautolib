@@ -159,7 +159,7 @@ importer 严格匹配 manifest 的名称、目标平台、唯一记录和摘要�
 
 adapter 只能在本包或显式 sibling 包中选择交付设计允许的精确导入机制。所有包就绪后才导入，不依赖调用者列出包名的顺序；需要依赖 target 时，adapter 显式加载已准备好的 sibling adapter，不下载它，也不从系统环境补齐。必须有 include guard，重复加载不创建冲突目标。调用者漏列依赖包时明确报错。
 
-统一 manifest 及其发布顺序属于前述历史协议；当前固定槽和默认分支发布由独立 CI 设计拥有，生产缓存和 build ID 已由[每轮重建决定](../../implemented/simplification/2026-10-24-ci-rebuild-without-production-cache.md)替代。Go 替换对应自有工具时直接调用宿主命令或标准 HTTP 能力，不因语言变化引入 GitHub SDK、后台服务或新的远端状态数据库。GitHub/Gitee 地址、凭据和远端写操作不从参考仓库继承。
+统一 manifest 及其发布顺序属于前述历史协议；当前固定槽和分支发布授权由独立 CI 设计拥有，生产缓存和 build ID 已由[每轮重建决定](../../implemented/simplification/2026-10-24-ci-rebuild-without-production-cache.md)替代。Go 替换对应自有工具时直接调用宿主命令或标准 HTTP 能力，不因语言变化引入 GitHub SDK、后台服务或新的远端状态数据库。GitHub/Gitee 地址、凭据和远端写操作不从参考仓库继承。
 
 本地发行与消费不依赖远端 CI。后续先建立代表集 CI 和 Release 供给，再推进受控 HTTPS fixture 与真实发行根的消费验证；CI 的 GitHub 发布能力不等于开放消费入口的网络能力。真实上传、触发远端 CI 或镜像写入均需明确授权，不能以发布目标的确认视为隐含远端授权。
 

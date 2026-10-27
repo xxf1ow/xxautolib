@@ -18,9 +18,22 @@ func finalizeFixture() (ciPlan, ciRunIdentity, []ciPlatformResult) {
 		if strings.HasPrefix(platform.ID, "windows-") {
 			tool += ".exe"
 		}
+		tool += ".tar.xz"
 		results = append(results, ciPlatformResult{Run: run, Platform: platform.ID, Complete: true, Importer: ciImporterResult{Asset: tool, SHA256: strings.Repeat("b", 64), Verified: true, Uploaded: true}, Packages: []ciSlotResult{{Slot: ciSlot{Name: "queue", OS: "any", Arch: "any"}, Asset: "queue-any-any.tar.zst", SHA256: strings.Repeat("c", 64), Built: true, Verified: true, Uploaded: platform.ID == plan.Publisher}}})
 	}
 	return plan, run, results
+}
+
+func TestCIImporterAssetNames(t *testing.T) {
+	for platform, want := range map[string]string{
+		"windows-x86_64": "autolib-importer-windows-x86_64.exe.tar.xz",
+		"linux-x86_64":   "autolib-importer-linux-x86_64.tar.xz",
+		"linux-aarch64":  "autolib-importer-linux-aarch64.tar.xz",
+	} {
+		if got := ciImporterAsset(platform); got != want {
+			t.Errorf("%s: asset = %q, want %q", platform, got, want)
+		}
+	}
 }
 
 func TestCIFinalize(t *testing.T) {
@@ -45,7 +58,7 @@ func TestCIFinalize(t *testing.T) {
 }
 
 func TestCIResultBinding(t *testing.T) {
-	for _, change := range []string{"run", "attempt", "sha", "platform", "unverified", "incomplete", "error", "duplicate-package", "missing-package", "wrong-slot", "wrong-asset", "importer", "unexpected-upload"} {
+	for _, change := range []string{"run", "attempt", "sha", "platform", "unverified", "incomplete", "error", "duplicate-package", "missing-package", "wrong-slot", "wrong-asset", "bare-importer", "importer", "unexpected-upload"} {
 		t.Run(change, func(t *testing.T) {
 			plan, run, results := finalizeFixture()
 			switch change {
@@ -73,6 +86,8 @@ func TestCIResultBinding(t *testing.T) {
 				results[0].Packages[0].Asset = "other.tar.zst"
 			case "importer":
 				results[0].Importer.Uploaded = false
+			case "bare-importer":
+				results[0].Importer.Asset = "autolib-importer-linux-x86_64"
 			case "unexpected-upload":
 				results[1].Packages[0].Uploaded = true
 			}

@@ -54,7 +54,7 @@ cmake -P src/autolib-builder/go-sdk.cmake -- build -mod=readonly -trimpath -o bu
 
 复制 `src/autolib.cmake`，创建消费者后调用 `autolib_import(TARGET app PRIVATE queue flann)`；在其他同名库发现之前导入，不再手工链接包目标。来源默认值及覆盖用法见 [README](../README.md#接入自己的-cmake-工程)。来源首次加载捕获、跨作用域固定；工作根为 `${CMAKE_BINARY_DIR}/autolib`，平台从当前 CMake 目标归一，VS 显式平台优先；工具按宿主选择。可增加根包或消费者，共享目标由 adapter guard 复用；旧函数参数拒绝，CLI 输入不变。空本地跳过本地，两源均空失败。
 
-LOCAL_ROOT 平铺固定名宿主工具和 `<name>-<os>-<arch>.tar.zst`；通用归档使用 any-any。安装及解包目录均为 `LOCAL_ROOT/<name>/`，优先于归档；同名包只保留一个平台/版本，错平台包头直接失败。相对根按顶层源码目录解析；本地根、工作根及实际包路径不得含分号。现有完整目录可只读复用；缺包需要本地根可写，同根写入由调用方串行且不与消费交错，独立构建使用各自工作根。不探测或搬迁旧 `packages/<平台>/` 数据。
+LOCAL_ROOT 平铺固定名宿主程序、可选同名 `.tar.xz` 和 `<name>-<os>-<arch>.tar.zst` 库归档，通用库使用 any-any。工具优先本地程序，再本地归档，最后远端同名归档；只有缺失才继续，坏候选直接失败，不回退远端裸资产。CMake 自带解包，有本地根时生成原裸程序供后续配置复用，不改归档输入。工具命名见[压缩分发约定](agent-notes/proposed/architecture/2026-10-27-importer-distribution-and-branch-release.md#importer-瘦身与生产)。库包安装及解包目录均为 `LOCAL_ROOT/<name>/`，优先于库归档；同名包只保留一个平台/版本，错平台包头直接失败。相对根按顶层源码目录解析；本地根、工作根及实际包路径不得含分号。完整目录可只读复用；缺包或解包工具需要本地根可写，同根写入由调用方串行且不与消费交错，独立构建使用各自工作根。不探测或搬迁旧 `packages/<平台>/` 数据。
 
 CLI 为 `importer prepare --local-root=<目录> --work-root=<目录> --os=<目标OS> --arch=<目标架构> --result=<文件> --package=<根包>`，package 可重复。可选 `--remote-root=<公开GitHub Release tag URL>` 在本地缺包时补齐；省略本地来源跳过本地查找，省略远端来源禁网，不能同时省略或显式传空来源。CMake 内部共享本次 configure 的原始 API 响应，用户不需传响应文件。URI、--uri、--manifest 不兼容；CI 验证仍使用本地入口。
 
@@ -64,7 +64,7 @@ GitHub 消费在 include 前将 `AUTOLIB_REMOTE_ROOT` 设为 `https://github.com
 
 ## CI 开发与运行
 
-[手动流水线](../.github/workflows/build-platform.yml)只接受默认分支并检出事件提交；平台单选默认all，模块列表留空选择首期全部三库。每轮构建所选模块及依赖，逐槽验证后同名替换，不备份或回滚。汇总失败保留成功槽，重跑仍重新构建；不提供 force 输入，不设置资产 label。本地消费目录由用户按上节刷新。验证范围见[测试指南](testing.md#ci-验证)，后续远端操作仍须授权。命令见[入口](../src/autolib-ci/main.go)，固定目标和策略见 [CI 设计](agent-notes/implemented/architecture/2026-10-20-ci-system.md)。
+[手动流水线](../.github/workflows/build-platform.yml)接受同仓库任意分支、拒绝tag，检出事件提交；平台单选默认all，模块列表留空选择首期全部三库。每轮构建所选模块及依赖，逐槽验证后同名替换，不备份或回滚。汇总失败保留成功槽，重跑仍重新构建；不提供 force 输入，不设置资产 label。本地消费目录由用户按上节刷新。验证范围见[测试指南](testing.md#ci-验证)，后续远端操作仍须授权。命令见[入口](../src/autolib-ci/main.go)，固定目标和策略见 [CI 设计](agent-notes/implemented/architecture/2026-10-20-ci-system.md)。
 
 ## 日常修改
 

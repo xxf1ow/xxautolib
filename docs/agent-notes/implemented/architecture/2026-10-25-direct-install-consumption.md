@@ -65,7 +65,7 @@ GitHub 下载阶段已经验收，其证据与 Gitee 后置安排保留在按目
 
 ### 本地构建输出宿主 importer
 
-生产端入口使用既有固定 Go SDK、模块缓存及禁用 cgo 的环境，独立编译 `src/autolib-builder` 和 `src/autolib-importer`。importer 输出到实际安装根，采用发行时相同的 `autolib-importer-<宿主OS>-<宿主架构>` 文件名，Windows 加 `.exe`；自定义安装根同样生效。它是普通本地构建输出，不要求用户复制 `build/tools` 中的程序，也不从 Release 下载。
+生产端入口使用既有固定 Go SDK、模块缓存及禁用 cgo 的环境，独立编译 `src/autolib-builder` 和 `src/autolib-importer`。importer 输出到实际安装根，采用 `autolib-importer-<宿主OS>-<宿主架构>` 裸程序名，Windows 加 `.exe`；自定义安装根同样生效。正式 importer 用 `-ldflags="-s -w"` 去符号；Release 的 tar.xz 分发不改变本地裸程序约定，见[压缩分发设计](../../proposed/architecture/2026-10-27-importer-distribution-and-branch-release.md)。它是普通本地构建输出，不要求用户复制 `build/tools` 中的程序，也不从 Release 下载。
 
 生产入口在配置阶段将实际安装根确定为绝对规范路径，作为库安装、宿主 importer 输出及 builder 调用的同一个值。`AUTOLIB_INSTALL_ROOT` 相对值以顶层源码目录为基准，含空格路径作为单个参数传递；构建阶段不按另一工作目录重新解析，也不重新读取环境改根。更换根须重新 configure。
 
@@ -81,7 +81,7 @@ builder 和 importer 保持独立源码、独立可执行目标；生产入口�
 
 可搬迁处理继续只作用于独立 staging 副本：检查允许的本包和 sibling 生产引用，修正已知前缀，再生成带内容校验的固定名 tar.zst。归档顶层、包头协议及 Release 文件名不变，已有合规归档仍可按新布局解包。原始安装树的直接消费不增加任意搬迁承诺，归档产物继续接受搬迁链接运行验证。
 
-CI 通过 builder/CMake 获得同样的安装结果，再调用 builder 打包和 importer 验证；发布工具复用本地构建生成的宿主 importer。[CI 系统设计](../../implemented/architecture/2026-10-20-ci-system.md)继续拥有平台环境、生产编排、发布权限、并发和汇总。适配只调整工具与安装产物的接线，不将生成规则放进 CI，不改变每轮重建、默认分支限制和同名替换策略。
+CI 通过 builder/CMake 获得同样的安装结果，再调用 builder 打包和 importer 验证；发布工具复用本地构建生成的宿主 importer。[CI 系统设计](../../implemented/architecture/2026-10-20-ci-system.md)继续拥有平台环境、生产编排、发布权限、并发和汇总。适配只调整工具与安装产物的接线，不将生成规则放进 CI，不改变每轮重建、分支授权和同名替换策略。
 
 ### 消费接口、文档与实施范围
 

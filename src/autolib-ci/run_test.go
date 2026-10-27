@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -22,6 +23,7 @@ type layerFixture struct {
 	run     ciRunIdentity
 	writes  []string
 	reads   int
+	uploads map[string][]byte
 }
 
 func newLayerFixture(t *testing.T, modules []string) *layerFixture {
@@ -42,7 +44,12 @@ func newLayerFixture(t *testing.T, modules []string) *layerFixture {
 		t.Fatal(err)
 	}
 	executable = tool
-	f := &layerFixture{run: identity}
+	f := &layerFixture{run: identity, uploads: map[string][]byte{}}
+	cmake, err := exec.LookPath("cmake")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("AUTOLIB_CI_REAL_CMAKE", cmake)
 	f.plan = ciPlan{RequestedModules: modules, Publisher: "windows-x86_64"}
 	description := moduleDescription{SystemName: "Windows", Architecture: "x86_64", GoModuleFiles: []string{}, BuilderFiles: []string{}}
 	for _, name := range modules {
@@ -68,7 +75,7 @@ func newLayerFixture(t *testing.T, modules []string) *layerFixture {
 		writeCIFixture(t, root, file, string(data))
 	}
 	work := filepath.Join(root, "build", "ci", identity.RunID+"-"+identity.Attempt, "windows-x86_64")
-	f.options = ciRunOptions{SourceRoot: root, PlanFile: filepath.Join(root, "plan.json"), RunIdentityFile: filepath.Join(root, "run.json"), Platform: "windows-x86_64", WorkRoot: work, BuilderFile: executable, ImporterFile: filepath.Join(work, "install", ciImporterAsset("windows-x86_64")), CMakeCommand: executable}
+	f.options = ciRunOptions{SourceRoot: root, PlanFile: filepath.Join(root, "plan.json"), RunIdentityFile: filepath.Join(root, "run.json"), Platform: "windows-x86_64", WorkRoot: work, BuilderFile: executable, ImporterFile: filepath.Join(work, "install", ciImporterExecutable("windows-x86_64")), CMakeCommand: executable}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" {
 			f.writes = append(f.writes, r.Method+" "+r.URL.Path)
@@ -84,7 +91,12 @@ func newLayerFixture(t *testing.T, modules []string) *layerFixture {
 		case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/assets"):
 			name := r.URL.Query().Get("name")
 			label := r.URL.Query().Get("label")
-			digest, err := hashReader(r.Body)
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Error(err)
+			}
+			f.uploads[name] = body
+			digest, err := hashReader(bytes.NewReader(body))
 			if err != nil {
 				t.Error(err)
 			}
@@ -115,9 +127,70 @@ func (f *layerFixture) result(t *testing.T) ciPlatformResult {
 	return result
 }
 
+func TestCIRunImporterArchive(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		t.Run(fmt.Sprintf("archive_failure=%t", fail), func(t *testing.T) {
+			f := newLayerFixture(t, []string{"queue"})
+			if fail {
+				t.Setenv("AUTOLIB_CI_FAIL_IMPORTER_ARCHIVE", "1")
+			}
+			err := f.layer(t, "prepare")
+			result := f.result(t)
+			if fail {
+				if err == nil || result.Error == "" || result.Importer.Uploaded || len(f.writes) != 0 {
+					t.Fatalf("archive failure did not stop publication: %v %+v %v", err, result, f.writes)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			const asset = "autolib-importer-windows-x86_64.exe.tar.xz"
+			body := f.uploads[asset]
+			digest, err := hashReader(bytes.NewReader(body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(f.uploads) != 1 || len(body) == 0 || result.Importer.Asset != asset || result.Importer.SHA256 != digest || !result.Importer.Verified || !result.Importer.Uploaded {
+				t.Fatalf("wrong archive publication: %+v uploads=%d bytes=%d", result.Importer, len(f.uploads), len(body))
+			}
+			archive := filepath.Join(f.options.WorkRoot, "release", asset)
+			if !bytes.Equal(body, []byte(mustReadText(t, archive))) {
+				t.Fatal("uploaded bytes differ from local archive")
+			}
+			cmake := os.Getenv("AUTOLIB_CI_REAL_CMAKE")
+			if out, err := exec.Command(cmake, "-E", "tar", "tf", archive).CombinedOutput(); err != nil || strings.TrimSpace(string(out)) != "autolib-importer-windows-x86_64.exe" {
+				t.Fatalf("archive member: %v %s", err, out)
+			}
+			extracted := t.TempDir()
+			command := exec.Command(cmake, "-E", "tar", "xf", archive)
+			command.Dir = extracted
+			if out, err := command.CombinedOutput(); err != nil {
+				t.Fatalf("extract archive: %v %s", err, out)
+			}
+			if got := mustReadText(t, filepath.Join(extracted, "autolib-importer-windows-x86_64.exe")); got != mustReadText(t, f.options.ImporterFile) {
+				t.Fatal("archive contains a different importer")
+			}
+			commands := mustReadText(t, os.Getenv("AUTOLIB_CI_COMMAND_LOG"))
+			smokeAt, archiveAt := strings.Index(commands, `"--package=ci-smoke"`), strings.Index(commands, `"-E","tar"`)
+			if smokeAt < 0 || archiveAt <= smokeAt || strings.Count(commands, `"-E","tar"`) != 1 {
+				t.Fatalf("archive precedes importer verification: %s", commands)
+			}
+		})
+	}
+}
+
 func TestCIRunLayers(t *testing.T) {
 	t.Run("real local dependency", testRealCILocalDependency)
 	f := newLayerFixture(t, []string{"lz4", "flann"})
+	f.run.Ref = "refs/heads/feat/gitee-release-mirroring"
+	data, err := json.Marshal(f.run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(f.options.RunIdentityFile, data, 0644); err != nil {
+		t.Fatal(err)
+	}
 	for _, layer := range []string{"prepare", "layer0", "layer1", "verify"} {
 		if err := f.layer(t, layer); err != nil {
 			t.Fatalf("%s: %v", layer, err)
@@ -334,7 +407,7 @@ int main() {
 		f.plan = plan
 		f.run.Attempt = attempt
 		f.options.WorkRoot = filepath.Join(root, "build/ci", f.run.RunID+"-"+attempt, platform)
-		f.options.ImporterFile = filepath.Join(f.options.WorkRoot, "install", ciImporterAsset(platform))
+		f.options.ImporterFile = filepath.Join(f.options.WorkRoot, "install", ciImporterExecutable(platform))
 		if err := writeCIJSON(f.options.PlanFile, plan); err != nil {
 			t.Fatal(err)
 		}
@@ -433,16 +506,16 @@ func TestCIPublisherFailure(t *testing.T) {
 		t.Fatalf("nonpublisher did not validate independently: %+v writes=%v", result, f.writes)
 	}
 	identity := f.run
-	identity.Ref = "refs/heads/topic"
+	identity.Ref = "refs/tags/master"
 	data, _ = json.Marshal(identity)
 	os.WriteFile(f.options.RunIdentityFile, data, 0644)
 	before := len(f.writes)
 	commandsBefore := mustReadText(t, os.Getenv("AUTOLIB_CI_COMMAND_LOG"))
 	if err := f.layer(t, "layer0"); err == nil || len(f.writes) != before {
-		t.Fatal("nondefault run was not rejected before writes")
+		t.Fatal("tag run was not rejected before writes")
 	}
 	if after := mustReadText(t, os.Getenv("AUTOLIB_CI_COMMAND_LOG")); after != commandsBefore {
-		t.Fatal("nondefault run launched a build or validation command")
+		t.Fatal("tag run launched a build or validation command")
 	}
 }
 
@@ -464,6 +537,17 @@ func runLayerCommandFixture() {
 			}
 		}
 		return ""
+	}
+	if len(args) >= 2 && args[0] == "-E" && args[1] == "tar" {
+		if os.Getenv("AUTOLIB_CI_FAIL_IMPORTER_ARCHIVE") != "" {
+			os.Exit(82)
+		}
+		command := exec.Command(os.Getenv("AUTOLIB_CI_REAL_CMAKE"), args...)
+		command.Stdout, command.Stderr = os.Stdout, os.Stderr
+		if err := command.Run(); err != nil {
+			os.Exit(83)
+		}
+		os.Exit(0)
 	}
 	if len(args) > 0 && args[0] == "prepare" {
 		fmt.Fprintln(os.Stderr, "package ci-smoke not found")

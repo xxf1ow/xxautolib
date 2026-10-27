@@ -18,7 +18,7 @@ CI 仍是独立系统，其构建编排、发布权限、并发和运行汇总�
 
 ### 已验收范围
 
-[三平台 CI 运行 40208173445](https://github.com/xxf1ow/xxautolib/actions/runs/40208173445)完成 queue、lz4、flann 和宿主 importer 的构建、消费验证及同名发布。十个实际 Release 资产的 SHA256 与 API 摘要逐一匹配；包使用小写公共目标，FLANN 聚合 C/C++ API 并传递 lz4。
+[三平台 CI 运行 40208173445](https://github.com/xxf1ow/xxautolib/actions/runs/40208173445)完成 queue、lz4、flann 和裸宿主 importer 的构建、消费验证及同名发布。十个实际 Release 资产的 SHA256 与 API 摘要逐一匹配；包使用小写公共目标，FLANN 聚合 C/C++ API 并传递 lz4。该历史记录不证明后续[压缩工具格式](2026-10-27-importer-distribution-and-branch-release.md)已通过三平台验收。
 
 Windows x86_64 的真实 GitHub 验证从空消费根引导工具、下载依赖、编译并运行，CTest 1/1 及再次 configure 通过。用户确认远程方式可用，并确认 Linux 验收通过；结合前述 Windows 证据，GitHub 阶段按三平台验收完成。Linux 结论采用用户验收，不附未提供的命令、日志或运行指标。
 
@@ -77,11 +77,11 @@ adapter 不联网、不编译源码、不回退系统同名包，不在消费时
 
 builder 负责声明解析、包内依赖生成、暂存修正和本地打包，不认识 Release 地址、CI 凭据或远端发布策略。importer 负责包查找、依赖遍历、下载、校验和安全准备，不执行 CMake adapter，也不发布产物。CMake 入口负责一次性来源配置、最小工具引导、结果核对、adapter 加载及消费 target 链接，不重写 importer 的包获取和解包能力。
 
-首次工具引导使用 FetchContent，只下载宿主 importer，不编译源码；显式开启证书校验并通过 URL_HASH 核对 GitHub API 摘要，成功后才执行。CMake 请求接受原生重定向行为，不增加降级检测、自定义重试、外部下载器或自动恢复；已识别的错误直接终止 configure。包下载仍由 importer 执行，保留其拒绝非 HTTPS 重定向的规则。
+首次工具引导优先本地裸程序，再本地 tar.xz；均缺失时用 FetchContent 下载宿主 importer 的 tar.xz，不编译源码。GitHub 下载显式开启证书校验并通过 URL_HASH 核对 API 摘要，CMake 原生解包且检查完整性后才执行；坏候选直接失败，不回退远端裸程序。格式及验证范围由[压缩分发设计](2026-10-27-importer-distribution-and-branch-release.md)拥有。CMake 请求接受原生重定向行为，不增加降级检测、自定义重试、外部下载器或自动恢复；已识别的错误直接终止 configure。包下载仍由 importer 执行，保留其拒绝非 HTTPS 重定向的规则。
 
 架构、开发和测试指南分别保留远端消费职责、来源配置与安全限制、验证命令及供给前提；它们不再只描述本地导入。对应文档预算扩展以容纳这些必要说明及余量，协议细节仍集中在本设计和包消费设计，不重复维护资产规则。
 
-`autolib-ci` 通过独立 CLI 调用 builder、importer 和 CMake，负责生产编排和 GitHub 发布；workflow 负责机器、环境、权限及运行并发。三个可执行目标继续独立源码和入口，不互相混编业务实现。Gitee 镜像由 CI 专用本地 Action 完成，不加入 builder 或 importer；普通本地构建与消费不依赖 CI。
+`autolib-ci` 通过独立 CLI 调用 builder、importer 和 CMake，负责生产编排和 GitHub 发布；workflow 负责机器、环境、权限及运行并发。三个可执行目标继续独立源码和入口，不互相混编业务实现。Gitee 镜像由独立同步 workflow 调用 CI 专用本地 Action 完成，不接入编译阶段的逐包发布，不加入 builder、importer 或 autolib-ci；普通本地构建与消费不依赖 CI。
 
 ### 交付阶段
 
@@ -97,13 +97,23 @@ README 按完整交付形态编写，不随阶段反复改写，并包含“使�
 
 ### Gitee 镜像选型与范围
 
-默认 Gitee 仓库 `xxf1ow/autolib-release` 为专用 Release 镜像仓库，没有其他用途；参考项目已废弃，不调查旧项目共同写入、接口兼容或迁移需求。Gitee 使用固定 tag `autolib-release`、相同资产文件名及同名替换策略，不据此假设其 API、资产状态或摘要字段与 GitHub 相同。
+默认 Gitee 仓库 `xxf1ow/autolib-release` 为专用 Release 镜像仓库，没有其他用途；参考项目已废弃，不调查旧项目共同写入、接口兼容或迁移需求。目标仓库通过 GitHub 仓库变量 `GITEE_REPOSITORY` 配置，默认 `xxf1ow/autolib-release`；Release tag 通过变量 `GITEE_RELEASE_TAG` 配置，默认 `autolib-release`。同步使用相同资产文件名及同名替换策略，不据此假设 Gitee 的 API、资产状态或摘要字段与 GitHub 相同。
 
-镜像选用 [action-gitee-release](https://github.com/nICEnnnnnnnLee/action-gitee-release) 作为参考本体。实施时固定实际上游提交，将源码原样引入 `.github/actions/gitee-release/`，核对上游及其依赖许可，保留许可证、来源及提交记录，先验证基线，再最小适配；本地适配差异由 Git 记录。仅补固定 Release 不存在则创建、存在则复用，新增附件上传、同名附件替换，其他附件不动。上游 `update_asset` 要求附件已存在，不能直接当作新增与替换统一入口。
+镜像选用 [action-gitee-release](https://github.com/nICEnnnnnnnLee/action-gitee-release) 作为参考本体。实施时固定实际上游提交，将源码原样引入 `.github/actions/gitee-release/`，核对上游及其依赖许可，保留许可证、来源及提交记录，先验证基线，再最小适配；本地适配差异由 Git 记录。适配覆盖 Gitee 固定 Release 不存在则创建、存在则复用，新增附件上传、同名附件替换，以及下述独立同步流程所需能力；其他附件不动。上游 `update_asset` 要求附件已存在，不能直接当作新增与替换统一入口。
 
-不删除整个 Release、不扫描历史、不同步 Git 源码，不重写成 Go 或扩为通用镜像工具。上游 Python 和依赖仅在 CI 运行，不给消费者增加 Python。Gitee token 只供镜像写入步骤，不进入包、消费入口或日志；默认分支、最小权限、写入并发及失败汇总承接独立 CI 设计，并在该阶段明确具体接线。
+不删除整个 Release、不扫描历史、不同步 Git 源码，不重写成 Go 或扩为通用镜像工具。上游 Python 和依赖仅在独立同步 workflow 运行，不给消费者增加 Python。凭据使用 GitHub secret `GITEE_TOKEN`，只供镜像步骤，不注入原构建流程，不进入包、消费入口或日志；最小权限、写入并发及失败汇总在该阶段的独立设计中明确。
 
-第三阶段的独立 CI 设计须明确镜像失败与重跑：失败使本次镜像阶段失败，保留已成功附件，失败槽可能缺失；重跑根据远端实际附件补齐或同名替换，不自动回滚，不以另一份持久化清单判断完成状态。该规则在第三阶段核实、确认及验收，不扩大前两阶段实现范围。
+### 独立同步 workflow 的交接约定
+
+原构建、GitHub 发布、消费验证及 finalize 全部成功结束后，通过 `workflow_run` 的 completed 事件和成功条件自动启动独立 Gitee 同步 workflow；原流水线不等待同步，不在平台 job 中逐包调用 Gitee。另提供 `workflow_dispatch` 手动入口，可在不重新编译、不重跑原流水线的情况下单独同步。自动触发以同步 workflow 文件已进入默认分支为启用前提，依据 [GitHub 的 workflow_run 规则](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_run)验收。
+
+同步始终从本仓库已有 GitHub Release 中按本轮 `GITEE_RELEASE_TAG` 查找来源，将附件下载后上传至 `GITEE_REPOSITORY` 中相同 tag 的 Gitee Release。来源不是工作目录、构建 artifact、最新 Release 或另一个独立配置的 GitHub tag；GitHub 上不存在指定 Release 时明确失败，不创建来源 Release、不改用其他 tag。Gitee 目标 Release 仍按前述不存在则创建、存在则复用的规则处理。
+
+同步输入支持按包名选择，只同步所选包对应的附件，不要求每次同步全部；未指定包名时同步该来源 Release 的全部附件。自动与手动入口使用同一套来源、筛选及上传规则，包名选择不改变源和目标 tag 的对应关系。包名输入格式、跨平台附件匹配、未匹配包名的处理、importer 的选择方式，以及自动入口如何传递包名，由后续独立分支的正式设计明确，不在迁移分支提前实现。
+
+同步复用网络连接，并对暂时性网络或服务失败实施有界重试。某个附件最终失败后继续处理其他附件，保留已成功附件；末尾只使独立同步 workflow 失败，不改变已结束的构建与 GitHub 发布结果。失败槽可能缺失，显式重跑根据远端实际附件补齐或同名替换，不自动回滚，也不以另一份持久化清单判断完成状态。有界重试不承诺在持续网络故障下必然上传成功；具体可重试错误、次数、退避和超时在独立设计中确定。
+
+[importer 压缩分发与功能分支手动发布](2026-10-27-importer-distribution-and-branch-release.md)先独立验收并按授权集成 master；同步 workflow 随后从更新的 master 新建任务分支，以该分支的正式设计指导实现。本节保存交接约束，不将同步视为已实现，也不授权 push、远端合并、触发 CI 或写入 Release。
 
 ## 备选方案
 
@@ -114,6 +124,8 @@ README 按完整交付形态编写，不随阶段反复改写，并包含“使�
 **直接调用外部 Gitee Action 的原始接口。** 不需维护本地源码，但新增与更新接口不能直接完成固定槽批量替换，把判断散在 workflow 会重复资产规则；原样引入后最小适配保留可核对的参考基线。
 
 **使用 hub-mirror-action 或 sync-release-to-gitee。** 前者用于 Git 源码镜像，不承担所需 Release 附件同步；所比较的后者对同名附件跳过，且下载关闭证书验证，不符合固定槽替换和 HTTPS 校验要求。
+
+**在编译阶段逐包同步 Gitee。** Gitee 网络耗时和失败会占用平台构建 job，重新同步还会耦合整轮生产；选择构建成功后独立同步已有 Release，并提供按包名筛选及手动重跑。
 
 ## 验收标准
 
@@ -137,6 +149,8 @@ README 按完整交付形态编写，不随阶段反复改写，并包含“使�
 ### Gitee 镜像与消费阶段
 
 - 上游原样基线与最小适配均有验证，固定 Release 首次创建、后续复用、新附件上传、同名替换及无关附件保留符合约定；镜像失败必须可见，不能以 GitHub 已发布代替成功。
+- 独立同步仅在原流水线全部成功结束后自动运行，手动入口无需重新构建。按包名筛选与全量同步均验证；修改 `GITEE_RELEASE_TAG` 后只读取 GitHub 上该 tag 的已有 Release，并写入 Gitee 相同 tag，不回退其他 Release 或影响未选择的附件。
+- 暂时性故障的有界重试、持续失败后继续其他附件、末尾独立标红及显式重跑恢复均有定向验证；原构建结果不受镜像失败影响。连接复用、超时与失败诊断以独立设计确定的规则验收，不用无限重试掩盖失败。
 - 默认 Gitee 地址无需 GitHub 覆盖即可完成工具引导、下载、准备、链接和运行；摘要与工具执行前校验依据按该阶段已核实并确认的协议验证，不用 GitHub 成功推定 Gitee 可用。
 
 README 的前后对比使用同一需求和可验证的用法，不加入虚构收益。局部和阶段末只验证受影响增量，全部受影响阶段完成后执行一次全量回归。真实远端验证及写入仍按授权范围进行，不以 fixture 代替实机证据。

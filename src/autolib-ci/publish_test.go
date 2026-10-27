@@ -37,7 +37,7 @@ func publishTestIdentity(t *testing.T) (string, ciRunIdentity) {
 
 func TestCIPublishAuthorization(t *testing.T) {
 	root, identity := publishTestIdentity(t)
-	for _, change := range []string{"valid", "topic", "tag", "repository", "checkout", "actual-head"} {
+	for _, change := range []string{"valid", "topic", "tag", "empty-branch", "pull-ref", "repository", "remote-repository", "missing-token", "checkout", "actual-head"} {
 		t.Run(change, func(t *testing.T) {
 			writes := 0
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -47,6 +47,10 @@ func TestCIPublishAuthorization(t *testing.T) {
 					return
 				}
 				if r.URL.Path == "/repos/xxf1ow/xxautolib" {
+					if change == "remote-repository" {
+						fmt.Fprint(w, `{"full_name":"elsewhere/repository","default_branch":"master"}`)
+						return
+					}
 					fmt.Fprint(w, `{"full_name":"xxf1ow/xxautolib","default_branch":"master"}`)
 					return
 				}
@@ -60,6 +64,12 @@ func TestCIPublishAuthorization(t *testing.T) {
 				run.Ref = "refs/heads/topic"
 			case "tag":
 				run.Ref = "refs/tags/master"
+			case "empty-branch":
+				run.Ref = "refs/heads/"
+			case "pull-ref":
+				run.Ref = "refs/pull/1/merge"
+			case "missing-token":
+				client.Token = ""
 			case "repository":
 				run.Repository = "elsewhere/repository"
 			case "checkout":
@@ -68,7 +78,7 @@ func TestCIPublishAuthorization(t *testing.T) {
 				run.CheckoutSHA, run.SHA = strings.Repeat("f", 40), strings.Repeat("f", 40)
 			}
 			auth, err := authorizeCIWrite(context.Background(), client, root, run)
-			if change == "valid" {
+			if change == "valid" || change == "topic" {
 				if err != nil || auth == nil {
 					t.Fatalf("valid identity rejected: %v", err)
 				}
