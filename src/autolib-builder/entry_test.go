@@ -146,6 +146,14 @@ func TestEntryInstalledImporter(t *testing.T) {
 			}
 			f.mustEntry("-DBUILD_LIST=demo")
 			tool := installedImporter(root)
+			if output, err := exec.Command(goExecutable(), "tool", "nm", tool).CombinedOutput(); err == nil || !strings.Contains(string(output), "no symbol") {
+				t.Fatalf("installed importer retains symbols: nm exit=%v", err)
+			}
+			stat, err := os.Stat(tool)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Logf("installed importer: %d bytes", stat.Size())
 			if _, stderr, err := f.command(tool); err == nil || !strings.Contains(stderr, "usage: autolib-importer") {
 				t.Fatalf("installed host tool cannot execute: %v %s", err, stderr)
 			}

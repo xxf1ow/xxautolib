@@ -36,7 +36,7 @@ function(xxautolib_generate_modules)
     if(CMAKE_HOST_WIN32)
         string(APPEND importer ".exe")
     endif()
-    execute_process(COMMAND ${go_environment} "${go_executable}" build -mod=readonly -trimpath
+    execute_process(COMMAND ${go_environment} "${go_executable}" build -mod=readonly -trimpath "-ldflags=-s -w"
         -o "${importer}" ./src/autolib-importer
         WORKING_DIRECTORY "${root}" RESULT_VARIABLE compilation_result
         OUTPUT_VARIABLE compilation_output ERROR_VARIABLE compilation_error)
