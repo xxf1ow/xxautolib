@@ -18,3 +18,9 @@ python -m unittest discover -s tests/ci/gitee-release -p test_upstream_baseline.
 ```
 
 原样基线不证明 Gitee 认证、真实上传或三平台 CI 已通过；不承诺上游、系统包和 runner 的永久可复现。适配及真实镜像验收范围由[独立设计](../../../docs/agent-notes/proposed/architecture/2026-10-27-gitee-release-sync-workflow.md)拥有。
+
+## 同步适配
+
+`gitee_release.py` 保留上游操作与 multipart 构造，增加可选 request 注入、返回原始 Response 的创建/上传/删除接口，以及身份、仓库、Release 正文和分页附件接口。独立同步只调用无装饰器的细节接口，有界重试由 `sync_api.py` 单独负责，不叠加上游重试。原始入口三项测试继续验证创建、上传和更新的可观察结果；请求替身不区分 HTTP 方法字母大小写。
+
+`sync_rules.py` 拥有来源筛选与正文索引纯规则，`sync_api.py` 拥有响应确认、下载校验和每线程连接。两者仅属于独立同步，不作为 builder 或 importer 依赖。

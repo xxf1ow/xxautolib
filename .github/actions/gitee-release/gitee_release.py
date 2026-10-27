@@ -6,6 +6,7 @@ import requests
 import time
 from requests_toolbelt import MultipartEncoder
 from functools import wraps
+from urllib.parse import quote
 
 retry_times = os.environ.get("gitee_upload_retry_times", "0")
 try:
@@ -48,11 +49,12 @@ def no_catch(exception, exclude_exceptions):
     return False
     
 class Gitee:
-    def __init__(self, owner, token):
+    def __init__(self, owner, token, request=None):
         self.owner = owner
         self.token = token
+        self.request = request or requests.request
 
-    def create_release(self, repo, tag_name, name, body = '-', target_commitish = 'master'):
+    def create_release_details(self, repo, tag_name, name, body = '-', target_commitish = 'master'):
         url = f'https://gitee.com/api/v5/repos/{self.owner}/{repo}/releases'
         data = {
             'access_token': self.token,
@@ -61,7 +63,10 @@ class Gitee:
             'body': body,
             'target_commitish': target_commitish,
         }
-        response = requests.post(url, data=data)
+        return self.request('POST', url, data=data)
+
+    def create_release(self, repo, tag_name, name, body = '-', target_commitish = 'master'):
+        response = self.create_release_details(repo, tag_name, name, body, target_commitish)
         res = response.json() 
         if response.status_code < 200 or response.status_code >= 300:
             return False, res["message"] if "message" in res else f"Response status_code is {response.status_code}"
@@ -73,6 +78,15 @@ class Gitee:
 
     @Retry(retry_times)
     def upload_asset(self, repo, release_id, files = None, file_name = None, file_path = None):
+        response = self.upload_asset_details(repo, release_id, files, file_name, file_path)
+        res = response.json()
+        if response.status_code < 200 or response.status_code >= 300:
+            return False, res["message"] if "message" in res else f"Response status_code is {response.status_code}"
+        if "browser_download_url" in res:
+            return True, res["browser_download_url"]
+        return False, "No 'browser_download_url' in response"
+
+    def upload_asset_details(self, repo, release_id, files = None, file_name = None, file_path = None):
         if files:
             fields = [('access_token', self.token)]
             idx = 1
@@ -90,7 +104,7 @@ class Gitee:
                 
                 m = MultipartEncoder(fields=fields)
                 url = f"https://gitee.com/api/v5/repos/{self.owner}/{repo}/releases/{release_id}/attach_files"
-                response = requests.post(url, data=m, headers={'Content-Type': m.content_type})
+                response = self.request('POST', url, data=m, headers={'Content-Type': m.content_type})
             finally:
                 # Close all file handles
                 for handle in file_handles:
@@ -103,19 +117,29 @@ class Gitee:
                 }
                 m = MultipartEncoder(fields=fields)
                 url = f"https://gitee.com/api/v5/repos/{self.owner}/{repo}/releases/{release_id}/attach_files"
-                response = requests.post(url, data=m, headers={'Content-Type': m.content_type})
+                response = self.request('POST', url, data=m, headers={'Content-Type': m.content_type})
         else:
             raise ValueError('files or (file_name and file_path) should not be False at the same time')
         
-        # print(response.text)
-        res = response.json()
-        if response.status_code < 200 or response.status_code >= 300:
-            return False, res["message"] if "message" in res else f"Response status_code is {response.status_code}"
-        
-        if "browser_download_url" in res:
-            return True, res["browser_download_url"]
-        else:
-            return False, "No 'browser_download_url' in response"
+        return response
+
+    def get_user(self):
+        return self.request('GET', 'https://gitee.com/api/v5/user', params={'access_token': self.token})
+
+    def get_repository(self, repo):
+        return self.request('GET', f'https://gitee.com/api/v5/repos/{self.owner}/{repo}', params={'access_token': self.token})
+
+    def get_release_details(self, repo, tag):
+        url = f'https://gitee.com/api/v5/repos/{self.owner}/{repo}/releases/tags/{quote(tag, safe="")}'
+        return self.request('GET', url, params={'access_token': self.token})
+
+    def list_assets(self, repo, release_id, page):
+        url = f'https://gitee.com/api/v5/repos/{self.owner}/{repo}/releases/{release_id}/attach_files'
+        return self.request('GET', url, params={'access_token': self.token, 'page': page, 'per_page': 100})
+
+    def update_release_body(self, repo, release_id, body):
+        url = f'https://gitee.com/api/v5/repos/{self.owner}/{repo}/releases/{release_id}'
+        return self.request('PATCH', url, data={'access_token': self.token, 'body': body})
 
     def get_release_by_tag(self, repo, tag_name):
         url = f'https://gitee.com/api/v5/repos/{self.owner}/{repo}/releases/tags/{tag_name}'
@@ -184,14 +208,16 @@ class Gitee:
         return self.delete_asset(repo, release_id, asset_id)
 
     def delete_asset(self, repo, release_id, asset_id):
-        url = f'https://gitee.com/api/v5/repos/{self.owner}/{repo}/releases/{release_id}/attach_files/{asset_id}'
-        params = {'access_token': self.token}
-        response = requests.delete(url, params=params)
+        response = self.delete_asset_details(repo, release_id, asset_id)
         if response.status_code == 204:
             return True, "Asset deleted successfully"
-        else:
-            res = response.json()
-            return False, res.get("message", f"Status code {response.status_code}")
+        res = response.json()
+        return False, res.get("message", f"Status code {response.status_code}")
+
+    def delete_asset_details(self, repo, release_id, asset_id):
+        url = f'https://gitee.com/api/v5/repos/{self.owner}/{repo}/releases/{release_id}/attach_files/{asset_id}'
+        params = {'access_token': self.token}
+        return self.request('DELETE', url, params=params)
 
 def get(key):
     val = os.environ.get(key)

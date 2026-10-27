@@ -27,6 +27,7 @@ class UpstreamBaseline(unittest.TestCase):
         import requests
         from requests_toolbelt.multipart.decoder import MultipartDecoder
 
+        method = method.lower()
         response = requests.Response()
         response.status_code = 200
         if method == "get" and "/releases/tags/" in url:
