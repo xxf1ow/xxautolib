@@ -89,7 +89,7 @@ func init() {
 				add("lz4")
 				depends = []string{"lz4"}
 			}
-			byName[name] = describedModule{Name: name, Depends: depends, SystemDependencies: map[string][]string{"apt": {}, "choco": {}}, Configuration: []byte(`{}`), InputFiles: []string{}, AdapterFile: "src/dependencies/" + name + "/autolib-import.cmake"}
+			byName[name] = describedModule{Name: name, Depends: depends, PlatformIndependent: name == "queue", SystemDependencies: map[string][]string{"apt": {}, "choco": {}}, Configuration: []byte(`{}`), InputFiles: []string{}, AdapterFile: "src/dependencies/" + name + "/autolib-import.cmake"}
 		}
 		for _, name := range requested {
 			add(name)

@@ -20,8 +20,14 @@ func runCILayer(ctx context.Context, o ciRunOptions) error {
 }
 
 func runCILayerWithClient(ctx context.Context, o ciRunOptions, client *githubClient) (failure error) {
-	if !slices.Contains([]string{"prepare", "layer0", "layer1", "verify"}, o.Layer) {
-		return errors.New("CI layer must be prepare, layer0, layer1 or verify")
+	index := -1
+	if o.Layer != "prepare" && o.Layer != "verify" {
+		value, ok := strings.CutPrefix(o.Layer, "layer")
+		var err error
+		index, err = strconv.Atoi(value)
+		if !ok || err != nil || index < 0 || strconv.Itoa(index) != value {
+			return errors.New("CI layer must be prepare, layer<N> or verify")
+		}
 	}
 	for name, value := range map[string]string{"source root": o.SourceRoot, "plan": o.PlanFile, "run identity": o.RunIdentityFile, "platform": o.Platform, "work root": o.WorkRoot, "builder file": o.BuilderFile, "importer file": o.ImporterFile, "CMake command": o.CMakeCommand} {
 		if strings.TrimSpace(value) == "" {
@@ -172,7 +178,7 @@ func runCILayerWithClient(ctx context.Context, o ciRunOptions, client *githubCli
 		if err != nil {
 			return err
 		}
-		if _, err := uploadCIAsset(ctx, client, auth, release, ciUploadOptions{File: archive, Name: filepath.Base(archive), SHA256: digest}); err != nil {
+		if _, err := uploadCIAsset(ctx, client, auth, release, ciUploadOptions{File: archive, Name: filepath.Base(archive), SHA256: digest, Plan: plan, Platform: o.Platform}); err != nil {
 			return err
 		}
 		result.Importer.Uploaded = true
@@ -194,17 +200,15 @@ func runCILayerWithClient(ctx context.Context, o ciRunOptions, client *githubCli
 		if len(result.Packages) != len(modules) {
 			return errors.New("verify requires all selected package results")
 		}
-		if len(modules) == 3 && modules["queue"].Name != "" && modules["lz4"].Name != "" && modules["flann"].Name != "" {
-			if _, err := validateCIRelease(ctx, ciValidationOptions{SourceRoot: source, InstallRoot: install, BuildRoot: work, ReleaseRoot: releaseRoot, ImporterFile: o.ImporterFile, CMakeCommand: o.CMakeCommand, EvidenceDirectory: filepath.Join(work, "evidence", "relocate"), Modules: []string{"queue", "lz4", "flann"}, Context: production, Mode: "relocate"}); err != nil {
-				return err
-			}
+		selected := []string{}
+		for _, layer := range platform.Layers {
+			selected = append(selected, layer...)
+		}
+		if _, err := validateCIRelease(ctx, ciValidationOptions{SourceRoot: source, InstallRoot: install, BuildRoot: work, ReleaseRoot: releaseRoot, ImporterFile: o.ImporterFile, CMakeCommand: o.CMakeCommand, EvidenceDirectory: filepath.Join(work, "evidence", "relocate"), Modules: selected, Context: production, Mode: "relocate"}); err != nil {
+			return err
 		}
 		result.Complete = true
 		return nil
-	}
-	index := 0
-	if o.Layer == "layer1" {
-		index = 1
 	}
 	if index >= len(platform.Layers) || len(platform.Layers[index]) == 0 {
 		return errors.New("requested dependency layer is empty")
@@ -227,14 +231,28 @@ func runCILayerWithClient(ctx context.Context, o ciRunOptions, client *githubCli
 		slot := ciModuleSlot(module, o.Platform)
 		item := ciSlotResult{Slot: slot, Asset: ciPackageAssetName(slot)}
 		consumerModules := []string{}
-		for _, dependency := range module.Depends {
-			ready := findResult(dependency)
-			if ready == nil || !ready.Verified {
-				return fmt.Errorf("dependency %s is not verified", dependency)
+		visited := map[string]bool{}
+		var addConsumer func(string) error
+		addConsumer = func(current string) error {
+			if visited[current] {
+				return nil
 			}
-			consumerModules = append(consumerModules, dependency)
+			visited[current] = true
+			for _, dependency := range modules[current].Depends {
+				ready := findResult(dependency)
+				if ready == nil || !ready.Verified {
+					return fmt.Errorf("dependency %s is not verified", dependency)
+				}
+				if err := addConsumer(dependency); err != nil {
+					return err
+				}
+			}
+			consumerModules = append(consumerModules, current)
+			return nil
 		}
-		consumerModules = append(consumerModules, name)
+		if err := addConsumer(name); err != nil {
+			return err
+		}
 		archive := filepath.Join(releaseRoot, item.Asset)
 		if err := buildCIModule(ctx, o, production, name, install); err != nil {
 			return err
@@ -270,7 +288,7 @@ func runCILayerWithClient(ctx context.Context, o ciRunOptions, client *githubCli
 			if err != nil {
 				return err
 			}
-			if _, err := uploadCIAsset(ctx, client, auth, release, ciUploadOptions{File: archive, Name: item.Asset, SHA256: digest}); err != nil {
+			if _, err := uploadCIAsset(ctx, client, auth, release, ciUploadOptions{File: archive, Name: item.Asset, SHA256: digest, Plan: plan, Platform: o.Platform}); err != nil {
 				return err
 			}
 			result.Packages[len(result.Packages)-1].Uploaded = true

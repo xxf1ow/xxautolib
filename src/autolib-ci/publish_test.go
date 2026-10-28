@@ -158,7 +158,7 @@ func TestCIReplaceAsset(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			o := ciUploadOptions{File: file, Name: name, SHA256: testDigest(data)}
+			o := ciUploadOptions{File: file, Name: name, SHA256: testDigest(data), Platform: "windows-x86_64", Plan: ciPlan{Publisher: "windows-x86_64", Platforms: []ciPlatformPlan{{ID: "windows-x86_64", Description: moduleDescription{Modules: []describedModule{{Name: "queue", PlatformIndependent: true}}}}}}}
 			if scenario == "bad-local-digest" {
 				o.SHA256 = strings.Repeat("0", 64)
 			}
@@ -265,7 +265,11 @@ func TestCIInitCLI(t *testing.T) {
 					t.Fatal(err)
 				}
 				var out, diagnostic bytes.Buffer
-				code := runCIInit([]string{"--source-root", root, "--run-identity", identityFile}, &out, &diagnostic, client)
+				planFile := filepath.Join(t.TempDir(), "plan.json")
+				if err := writeCIJSON(planFile, ciPlan{Platforms: []ciPlatformPlan{{ID: "windows-x86_64"}}}); err != nil {
+					t.Fatal(err)
+				}
+				code := runCIInit([]string{"--source-root", root, "--run-identity", identityFile, "--plan", planFile}, &out, &diagnostic, client)
 				var got githubRelease
 				if code != 0 || json.Unmarshal(out.Bytes(), &got) != nil || got.ID != 42 || writes != 0 {
 					t.Fatalf("init CLI failed: %d %s %s", code, out.String(), diagnostic.String())

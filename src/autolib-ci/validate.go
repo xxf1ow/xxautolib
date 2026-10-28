@@ -108,16 +108,15 @@ func validateCIConsumerModules(modules []string) error {
 	}
 	seen := map[string]bool{}
 	for _, name := range modules {
-		if !slices.Contains(ciModules, name) || seen[name] {
+		if !ciModuleName.MatchString(name) || seen[name] {
 			return fmt.Errorf("invalid CI consumer module %q", name)
 		}
 		seen[name] = true
 	}
-	if seen["flann"] && !seen["lz4"] {
-		return errors.New("CI consumer selection for flann must include dependency lz4")
-	}
 	return nil
 }
+
+var ciModuleName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.+\-]*$`)
 
 func validateCIProductionIdentity(c ciProductionContext, environment ciEnvironmentConfig) error {
 	common := environment.Production.Common
@@ -375,9 +374,8 @@ func collectLinuxABIVersions(root, mode string) ([]string, error) {
 	if phase == "second" {
 		consumerFiles = append(consumerFiles, filepath.Join(root, "second", "autolib_smoke"))
 	}
-	flannRoot := filepath.Join(packageRoot, "flann", "lib")
-	if info, err := os.Stat(flannRoot); err == nil && info.IsDir() {
-		err = filepath.WalkDir(flannRoot, func(path string, entry os.DirEntry, walkErr error) error {
+	if info, err := os.Stat(packageRoot); err == nil && info.IsDir() {
+		err = filepath.WalkDir(packageRoot, func(path string, entry os.DirEntry, walkErr error) error {
 			if walkErr != nil {
 				return walkErr
 			}

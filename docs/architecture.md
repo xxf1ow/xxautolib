@@ -25,7 +25,9 @@
 
 普通本地构建和离线消费不依赖 CI 发布流程，builder 不读取 CI 配置或凭据。importer 按固定宿主名输出到 configure 确定的绝对安装根；正式构建去符号，本地安装和打包附带裸程序，CI 发布单程序 tar.xz。命名见[压缩分发约定](agent-notes/proposed/architecture/2026-10-27-importer-distribution-and-branch-release.md#importer-瘦身与生产)。
 
-CI 每轮构建所选模块及依赖，不跨运行复用 Release 包。各平台按依赖层共用本轮隔离安装根，共享依赖只构建一次；逐槽消费验证后按固定文件名同名替换，不设置显示 label，finalize 只汇总、不写发行清单。取舍见[生产缓存收缩决定](agent-notes/implemented/simplification/2026-10-24-ci-rebuild-without-production-cache.md)。
+CI 模块输入留空时扫描模块目录中的声明与 adapter，显式列表可选子集；builder 继续解析声明及依赖。自身或传递依赖缺 adapter 的根包静默过滤，各平台仅执行有效根的完整闭包；坏声明、不可读或非文件 adapter 仍失败。计划不执行 adapter 正文，实际消费负责核对目标及链接。全被过滤时成功汇总，不启动平台生产、发布工具或修改 Release。
+
+CI 每轮构建有效模块及依赖，不跨运行复用 Release 包。各平台顺序执行全部实际依赖层，共用本轮隔离安装根，共享依赖只构建一次；通用包由包含通用模块的唯一优先平台发布。逐槽真实消费及全闭包搬迁验证复用同一工程，既有三库保留运行检查，新模块通过实际导入和链接验证。上传资格绑定当前计划、平台与通用 publisher，按正式文件名同名替换，不设置显示 label，finalize 只汇总执行集合、不写发行清单。取舍见[生产缓存收缩决定](agent-notes/implemented/simplification/2026-10-24-ci-rebuild-without-production-cache.md)。
 
 [独立同步 workflow](../.github/workflows/sync-gitee.yml)在发布成功后检查完整 Release，或手动按包同步；原流水线不等待 Gitee。[本地 Action](../.github/actions/gitee-release/UPSTREAM.md)批量读元数据，以正文 SHA256、附件 ID 和大小判断跳过，按可用 CPU 数的两倍并发传输变化附件，由协调器合并成功索引。它不进入三个 Go 工具或 Gitee 消费；信任及恢复限制见[同步设计](agent-notes/proposed/architecture/2026-10-27-gitee-release-sync-workflow.md)。
 

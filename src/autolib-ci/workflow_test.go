@@ -172,7 +172,7 @@ func TestCIWorkflowContract(t *testing.T) {
 	}
 	for _, id := range []string{"linux", "windows"} {
 		job := workflowSection(t, document, "  "+id+":")
-		for _, layer := range []string{"prepare", "layer0", "layer1", "verify"} {
+		for _, layer := range []string{"prepare", "verify"} {
 			if !strings.Contains(job, "--layer "+layer) {
 				t.Fatalf("%s missing %s", id, layer)
 			}
@@ -233,22 +233,19 @@ func TestCIWorkflowContract(t *testing.T) {
 			t.Fatalf("%s independently builds the importer instead of using production configure", file)
 		}
 	}
-	t.Run("Windows skips an absent dependency layer", func(t *testing.T) {
+	t.Run("Windows executes every nonempty dependency layer", func(t *testing.T) {
 		pwsh, err := exec.LookPath("pwsh")
 		if err != nil {
 			t.Skip("PowerShell is unavailable")
 		}
 		job := workflowSection(t, document, "  windows:")
-		step := workflowSection(t, job, "      - name: Prepare native environment and tools")
+		step := workflowSection(t, job, "      - name: Produce dependency layers")
 		script := workflowSection(t, step, "        run: |")
-		_, script, ok := strings.Cut(script, "$plan = ")
-		if !ok {
-			t.Fatal("missing Windows layer selection")
-		}
-		script = "$plan = " + script
-		for _, tc := range []struct{ layers, want string }{
-			{`[["lz4"]]`, "layer0=true\nlayer1=false"},
-			{`[["lz4","queue"],["flann"]]`, "layer0=true\nlayer1=true"},
+		for _, tc := range []struct{ layers, want, failLayer string }{
+			{`[]`, "", ""},
+			{`[["fresh"]]`, "layer0", ""},
+			{`[["common"],["middle"],["fresh"]]`, "layer0\nlayer1\nlayer2", ""},
+			{`[["common"],["middle"],["fresh"]]`, "layer0\nlayer1", "layer1"},
 		} {
 			work := t.TempDir()
 			input := filepath.Join(work, "build/ci-input")
@@ -259,18 +256,16 @@ func TestCIWorkflowContract(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(input, "plan.json"), []byte(plan), 0644); err != nil {
 				t.Fatal(err)
 			}
-			outputFile := filepath.Join(work, "output.txt")
-			command := exec.Command(pwsh, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script)
+			stub := `function Invoke-CILayer { $layerIndex=[Array]::IndexOf($args,'--layer'); $layer=$args[$layerIndex+1]; Write-Output $layer; $global:LASTEXITCODE=0; if($layer -eq $env:FAIL_LAYER) { $global:LASTEXITCODE=17 } }; `
+			script = strings.ReplaceAll(script, `& "$env:WORK_ROOT/autolib-ci.exe"`, "Invoke-CILayer")
+			command := exec.Command(pwsh, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", stub+script)
 			command.Dir = work
-			command.Env = append(withoutEnvironment(os.Environ(), "GITHUB_OUTPUT"), "GITHUB_OUTPUT="+outputFile)
-			if output, err := command.CombinedOutput(); err != nil {
+			command.Env = append(withoutEnvironment(os.Environ(), "FAIL_LAYER"), "FAIL_LAYER="+tc.failLayer)
+			output, err := command.CombinedOutput()
+			if (err != nil) != (tc.failLayer != "") {
 				t.Fatalf("Windows layer selection: %v %s", err, output)
 			}
-			data, err := os.ReadFile(outputFile)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got := strings.TrimSpace(strings.ReplaceAll(string(data), "\r\n", "\n")); got != tc.want {
+			if got := strings.TrimSpace(strings.ReplaceAll(string(output), "\r\n", "\n")); got != tc.want {
 				t.Fatalf("layers %s: got %q want %q", tc.layers, got, tc.want)
 			}
 		}

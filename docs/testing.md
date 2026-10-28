@@ -47,7 +47,9 @@ importer覆盖包头、优先级、依赖图、通用包、安全解包及CRC失
 
 ## CI 验证
 
-CI 本地资产服务测试覆盖空 label 同名替换、每轮重建、分层及失败汇总，并真实编译消费 Windows 小型依赖；已有发布资产不会短路下一轮构建。`-run TestCIWorkflowContract` 执行分支检查及 Make 准备片段，不模拟完整 Actions；Windows 跳过 Linux FIFO 探针，不证明 Linux 并行。
+CI 测试覆盖同名替换、每轮重建、动态依赖层及失败汇总。`TestCIDiscoveryFiltering` 通过真实 builder 验证自动发现、闭包过滤、通用 publisher 和空工作。`TestCIDynamicRelease` 真实编译、打包并消费 Windows 三层依赖及 queue 通用包，核对上传字节与汇总；无资格资产拒绝上传，全过滤不访问远端。最终复用既有工程验证有效闭包的双搬迁。
+
+`TestCIWorkflowContract` 执行分支检查、Windows 层循环及 Make 准备片段，不模拟完整 Actions。Windows 不验证 Linux FIFO；无法用权限位阻断读取时跳过不可读目录及 adapter 用例。本地 fixture 不代替远端或 Linux 双架构验收。
 
 queue、lz4、flann 的三平台供给、逐槽消费、双搬迁及凭据写入已有真实证据；ABI、-j/FIFO 和历史运行见[CI验证记录](agent-notes/implemented/architecture/2026-10-20-ci-system.md#真实运行)。[每轮重建与空 label 发布](agent-notes/implemented/simplification/2026-10-24-ci-rebuild-without-production-cache.md)的本地回归不替代新策略的三平台远端验收及 GitHub 页面核对；下载消费另按上节验收。
 

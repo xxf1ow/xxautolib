@@ -14,9 +14,9 @@ on:
         default: all
         required: true
       modules:
-        description: Comma-separated representative modules (blank selects all)
+        description: Comma-separated modules (blank discovers adapter-backed modules)
         type: string
-        default: queue,lz4,flann
+        default: ''
         required: false
 
 permissions:
@@ -70,6 +70,7 @@ jobs:
 
   initialize:
     needs: plan
+    if: ${{ needs.plan.outputs.linux == 'true' || needs.plan.outputs.windows == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -88,7 +89,7 @@ jobs:
       - name: Initialize fixed Release
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: build/tools/autolib-ci init --source-root "$GITHUB_WORKSPACE" --run-identity build/ci-input/run.json
+        run: build/tools/autolib-ci init --source-root "$GITHUB_WORKSPACE" --run-identity build/ci-input/run.json --plan build/ci-input/plan.json
 
   linux:
     needs: [plan, initialize]
@@ -129,7 +130,6 @@ jobs:
           set -euo pipefail
           bash .github/scripts/prepare-linux.sh --config .github/ci-tools.json --plan build/ci-input/plan.json --platform "$PLATFORM" --work-root "$WORK_ROOT" > build/ci-input/environment.json
           jq -r 'to_entries[] | "\(.key)=\(.value)"' build/ci-input/environment.json >> "$GITHUB_OUTPUT"
-          jq -r --arg platform "$PLATFORM" '.platforms[] | select(.id == $platform) | "layer0=" + (((.layers[0] // [])|length)>0|tostring), "layer1=" + (((.layers[1] // [])|length)>0|tostring)' build/ci-input/plan.json >> "$GITHUB_OUTPUT"
       - name: Prepare platform
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -138,24 +138,18 @@ jobs:
           BUDGET: ${{ steps.environment.outputs.budget }}
         run: >-
           "$WORK_ROOT/autolib-ci" run --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer prepare --work-root "$WORK_ROOT" --builder-file "$WORK_ROOT/autolib-builder" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
-      - name: Produce dependency layer 0
-        if: ${{ steps.environment.outputs.layer0 == 'true' }}
+      - name: Produce dependency layers
         env:
           GITHUB_TOKEN: ${{ github.token }}
           CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
           MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
           BUDGET: ${{ steps.environment.outputs.budget }}
-        run: >-
-          "$WORK_ROOT/autolib-ci" run --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer layer0 --work-root "$WORK_ROOT" --builder-file "$WORK_ROOT/autolib-builder" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
-      - name: Produce dependency layer 1
-        if: ${{ steps.environment.outputs.layer1 == 'true' }}
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
-          MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
-          BUDGET: ${{ steps.environment.outputs.budget }}
-        run: >-
-          "$WORK_ROOT/autolib-ci" run --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer layer1 --work-root "$WORK_ROOT" --builder-file "$WORK_ROOT/autolib-builder" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
+        run: |
+          set -euo pipefail
+          layers=$(jq -er --arg platform "$PLATFORM" '.platforms[] | select(.id == $platform) | .layers | length' build/ci-input/plan.json)
+          for ((index=0; index<layers; index++)); do
+            "$WORK_ROOT/autolib-ci" run --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer "layer$index" --work-root "$WORK_ROOT" --builder-file "$WORK_ROOT/autolib-builder" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
+          done
       - name: Verify selected work
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -210,30 +204,23 @@ jobs:
         run: |
           $settings = ./.github/scripts/prepare-windows.ps1 -Config .github/ci-tools.json -Plan build/ci-input/plan.json -Platform windows-x86_64 -WorkRoot $env:WORK_ROOT | ConvertFrom-Json
           "cmake_command=$($settings.cmake_command)" >> $env:GITHUB_OUTPUT
-          $plan = Get-Content build/ci-input/plan.json -Raw | ConvertFrom-Json
-          $platform = @($plan.platforms | Where-Object id -eq 'windows-x86_64')[0]
-          "layer0=$($platform.layers.Count -gt 0 -and @($platform.layers[0]).Count -gt 0)".ToLowerInvariant() >> $env:GITHUB_OUTPUT
-          "layer1=$($platform.layers.Count -gt 1 -and @($platform.layers[1]).Count -gt 0)".ToLowerInvariant() >> $env:GITHUB_OUTPUT
       - name: Prepare platform
         env:
           GITHUB_TOKEN: ${{ github.token }}
           CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
         run: >-
           & "$env:WORK_ROOT/autolib-ci.exe" run --source-root $env:GITHUB_WORKSPACE --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform windows-x86_64 --layer prepare --work-root $env:WORK_ROOT --builder-file "$env:WORK_ROOT/autolib-builder.exe" --importer-file "$env:WORK_ROOT/install/autolib-importer-windows-x86_64.exe" --cmake-command $env:CMAKE_COMMAND
-      - name: Produce dependency layer 0
-        if: ${{ steps.environment.outputs.layer0 == 'true' }}
+      - name: Produce dependency layers
         env:
           GITHUB_TOKEN: ${{ github.token }}
           CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
-        run: >-
-          & "$env:WORK_ROOT/autolib-ci.exe" run --source-root $env:GITHUB_WORKSPACE --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform windows-x86_64 --layer layer0 --work-root $env:WORK_ROOT --builder-file "$env:WORK_ROOT/autolib-builder.exe" --importer-file "$env:WORK_ROOT/install/autolib-importer-windows-x86_64.exe" --cmake-command $env:CMAKE_COMMAND
-      - name: Produce dependency layer 1
-        if: ${{ steps.environment.outputs.layer1 == 'true' }}
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
-        run: >-
-          & "$env:WORK_ROOT/autolib-ci.exe" run --source-root $env:GITHUB_WORKSPACE --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform windows-x86_64 --layer layer1 --work-root $env:WORK_ROOT --builder-file "$env:WORK_ROOT/autolib-builder.exe" --importer-file "$env:WORK_ROOT/install/autolib-importer-windows-x86_64.exe" --cmake-command $env:CMAKE_COMMAND
+        run: |
+          $plan = Get-Content build/ci-input/plan.json -Raw | ConvertFrom-Json
+          $platform = @($plan.platforms | Where-Object id -eq 'windows-x86_64')[0]
+          for ($index = 0; $index -lt $platform.layers.Count; $index++) {
+            & "$env:WORK_ROOT/autolib-ci.exe" run --source-root $env:GITHUB_WORKSPACE --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform windows-x86_64 --layer "layer$index" --work-root $env:WORK_ROOT --builder-file "$env:WORK_ROOT/autolib-builder.exe" --importer-file "$env:WORK_ROOT/install/autolib-importer-windows-x86_64.exe" --cmake-command $env:CMAKE_COMMAND
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
       - name: Verify selected work
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -274,6 +261,7 @@ jobs:
           name: ci-plan-${{ github.run_id }}-${{ github.run_attempt }}
           path: build/ci-input
       - name: Collect available results
+        if: ${{ needs.plan.outputs.linux == 'true' || needs.plan.outputs.windows == 'true' }}
         uses: actions/download-artifact@v8
         with:
           pattern: ci-result-${{ github.run_id }}-${{ github.run_attempt }}-*

@@ -32,7 +32,7 @@ func ciImporterAsset(platform string) string {
 }
 
 func finalizeCI(plan ciPlan, run ciRunIdentity, results []ciPlatformResult) error {
-	if len(plan.Platforms) == 0 || len(results) != len(plan.Platforms) {
+	if len(results) != len(plan.Platforms) {
 		return errors.New("platform results are missing or duplicated")
 	}
 	seen := map[string]bool{}

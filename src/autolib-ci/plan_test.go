@@ -12,7 +12,7 @@ import (
 )
 
 func TestCIPlanInputs(t *testing.T) {
-	root := t.TempDir()
+	root := fakePlanRoot(t)
 	builder, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -22,7 +22,7 @@ func TestCIPlanInputs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := plan.RequestedModules, []string{"queue", "lz4", "flann"}; !reflect.DeepEqual(got, want) {
+	if got, want := plan.RequestedModules, []string{"flann", "lz4", "queue"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("requested modules: want %v, got %v", want, got)
 	}
 	if len(plan.Platforms) != 3 || plan.Publisher != "linux-x86_64" {
@@ -55,7 +55,7 @@ func TestCIPlanInputs(t *testing.T) {
 				t.Fatal(err)
 			}
 			if !reflect.DeepEqual(got, plan) {
-				t.Fatalf("blank modules should select the default representative set: %+v", got)
+				t.Fatalf("blank modules should select discovered candidates: %+v", got)
 			}
 		})
 	}
@@ -73,7 +73,7 @@ func TestCIPlanRejectsInvalidSelection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	root := t.TempDir()
+	root := fakePlanRoot(t)
 	t.Setenv("AUTOLIB_CI_HELPER_MODE", "valid")
 	for _, tc := range []struct {
 		name      string
@@ -102,7 +102,7 @@ func TestCIPublisher(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("AUTOLIB_CI_HELPER_MODE", "valid")
-	root := t.TempDir()
+	root := fakePlanRoot(t)
 	for _, tc := range []struct {
 		platforms string
 		modules   string
@@ -130,7 +130,7 @@ func TestCICLI(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("AUTOLIB_CI_HELPER_MODE", "valid")
-	root := t.TempDir()
+	root := fakePlanRoot(t)
 	output := filepath.Join(root, "ci plan.json")
 	var stdout, stderr bytes.Buffer
 	args := []string{"plan", "--source-root", root, "--builder-file", builder, "--output", output, "--platforms", "linux-aarch64,linux-x86_64", "--modules", "flann"}
@@ -164,7 +164,7 @@ func TestCICLI(t *testing.T) {
 	if err := json.Unmarshal(data, &plan); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(plan.RequestedModules, []string{"queue", "lz4", "flann"}) || len(plan.Platforms) != 3 {
+	if !reflect.DeepEqual(plan.RequestedModules, []string{"flann", "lz4", "queue"}) || len(plan.Platforms) != 3 {
 		t.Fatalf("blank CLI modules did not select all: %+v", plan)
 	}
 	validOutput = string(data)
@@ -182,4 +182,14 @@ func TestCICLI(t *testing.T) {
 			t.Fatalf("invalid plan changed successful output: %q, %v", got, err)
 		}
 	}
+}
+
+func fakePlanRoot(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	for _, name := range []string{"queue", "lz4", "flann"} {
+		writeCIFixture(t, root, "src/dependencies/"+name+"/module.toml", "")
+		writeCIFixture(t, root, "src/dependencies/"+name+"/autolib-import.cmake", "# fixture\n")
+	}
+	return root
 }

@@ -3,12 +3,13 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 )
 
 var ciPlatforms = []string{"windows-x86_64", "linux-x86_64", "linux-aarch64"}
-var ciModules = []string{"queue", "lz4", "flann"}
 
 func planCI(ctx context.Context, o ciPlanOptions) (ciPlan, error) {
 	if strings.TrimSpace(o.SourceRoot) == "" || strings.TrimSpace(o.BuilderFile) == "" {
@@ -26,11 +27,18 @@ func planCI(ctx context.Context, o ciPlanOptions) (ciPlan, error) {
 	if moduleSelection != nil && strings.TrimSpace(*moduleSelection) == "" {
 		moduleSelection = nil
 	}
-	selected, err := ciList(moduleSelection, ciModules, ciModules, "module")
+	known, candidates, err := discoverCIModules(o.SourceRoot)
+	if err != nil {
+		return ciPlan{}, err
+	}
+	selected, err := ciList(moduleSelection, candidates, known, "module")
 	if err != nil {
 		return ciPlan{}, err
 	}
 	plan := ciPlan{Platforms: []ciPlatformPlan{}, RequestedModules: selected}
+	if len(selected) == 0 {
+		return plan, nil
+	}
 	for _, platform := range platforms {
 		systemName, architecture, err := ciTarget(platform)
 		if err != nil {
@@ -40,10 +48,12 @@ func planCI(ctx context.Context, o ciPlanOptions) (ciPlan, error) {
 		if err != nil {
 			return ciPlan{}, fmt.Errorf("platform %s: %w", platform, err)
 		}
-		for _, module := range description.Modules {
-			if !slices.Contains(ciModules, module.Name) {
-				return ciPlan{}, fmt.Errorf("module %q is outside the supported CI closure", module.Name)
-			}
+		description.Modules, err = effectiveCIModules(o.SourceRoot, description.Modules, selected)
+		if err != nil {
+			return ciPlan{}, fmt.Errorf("platform %s: %w", platform, err)
+		}
+		if len(description.Modules) == 0 {
+			continue
 		}
 		layers, err := ciLayers(description.Modules)
 		if err != nil {
@@ -51,15 +61,139 @@ func planCI(ctx context.Context, o ciPlanOptions) (ciPlan, error) {
 		}
 		plan.Platforms = append(plan.Platforms, ciPlatformPlan{ID: platform, Description: description, Layers: layers, SystemDependencies: ciSystemDependencies(description.Modules)})
 	}
-	if slices.Contains(selected, "queue") {
-		for _, preferred := range []string{"linux-x86_64", "linux-aarch64", "windows-x86_64"} {
-			if slices.Contains(platforms, preferred) {
-				plan.Publisher = preferred
-				break
+	for _, preferred := range []string{"linux-x86_64", "linux-aarch64", "windows-x86_64"} {
+		for _, platform := range plan.Platforms {
+			if platform.ID != preferred {
+				continue
+			}
+			for _, module := range platform.Description.Modules {
+				if module.PlatformIndependent {
+					plan.Publisher = preferred
+					return plan, nil
+				}
 			}
 		}
 	}
 	return plan, nil
+}
+
+func readableCIAdapter(file string) (bool, error) {
+	info, err := os.Stat(file)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if !info.Mode().IsRegular() {
+		return false, fmt.Errorf("adapter %s must be a readable regular file", file)
+	}
+	f, err := os.Open(file)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+	return true, nil
+}
+
+func discoverCIModules(root string) (known, candidates []string, err error) {
+	directory := filepath.Join(root, "src", "dependencies")
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		return nil, nil, err
+	}
+	known, candidates = []string{}, []string{}
+	for _, entry := range entries {
+		moduleDirectory := filepath.Join(directory, entry.Name())
+		isDirectory := entry.IsDir()
+		if entry.Type()&os.ModeSymlink != 0 {
+			info, err := os.Stat(moduleDirectory)
+			if os.IsNotExist(err) {
+				continue
+			}
+			if err != nil {
+				return nil, nil, err
+			}
+			isDirectory = info.IsDir()
+		}
+		if !isDirectory {
+			continue
+		}
+		files, err := os.ReadDir(moduleDirectory)
+		if err != nil {
+			return nil, nil, err
+		}
+		if !slices.ContainsFunc(files, func(file os.DirEntry) bool { return file.Name() == "module.toml" }) {
+			continue
+		}
+		name := entry.Name()
+		known = append(known, name)
+		ok, err := readableCIAdapter(filepath.Join(moduleDirectory, "autolib-import.cmake"))
+		if err != nil {
+			return nil, nil, err
+		}
+		if ok {
+			candidates = append(candidates, name)
+		}
+	}
+	return known, candidates, nil
+}
+
+func effectiveCIModules(root string, modules []describedModule, requested []string) ([]describedModule, error) {
+	byName := map[string]describedModule{}
+	eligible := map[string]bool{}
+	for _, module := range modules {
+		byName[module.Name] = module
+		if module.AdapterFile != "" {
+			ok, err := readableCIAdapter(filepath.Join(root, filepath.FromSlash(module.AdapterFile)))
+			if err != nil {
+				return nil, err
+			}
+			eligible[module.Name] = ok
+		}
+	}
+	// Validate the complete described graph before excluding ineligible roots.
+	if _, err := ciLayers(modules); err != nil {
+		return nil, err
+	}
+	var qualifies func(string) bool
+	qualifies = func(name string) bool {
+		if !eligible[name] {
+			return false
+		}
+		for _, dependency := range byName[name].Depends {
+			if !qualifies(dependency) {
+				return false
+			}
+		}
+		return true
+	}
+	keep := map[string]bool{}
+	var add func(string)
+	add = func(name string) {
+		if keep[name] {
+			return
+		}
+		keep[name] = true
+		for _, dependency := range byName[name].Depends {
+			add(dependency)
+		}
+	}
+	for _, name := range requested {
+		if qualifies(name) {
+			add(name)
+		}
+	}
+	result := []describedModule{}
+	for _, module := range modules {
+		if keep[module.Name] {
+			result = append(result, module)
+		}
+	}
+	return result, nil
 }
 
 func ciList(value *string, fallback, allowed []string, label string) ([]string, error) {
