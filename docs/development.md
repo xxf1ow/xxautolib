@@ -22,7 +22,7 @@ cmake --build build --config Release
 
 引擎为 CMake 子项目提供 policy 下限 `3.5`、PIC `ON`、C++ 标准 `17` 的兜底值，通过原生 `CMAKE_ARGS` 传入，不向父级 cache 写默认值；不依赖 preset、IDE 设置或环境变量。根 configure 的 `-D` 或 toolchain 中已定义的值可覆盖兜底值，模块显式 cache 优先于父级值；修改公共值后重新 configure/build。已有 cache 条目保留为父级输入，不自动删除。policy 下限不降低上游较高声明，旧声明被提高后的兼容性仍须实际验证。CMake Tools 可沿用 Kit/Variant，选择已有编译器和配置。
 
-默认发现全部模块，分别安装到 `3rdparty/<模块名>/`。只选部分模块时追加 `"-DBUILD_LIST=opencv"`，自动包含 freetype、harfbuzz；选择 flann 自动包含 lz4。根 BUILD_LIST 不传入 OpenCV。configure 输出工具链、安装目录与模块摘要；获取和安装在 build 阶段执行。
+默认发现全部模块，分别安装到 `3rdparty/<模块名>/`。只选部分模块时追加 `"-DBUILD_LIST=opencv"`，自动包含 freetype、harfbuzz；选择 flann 自动包含 lz4；选择 librealsense 自动包含 nlohmann、lz4、libusb，不提供 adapter。根 BUILD_LIST 不传入 OpenCV。configure 输出工具链、安装目录与模块摘要；获取和安装在 build 阶段执行。
 
 公共入口仅为 Go 子进程设置项目 SDK、缓存、`GOENV=off`、`GOWORK=off`、`GOTOOLCHAIN=local` 和 `CGO_ENABLED=0`，不修改全局环境或用户 Go 配置。只读模块模式分别编译宿主 builder 和 importer，宿主不随 C++ 目标架构改变；go.mod 固定依赖、go.sum 校验内容。每份工作副本统一用 build，不跨平台混用产物。子项目固定 Release，沿用父生成器、平台、完整工具集和 instance；父显式 CRT 原值传递，未指定时 MSVC Release 使用 `/MD`，静态库不自动改为 `/MT`。
 

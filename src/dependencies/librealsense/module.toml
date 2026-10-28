@@ -1,0 +1,32 @@
+# librealsense：RealSense 彩色/深度采集、标定及 CPU 对齐 SDK，构建共享库，不安装驱动。
+name = "librealsense"
+type = "cmake"
+version = "2.58.1"
+sentinel = "include/librealsense2/rs.hpp"
+depends = ["nlohmann", "lz4", "libusb"]
+config_dir = "lib/cmake/realsense2"
+pkgconfig_dir = "lib/pkgconfig"
+package_name = "realsense2"
+
+[source]
+GIT_REPOSITORY = "https://github.com/realsenseai/librealsense.git"
+GIT_TAG = "bf2778061d5dd29776e9aca8765f75852671760b" # 固定 v2.58.1；升级须重新核对选项、依赖及局部补丁。
+
+[cmake.cache]
+FORCE_RSUSB_BACKEND = true # 用户态 USB 后端，无内核补丁或 DKMS。
+USE_EXTERNAL_LZ4 = true    # 旧式录制仍随核心构建，复用仓库 LZ4。
+BUILD_ROSBAG2 = false     # 排除 Fast-CDR、SQLite、yaml-cpp。
+BUILD_EXAMPLES = false
+BUILD_GRAPHICAL_EXAMPLES = false
+BUILD_TOOLS = false
+BUILD_GLSL_EXTENSIONS = false
+CHECK_FOR_UPDATES = false # 不构建 GUI 或在线更新检查。
+
+[platforms.windows.cmake.cache]
+BUILD_WITH_STATIC_CRT = false # 不允许上游覆盖公共引擎的 CRT 选择。
+
+[[patches]]
+file = "local-dependencies.patch" # JSON/libusb 仅用本地安装；适配 LZ4 目标名并禁止系统 ldconfig。
+
+[[patches]]
+file = "pkgconfig-install-dir.patch" # 上游 .pc 硬编码 x86_64 路径；使用实际安装库目录并补齐包名。

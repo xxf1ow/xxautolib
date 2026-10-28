@@ -12,7 +12,7 @@ func TestRealModuleDeclarations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	names := []string{"flann", "freetype", "harfbuzz", "lz4", "onnxruntime", "opencv", "queue", "zlib"}
+	names := []string{"flann", "freetype", "harfbuzz", "librealsense", "libusb", "lz4", "nlohmann", "onnxruntime", "opencv", "queue", "zlib"}
 	for _, slot := range []struct{ system, arch, onnx string }{
 		{"Windows", "x64", "onnxruntime-win-x64-1.24.4.zip"},
 		{"Linux", "x86_64", "onnxruntime-linux-x64-1.24.4.tgz"},

@@ -1,0 +1,87 @@
+diff --git a/CMake/install_config.cmake b/CMake/install_config.cmake
+index 9f56666..ed908e2 100644
+--- a/CMake/install_config.cmake
++++ b/CMake/install_config.cmake
+@@ -48,4 +48,3 @@ install(FILES "${CMAKE_CURRENT_BINARY_DIR}/config/realsense2.pc"
+         DESTINATION "${CMAKE_INSTALL_LIBDIR}/pkgconfig"
+ )
+ 
+-install(CODE "execute_process(COMMAND ldconfig)")
+diff --git a/CMake/libusb_config.cmake b/CMake/libusb_config.cmake
+index ca221ca..9dcd5cc 100644
+--- a/CMake/libusb_config.cmake
++++ b/CMake/libusb_config.cmake
+@@ -1,14 +1,21 @@
+ if (NOT TARGET usb)
+-    find_library(LIBUSB_LIB usb-1.0)
+-    find_path(LIBUSB_INC libusb.h HINTS PATH_SUFFIXES libusb-1.0)
+-    include(FindPackageHandleStandardArgs)
+-    find_package_handle_standard_args(usb "libusb not found; using internal version" LIBUSB_LIB LIBUSB_INC)
+-    if (USB_FOUND AND NOT USE_EXTERNAL_USB)
+-        add_library(usb INTERFACE)
+-        target_include_directories(usb INTERFACE ${LIBUSB_INC})
+-        target_link_libraries(usb INTERFACE ${LIBUSB_LIB})
+-    else()
+-        include(CMake/external_libusb.cmake)
++    get_filename_component(AUTOLIB_USB_PREFIX "${CMAKE_INSTALL_PREFIX}/../libusb" ABSOLUTE)
++    find_library(LIBUSB_LIB NAMES usb-1.0 libusb-1.0
++        PATHS "${AUTOLIB_USB_PREFIX}/lib" NO_DEFAULT_PATH)
++    find_path(LIBUSB_INC libusb.h
++        PATHS "${AUTOLIB_USB_PREFIX}/include/libusb-1.0" NO_DEFAULT_PATH)
++    if(NOT LIBUSB_LIB OR NOT LIBUSB_INC)
++        message(FATAL_ERROR "Local libusb headers/library missing: ${AUTOLIB_USB_PREFIX}")
+     endif()
++    add_library(usb INTERFACE)
++    target_include_directories(usb INTERFACE ${LIBUSB_INC})
++    target_link_libraries(usb INTERFACE ${LIBUSB_LIB})
++    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
++        find_package(Threads REQUIRED)
++        find_library(AUTOLIB_UDEV_LIB NAMES udev REQUIRED)
++        target_link_libraries(usb INTERFACE ${AUTOLIB_UDEV_LIB} Threads::Threads)
++    elseif(WIN32)
++        target_link_libraries(usb INTERFACE windowsapp)
++    endif()
+     install(TARGETS usb EXPORT realsense2Targets)
+ endif()
+diff --git a/third-party/CMakeLists.txt b/third-party/CMakeLists.txt
+index e8add9a..1c26150 100644
+--- a/third-party/CMakeLists.txt
++++ b/third-party/CMakeLists.txt
+@@ -5,7 +5,11 @@ add_subdirectory( "${CMAKE_CURRENT_LIST_DIR}/rsutils" )
+ 
+ pop_security_flags() # remove security flags for third party, as we cannot guarantee their security enforcment
+ 
+-include(CMake/external_json.cmake)
++get_filename_component(AUTOLIB_JSON_INCLUDE "${CMAKE_INSTALL_PREFIX}/../nlohmann/include" ABSOLUTE)
++if(NOT EXISTS "${AUTOLIB_JSON_INCLUDE}/nlohmann/json.hpp")
++    message(FATAL_ERROR "Local nlohmann headers missing: ${AUTOLIB_JSON_INCLUDE}/nlohmann/json.hpp")
++endif()
++target_include_directories(rsutils PUBLIC $<BUILD_INTERFACE:${AUTOLIB_JSON_INCLUDE}>)
+ add_subdirectory( ${_rel_path}/realsense-file )
+ 
+ if(BUILD_EASYLOGGINGPP)
+diff --git a/third-party/realsense-file/CMakeLists.txt b/third-party/realsense-file/CMakeLists.txt
+index 6abff37..3f313a2 100644
+--- a/third-party/realsense-file/CMakeLists.txt
++++ b/third-party/realsense-file/CMakeLists.txt
+@@ -18,7 +18,7 @@ FILE(GLOB_RECURSE AllSources
+ if(USE_EXTERNAL_LZ4)
+     find_package(lz4 REQUIRED)
+     add_library(rs_lz4 INTERFACE)
+-    target_link_libraries(rs_lz4 INTERFACE lz4::lz4)
++    target_link_libraries(rs_lz4 INTERFACE LZ4::lz4)
+ else()
+     add_library(rs_lz4 STATIC ${LZ4_DIR}/lz4.c ${LZ4_DIR}/lz4.h)
+     target_include_directories(rs_lz4 PUBLIC "$<BUILD_INTERFACE:${LZ4_DIR}>")
+diff --git a/third-party/rsutils/CMakeLists.txt b/third-party/rsutils/CMakeLists.txt
+index 943dc17..a86d361 100644
+--- a/third-party/rsutils/CMakeLists.txt
++++ b/third-party/rsutils/CMakeLists.txt
+@@ -12,7 +12,6 @@ set_target_properties( ${PROJECT_NAME} PROPERTIES FOLDER Library )
+ target_include_directories( ${PROJECT_NAME}
+     PUBLIC
+         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+-        $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/third-party/json/include>
+ )
+ 
+ # Headers -----------------------------------------------------------------------------------
