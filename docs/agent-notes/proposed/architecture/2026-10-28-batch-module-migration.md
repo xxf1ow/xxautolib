@@ -24,7 +24,7 @@ Status: proposed
 
 纯头文件 copy 模块可声明 `platform_independent=true`，通用包检查不绑定模块名、文件数量或文件名；支持主源码与附属资源的文件和目录复制，核对 include 下的实际文件集合及来源字节，拒绝额外载荷或非普通文件。平台无关性由配方维护者确认，字节核对不代替该判断。Clipper2 1.5.4 对 GCC 9 使用模块局部补丁：移除其不识别的 `-Wno-c++20-compat`，仅将 Clipper2Z 的 sign-conversion 保留为警告；其他告警仍按上游 `-Werror` 处理，不修改算法或关闭 Z 坐标库。
 
-每包提供唯一的 `autolib::<name>` 公共目标，封装参考支持的上游组件及实际直接依赖，不回退系统同名包，不在 adapter 下载或构建。纯头文件包只有在内容确实平台无关时才使用通用槽位。沿用现有自动发现、打包和 CI 规则，不新增逐库发布编排。
+每包提供唯一的 `autolib::<name>` 公共目标，封装参考支持的上游组件及实际直接依赖，不回退系统同名包，不在 adapter 下载或构建。WebSocket++ 沿用默认 Boost 后端，声明 `websocketpp → boost → zlib` 闭包；Asio、cpp-httplib、Taskflow 传递系统 `Threads::Threads`。纯头文件包只有在内容确实平台无关时才使用通用槽位；通用头文件可声明平台包依赖，importer 按消费平台准备该依赖。沿用现有自动发现、打包和 CI 规则，不新增逐库发布编排。
 
 ### 执行与授权
 
@@ -60,6 +60,8 @@ Status: proposed
 
 安装核对覆盖代表头文件、实际库、精确 Config 和 pkg-config 路径。Clipper2 普通及 Z 静态库均存在；PortAudio 保留静动态库，libzmq 保留静动态库及共享库链接，二者在 109 的动态依赖均可解析。SDL3 保留静态库及 OpenGL/OpenGLES、X11、Wayland 配置。Boost cache 的 zlib include 与 Release 库均指向本仓库 `3rdparty/zlib`，iostreams 导出依赖为 `ZLIB::ZLIB`。系统 GTK、Wayland、ALSA 及 C/C++ 运行库仍由消费环境满足，不承诺静态自包含。
 
-本轮 builder 打包退出码为 0，输出在 `/home/lxx/xxautolib/build/stage1-release/`：17 份 tar.zst 和 Linux x86_64 importer。全部归档通过 Zstd 完整性检查，包头与 Boost 的 zlib 依赖已核对；asio、cpp-httplib、expected、taskflow、websocketpp 使用 any/any，其余为 linux/x86_64。归档保留动态库文件及链接，pkg-config 的生产前缀在 staging 中修正，importer 与安装工具字节一致。
+本轮 builder 最终打包退出码为 0，日志为 `build/stage1-package-final.log`，输出在 `/home/lxx/xxautolib/build/stage1-release-final/`：17 份 tar.zst 和 Linux x86_64 importer。全部归档通过 Zstd 完整性检查，包头与 Boost 的 zlib 依赖已核对；asio、cpp-httplib、expected、taskflow、websocketpp 使用 any/any，其余为 linux/x86_64。归档保留动态库文件及链接，pkg-config 的生产前缀在 staging 中修正，importer 与安装工具字节一致。
+
+依赖接线补齐后，既有 builder 已刷新消费描述并重新打包，没有重编第三方库。importer 对本地安装的 WebSocket++ 请求实际返回 `zlib;boost;websocketpp` 准备顺序；最终归档包含 Boost 依赖头及三个头文件库的 Threads 接线。该核对不执行 CMake adapter，也不证明消费者编译链接通过。
 
 本次使用 Windows 校验后预传的第三方来源，不验证空缓存自动取源。未在本机编译，未新增或运行测试工程，未编译消费者，未验证 Windows、Linux aarch64、跨平台 ABI 或完整运行功能。公共 Go 回归、adapter 实际加载链接及搬迁验证留给用户手动触发 CI；助手未推送或触发 CI。复杂模块阶段未执行，本记录保留 proposed 状态。
