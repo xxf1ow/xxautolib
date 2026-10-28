@@ -1,0 +1,25 @@
+name: Gitee Release synchronization
+description: Synchronize a fixed GitHub Release using a body digest index
+inputs:
+  packages:
+    description: Comma-separated package names; blank checks all assets
+    required: false
+    default: ''
+  repository:
+    description: Target Gitee owner/repository
+    required: false
+    default: xxf1ow/autolib-release
+  tag:
+    description: Shared GitHub and Gitee Release tag
+    required: false
+    default: autolib-release
+runs:
+  using: composite
+  steps:
+    - name: Synchronize Release
+      shell: bash
+      env:
+        SYNC_PACKAGES: ${{ inputs.packages }}
+        GITEE_REPOSITORY: ${{ inputs.repository }}
+        GITEE_RELEASE_TAG: ${{ inputs.tag }}
+      run: python "${{ github.action_path }}/sync.py"

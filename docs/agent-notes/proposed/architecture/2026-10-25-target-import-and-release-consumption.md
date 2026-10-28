@@ -105,13 +105,15 @@ README 按完整交付形态编写，不随阶段反复改写，并包含“使�
 
 ### 独立同步 workflow 的交接约定
 
+独立同步、正文 SHA256 索引及 CPU 数并发由[独立 Gitee 同步设计](2026-10-27-gitee-release-sync-workflow.md)拥有。该设计部分替代本节不保存持久化摘要记录的约定，允许用 Release 正文中的附件 ID 与摘要记录跳过相同内容；本设计继续拥有后续默认来源消费，不由镜像供给推定其可用。
+
 原构建、GitHub 发布、消费验证及 finalize 全部成功结束后，通过 `workflow_run` 的 completed 事件和成功条件自动启动独立 Gitee 同步 workflow；原流水线不等待同步，不在平台 job 中逐包调用 Gitee。另提供 `workflow_dispatch` 手动入口，可在不重新编译、不重跑原流水线的情况下单独同步。自动触发以同步 workflow 文件已进入默认分支为启用前提，依据 [GitHub 的 workflow_run 规则](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_run)验收。
 
 同步始终从本仓库已有 GitHub Release 中按本轮 `GITEE_RELEASE_TAG` 查找来源，将附件下载后上传至 `GITEE_REPOSITORY` 中相同 tag 的 Gitee Release。来源不是工作目录、构建 artifact、最新 Release 或另一个独立配置的 GitHub tag；GitHub 上不存在指定 Release 时明确失败，不创建来源 Release、不改用其他 tag。Gitee 目标 Release 仍按前述不存在则创建、存在则复用的规则处理。
 
 同步输入支持按包名选择，只同步所选包对应的附件，不要求每次同步全部；未指定包名时同步该来源 Release 的全部附件。自动与手动入口使用同一套来源、筛选及上传规则，包名选择不改变源和目标 tag 的对应关系。包名输入格式、跨平台附件匹配、未匹配包名的处理、importer 的选择方式，以及自动入口如何传递包名，由后续独立分支的正式设计明确，不在迁移分支提前实现。
 
-同步复用网络连接，并对暂时性网络或服务失败实施有界重试。某个附件最终失败后继续处理其他附件，保留已成功附件；末尾只使独立同步 workflow 失败，不改变已结束的构建与 GitHub 发布结果。失败槽可能缺失，显式重跑根据远端实际附件补齐或同名替换，不自动回滚，也不以另一份持久化清单判断完成状态。有界重试不承诺在持续网络故障下必然上传成功；具体可重试错误、次数、退避和超时在独立设计中确定。
+同步复用网络连接，并对暂时性网络或服务失败实施有界重试。某个附件最终失败后继续处理其他附件，保留已成功附件；末尾只使独立同步 workflow 失败，不改变已结束的构建与 GitHub 发布结果。失败槽可能缺失，显式重跑结合远端实际附件及正文索引判断跳过、新增或同名替换，不自动回滚，不增加独立 manifest 资产或持久恢复队列。有界重试不承诺在持续网络故障下必然上传成功；具体可重试错误、次数、退避和超时由独立设计拥有。
 
 [importer 压缩分发与功能分支手动发布](2026-10-27-importer-distribution-and-branch-release.md)先独立验收并按授权集成 master；同步 workflow 随后从更新的 master 新建任务分支，以该分支的正式设计指导实现。本节保存交接约束，不将同步视为已实现，也不授权 push、远端合并、触发 CI 或写入 Release。
 

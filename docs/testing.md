@@ -51,6 +51,18 @@ CI 本地资产服务测试覆盖空 label 同名替换、每轮重建、分层�
 
 queue、lz4、flann 的三平台供给、逐槽消费、双搬迁及凭据写入已有真实证据；ABI、-j/FIFO 和历史运行见[CI验证记录](agent-notes/implemented/architecture/2026-10-20-ci-system.md#真实运行)。[每轮重建与空 label 发布](agent-notes/implemented/simplification/2026-10-24-ci-rebuild-without-production-cache.md)的本地回归不替代新策略的三平台远端验收及 GitHub 页面核对；下载消费另按上节验收。
 
+## 独立 Gitee 同步验证
+
+使用 Python 3.12 和 Git，在仓库根创建专用 venv；Windows 命令如下，Linux 将解释器路径中的 `Scripts/python.exe` 换为 `bin/python`：
+
+```text
+python -m venv build/tools/gitee-sync-venv
+build/tools/gitee-sync-venv/Scripts/python.exe -m pip install -r .github/actions/gitee-release/requirements.txt -c .github/actions/gitee-release/constraints.txt
+build/tools/gitee-sync-venv/Scripts/python.exe -m unittest discover -s tests/ci/gitee-release -p 'test_*.py' -v
+```
+
+测试仅替换 HTTP，验证实际 multipart 字节、索引、失败重跑及受控并发；不访问远端。Windows 使用 Git Bash 执行分支检查，没有 Bash 会明确跳过；CPU affinity 在 Windows 测试中替换，不证明 Linux 调度或网络性能。真实验收须另获远端写入授权：检查默认分支自动触发、变化同步和相同内容跳过，下载至少一个 Gitee 附件核对 SHA256，并记录 CPU、元数据/传输/总耗时、429 与失败数，按[同步设计](agent-notes/proposed/architecture/2026-10-27-gitee-release-sync-workflow.md#汇总验证范围与后续条件)评价效果。
+
 ## 安装产物集成验证
 
 先按[开发指南](development.md)构建安装模块。以下命令在仓库根目录执行；将 `<zlib绝对前缀>`、`<queue绝对前缀>` 分别替换为当前副本的 `3rdparty/zlib`、`3rdparty/queue` 绝对路径：
