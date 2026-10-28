@@ -32,7 +32,7 @@ func newRemotePrepareFixture(t *testing.T) *remotePrepareFixture {
 	t.Helper()
 	f := &remotePrepareFixture{options: localGraphFixture(t)}
 	f.options.RemoteRoot = testReleaseURL
-	f.options.GitHubResponse = filepath.Join(f.options.WorkRoot, "api.json")
+	f.options.SourceResponse = filepath.Join(f.options.WorkRoot, "api.json")
 	source := t.TempDir()
 	for i, node := range [][4]string{{"flann", "linux", "aarch64", "lz4"}, {"lz4", "linux", "aarch64", ""}, {"queue", "any", "any", ""}} {
 		path := graphArchive(t, source, packageIdentity{node[0], node[1], node[2]}, node[3])
@@ -148,7 +148,7 @@ func TestPrepareSourcePriority(t *testing.T) {
 			case "directory":
 				putTestFile(t, filepath.Join(graphSlot(o, "queue"), "autolib-import.cmake"), identityHeader(packageIdentity{"queue", "any", "any"}))
 				o.RemoteRoot = "https://unavailable.invalid/release"
-				o.GitHubResponse = putTestFile(t, filepath.Join(o.WorkRoot, "bad.json"), "invalid")
+				o.SourceResponse = putTestFile(t, filepath.Join(o.WorkRoot, "bad.json"), "invalid")
 			case "archive":
 				graphArchive(t, o.LocalRoot, packageIdentity{"queue", "any", "any"}, "")
 			case "bad directory":
@@ -182,7 +182,7 @@ func TestPrepareRemoteFailureCleanup(t *testing.T) {
 				o.Packages = []string{"queue"}
 				putTestFile(t, filepath.Join(o.LocalRoot, "queue"), "not a directory")
 			case "response":
-				putTestFile(t, o.GitHubResponse, "{invalid")
+				putTestFile(t, o.SourceResponse, "{invalid")
 			}
 			if _, err := prepare(o); err == nil {
 				t.Fatal("accepted remote failure")
@@ -234,7 +234,7 @@ func TestPrepareRemoteOnly(t *testing.T) {
 		t.Fatal("used an undeclared local source")
 	}
 	// A standalone prepare can also enumerate once without a response-file argument.
-	o.GitHubResponse = ""
+	o.SourceResponse = ""
 	if _, err := prepare(o); err != nil {
 		t.Fatal(err)
 	}
@@ -259,7 +259,7 @@ func TestPrepareRemoteResponseReuse(t *testing.T) {
 	}
 	// A response from a different source is not an empty cache miss.
 	client := &githubSourceClient{Source: githubSource{"other", "repo", "v1"}}
-	if _, err := loadGitHubSnapshot(context.Background(), client, o.GitHubResponse); err == nil {
+	if _, err := client.snapshot(context.Background(), o.SourceResponse); err == nil {
 		t.Fatal("accepted mismatched source")
 	}
 }

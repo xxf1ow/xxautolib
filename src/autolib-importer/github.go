@@ -2,20 +2,14 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
-	"os"
-	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
-	"time"
 )
 
 type githubSource struct{ Owner, Repository, Tag string }
@@ -52,70 +46,9 @@ type githubAsset struct {
 	Digest string `json:"digest"`
 }
 
-// Raw API responses live only for the caller's configure, never as a published package index.
-type githubSnapshot struct {
-	Source  string            `json:"source"`
-	Release json.RawMessage   `json:"release"`
-	Pages   []json.RawMessage `json:"pages"`
-}
-
 type githubSourceClient struct {
 	Source githubSource
 	HTTP   *http.Client
-}
-
-func (c *githubSourceClient) get(ctx context.Context, address, accept string) (*http.Response, error) {
-	u, err := url.Parse(address)
-	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil {
-		return nil, fmt.Errorf("GitHub requests require HTTPS: %s", address)
-	}
-	client := http.Client{Timeout: 5 * time.Minute}
-	if c.HTTP != nil {
-		client = *c.HTTP
-		if client.Timeout == 0 {
-			client.Timeout = 5 * time.Minute
-		}
-	}
-	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-		if req.URL.Scheme != "https" || req.URL.User != nil {
-			return fmt.Errorf("GitHub redirect requires HTTPS: %s", req.URL.Redacted())
-		}
-		if len(via) >= 10 {
-			return fmt.Errorf("too many GitHub redirects")
-		}
-		return nil
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, address, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", accept)
-	req.Header.Set("User-Agent", "xxautolib-importer")
-	response, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("GitHub request %s: %w", address, err)
-	}
-	if response.StatusCode != http.StatusOK {
-		response.Body.Close()
-		return nil, fmt.Errorf("GitHub request %s: HTTP %d", address, response.StatusCode)
-	}
-	return response, nil
-}
-
-func readGitHubJSON(ctx context.Context, c *githubSourceClient, address string) (json.RawMessage, error) {
-	response, err := c.get(ctx, address, "application/vnd.github+json")
-	if err != nil {
-		return nil, err
-	}
-	defer response.Body.Close()
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		return nil, err
-	}
-	if !json.Valid(body) {
-		return nil, fmt.Errorf("invalid GitHub JSON from %s", address)
-	}
-	return json.RawMessage(body), nil
 }
 
 func githubReleaseID(raw json.RawMessage, source githubSource) (int64, error) {
@@ -134,27 +67,16 @@ func githubReleaseID(raw json.RawMessage, source githubSource) (int64, error) {
 	return release.ID, nil
 }
 
-func githubPage(raw json.RawMessage) ([]json.RawMessage, error) {
-	var page []json.RawMessage
-	if err := json.Unmarshal(raw, &page); err != nil {
-		return nil, fmt.Errorf("invalid GitHub assets page: %w", err)
-	}
-	if page == nil {
-		return nil, fmt.Errorf("GitHub assets page must be an array")
-	}
-	return page, nil
-}
-
-func validateGitHubSnapshot(snapshot githubSnapshot, source githubSource) error {
+func validateGitHubSnapshot(snapshot releaseSnapshot, source githubSource) error {
 	actualSource, err := parseGitHubSource(snapshot.Source)
-	if err != nil || actualSource != source || len(snapshot.Pages) == 0 {
+	if err != nil || actualSource != source || snapshot.Platform != "github" || len(snapshot.Pages) == 0 {
 		return fmt.Errorf("GitHub response has mismatched source or missing asset pages")
 	}
 	if _, err := githubReleaseID(snapshot.Release, source); err != nil {
 		return err
 	}
 	for i, raw := range snapshot.Pages {
-		page, err := githubPage(raw)
+		page, err := releasePage(raw)
 		if err != nil {
 			return err
 		}
@@ -165,41 +87,36 @@ func validateGitHubSnapshot(snapshot githubSnapshot, source githubSource) error 
 	return nil
 }
 
-func loadGitHubSnapshot(ctx context.Context, c *githubSourceClient, responsePath string) (githubSnapshot, error) {
-	snapshot := githubSnapshot{Source: c.Source.releaseURL()}
-	if responsePath != "" {
-		body, err := os.ReadFile(responsePath)
-		if err == nil {
-			snapshot = githubSnapshot{}
-			if err := json.Unmarshal(body, &snapshot); err != nil {
-				return githubSnapshot{}, fmt.Errorf("GitHub response %s: %w", responsePath, err)
-			}
-			return snapshot, validateGitHubSnapshot(snapshot, c.Source)
-		}
-		if !os.IsNotExist(err) {
-			return githubSnapshot{}, err
-		}
-	}
-	release, err := readGitHubJSON(ctx, c, c.Source.apiRoot()+"tags/"+url.PathEscape(c.Source.Tag))
+func (c *githubSourceClient) snapshot(ctx context.Context, responsePath string) (releaseSnapshot, error) {
+	snapshot, exists, err := readReleaseSnapshot(responsePath)
 	if err != nil {
-		return githubSnapshot{}, err
+		return releaseSnapshot{}, err
+	}
+	if exists {
+		return snapshot, validateGitHubSnapshot(snapshot, c.Source)
+	}
+	snapshot = releaseSnapshot{Platform: "github", Source: c.Source.releaseURL()}
+
+	release, err := readReleaseJSON(ctx, c.HTTP, c.Source.apiRoot()+"tags/"+url.PathEscape(c.Source.Tag), "application/vnd.github+json")
+	if err != nil {
+		return releaseSnapshot{}, err
 	}
 	snapshot.Release = release
 	id, err := githubReleaseID(release, c.Source)
 	if err != nil {
-		return githubSnapshot{}, err
+		return releaseSnapshot{}, err
 	}
 	for number := 1; ; number++ {
-		page, err := readGitHubJSON(ctx, c, fmt.Sprintf("%s%d/assets?per_page=100&page=%d", c.Source.apiRoot(), id, number))
+		page, err := readReleaseJSON(ctx, c.HTTP, fmt.Sprintf("%s%d/assets?per_page=100&page=%d", c.Source.apiRoot(), id, number), "application/vnd.github+json")
 		if err != nil {
-			return githubSnapshot{}, err
+			return releaseSnapshot{}, err
 		}
-		entries, err := githubPage(page)
+		entries, err := releasePage(page)
 		if err != nil {
-			return githubSnapshot{}, err
+			return releaseSnapshot{}, err
 		}
 		if len(entries) > 100 {
-			return githubSnapshot{}, fmt.Errorf("GitHub assets page exceeds requested page size")
+			return releaseSnapshot{}, fmt.Errorf("GitHub assets page exceeds requested page size")
 		}
 		snapshot.Pages = append(snapshot.Pages, page)
 		if len(entries) < 100 {
@@ -207,24 +124,10 @@ func loadGitHubSnapshot(ctx context.Context, c *githubSourceClient, responsePath
 		}
 	}
 	if err := validateGitHubSnapshot(snapshot, c.Source); err != nil {
-		return githubSnapshot{}, err
+		return releaseSnapshot{}, err
 	}
-	if responsePath != "" {
-		if err := os.MkdirAll(filepath.Dir(responsePath), 0700); err != nil {
-			return githubSnapshot{}, err
-		}
-		f, err := os.CreateTemp(filepath.Dir(responsePath), ".github-response-")
-		if err != nil {
-			return githubSnapshot{}, err
-		}
-		defer os.Remove(f.Name())
-		writeErr := json.NewEncoder(f).Encode(snapshot)
-		if err := errors.Join(writeErr, f.Close()); err != nil {
-			return githubSnapshot{}, err
-		}
-		if err := os.Rename(f.Name(), responsePath); err != nil {
-			return githubSnapshot{}, err
-		}
+	if err := writeReleaseSnapshot(responsePath, snapshot); err != nil {
+		return releaseSnapshot{}, err
 	}
 	return snapshot, nil
 }
@@ -239,10 +142,10 @@ func githubDigest(value string) (string, error) {
 	return strings.ToLower(value[7:]), nil
 }
 
-func selectGitHubAsset(snapshot githubSnapshot, names []string) (githubAsset, error) {
+func selectGitHubAsset(snapshot releaseSnapshot, names []string) (githubAsset, error) {
 	var found []json.RawMessage
 	for _, raw := range snapshot.Pages {
-		page, err := githubPage(raw)
+		page, err := releasePage(raw)
 		if err != nil {
 			return githubAsset{}, err
 		}
@@ -274,38 +177,17 @@ func selectGitHubAsset(snapshot githubSnapshot, names []string) (githubAsset, er
 	return asset, nil
 }
 
-func downloadGitHubAsset(ctx context.Context, c *githubSourceClient, asset githubAsset, destination string) error {
-	expected, err := githubDigest(asset.Digest)
+func (c *githubSourceClient) selectAsset(snapshot releaseSnapshot, names []string) (releaseAsset, error) {
+	if err := validateGitHubSnapshot(snapshot, c.Source); err != nil {
+		return releaseAsset{}, err
+	}
+	asset, err := selectGitHubAsset(snapshot, names)
 	if err != nil {
-		return err
+		return releaseAsset{}, err
 	}
-	if _, err := os.Lstat(destination); err == nil {
-		return fmt.Errorf("download destination already exists: %s", destination)
-	} else if !os.IsNotExist(err) {
-		return err
-	}
-	response, err := c.get(ctx, fmt.Sprintf("%sassets/%d", c.Source.apiRoot(), asset.ID), "application/octet-stream")
+	digest, err := githubDigest(asset.Digest)
 	if err != nil {
-		return err
+		return releaseAsset{}, err
 	}
-	defer response.Body.Close()
-	f, err := os.CreateTemp(filepath.Dir(destination), ".download-")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(f.Name())
-	hash := sha256.New()
-	_, copyErr := io.Copy(io.MultiWriter(f, hash), response.Body)
-	if err := errors.Join(copyErr, f.Close()); err != nil {
-		return fmt.Errorf("download %s: %w", asset.Name, err)
-	}
-	if hex.EncodeToString(hash.Sum(nil)) != expected {
-		return fmt.Errorf("GitHub asset %s: SHA256 mismatch", asset.Name)
-	}
-	if _, err := os.Lstat(destination); err == nil {
-		return fmt.Errorf("download destination already exists: %s", destination)
-	} else if !os.IsNotExist(err) {
-		return err
-	}
-	return os.Rename(f.Name(), destination)
+	return releaseAsset{ID: asset.ID, Name: asset.Name, URL: fmt.Sprintf("%sassets/%d", c.Source.apiRoot(), asset.ID), SHA256: digest, Accept: "application/octet-stream"}, nil
 }
