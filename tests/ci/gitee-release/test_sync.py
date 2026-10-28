@@ -84,7 +84,7 @@ class SyncTests(unittest.TestCase):
                 ("GET", GH + "/releases/tags/fixed%2Frelease", (404, {})),
                 ("GET", GT + "/releases/42/attach_files", (503, {})),
                 ("GET", "/api/v5/user", (401, {}))):
-            self.remote.inject(method, path, outcome, outcome, outcome)
+            self.remote.inject(method, path, *[outcome] * 6)
             with self.subTest(path=path), self.assertRaises(self.module.SyncAPIError):
                 self.run_sync()
             self.remote.overrides.clear()
@@ -100,6 +100,7 @@ class SyncTests(unittest.TestCase):
         name = self.remote.sources[0]["name"]
         self.assertEqual(result["uploaded"], [name])
         self.assertEqual(result["body_status"], "saved")
+        self.assertEqual(result["workers"], 1)
         self.assertEqual(len([c for c in self.remote.writes if c["path"] == GT + "/releases"]), 1)
         self.assertEqual(self.remote.target_bytes[self.remote.asset(name)["id"]], b"new\x00asset")
         self.remote.writes.clear()
@@ -212,7 +213,7 @@ class SyncTests(unittest.TestCase):
             self.remote.dispatch(call)
             raise requests.ReadTimeout(TOKEN)
 
-        self.remote.inject("PATCH", GT + "/releases/42", save_then_lose, save_then_lose, save_then_lose)
+        self.remote.inject("PATCH", GT + "/releases/42", *[save_then_lose] * 6)
         result = self.run_sync()
         self.assertEqual(result["body_status"], "unknown")
         self.remote.writes.clear()
@@ -268,9 +269,14 @@ class SyncTests(unittest.TestCase):
                        "not-selected-any-any.tar.zst": {"sha256": "c" * 64, "gitee_asset_id": 88},
                        "unknown.bin": {"sha256": "d" * 64, "gitee_asset_id": 99}}
         self.remote.release["body"] = body_for(old_records)
-        self.remote.inject("POST", GT + "/releases/42/attach_files", (403, {}))
-        with patch.object(os, "sched_getaffinity", return_value={0}):
-            result = self.run_sync("lz4,queue,flann")
+        def reject_upload(call):
+            if call["kwargs"]["data"].fields["file"][0] == source["name"]:
+                return response(403, {})
+            with self.remote.lock:
+                return self.remote.dispatch(call)
+
+        self.remote.inject("POST", GT + "/releases/42/attach_files", *[reject_upload] * 3)
+        result = self.run_sync("lz4,queue,flann")
         self.assertEqual(result["failed"], [source["name"]])
         self.assertEqual(result["uploaded"], ["queue-any-any.tar.zst", "flann-linux-x86_64.tar.zst"])
         self.assertFalse(any(a["name"] == source["name"] for a in self.remote.targets))
@@ -282,9 +288,11 @@ class SyncTests(unittest.TestCase):
         self.assertEqual(second["uploaded"], [source["name"]])
         self.assertEqual(second["skipped"], ["queue-any-any.tar.zst", "flann-linux-x86_64.tar.zst"])
 
-    def test_two_workers_make_progress_after_failure(self):
+    def test_twice_cpu_workers_make_progress_after_failure(self):
         self.remote.add_source("queue-any-any.tar.zst", b"queue")
         self.remote.add_source("flann-linux-x86_64.tar.zst", b"flann")
+        self.remote.add_source("zlib-linux-x86_64.tar.zst", b"zlib")
+        self.remote.add_source("bzip2-linux-x86_64.tar.zst", b"bzip2")
         ready, release = threading.Event(), threading.Event()
         lock = threading.Lock()
         state = {"active": 0, "started": 0, "maximum": 0}
@@ -296,7 +304,7 @@ class SyncTests(unittest.TestCase):
                 state["active"] += 1
                 state["started"] += 1
                 state["maximum"] = max(state["maximum"], state["active"])
-                if state["started"] == 2:
+                if state["started"] == 4:
                     ready.set()
             try:
                 if not release.wait(timeout=10):
@@ -321,18 +329,19 @@ class SyncTests(unittest.TestCase):
         try:
             self.assertTrue(ready.wait(timeout=5))
             with lock:
-                self.assertEqual(state["active"], 2)
-                self.assertEqual(state["started"], 2)
+                self.assertEqual(state["active"], 4)
+                self.assertEqual(state["started"], 4)
         finally:
             release.set()
             thread.join(timeout=15)
         self.assertFalse(thread.is_alive())
         self.assertEqual(errors, [])
-        self.assertLessEqual(state["maximum"], 2)
+        self.assertLessEqual(state["maximum"], 4)
         self.assertEqual(result[0]["failed"], [self.remote.sources[0]["name"]])
-        self.assertEqual(result[0]["workers"], 2)
+        self.assertEqual(result[0]["cpu_count"], 2)
+        self.assertEqual(result[0]["workers"], 4)
         records = self.rules.parse_index(self.remote.release["body"])
-        self.assertEqual(len(records), 2)
+        self.assertEqual(len(records), 4)
         for source in self.remote.sources[1:]:
             asset = self.remote.asset(source["name"])
             self.assertEqual(self.remote.target_bytes[asset["id"]], self.remote.source_bytes[source["id"]])

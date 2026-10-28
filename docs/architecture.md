@@ -27,7 +27,7 @@
 
 CI 每轮构建所选模块及依赖，不跨运行复用 Release 包。各平台按依赖层共用本轮隔离安装根，共享依赖只构建一次；逐槽消费验证后按固定文件名同名替换，不设置显示 label，finalize 只汇总、不写发行清单。取舍见[生产缓存收缩决定](agent-notes/implemented/simplification/2026-10-24-ci-rebuild-without-production-cache.md)。
 
-[独立同步 workflow](../.github/workflows/sync-gitee.yml)在发布成功后检查完整 Release，或手动按包同步；原流水线不等待 Gitee。[本地 Action](../.github/actions/gitee-release/UPSTREAM.md)批量读元数据，以正文 SHA256、附件 ID 和大小判断跳过，按可用 CPU 数并发传输变化附件，由协调器合并成功索引。它不进入三个 Go 工具或 Gitee 消费；信任及恢复限制见[同步设计](agent-notes/proposed/architecture/2026-10-27-gitee-release-sync-workflow.md)。
+[独立同步 workflow](../.github/workflows/sync-gitee.yml)在发布成功后检查完整 Release，或手动按包同步；原流水线不等待 Gitee。[本地 Action](../.github/actions/gitee-release/UPSTREAM.md)批量读元数据，以正文 SHA256、附件 ID 和大小判断跳过，按可用 CPU 数的两倍并发传输变化附件，由协调器合并成功索引。它不进入三个 Go 工具或 Gitee 消费；信任及恢复限制见[同步设计](agent-notes/proposed/architecture/2026-10-27-gitee-release-sync-workflow.md)。
 
 ## 二进制消费
 

@@ -131,7 +131,8 @@ class Remote:
                 return response(201, self.add_target(name, part.content))
             if method == "PATCH" and path == GT + "/releases/42":
                 data = kwargs["data"]
-                assert set(data) == {"access_token", "body"}
-                self.release = dict(self.release, body=data["body"])
+                if not {"tag_name", "name", "body"} <= data.keys():
+                    return response(400, {"message": "missing required release fields"})
+                self.release = dict(self.release, **{key: data[key] for key in ("tag_name", "name", "body")})
                 return response(200, self.release)
         raise AssertionError(f"Unexpected fixture request: {method} {call['host']} {path}")

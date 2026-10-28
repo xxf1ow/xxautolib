@@ -108,14 +108,15 @@ class APITests(unittest.TestCase):
 
     def test_query_retry_limit_and_waits(self):
         path = GH + "/releases/tags/fixed%2Frelease"
-        self.remote.inject("GET", path, requests.ReadTimeout(TOKEN), (503, {}))
+        self.remote.inject("GET", path, requests.ReadTimeout(TOKEN), (503, {}), (502, {}), (504, {}), (503, {}))
         self.assertEqual(self.api.source_assets(TAG), self.remote.sources)
-        self.assertEqual(len(self.calls("GET", path)), 3)
-        self.assertEqual(self.waits, [2, 4])
-        self.remote.inject("GET", path, (502, {}), (504, {}), (503, {}))
+        self.assertEqual(len(self.calls("GET", path)), 6)
+        self.assertEqual(self.waits, [2, 4, 8, 16, 32])
+        self.remote.inject("GET", path, *[(503, {})] * 6)
         with self.assertRaises(self.module.SyncAPIError):
             self.api.source_assets(TAG)
-        self.assertEqual(len(self.calls("GET", path)), 6)
+        self.assertEqual(len(self.calls("GET", path)), 12)
+        self.assertEqual(self.waits, [2, 4, 8, 16, 32] * 2)
         self.assertNotIn(TOKEN, self.logs.getvalue())
 
     def test_non_retryable_query_errors(self):
@@ -146,24 +147,59 @@ class APITests(unittest.TestCase):
         self.remote.inject("PATCH", path, requests.ReadTimeout(TOKEN), (503, {}))
         self.api.update_body(self.remote.release, "new body")
         self.assertEqual(self.remote.release["body"], "new body")
-        self.assertEqual([c["kwargs"]["data"]["body"] for c in self.calls("PATCH", path)], ["new body"] * 3)
+        self.assertEqual([c["kwargs"]["data"] for c in self.calls("PATCH", path)],
+                         [{"access_token": TOKEN, "tag_name": TAG, "name": "Keep title", "body": "new body"}] * 3)
+        self.assertEqual(self.remote.release["tag_name"], TAG)
+        self.assertEqual(self.remote.release["name"], "Keep title")
         self.assertEqual(self.waits, [2, 4])
-        self.remote.inject("PATCH", path, (200, dict(self.remote.release, body="wrong")))
+        for field in ("body", "name", "tag_name", "id"):
+            self.remote.inject("PATCH", path, (200, dict(self.remote.release, **{field: "wrong"})))
+            before = len(self.calls("PATCH", path))
+            with self.subTest(field=field), self.assertRaises(self.module.SyncAPIError) as raised:
+                self.api.update_body(self.remote.release, "new body")
+            self.assertEqual(raised.exception.outcome, "unknown")
+            self.assertEqual(len(self.calls("PATCH", path)), before + 1)
+
+    def test_body_explicit_rejection_is_not_retried(self):
+        path = GT + "/releases/42"
+        self.remote.inject("PATCH", path, (400, {}))
         with self.assertRaises(self.module.SyncAPIError) as raised:
             self.api.update_body(self.remote.release, "new body")
-        self.assertEqual(raised.exception.outcome, "unknown")
+        self.assertEqual(raised.exception.outcome, "failed")
+        self.assertEqual(len(self.calls("PATCH", path)), 1)
+        self.assertEqual(self.waits, [])
 
-    def test_retry_after_and_upload_rebuild(self):
+    def test_upload_and_body_retry_budgets_are_independent(self):
         path = GT + "/releases/42/attach_files"
+        retry_after = iter((2, 4, 8, 16, 32))
 
         def consume_rejected_upload(call):
             call["kwargs"]["data"].to_string()
-            return response(429, {}, {"Retry-After": "1"})
+            return response(429, {}, {"Retry-After": str(next(retry_after))})
 
-        self.remote.inject("POST", path, consume_rejected_upload)
+        self.remote.inject("POST", path, *[consume_rejected_upload] * 5)
         target = self.api.upload_asset(42, self.source, self.file)
         self.assertEqual(self.remote.target_bytes[target["id"]], b"new\x00asset")
-        self.assertEqual(self.waits, [2])
+        self.assertEqual(len(self.calls("POST", path)), 6)
+        self.assertEqual(self.waits, [2, 4, 8, 16, 32])
+        body_path = GT + "/releases/42"
+        self.remote.inject("PATCH", body_path, *[requests.ReadTimeout(TOKEN)] * 5)
+        self.api.update_body(self.remote.release, "new body")
+        self.assertEqual(self.remote.release["body"], "new body")
+        self.assertEqual(len(self.calls("PATCH", body_path)), 6)
+        self.assertEqual(self.waits, [2, 4, 8, 16, 32] * 2)
+        self.remote.inject("POST", path, *[(429, {})] * 6)
+        with self.assertRaises(self.module.SyncAPIError) as raised:
+            self.api.upload_asset(42, self.source, self.file)
+        self.assertEqual(raised.exception.outcome, "failed")
+        self.assertEqual(len(self.calls("POST", path)), 12)
+        self.assertEqual(len(self.remote.targets), 1)
+        self.remote.inject("PATCH", body_path, *[requests.ReadTimeout(TOKEN)] * 6)
+        with self.assertRaises(self.module.SyncAPIError) as raised:
+            self.api.update_body(self.remote.release, "unconfirmed body")
+        self.assertEqual(raised.exception.outcome, "unknown")
+        self.assertEqual(len(self.calls("PATCH", body_path)), 12)
+        self.assertEqual(self.waits, [2, 4, 8, 16, 32] * 4)
         for retry_after in ("30", "not-a-date", format_datetime(datetime.now(timezone.utc) + timedelta(seconds=60))):
             self.remote.inject("POST", path, (429, {}, {"Retry-After": retry_after}))
             before = len(self.calls("POST", path))
@@ -171,7 +207,7 @@ class APITests(unittest.TestCase):
                 self.api.upload_asset(42, self.source, self.file)
             self.assertEqual(raised.exception.outcome, "failed")
             self.assertEqual(len(self.calls("POST", path)), before + 1)
-        self.assertEqual(self.api.rate_limited, 4)
+        self.assertEqual(self.api.rate_limited, 14)
 
     def test_download_integrity_and_timeouts(self):
         self.api.download(self.source, self.file)

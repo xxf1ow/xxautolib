@@ -95,7 +95,7 @@ def sync_release(config: dict) -> dict:
             except ValueError:
                 results[name] = dict(name=name, status="failed", reason="invalid_or_duplicate_target")
         cpu_count = len(os.sched_getaffinity(0))
-        workers = min(cpu_count, len(pending))
+        workers = min(cpu_count * 2, len(pending))
         _log(dict(event="concurrency", cpu_count=cpu_count, workers=workers), secrets)
         if pending:
             with tempfile.TemporaryDirectory(prefix="autolib-gitee-sync-") as temporary:

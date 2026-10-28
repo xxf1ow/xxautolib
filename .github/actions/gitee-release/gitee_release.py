@@ -137,9 +137,9 @@ class Gitee:
         url = f'https://gitee.com/api/v5/repos/{self.owner}/{repo}/releases/{release_id}/attach_files'
         return self.request('GET', url, params={'access_token': self.token, 'page': page, 'per_page': 100})
 
-    def update_release_body(self, repo, release_id, body):
+    def update_release_body(self, repo, release_id, tag_name, name, body):
         url = f'https://gitee.com/api/v5/repos/{self.owner}/{repo}/releases/{release_id}'
-        return self.request('PATCH', url, data={'access_token': self.token, 'body': body})
+        return self.request('PATCH', url, data={'access_token': self.token, 'tag_name': tag_name, 'name': name, 'body': body})
 
     def get_release_by_tag(self, repo, tag_name):
         url = f'https://gitee.com/api/v5/repos/{self.owner}/{repo}/releases/tags/{tag_name}'

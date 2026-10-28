@@ -61,7 +61,7 @@ build/tools/gitee-sync-venv/Scripts/python.exe -m pip install -r .github/actions
 build/tools/gitee-sync-venv/Scripts/python.exe -m unittest discover -s tests/ci/gitee-release -p 'test_*.py' -v
 ```
 
-测试仅替换 HTTP，验证实际 multipart 字节、索引、失败重跑及受控并发；不访问远端。Windows 使用 Git Bash 执行分支检查，没有 Bash 会明确跳过；CPU affinity 在 Windows 测试中替换，不证明 Linux 调度或网络性能。真实验收须另获远端写入授权：检查默认分支自动触发、变化同步和相同内容跳过，下载至少一个 Gitee 附件核对 SHA256，并记录 CPU、元数据/传输/总耗时、429 与失败数，按[同步设计](agent-notes/proposed/architecture/2026-10-27-gitee-release-sync-workflow.md#汇总验证范围与后续条件)评价效果。
+测试仅替换 HTTP，验证实际 multipart 字节、正文必填字段、索引、失败重跑、CPU 两倍并发及各操作独立的六次请求上限；不访问远端。Windows 使用 Git Bash 执行分支检查，没有 Bash 会明确跳过；CPU affinity 在 Windows 测试中替换，不证明 Linux 调度或网络性能。真实验收须另获远端写入授权：检查默认分支自动触发、变化同步和相同内容跳过，下载至少一个 Gitee 附件核对 SHA256，并记录 CPU、元数据/传输/总耗时、429 与失败数，按[同步设计](agent-notes/proposed/architecture/2026-10-27-gitee-release-sync-workflow.md#汇总验证范围与后续条件)评价效果。
 
 ## 安装产物集成验证
 

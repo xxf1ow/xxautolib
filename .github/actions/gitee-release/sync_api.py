@@ -20,6 +20,7 @@ from sync_rules import valid_id, valid_https, validate_target
 GH = "https://api.github.com/repos/xxf1ow/xxautolib"
 TRANSIENT = {429, 502, 503, 504}
 REJECTED = {400, 401, 403, 404, 405, 409, 422, 429}
+RETRY_DELAYS = (2, 4, 8, 16, 32)
 
 
 class SyncAPIError(Exception):
@@ -89,12 +90,12 @@ class SyncAPI:
             value = headers["Retry-After"]
             seconds = int(value) if value.isdigit() else (
                 parsedate_to_datetime(value) - datetime.now(timezone.utc)).total_seconds()
-            return seconds <= (2, 4)[attempt - 1]
+            return seconds <= RETRY_DELAYS[attempt - 1]
         except (ValueError, TypeError, OverflowError):
             return False
 
     def _run(self, operation, send, expected, read, *, write=False, repeatable=False):
-        for attempt in range(1, 4):
+        for attempt in range(1, len(RETRY_DELAYS) + 2):
             started, status, headers, retry = time.monotonic(), None, {}, False
             self._emit(operation, "start", started, attempt)
             try:
@@ -122,9 +123,9 @@ class SyncAPI:
             except OSError:
                 error = SyncAPIError(operation, status)
             self._emit(operation, "end", started, attempt, status=status, outcome=error.outcome)
-            if not retry or attempt == 3 or not self._retry_allowed(status, headers, attempt):
+            if not retry or attempt > len(RETRY_DELAYS) or not self._retry_allowed(status, headers, attempt):
                 raise error from None
-            time.sleep((2, 4)[attempt - 1])
+            time.sleep(RETRY_DELAYS[attempt - 1])
 
     def _json(self, operation, send, expected, validate, *, write=False, repeatable=False):
         return self._run(operation, send, expected, lambda response: validate(response.json()),
@@ -259,9 +260,10 @@ class SyncAPI:
     def update_body(self, release: dict, body: str) -> None:
         def updated(data):
             data = self._release(data, release["tag_name"])
-            if data["id"] != release["id"] or data["body"] != body:
+            if data["id"] != release["id"] or data["name"] != release["name"] or data["body"] != body:
                 raise ValueError("invalid_body_response")
             return data
 
-        self._json("update_body", lambda: self.client.update_release_body(self.repo, release["id"], body),
+        self._json("update_body", lambda: self.client.update_release_body(
+            self.repo, release["id"], release["tag_name"], release["name"], body),
                    200, updated, write=True, repeatable=True)
