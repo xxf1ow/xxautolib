@@ -32,7 +32,7 @@ func entryHTTPSProxy(t *testing.T, handler http.Handler) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cert := &x509.Certificate{SerialNumber: big.NewInt(1), DNSNames: []string{"api.github.com", "downloads.example"}, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour), IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
+	cert := &x509.Certificate{SerialNumber: big.NewInt(1), DNSNames: []string{"api.github.com", "gitee.com", "downloads.example"}, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour), IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
 	der, err := x509.CreateCertificate(rand.Reader, cert, cert, &key.PublicKey, key)
 	if err != nil {
 		t.Fatal(err)
@@ -98,6 +98,16 @@ func TestCMakeGitHubEnumerationReuse(t *testing.T) {
 }
 
 func testCMakeGitHubEntry(t *testing.T, kind string) {
+	testCMakeReleaseEntry(t, kind, "github")
+}
+
+func TestCMakeGiteeBootstrap(t *testing.T) {
+	for _, kind := range []string{"success", "encoded tag", "remote only", "hash mismatch", "invalid digest", "duplicate tool", "deleted tool", "untrusted certificate", "existing broken tool", "corrupt archive", "missing program", "bare remote only", "no index", "missing entry", "wrong ID"} {
+		t.Run(kind, func(t *testing.T) { testCMakeReleaseEntry(t, kind, "gitee") })
+	}
+}
+
+func testCMakeReleaseEntry(t *testing.T, kind, platform string) {
 	t.Helper()
 	f := newEntryFixture(t, false, "")
 	originalTool := readTestFile(t, filepath.Join(f.release, f.toolAsset))
@@ -144,6 +154,38 @@ func testCMakeGitHubEntry(t *testing.T, kind string) {
 		mu.Lock()
 		counts[r.URL.Path]++
 		mu.Unlock()
+		if platform == "gitee" {
+			switch r.URL.Path {
+			case "/api/v5/repos/owner/repo/releases/tags/v1":
+				files := map[string]any{assetName: map[string]any{"sha256": fmt.Sprintf("%x", sha256.Sum256([]byte(tool))), "gitee_asset_id": 1}, "demo-linux-aarch64.tar.zst": map[string]any{"sha256": fmt.Sprintf("%x", sha256.Sum256([]byte(archive))), "gitee_asset_id": 2}}
+				if kind == "invalid digest" {
+					files[assetName] = map[string]any{"sha256": "bad", "gitee_asset_id": 1}
+				}
+				if kind == "missing entry" {
+					delete(files, assetName)
+				}
+				if kind == "wrong ID" {
+					files[assetName] = map[string]any{"sha256": fmt.Sprintf("%x", sha256.Sum256([]byte(tool))), "gitee_asset_id": 99}
+				}
+				index, _ := json.Marshal(map[string]any{"files": files})
+				body := "<!-- autolib-gitee-sync:start -->\n```json\n" + string(index) + "\n```\n<!-- autolib-gitee-sync:end -->"
+				if kind == "no index" {
+					body = "no index"
+				}
+				json.NewEncoder(w).Encode(map[string]any{"id": 42, "tag_name": "v1", "body": body})
+				return
+			case "/api/v5/repos/owner/repo/releases/42/attach_files":
+				assets := []map[string]any{{"id": 1, "name": assetName, "size": len(tool), "browser_download_url": "https://downloads.example/tool"}, {"id": 2, "name": "demo-linux-aarch64.tar.zst", "size": len(archive), "browser_download_url": "https://downloads.example/package"}}
+				if kind == "duplicate tool" {
+					assets = append(assets, assets[0])
+				}
+				json.NewEncoder(w).Encode(assets)
+				return
+			case "/package":
+				fmt.Fprint(w, archive)
+				return
+			}
+		}
 		switch r.URL.Path {
 		case "/repos/owner/repo/releases/tags/v1":
 			fmt.Fprint(w, `{"id":42,"tag_name":"v1","draft":false,"assets_url":"https://api.github.com/repos/owner/repo/releases/42/assets"}`)
@@ -177,6 +219,10 @@ func testCMakeGitHubEntry(t *testing.T, kind string) {
 			}
 			http.Redirect(w, r, "https://downloads.example/tool", 302)
 		case "/tool":
+			if kind == "deleted tool" {
+				w.WriteHeader(404)
+				return
+			}
 			if kind == "hash mismatch" {
 				fmt.Fprint(w, tampered)
 				return
@@ -191,8 +237,14 @@ func testCMakeGitHubEntry(t *testing.T, kind string) {
 		}
 	}))
 	args := []string{"-DAUTOLIB_REMOTE_ROOT=" + testReleaseURL, "-DCMAKE_TLS_CAINFO=" + filepath.ToSlash(ca)}
+	if platform == "gitee" {
+		args[0] = "-DAUTOLIB_REMOTE_ROOT=https://gitee.com/owner/repo/releases/download/v1"
+	}
 	if kind == "encoded tag" {
 		args[0] = "-DAUTOLIB_REMOTE_ROOT=https://github.com/owner/repo/releases/tag/v%31"
+		if platform == "gitee" {
+			args[0] = "-DAUTOLIB_REMOTE_ROOT=https://gitee.com/owner/repo/releases/download/v%31"
+		}
 	}
 	if kind == "success" {
 		t.Setenv("PATH", t.TempDir())
@@ -244,7 +296,11 @@ func testCMakeGitHubEntry(t *testing.T, kind string) {
 	if kind == "remote only" {
 		wantDownloads = 2
 	}
-	if counts["/repos/owner/repo/releases/tags/v1"] != 1 || counts["/repos/owner/repo/releases/42/assets"] != wantPages || counts["/repos/owner/repo/releases/assets/2"] != wantDownloads {
+	releasePath, pagesPath, packagePath := "/repos/owner/repo/releases/tags/v1", "/repos/owner/repo/releases/42/assets", "/repos/owner/repo/releases/assets/2"
+	if platform == "gitee" {
+		releasePath, pagesPath, packagePath = "/api/v5/repos/owner/repo/releases/tags/v1", "/api/v5/repos/owner/repo/releases/42/attach_files", "/package"
+	}
+	if counts[releasePath] != 1 || counts[pagesPath] != wantPages || counts[packagePath] != wantDownloads {
 		t.Error("bootstrap did not share enumeration", counts)
 	}
 	before := fmt.Sprint(counts)

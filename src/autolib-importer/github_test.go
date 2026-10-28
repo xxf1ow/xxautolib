@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -18,9 +20,13 @@ import (
 const testReleaseURL = "https://github.com/owner/repo/releases/tag/v1"
 
 // Preserve production URL routing and TLS verification; only the socket destination changes.
-func githubTestClient(t *testing.T, handler http.Handler) *http.Client {
+func githubTestClient(t *testing.T, handler http.Handler, diagnostic ...*log.Logger) *http.Client {
 	t.Helper()
-	server := httptest.NewTLSServer(handler)
+	server := httptest.NewUnstartedServer(handler)
+	if len(diagnostic) != 0 {
+		server.Config.ErrorLog = diagnostic[0]
+	}
+	server.StartTLS()
 	t.Cleanup(server.Close)
 	transport := server.Client().Transport.(*http.Transport).Clone()
 	transport.TLSClientConfig.ServerName = "example.com"
@@ -208,6 +214,10 @@ func TestGitHubAssetSelection(t *testing.T) {
 func TestReleaseDownload(t *testing.T) {
 	for _, kind := range []string{"direct", "redirect", "bad certificate", "downgrade", "deleted", "replaced", "mismatch", "truncated"} {
 		t.Run(kind, func(t *testing.T) {
+			var diagnostic *log.Logger
+			if kind == "bad certificate" {
+				diagnostic = log.New(io.Discard, "", 0)
+			}
 			var calls, insecureCalls atomic.Int32
 			insecure := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { insecureCalls.Add(1); fmt.Fprint(w, "payload") }))
 			defer insecure.Close()
@@ -239,7 +249,7 @@ func TestReleaseDownload(t *testing.T) {
 					t.Error("unexpected request", r.URL)
 				}
 				fmt.Fprint(w, "payload")
-			}))
+			}), diagnostic)
 			if kind == "bad certificate" {
 				transport := client.Transport.(*http.Transport).Clone()
 				transport.TLSClientConfig = nil
@@ -250,6 +260,11 @@ func TestReleaseDownload(t *testing.T) {
 			a := releaseAsset{ID: 7, Name: "demo", URL: fmt.Sprintf("%sassets/7", source.apiRoot()), Accept: "application/octet-stream", SHA256: fmt.Sprintf("%x", sha256.Sum256([]byte("payload")))}
 			file := filepath.Join(t.TempDir(), "download")
 			err := downloadReleaseAsset(context.Background(), client, a, file)
+			if kind == "bad certificate" {
+				if err == nil || !strings.Contains(err.Error(), "certificate") {
+					t.Fatal("missing expected TLS rejection", err)
+				}
+			}
 			valid := kind == "direct" || kind == "redirect"
 			if (err == nil) != valid {
 				t.Fatalf("download: %v", err)

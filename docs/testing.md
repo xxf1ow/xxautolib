@@ -37,11 +37,13 @@ MODULES表示生产和链接集合，ROOT_PACKAGES只控制首次请求、默认
 
 importer覆盖包头、优先级、依赖图、通用包、安全解包及CRC失败清理。[入口测试](../src/autolib-importer/entry_test.go)覆盖接口、作用域、多个消费者、平台及失败保护；UNC仅词法覆盖。受控PATH阻断运行时和下载器，验证本地消费零网络。真实消费验证FLANN两种API及LZ4，无需补链。本地回归不代替三宿主发行验证。
 
-## GitHub 下载验证
+## Release 下载验证
 
-`TestCMakeImporterArchive` 及[远端入口测试](../src/autolib-importer/remote_entry_test.go)使用真实归档、受控 PATH 和本机 HTTPS 核对字节、优先级、失败保护及分页复用。定向命令：`cmake -P src/autolib-builder/go-sdk.cmake -- test ./src/autolib-importer -run '^Test(CMakeImporterArchive|CMakeGitHubBootstrap|CMakeGitHubEnumerationReuse)$' -count=1 -v`。CMake 接受原生重定向，importer 拒绝降级；Windows 需正常用户 TLS 凭据。真实下载前须先发布本平台工具归档，仅裸资产不满足新入口；命名、最低版本及平台证据见[压缩分发验证](agent-notes/proposed/architecture/2026-10-27-importer-distribution-and-branch-release.md#本地验证与待验收范围)。
+双来源定向命令：`cmake -P src/autolib-builder/go-sdk.cmake -- test ./src/autolib-importer -run 'TestCMake(Gitee|GitHub|ImporterArchive|ReleaseSourceProtocol)' -count=1 -v`。[入口测试](../src/autolib-importer/remote_entry_test.go)使用真实归档及本机TLS；[传递依赖消费测试](../src/autolib-importer/gitee_entry_test.go)实际配置、链接、运行，核对分页共享、本地零请求及失败后新配置。共享向量、拒绝条件与信任限制见[双来源验证](agent-notes/implemented/architecture/2026-10-27-ci-discovery-and-release-sources.md#验证)。CMake接受原生重定向，importer拒绝降级；Windows需要正常用户TLS凭据。
 
-真实验收运行 `cmake -DSOURCE_ROOT=<仓库绝对路径> -DVALIDATION_ROOT=<仓库绝对路径>/build/validation/github -DREMOTE_ROOT=https://github.com/xxf1ow/xxautolib/releases/tag/autolib-release -P tests/autolib/run-github.cmake`，生成器参数沿用本地 driver。[下载 driver](../tests/autolib/run-github.cmake)从空根下载工具及 flann、queue，构建、运行 smoke 并重新配置；不编译第三方源码或发布。
+本机仅验证Windows x86_64、CMake 4.2.3及受控TLS；Linux双架构、最低CMake 3.20和真实Gitee完整消费未执行。真实下载须另行授权发布匹配`--source-response`的宿主工具归档；裸资产、只读API探测或同步成功均不证明完整消费，不得替换现有本地工具冒充空根引导。命名及其余缺口见[压缩分发验证](agent-notes/proposed/architecture/2026-10-27-importer-distribution-and-branch-release.md#本地验证与待验收范围)。
+
+真实验收由[下载入口](../tests/autolib/run-github.cmake)负责：`cmake -DSOURCE_ROOT=<仓库绝对路径> -DVALIDATION_ROOT=<仓库绝对路径>/build/validation/remote -DREMOTE_ROOT=<GitHub-tag-URL或Gitee-download根> -P tests/autolib/run-github.cmake`，生成器参数沿用本地验证入口。从空根下载工具及库包，构建、运行并重新配置；不编译第三方源码或发布。该真实网络命令尚未在本轮执行。
 
 代表集此前使用裸 importer 的三平台供给和真实 GitHub 消费已通过验收；Windows 由下载 driver 验证，Linux 由用户确认通过。供给摘要、公共目标及验收依据集中记录在[消费设计](agent-notes/proposed/architecture/2026-10-25-target-import-and-release-consumption.md#已验收范围)。该历史验收不证明压缩工具新格式或 Gitee 可用。
 

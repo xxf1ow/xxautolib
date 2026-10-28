@@ -37,9 +37,9 @@ CI 每轮构建有效模块及依赖，不跨运行复用 Release 包。各平�
 
 builder 的 `package` 核对并复制已有消费描述及安装树到 staging，只在副本中修正本包及声明 sibling 的生产路径，生成固定名 tar.zst 并复制宿主 importer，不改原安装或补齐描述。归档显式启用 Zstd 内容校验；无全局消费清单或外置摘要文件。
 
-下游携带单文件 [autolib.cmake](../src/autolib.cmake)，首次加载固定来源，通过 target 接口准备并链接根包。`src/autolib-importer/` 按已解包目录、固定名归档、显式公开 GitHub Release 查找，仅不存在时继续；校验、安全解包并提交依赖在前的完整结果，CMake 再加载每包唯一的全局 `autolib::<name>`。宿主工具依次查找本地程序、本地 `.tar.xz`、远端同名归档；CMake 原生解包，GitHub 下载用 FetchContent 校验归档摘要。其他缺包由 importer 补齐；本地齐全不联网，消费者无需外部解压工具、语言运行时或 builder。
+下游携带单文件 [autolib.cmake](../src/autolib.cmake)，首次加载固定来源，通过 target 接口准备并链接根包。importer 按已解包目录、固定名归档、配置的公开 Release 查找，仅不存在时继续；安全准备依赖在前的完整结果，CMake 加载每包唯一的全局 `autolib::<name>`。宿主工具依次查找本地程序、本地 `.tar.xz`、远端同名归档，共用摘要校验及原生解包。其他缺包由 importer 补齐；本地齐全不联网，消费者无需外部解压工具、语言运行时或 builder。
 
-CMake 与 importer 共用本次 configure 的临时 API 响应，不跨配置缓存远端信息；默认 Gitee 未接通，GitHub 需显式覆盖。
+远端适配提供下载地址和预期摘要：GitHub 使用原生 SHA256，Gitee 使用正文索引及附件 ID。工具与库包在解包或执行前校验字节，共享绑定来源和平台的配置期快照，完整枚举仅取一次，不跨配置缓存。默认使用 Gitee，GitHub 可覆盖；信任限制见[双平台消费决定](agent-notes/implemented/architecture/2026-10-27-ci-discovery-and-release-sources.md)。
 
 queue、lz4、flann 提供精确布局 adapter；flann 传递 sibling lz4，不回退系统包。安装与解包统一使用 `<本地根>/<包名>/`，包头核对平台，通用包使用 any/any；不探测旧嵌套缓存。完整本地目录权威，更新由用户显式刷新；同根写入由调用方串行，不与消费交错。系统运行库不作为包下载。来源、工作根和目标在同次 configure 固定。协议见[包消费设计](agent-notes/proposed/architecture/2026-10-24-manifestless-package-consumption.md)，安装及布局见[直接消费设计](agent-notes/implemented/architecture/2026-10-25-direct-install-consumption.md)，用法见开发、测试指南。
 
