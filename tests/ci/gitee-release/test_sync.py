@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 import requests
 
-from sync_fixture import GH, GT, TAG, TOKEN, Remote
+from sync_fixture import GH, GT, TAG, TOKEN, Remote, response
 from test_sync_rules import body_for
 
 
@@ -237,6 +237,26 @@ class SyncTests(unittest.TestCase):
         self.assertEqual(len(self.writes("POST")), 1)
         self.assertEqual(self.run_sync()["uploaded"], [name])
         self.assertNotEqual(self.remote.asset(name)["id"], first_id)
+
+    def test_uploaded_response_without_id_is_not_replayed_or_recorded(self):
+        def upload_without_id(call):
+            uploaded = self.remote.dispatch(call).json()
+            del uploaded["id"]
+            return response(201, uploaded)
+
+        original_body = self.remote.release["body"]
+        self.remote.inject("POST", GT + "/releases/42/attach_files", upload_without_id)
+        result = self.run_sync()
+        source = self.remote.sources[0]
+        self.assertEqual(result["failed"], [source["name"]])
+        self.assertEqual(result["uploaded"], [])
+        self.assertEqual(result["body_status"], "unchanged")
+        self.assertEqual(len(self.writes("POST")), 1)
+        self.assertEqual(self.writes("PATCH"), [])
+        self.assertEqual(self.remote.release["body"], original_body)
+        self.assertEqual(len(self.remote.targets), 1)
+        target = self.remote.asset(source["name"])
+        self.assertEqual(self.remote.target_bytes[target["id"]], self.remote.source_bytes[source["id"]])
 
     def test_missing_after_failed_upload_and_partial_success_records(self):
         source = self.remote.sources[0]

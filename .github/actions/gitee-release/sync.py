@@ -43,24 +43,20 @@ def _log(record, secrets=()):
         print(encoded, flush=True)
 
 
-def sync_one(api: SyncAPI, release_id: int, source: dict, targets: list[dict],
-             entry: dict | None, temporary_root: Path) -> dict:
+def sync_one(api: SyncAPI, release_id: int, source: dict, target_id: int | None,
+             temporary_root: Path) -> dict:
     """处理一个附件；先校验来源字节，再删除唯一旧目标，绝不提交正文。"""
     started, name = time.monotonic(), source["name"]
     secrets = (api.github_token, api.gitee_token)
     _log(dict(event="asset_start", name=name), secrets)
     try:
-        if decide_asset(source, targets, entry) == "skip":
-            result = dict(name=name, status="skipped")
-        else:
-            file = temporary_root / name
-            api.download(source, file)
-            matches = [asset for asset in targets if asset["name"] == name]
-            if matches:
-                api.delete_asset(release_id, matches[0]["id"])
-            uploaded = api.upload_asset(release_id, source, file)
-            result = dict(name=name, status="uploaded", entry={
-                "sha256": source["digest"][7:].lower(), "gitee_asset_id": uploaded["id"]})
+        file = temporary_root / name
+        api.download(source, file)
+        if target_id is not None:
+            api.delete_asset(release_id, target_id)
+        uploaded = api.upload_asset(release_id, source, file)
+        result = dict(name=name, status="uploaded", entry={
+            "sha256": source["digest"][7:].lower(), "gitee_asset_id": uploaded["id"]})
     except SyncAPIError as error:
         result = dict(name=name, status="failed", reason=error.operation, outcome=error.outcome)
     except (ValueError, OSError):
@@ -94,7 +90,8 @@ def sync_release(config: dict) -> dict:
                 if decide_asset(source, targets, index.get(name)) == "skip":
                     results[name] = dict(name=name, status="skipped")
                 else:
-                    pending.append(source)
+                    target_id = next((asset["id"] for asset in targets if asset["name"] == name), None)
+                    pending.append((source, target_id))
             except ValueError:
                 results[name] = dict(name=name, status="failed", reason="invalid_or_duplicate_target")
         cpu_count = len(os.sched_getaffinity(0))
@@ -104,8 +101,8 @@ def sync_release(config: dict) -> dict:
             with tempfile.TemporaryDirectory(prefix="autolib-gitee-sync-") as temporary:
                 with ThreadPoolExecutor(max_workers=workers) as pool:
                     futures = [(source["name"], pool.submit(sync_one, api, release["id"], source,
-                                                           targets, index.get(source["name"]), Path(temporary)))
-                               for source in pending]
+                                                           target_id, Path(temporary)))
+                               for source, target_id in pending]
                     for name, future in futures:
                         results[name] = future.result()
         successes = {name: item["entry"] for name, item in results.items() if item["status"] == "uploaded"}
