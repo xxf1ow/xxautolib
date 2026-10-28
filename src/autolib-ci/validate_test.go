@@ -103,9 +103,10 @@ func TestCIConsumerSelection(t *testing.T) {
 		{[]string{"queue"}, true},
 		{[]string{"lz4"}, true},
 		{[]string{"lz4", "flann"}, true},
-		{[]string{"flann"}, false},
+		{[]string{"flann"}, true},
 		{[]string{"queue", "queue"}, false},
-		{[]string{"opencv"}, false},
+		{[]string{"opencv"}, true},
+		{[]string{"bad/name"}, false},
 	} {
 		err := validateCIConsumerModules(test.modules)
 		if (err == nil) != test.valid {
@@ -135,7 +136,7 @@ func TestCILinuxABIRecordsRealSymbolRequirements(t *testing.T) {
 	}
 	root := t.TempDir()
 	packages := filepath.Join(root, "packages")
-	libraryRoot := filepath.Join(packages, "flann", "lib")
+	libraryRoot := filepath.Join(packages, "fresh", "lib")
 	first := filepath.Join(root, "first")
 	for _, directory := range []string{libraryRoot, first} {
 		if err := os.MkdirAll(directory, 0755); err != nil {
@@ -147,7 +148,7 @@ func TestCILinuxABIRecordsRealSymbolRequirements(t *testing.T) {
 	writeCIFixture(t, root, "library.cpp", "#include <cstdio>\n#include <string>\nextern \"C\" int abi_fixture() { std::string text(128, 'x'); return std::puts(text.c_str()); }\n")
 	for _, args := range [][]string{
 		{filepath.Join(root, "consumer.cpp"), "-o", filepath.Join(first, "autolib_smoke")},
-		{"-fPIC", "-shared", filepath.Join(root, "library.cpp"), "-o", filepath.Join(libraryRoot, "libflann.so")},
+		{"-fPIC", "-shared", filepath.Join(root, "library.cpp"), "-o", filepath.Join(libraryRoot, "libfresh.so")},
 	} {
 		if output, err := exec.Command("g++", args...).CombinedOutput(); err != nil {
 			t.Fatalf("compile ABI fixture: %v\n%s", err, output)

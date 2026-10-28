@@ -1,0 +1,1402 @@
+{
+  "sources": [
+    {
+      "name": "github",
+      "input": "https://github.com/owner/repo/releases/tag/v1",
+      "valid": true,
+      "platform": "github",
+      "tag": "v1"
+    },
+    {
+      "name": "gitee",
+      "input": "https://gitee.com/owner/repo/releases/download/v1",
+      "valid": true,
+      "platform": "gitee",
+      "tag": "v1"
+    },
+    {
+      "name": "encoded-slash-github",
+      "input": "https://github.com/owner/repo/releases/tag/release%2Fstable",
+      "valid": true,
+      "platform": "github",
+      "tag": "release/stable"
+    },
+    {
+      "name": "encoded-slash-gitee",
+      "input": "https://gitee.com/owner/repo/releases/download/release%2Fstable",
+      "valid": true,
+      "platform": "gitee",
+      "tag": "release/stable"
+    },
+    {
+      "name": "invalid-0",
+      "input": "http://gitee.com/owner/repo/releases/download/v1",
+      "valid": false,
+      "platform": "",
+      "tag": ""
+    },
+    {
+      "name": "invalid-1",
+      "input": "https://user@gitee.com/owner/repo/releases/download/v1",
+      "valid": false,
+      "platform": "",
+      "tag": ""
+    },
+    {
+      "name": "invalid-2",
+      "input": "https://gitee.com:443/owner/repo/releases/download/v1",
+      "valid": false,
+      "platform": "",
+      "tag": ""
+    },
+    {
+      "name": "invalid-3",
+      "input": "https://gitee.com/owner/repo/releases/download/v1?x=1",
+      "valid": false,
+      "platform": "",
+      "tag": ""
+    },
+    {
+      "name": "invalid-4",
+      "input": "https://gitee.com/owner/repo/releases/download/v1#x",
+      "valid": false,
+      "platform": "",
+      "tag": ""
+    },
+    {
+      "name": "invalid-5",
+      "input": "https://gitee.com/owner/repo/releases/latest",
+      "valid": false,
+      "platform": "",
+      "tag": ""
+    },
+    {
+      "name": "invalid-6",
+      "input": "https://gitee.com/owner/repo/releases/download/",
+      "valid": false,
+      "platform": "",
+      "tag": ""
+    },
+    {
+      "name": "invalid-7",
+      "input": "https://gitee.com/owner/repo/releases/download/a/b",
+      "valid": false,
+      "platform": "",
+      "tag": ""
+    },
+    {
+      "name": "invalid-8",
+      "input": "https://gitee.com/owner/repo/releases/tag/v1",
+      "valid": false,
+      "platform": "",
+      "tag": ""
+    }
+  ],
+  "indexes": [
+    {
+      "name": "valid",
+      "body": "<!-- autolib-gitee-sync:start -->\n```json\n{\"files\":{\"demo-linux-aarch64.tar.zst\":{\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"gitee_asset_id\":7}}}\n```\n<!-- autolib-gitee-sync:end -->",
+      "valid": true,
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "id": 7
+    },
+    {
+      "name": "uppercase",
+      "body": "<!-- autolib-gitee-sync:start -->\n```json\n{\"files\":{\"demo-linux-aarch64.tar.zst\":{\"sha256\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\",\"gitee_asset_id\":7}}}\n```\n<!-- autolib-gitee-sync:end -->",
+      "valid": true,
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "id": 7
+    },
+    {
+      "name": "empty-files",
+      "body": "<!-- autolib-gitee-sync:start -->\n```json\n{\"files\":{}}\n```\n<!-- autolib-gitee-sync:end -->",
+      "valid": true
+    },
+    {
+      "name": "missing",
+      "body": "description",
+      "valid": false
+    },
+    {
+      "name": "duplicate-markers",
+      "body": "<!-- autolib-gitee-sync:start -->\n```json\n{\"files\":{\"demo-linux-aarch64.tar.zst\":{\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"gitee_asset_id\":7}}}\n```\n<!-- autolib-gitee-sync:end -->\n<!-- autolib-gitee-sync:start -->\n```json\n{\"files\":{\"demo-linux-aarch64.tar.zst\":{\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"gitee_asset_id\":7}}}\n```\n<!-- autolib-gitee-sync:end -->",
+      "valid": false
+    },
+    {
+      "name": "reversed-markers",
+      "body": "<!-- autolib-gitee-sync:end -->\n<!-- autolib-gitee-sync:start -->",
+      "valid": false
+    },
+    {
+      "name": "escaped-marker",
+      "body": "x<!-- autolib-gitee-sync:start -->\n```json\n{\"files\":{\"demo-linux-aarch64.tar.zst\":{\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"gitee_asset_id\":7}}}\n```\n<!-- autolib-gitee-sync:end -->",
+      "valid": false
+    },
+    {
+      "name": "extra-fence",
+      "body": "<!-- autolib-gitee-sync:start -->\n```json\n{\"files\":{\"demo-linux-aarch64.tar.zst\":{\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"gitee_asset_id\":7}}}\n```\n```\n<!-- autolib-gitee-sync:end -->",
+      "valid": false
+    },
+    {
+      "name": "extra-document-field",
+      "body": "<!-- autolib-gitee-sync:start -->\n```json\n{\"extra\":1,\"files\":{\"demo-linux-aarch64.tar.zst\":{\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"gitee_asset_id\":7}}}\n```\n<!-- autolib-gitee-sync:end -->",
+      "valid": false
+    },
+    {
+      "name": "duplicate-key",
+      "body": "<!-- autolib-gitee-sync:start -->\n```json\n{\"files\":{},\"files\":{\"demo-linux-aarch64.tar.zst\":{\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"gitee_asset_id\":7}}}\n```\n<!-- autolib-gitee-sync:end -->",
+      "valid": false
+    },
+    {
+      "name": "escaped-equivalent-key",
+      "body": "<!-- autolib-gitee-sync:start -->\n```json\n{\"f\\u0069les\":{},\"files\":{\"demo-linux-aarch64.tar.zst\":{\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"gitee_asset_id\":7}}}\n```\n<!-- autolib-gitee-sync:end -->",
+      "valid": false
+    },
+    {
+      "name": "null-document",
+      "body": "<!-- autolib-gitee-sync:start -->\n```json\nnull\n```\n<!-- autolib-gitee-sync:end -->",
+      "valid": false
+    },
+    {
+      "name": "null-files",
+      "body": "<!-- autolib-gitee-sync:start -->\n```json\n{\"files\":null}\n```\n<!-- autolib-gitee-sync:end -->",
+      "valid": false
+    },
+    {
+      "name": "empty-name",
+      "body": "<!-- autolib-gitee-sync:start -->\n```json\n{\"files\":{\"\":{\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"gitee_asset_id\":7}}}\n```\n<!-- autolib-gitee-sync:end -->",
+      "valid": false
+    },
+    {
+      "name": "extra-entry-field",
+      "body": "<!-- autolib-gitee-sync:start -->\n```json\n{\"files\":{\"demo-linux-aarch64.tar.zst\":{\"extra\":1,\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"gitee_asset_id\":7}}}\n```\n<!-- autolib-gitee-sync:end -->",
+      "valid": false
+    },
+    {
+      "name": "id-null",
+      "body": "<!-- autolib-gitee-sync:start -->\n```json\n{\"files\":{\"demo-linux-aarch64.tar.zst\":{\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"gitee_asset_id\":null}}}\n```\n<!-- autolib-gitee-sync:end -->",
+      "valid": false
+    },
+    {
+      "name": "id-true",
+      "body": "<!-- autolib-gitee-sync:start -->\n```json\n{\"files\":{\"demo-linux-aarch64.tar.zst\":{\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"gitee_asset_id\":true}}}\n```\n<!-- autolib-gitee-sync:end -->",
+      "valid": false
+    },
+    {
+      "name": "id-1.0",
+      "body": "<!-- autolib-gitee-sync:start -->\n```json\n{\"files\":{\"demo-linux-aarch64.tar.zst\":{\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"gitee_asset_id\":1.0}}}\n```\n<!-- autolib-gitee-sync:end -->",
+      "valid": false
+    },
+    {
+      "name": "id-1e0",
+      "body": "<!-- autolib-gitee-sync:start -->\n```json\n{\"files\":{\"demo-linux-aarch64.tar.zst\":{\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"gitee_asset_id\":1e0}}}\n```\n<!-- autolib-gitee-sync:end -->",
+      "valid": false
+    },
+    {
+      "name": "id-0",
+      "body": "<!-- autolib-gitee-sync:start -->\n```json\n{\"files\":{\"demo-linux-aarch64.tar.zst\":{\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"gitee_asset_id\":0}}}\n```\n<!-- autolib-gitee-sync:end -->",
+      "valid": false
+    },
+    {
+      "name": "id--1",
+      "body": "<!-- autolib-gitee-sync:start -->\n```json\n{\"files\":{\"demo-linux-aarch64.tar.zst\":{\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"gitee_asset_id\":-1}}}\n```\n<!-- autolib-gitee-sync:end -->",
+      "valid": false
+    },
+    {
+      "name": "id-\"7\"",
+      "body": "<!-- autolib-gitee-sync:start -->\n```json\n{\"files\":{\"demo-linux-aarch64.tar.zst\":{\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"gitee_asset_id\":\"7\"}}}\n```\n<!-- autolib-gitee-sync:end -->",
+      "valid": false
+    },
+    {
+      "name": "invalid-constant",
+      "body": "<!-- autolib-gitee-sync:start -->\n```json\n{\"files\":{\"demo-linux-aarch64.tar.zst\":{\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"gitee_asset_id\":NaN}}}\n```\n<!-- autolib-gitee-sync:end -->",
+      "valid": false
+    },
+    {
+      "name": "invalid-digest",
+      "body": "<!-- autolib-gitee-sync:start -->\n```json\n{\"files\":{\"demo-linux-aarch64.tar.zst\":{\"sha256\":\"bad\",\"gitee_asset_id\":7}}}\n```\n<!-- autolib-gitee-sync:end -->",
+      "valid": false
+    },
+    {
+      "name": "trailing-comma",
+      "body": "<!-- autolib-gitee-sync:start -->\n```json\n{\"files\":{\"demo-linux-aarch64.tar.zst\":{\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"gitee_asset_id\":7,}}}\n```\n<!-- autolib-gitee-sync:end -->",
+      "valid": false
+    },
+    {
+      "name": "second-root",
+      "body": "<!-- autolib-gitee-sync:start -->\n```json\n{\"files\":{\"demo-linux-aarch64.tar.zst\":{\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"gitee_asset_id\":7}}} {}\n```\n<!-- autolib-gitee-sync:end -->",
+      "valid": false
+    },
+    {
+      "name": "trailing-garbage",
+      "body": "<!-- autolib-gitee-sync:start -->\n```json\n{\"files\":{\"demo-linux-aarch64.tar.zst\":{\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"gitee_asset_id\":7}}} garbage\n```\n<!-- autolib-gitee-sync:end -->",
+      "valid": false
+    },
+    {
+      "name": "leading-zero",
+      "body": "<!-- autolib-gitee-sync:start -->\n```json\n{\"files\":{\"demo-linux-aarch64.tar.zst\":{\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"gitee_asset_id\":07}}}\n```\n<!-- autolib-gitee-sync:end -->",
+      "valid": false
+    },
+    {
+      "name": "comment",
+      "body": "<!-- autolib-gitee-sync:start -->\n```json\n{/*comment*/\"files\":{\"demo-linux-aarch64.tar.zst\":{\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"gitee_asset_id\":7}}}\n```\n<!-- autolib-gitee-sync:end -->",
+      "valid": false
+    }
+  ],
+  "selections": [
+    {
+      "name": "valid",
+      "source": "https://gitee.com/owner/repo/releases/download/v1",
+      "snapshot": {
+        "platform": "gitee",
+        "source": "https://gitee.com/owner/repo/releases/download/v1",
+        "release": {
+          "id": 42,
+          "tag_name": "v1",
+          "body": "<!-- autolib-gitee-sync:start -->\n```json\n{\"files\":{\"demo-linux-aarch64.tar.zst\":{\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"gitee_asset_id\":7}}}\n```\n<!-- autolib-gitee-sync:end -->"
+        },
+        "pages": [
+          [
+            {
+              "id": 7,
+              "name": "demo-linux-aarch64.tar.zst",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            }
+          ]
+        ]
+      },
+      "names": [
+        "demo-linux-aarch64.tar.zst",
+        "demo-any-any.tar.zst"
+      ],
+      "valid": true,
+      "asset_name": "demo-linux-aarch64.tar.zst",
+      "id": 7,
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "name": "missing-entry",
+      "source": "https://gitee.com/owner/repo/releases/download/v1",
+      "snapshot": {
+        "platform": "gitee",
+        "source": "https://gitee.com/owner/repo/releases/download/v1",
+        "release": {
+          "id": 42,
+          "tag_name": "v1",
+          "body": "<!-- autolib-gitee-sync:start -->\n```json\n{\"files\":{}}\n```\n<!-- autolib-gitee-sync:end -->"
+        },
+        "pages": [
+          [
+            {
+              "id": 7,
+              "name": "demo-linux-aarch64.tar.zst",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            }
+          ]
+        ]
+      },
+      "names": [
+        "demo-linux-aarch64.tar.zst",
+        "demo-any-any.tar.zst"
+      ],
+      "valid": false,
+      "asset_name": "demo-linux-aarch64.tar.zst",
+      "id": 7,
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "name": "wrong-id",
+      "source": "https://gitee.com/owner/repo/releases/download/v1",
+      "snapshot": {
+        "platform": "gitee",
+        "source": "https://gitee.com/owner/repo/releases/download/v1",
+        "release": {
+          "id": 42,
+          "tag_name": "v1",
+          "body": "<!-- autolib-gitee-sync:start -->\n```json\n{\"files\":{\"demo-linux-aarch64.tar.zst\":{\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"gitee_asset_id\":7}}}\n```\n<!-- autolib-gitee-sync:end -->"
+        },
+        "pages": [
+          [
+            {
+              "id": 8,
+              "name": "demo-linux-aarch64.tar.zst",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            }
+          ]
+        ]
+      },
+      "names": [
+        "demo-linux-aarch64.tar.zst",
+        "demo-any-any.tar.zst"
+      ],
+      "valid": false,
+      "asset_name": "demo-linux-aarch64.tar.zst",
+      "id": 7,
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "name": "duplicate",
+      "source": "https://gitee.com/owner/repo/releases/download/v1",
+      "snapshot": {
+        "platform": "gitee",
+        "source": "https://gitee.com/owner/repo/releases/download/v1",
+        "release": {
+          "id": 42,
+          "tag_name": "v1",
+          "body": "<!-- autolib-gitee-sync:start -->\n```json\n{\"files\":{\"demo-linux-aarch64.tar.zst\":{\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"gitee_asset_id\":7}}}\n```\n<!-- autolib-gitee-sync:end -->"
+        },
+        "pages": [
+          [
+            {
+              "id": 7,
+              "name": "demo-linux-aarch64.tar.zst",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "demo-linux-aarch64.tar.zst",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            }
+          ]
+        ]
+      },
+      "names": [
+        "demo-linux-aarch64.tar.zst",
+        "demo-any-any.tar.zst"
+      ],
+      "valid": false,
+      "asset_name": "demo-linux-aarch64.tar.zst",
+      "id": 7,
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "name": "mixed",
+      "source": "https://gitee.com/owner/repo/releases/download/v1",
+      "snapshot": {
+        "platform": "gitee",
+        "source": "https://gitee.com/owner/repo/releases/download/v1",
+        "release": {
+          "id": 42,
+          "tag_name": "v1",
+          "body": "<!-- autolib-gitee-sync:start -->\n```json\n{\"files\":{\"demo-linux-aarch64.tar.zst\":{\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"gitee_asset_id\":7}}}\n```\n<!-- autolib-gitee-sync:end -->"
+        },
+        "pages": [
+          [
+            {
+              "id": 7,
+              "name": "demo-linux-aarch64.tar.zst",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "demo-any-any.tar.zst",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            }
+          ]
+        ]
+      },
+      "names": [
+        "demo-linux-aarch64.tar.zst",
+        "demo-any-any.tar.zst"
+      ],
+      "valid": false,
+      "asset_name": "demo-linux-aarch64.tar.zst",
+      "id": 7,
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "name": "missing-size",
+      "source": "https://gitee.com/owner/repo/releases/download/v1",
+      "snapshot": {
+        "platform": "gitee",
+        "source": "https://gitee.com/owner/repo/releases/download/v1",
+        "release": {
+          "id": 42,
+          "tag_name": "v1",
+          "body": "<!-- autolib-gitee-sync:start -->\n```json\n{\"files\":{\"demo-linux-aarch64.tar.zst\":{\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"gitee_asset_id\":7}}}\n```\n<!-- autolib-gitee-sync:end -->"
+        },
+        "pages": [
+          [
+            {
+              "id": 7,
+              "name": "demo-linux-aarch64.tar.zst",
+              "browser_download_url": "https://gitee.com/download/demo"
+            }
+          ]
+        ]
+      },
+      "names": [
+        "demo-linux-aarch64.tar.zst",
+        "demo-any-any.tar.zst"
+      ],
+      "valid": false,
+      "asset_name": "demo-linux-aarch64.tar.zst",
+      "id": 7,
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "name": "negative-size",
+      "source": "https://gitee.com/owner/repo/releases/download/v1",
+      "snapshot": {
+        "platform": "gitee",
+        "source": "https://gitee.com/owner/repo/releases/download/v1",
+        "release": {
+          "id": 42,
+          "tag_name": "v1",
+          "body": "<!-- autolib-gitee-sync:start -->\n```json\n{\"files\":{\"demo-linux-aarch64.tar.zst\":{\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"gitee_asset_id\":7}}}\n```\n<!-- autolib-gitee-sync:end -->"
+        },
+        "pages": [
+          [
+            {
+              "id": 7,
+              "name": "demo-linux-aarch64.tar.zst",
+              "size": -1,
+              "browser_download_url": "https://gitee.com/download/demo"
+            }
+          ]
+        ]
+      },
+      "names": [
+        "demo-linux-aarch64.tar.zst",
+        "demo-any-any.tar.zst"
+      ],
+      "valid": false,
+      "asset_name": "demo-linux-aarch64.tar.zst",
+      "id": 7,
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "name": "bad-url",
+      "source": "https://gitee.com/owner/repo/releases/download/v1",
+      "snapshot": {
+        "platform": "gitee",
+        "source": "https://gitee.com/owner/repo/releases/download/v1",
+        "release": {
+          "id": 42,
+          "tag_name": "v1",
+          "body": "<!-- autolib-gitee-sync:start -->\n```json\n{\"files\":{\"demo-linux-aarch64.tar.zst\":{\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"gitee_asset_id\":7}}}\n```\n<!-- autolib-gitee-sync:end -->"
+        },
+        "pages": [
+          [
+            {
+              "id": 7,
+              "name": "demo-linux-aarch64.tar.zst",
+              "size": 10,
+              "browser_download_url": "http://gitee.com/demo"
+            }
+          ]
+        ]
+      },
+      "names": [
+        "demo-linux-aarch64.tar.zst",
+        "demo-any-any.tar.zst"
+      ],
+      "valid": false,
+      "asset_name": "demo-linux-aarch64.tar.zst",
+      "id": 7,
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "name": "missing-pages",
+      "source": "https://gitee.com/owner/repo/releases/download/v1",
+      "snapshot": {
+        "platform": "gitee",
+        "source": "https://gitee.com/owner/repo/releases/download/v1",
+        "release": {
+          "id": 42,
+          "tag_name": "v1",
+          "body": "<!-- autolib-gitee-sync:start -->\n```json\n{\"files\":{\"demo-linux-aarch64.tar.zst\":{\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"gitee_asset_id\":7}}}\n```\n<!-- autolib-gitee-sync:end -->"
+        },
+        "pages": []
+      },
+      "names": [
+        "demo-linux-aarch64.tar.zst",
+        "demo-any-any.tar.zst"
+      ],
+      "valid": false,
+      "asset_name": "demo-linux-aarch64.tar.zst",
+      "id": 7,
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "name": "incomplete-page",
+      "source": "https://gitee.com/owner/repo/releases/download/v1",
+      "snapshot": {
+        "platform": "gitee",
+        "source": "https://gitee.com/owner/repo/releases/download/v1",
+        "release": {
+          "id": 42,
+          "tag_name": "v1",
+          "body": "<!-- autolib-gitee-sync:start -->\n```json\n{\"files\":{\"demo-linux-aarch64.tar.zst\":{\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"gitee_asset_id\":7}}}\n```\n<!-- autolib-gitee-sync:end -->"
+        },
+        "pages": [
+          [
+            {
+              "id": 7,
+              "name": "demo-linux-aarch64.tar.zst",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-1",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-2",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-3",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-4",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-5",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-6",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-7",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-8",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-9",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-10",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-11",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-12",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-13",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-14",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-15",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-16",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-17",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-18",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-19",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-20",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-21",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-22",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-23",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-24",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-25",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-26",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-27",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-28",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-29",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-30",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-31",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-32",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-33",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-34",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-35",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-36",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-37",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-38",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-39",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-40",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-41",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-42",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-43",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-44",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-45",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-46",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-47",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-48",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-49",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-50",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-51",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-52",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-53",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-54",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-55",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-56",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-57",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-58",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-59",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-60",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-61",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-62",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-63",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-64",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-65",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-66",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-67",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-68",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-69",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-70",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-71",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-72",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-73",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-74",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-75",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-76",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-77",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-78",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-79",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-80",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-81",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-82",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-83",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-84",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-85",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-86",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-87",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-88",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-89",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-90",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-91",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-92",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-93",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-94",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-95",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-96",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-97",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-98",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            },
+            {
+              "id": 7,
+              "name": "unused-99",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            }
+          ]
+        ]
+      },
+      "names": [
+        "demo-linux-aarch64.tar.zst",
+        "demo-any-any.tar.zst"
+      ],
+      "valid": false,
+      "asset_name": "demo-linux-aarch64.tar.zst",
+      "id": 7,
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "name": "wrong-platform",
+      "source": "https://gitee.com/owner/repo/releases/download/v1",
+      "snapshot": {
+        "platform": "github",
+        "source": "https://gitee.com/owner/repo/releases/download/v1",
+        "release": {
+          "id": 42,
+          "tag_name": "v1",
+          "body": "<!-- autolib-gitee-sync:start -->\n```json\n{\"files\":{\"demo-linux-aarch64.tar.zst\":{\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"gitee_asset_id\":7}}}\n```\n<!-- autolib-gitee-sync:end -->"
+        },
+        "pages": [
+          [
+            {
+              "id": 7,
+              "name": "demo-linux-aarch64.tar.zst",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            }
+          ]
+        ]
+      },
+      "names": [
+        "demo-linux-aarch64.tar.zst",
+        "demo-any-any.tar.zst"
+      ],
+      "valid": false,
+      "asset_name": "demo-linux-aarch64.tar.zst",
+      "id": 7,
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "name": "wrong-source",
+      "source": "https://gitee.com/owner/repo/releases/download/v1",
+      "snapshot": {
+        "platform": "gitee",
+        "source": "https://gitee.com/other/repo/releases/download/v1",
+        "release": {
+          "id": 42,
+          "tag_name": "v1",
+          "body": "<!-- autolib-gitee-sync:start -->\n```json\n{\"files\":{\"demo-linux-aarch64.tar.zst\":{\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"gitee_asset_id\":7}}}\n```\n<!-- autolib-gitee-sync:end -->"
+        },
+        "pages": [
+          [
+            {
+              "id": 7,
+              "name": "demo-linux-aarch64.tar.zst",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            }
+          ]
+        ]
+      },
+      "names": [
+        "demo-linux-aarch64.tar.zst",
+        "demo-any-any.tar.zst"
+      ],
+      "valid": false,
+      "asset_name": "demo-linux-aarch64.tar.zst",
+      "id": 7,
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "name": "wrong-tag",
+      "source": "https://gitee.com/owner/repo/releases/download/v1",
+      "snapshot": {
+        "platform": "gitee",
+        "source": "https://gitee.com/owner/repo/releases/download/v1",
+        "release": {
+          "id": 42,
+          "tag_name": "other",
+          "body": "<!-- autolib-gitee-sync:start -->\n```json\n{\"files\":{\"demo-linux-aarch64.tar.zst\":{\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"gitee_asset_id\":7}}}\n```\n<!-- autolib-gitee-sync:end -->"
+        },
+        "pages": [
+          [
+            {
+              "id": 7,
+              "name": "demo-linux-aarch64.tar.zst",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            }
+          ]
+        ]
+      },
+      "names": [
+        "demo-linux-aarch64.tar.zst",
+        "demo-any-any.tar.zst"
+      ],
+      "valid": false,
+      "asset_name": "demo-linux-aarch64.tar.zst",
+      "id": 7,
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "name": "bad-release-id",
+      "source": "https://gitee.com/owner/repo/releases/download/v1",
+      "snapshot": {
+        "platform": "gitee",
+        "source": "https://gitee.com/owner/repo/releases/download/v1",
+        "release": {
+          "id": 0,
+          "tag_name": "v1",
+          "body": "<!-- autolib-gitee-sync:start -->\n```json\n{\"files\":{\"demo-linux-aarch64.tar.zst\":{\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"gitee_asset_id\":7}}}\n```\n<!-- autolib-gitee-sync:end -->"
+        },
+        "pages": [
+          [
+            {
+              "id": 7,
+              "name": "demo-linux-aarch64.tar.zst",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            }
+          ]
+        ]
+      },
+      "names": [
+        "demo-linux-aarch64.tar.zst",
+        "demo-any-any.tar.zst"
+      ],
+      "valid": false,
+      "asset_name": "demo-linux-aarch64.tar.zst",
+      "id": 7,
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "name": "string-asset-id",
+      "source": "https://gitee.com/owner/repo/releases/download/v1",
+      "snapshot": {
+        "platform": "gitee",
+        "source": "https://gitee.com/owner/repo/releases/download/v1",
+        "release": {
+          "id": 42,
+          "tag_name": "v1",
+          "body": "<!-- autolib-gitee-sync:start -->\n```json\n{\"files\":{\"demo-linux-aarch64.tar.zst\":{\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"gitee_asset_id\":7}}}\n```\n<!-- autolib-gitee-sync:end -->"
+        },
+        "pages": [
+          [
+            {
+              "id": "7",
+              "name": "demo-linux-aarch64.tar.zst",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            }
+          ]
+        ]
+      },
+      "names": [
+        "demo-linux-aarch64.tar.zst",
+        "demo-any-any.tar.zst"
+      ],
+      "valid": false,
+      "asset_name": "demo-linux-aarch64.tar.zst",
+      "id": 7,
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "name": "string-size",
+      "source": "https://gitee.com/owner/repo/releases/download/v1",
+      "snapshot": {
+        "platform": "gitee",
+        "source": "https://gitee.com/owner/repo/releases/download/v1",
+        "release": {
+          "id": 42,
+          "tag_name": "v1",
+          "body": "<!-- autolib-gitee-sync:start -->\n```json\n{\"files\":{\"demo-linux-aarch64.tar.zst\":{\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"gitee_asset_id\":7}}}\n```\n<!-- autolib-gitee-sync:end -->"
+        },
+        "pages": [
+          [
+            {
+              "id": 7,
+              "name": "demo-linux-aarch64.tar.zst",
+              "size": "10",
+              "browser_download_url": "https://gitee.com/download/demo"
+            }
+          ]
+        ]
+      },
+      "names": [
+        "demo-linux-aarch64.tar.zst",
+        "demo-any-any.tar.zst"
+      ],
+      "valid": false,
+      "asset_name": "demo-linux-aarch64.tar.zst",
+      "id": 7,
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "name": "string-release-id",
+      "source": "https://gitee.com/owner/repo/releases/download/v1",
+      "snapshot": {
+        "platform": "gitee",
+        "source": "https://gitee.com/owner/repo/releases/download/v1",
+        "release": {
+          "id": "42",
+          "tag_name": "v1",
+          "body": "<!-- autolib-gitee-sync:start -->\n```json\n{\"files\":{\"demo-linux-aarch64.tar.zst\":{\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"gitee_asset_id\":7}}}\n```\n<!-- autolib-gitee-sync:end -->"
+        },
+        "pages": [
+          [
+            {
+              "id": 7,
+              "name": "demo-linux-aarch64.tar.zst",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            }
+          ]
+        ]
+      },
+      "names": [
+        "demo-linux-aarch64.tar.zst",
+        "demo-any-any.tar.zst"
+      ],
+      "valid": false,
+      "asset_name": "demo-linux-aarch64.tar.zst",
+      "id": 7,
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "name": "overflow-asset-id",
+      "source": "https://gitee.com/owner/repo/releases/download/v1",
+      "snapshot": {
+        "platform": "gitee",
+        "source": "https://gitee.com/owner/repo/releases/download/v1",
+        "release": {
+          "id": 42,
+          "tag_name": "v1",
+          "body": "<!-- autolib-gitee-sync:start -->\n```json\n{\"files\":{\"demo-linux-aarch64.tar.zst\":{\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"gitee_asset_id\":7}}}\n```\n<!-- autolib-gitee-sync:end -->"
+        },
+        "pages": [
+          [
+            {
+              "id": 9223372036854776000,
+              "name": "demo-linux-aarch64.tar.zst",
+              "size": 10,
+              "browser_download_url": "https://gitee.com/download/demo"
+            }
+          ]
+        ]
+      },
+      "names": [
+        "demo-linux-aarch64.tar.zst",
+        "demo-any-any.tar.zst"
+      ],
+      "valid": false,
+      "asset_name": "demo-linux-aarch64.tar.zst",
+      "id": 7,
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ]
+}

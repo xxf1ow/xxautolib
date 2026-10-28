@@ -10,8 +10,8 @@ func prepareArguments(o prepareOptions) []string {
 	if o.LocalRoot != "" {
 		args = append(args, "--local-root="+o.LocalRoot)
 	}
-	if o.GitHubResponse != "" {
-		args = append(args, "--github-response="+o.GitHubResponse)
+	if o.SourceResponse != "" {
+		args = append(args, "--source-response="+o.SourceResponse)
 	}
 	if o.RemoteRoot != "" {
 		args = append(args, "--remote-root="+o.RemoteRoot)
@@ -29,7 +29,7 @@ func TestImporterCLI(t *testing.T) {
 	if code := run(args, &stdout, &stderr); code != 0 || stdout.Len() != 0 {
 		t.Fatalf("%d %s %s", code, stdout.String(), stderr.String())
 	}
-	for _, bad := range [][]string{nil, {"version"}, {"prepare"}, append(append([]string{}, args...), "extra"), append(append([]string{}, args...), "--unknown=x"), append(append([]string{}, args...), "--os=any"), append(append([]string{}, args...), "--package="), append(append([]string{}, args...), "--local-root="), append(append([]string{}, args...), "--remote-root="), append(append([]string{}, args...), "--github-response="), append(append([]string{}, args...), "--uri=old"), append(append([]string{}, args...), "--manifest=")} {
+	for _, bad := range [][]string{nil, {"version"}, {"prepare"}, append(append([]string{}, args...), "extra"), append(append([]string{}, args...), "--unknown=x"), append(append([]string{}, args...), "--os=any"), append(append([]string{}, args...), "--package="), append(append([]string{}, args...), "--local-root="), append(append([]string{}, args...), "--remote-root="), append(append([]string{}, args...), "--source-response="), append(append([]string{}, args...), "--uri=old"), append(append([]string{}, args...), "--manifest=")} {
 		stderr.Reset()
 		if code := run(bad, &stdout, &stderr); code == 0 || stderr.Len() == 0 {
 			t.Fatalf("accepted %q: %d %s", bad, code, stderr.String())

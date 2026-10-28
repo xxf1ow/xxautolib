@@ -10,7 +10,7 @@ import (
 
 type prepareOptions struct {
 	LocalRoot, RemoteRoot, WorkRoot, OS, Arch, ResultPath string
-	GitHubResponse                                        string
+	SourceResponse                                        string
 	Packages                                              []string
 }
 
@@ -55,26 +55,26 @@ func prepare(o prepareOptions) ([]preparedPackage, error) {
 			return nil, err
 		}
 	}
-	var remote *githubSourceClient
-	var snapshot githubSnapshot
+	var remote releaseSource
+	var snapshot releaseSnapshot
 	acquire := func(id packageIdentity, directory string) error {
 		if o.RemoteRoot == "" {
 			return fmt.Errorf("missing local package %s for %s/%s in %s; no remote source configured", id.Name, id.OS, id.Arch, local)
 		}
 		if remote == nil {
-			source, err := parseGitHubSource(o.RemoteRoot)
+			source, err := newReleaseSource(o.RemoteRoot)
 			if err != nil {
 				return err
 			}
-			remote = &githubSourceClient{Source: source}
-			snapshot, err = loadGitHubSnapshot(context.Background(), remote, o.GitHubResponse)
+			remote = source
+			snapshot, err = remote.snapshot(context.Background(), o.SourceResponse)
 			if err != nil {
 				return err
 			}
 		}
 		platformName := id.Name + "-" + id.OS + "-" + id.Arch + ".tar.zst"
 		universalName := id.Name + "-any-any.tar.zst"
-		asset, err := selectGitHubAsset(snapshot, []string{platformName, universalName})
+		asset, err := remote.selectAsset(snapshot, []string{platformName, universalName})
 		if err != nil {
 			return err
 		}
@@ -88,7 +88,7 @@ func prepare(o prepareOptions) ([]preparedPackage, error) {
 		}
 		defer os.RemoveAll(download)
 		archive := filepath.Join(download, asset.Name)
-		if err := downloadGitHubAsset(context.Background(), remote, asset, archive); err != nil {
+		if err := downloadReleaseAsset(context.Background(), nil, asset, archive); err != nil {
 			return err
 		}
 		return prepareMissingPackage(archive, directory, identity)

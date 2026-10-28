@@ -23,7 +23,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	for _, field := range []struct {
 		key   string
 		value *string
-	}{{"local-root", &o.LocalRoot}, {"remote-root", &o.RemoteRoot}, {"github-response", &o.GitHubResponse}, {"work-root", &o.WorkRoot}, {"os", &o.OS}, {"arch", &o.Arch}, {"result", &o.ResultPath}} {
+	}{{"local-root", &o.LocalRoot}, {"remote-root", &o.RemoteRoot}, {"source-response", &o.SourceResponse}, {"work-root", &o.WorkRoot}, {"os", &o.OS}, {"arch", &o.Arch}, {"result", &o.ResultPath}} {
 		flags.StringVar(field.value, field.key, "", field.key)
 	}
 	var packages packageFlags
@@ -36,7 +36,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	var emptyOption string
 	flags.Visit(func(f *flag.Flag) {
-		if (f.Name == "local-root" || f.Name == "remote-root" || f.Name == "github-response") && f.Value.String() == "" {
+		if (f.Name == "local-root" || f.Name == "remote-root" || f.Name == "source-response") && f.Value.String() == "" {
 			emptyOption = f.Name
 		}
 	})

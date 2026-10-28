@@ -59,7 +59,7 @@ func TestIndependentTargets(t *testing.T) {
 
 	// The fake describe executable succeeds without reading module.toml, proving
 	// CI planning consumes the builder boundary instead of parsing declarations.
-	sourceRoot := t.TempDir()
+	sourceRoot := fakePlanRoot(t)
 	t.Setenv("AUTOLIB_CI_HELPER_MODE", "valid")
 	plan, err := planCI(context.Background(), ciPlanOptions{SourceRoot: sourceRoot, BuilderFile: testExecutable(t), Platforms: stringPointer("linux-x86_64"), Modules: stringPointer("lz4")})
 	if err != nil || len(plan.Platforms) != 1 {

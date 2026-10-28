@@ -204,7 +204,7 @@ func TestCIRunLayers(t *testing.T) {
 	if strings.Index(commands, `"-DBUILD_LIST=lz4,flann"`) < 0 || strings.Index(commands, `"-DBUILD_LIST=lz4,flann"`) > strings.Index(commands, `"--package=ci-smoke"`) {
 		t.Fatalf("ordinary production configure did not prepare the host importer before verification: %s", commands)
 	}
-	if strings.Count(commands, `"--package=ci-smoke"`) != 1 || strings.Count(commands, `"-DVALIDATION_MODE=single"`) != 2 || strings.Contains(commands, `"-DVALIDATION_MODE=relocate"`) {
+	if strings.Count(commands, `"--package=ci-smoke"`) != 1 || strings.Count(commands, `"-DVALIDATION_MODE=single"`) != 2 || strings.Count(commands, `"-DVALIDATION_MODE=relocate"`) != 1 {
 		t.Fatalf("unexpected prepare/validation count: %s", commands)
 	}
 	if strings.Index(commands, `"-DBUILD_LIST=lz4"`) >= strings.Index(commands, `"-DBUILD_LIST=flann"`) {
@@ -221,6 +221,84 @@ func TestCIRunLayers(t *testing.T) {
 }
 
 func testRealCILocalDependency(t *testing.T) {
+	testRealCILocalDependencyModules(t, false)
+}
+
+func TestCIDynamicRelease(t *testing.T) {
+	t.Run("empty work never contacts remote", func(t *testing.T) {
+		root := discoveryRoot(t)
+		discoveryModule(t, root, "local", false, "")
+		plan, err := planCI(context.Background(), ciPlanOptions{SourceRoot: root, BuilderFile: discoveryBuilder(t), Modules: stringPointer("local")})
+		if err != nil {
+			t.Fatal(err)
+		}
+		planFile, runFile := filepath.Join(root, "plan.json"), filepath.Join(root, "run.json")
+		if err := writeCIJSON(planFile, plan); err != nil {
+			t.Fatal(err)
+		}
+		if err := writeCIJSON(runFile, ciRunIdentity{}); err != nil {
+			t.Fatal(err)
+		}
+		requests := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { requests++; http.Error(w, "unexpected", 500) }))
+		defer server.Close()
+		var out, diagnostic bytes.Buffer
+		code := runCIInit([]string{"--source-root", root, "--run-identity", runFile, "--plan", planFile}, &out, &diagnostic, &githubClient{BaseURL: server.URL, HTTP: server.Client()})
+		if code != 0 || requests != 0 {
+			t.Fatalf("empty work failed or contacted remote: %d requests=%d %s", code, requests, diagnostic.String())
+		}
+	})
+	t.Run("reject unqualified assets before remote writes", func(t *testing.T) {
+		requests := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { requests++; http.Error(w, "unexpected request", 500) }))
+		defer server.Close()
+		client := &githubClient{BaseURL: server.URL, UploadURL: server.URL, Token: "fixture", HTTP: server.Client()}
+		auth := &ciWriteAuthorization{client: client, sha: strings.Repeat("a", 40)}
+		plan := ciPlan{Publisher: "linux-x86_64", Platforms: []ciPlatformPlan{{ID: "windows-x86_64", Description: moduleDescription{Modules: []describedModule{{Name: "fresh"}, {Name: "universal", PlatformIndependent: true}}}}}}
+		for _, name := range []string{"lz4-windows-x86_64.tar.zst", "universal-any-any.tar.zst", "autolib-importer-linux-x86_64.tar.xz"} {
+			file := filepath.Join(t.TempDir(), name)
+			if err := os.WriteFile(file, []byte("verified bytes"), 0644); err != nil {
+				t.Fatal(err)
+			}
+			_, err := uploadCIAsset(context.Background(), client, auth, githubRelease{ID: 42, TagName: ciGitHubReleaseTag, AssetsURL: server.URL + "/assets"}, ciUploadOptions{File: file, Name: name, SHA256: testDigest([]byte("verified bytes")), Plan: plan, Platform: "windows-x86_64"})
+			if err == nil || requests != 0 {
+				t.Fatalf("unqualified asset contacted remote: %s %v requests=%d", name, err, requests)
+			}
+		}
+	})
+	t.Run("real consumer", func(t *testing.T) { testRealCILocalDependencyModules(t, true) })
+	t.Run("all dependency layers", func(t *testing.T) {
+		f := newLayerFixture(t, []string{"lz4", "flann", "apex"})
+		f.plan.Platforms[0].Description.Modules[2].Depends = []string{"flann"}
+		f.plan.Platforms[0].Layers = [][]string{{"lz4"}, {"flann"}, {"apex"}}
+		if err := writeCIJSON(f.options.PlanFile, f.plan); err != nil {
+			t.Fatal(err)
+		}
+		for _, layer := range []string{"prepare", "layer0", "layer1", "layer2", "verify"} {
+			if err := f.layer(t, layer); err != nil {
+				t.Fatalf("%s: %v", layer, err)
+			}
+		}
+		if err := finalizeCI(f.plan, f.run, []ciPlatformResult{f.result(t)}); err != nil {
+			t.Fatal(err)
+		}
+		commands := mustReadText(t, os.Getenv("AUTOLIB_CI_COMMAND_LOG"))
+		last := -1
+		for _, name := range []string{"lz4", "flann", "apex"} {
+			call := `"--target","` + name + `"`
+			at := strings.Index(commands, call)
+			if strings.Count(commands, call) != 1 || at <= last {
+				t.Fatalf("dependency execution is not once and ordered: %s", commands)
+			}
+			last = at
+		}
+		if strings.Count(commands, `"-DVALIDATION_MODE=relocate"`) != 1 {
+			t.Fatalf("final verification did not consume the dynamic closure: %s", commands)
+		}
+	})
+}
+
+func testRealCILocalDependencyModules(t *testing.T, dynamic bool) {
 	if runtime.GOOS != "windows" {
 		t.Skip("local integration fixture uses Windows import libraries")
 	}
@@ -343,11 +421,19 @@ add_library(autolib::flann ALIAS flann::flann)
 #include <iostream>
 #include <filesystem>
 extern "C" int lz4_value(void);
+#ifdef AUTOLIB_TEST_APEX
+extern "C" int apex_value(void);
+#endif
 #ifdef AUTOLIB_TEST_FLANN
 extern "C" __declspec(dllimport) int flann_value(void);
 #endif
 int main() {
+#ifdef AUTOLIB_TEST_LZ4
  if(lz4_value()!=7) return 1;
+#endif
+#ifdef AUTOLIB_TEST_APEX
+ if(apex_value()!=42) return 4;
+#endif
 #ifdef AUTOLIB_TEST_FLANN
  if(flann_value()!=42) return 2;
  HMODULE module=GetModuleHandleW(L"flann.dll"); wchar_t path[32768]={};
@@ -357,6 +443,28 @@ int main() {
  return 0;
 }
 `)
+	if dynamic {
+		queueDeclaration := mustReadText(t, filepath.Join(repository, "src/dependencies/queue/module.toml"))
+		writeCIFixture(t, root, "src/dependencies/queue/module.toml", queueDeclaration)
+		writeCIFixture(t, root, "src/dependencies/queue/autolib-import.cmake", "add_library(autolib::queue INTERFACE IMPORTED GLOBAL)\nset_target_properties(autolib::queue PROPERTIES INTERFACE_INCLUDE_DIRECTORIES \"${CMAKE_CURRENT_LIST_DIR}/include\")\n")
+		for resource, names := range map[string][]string{"readerwriterqueue": {"atomicops.h", "readerwriterqueue.h", "readerwritercircularbuffer.h"}, "concurrentqueue": {"concurrentqueue.h", "lightweightsemaphore.h", "blockingconcurrentqueue.h"}} {
+			for _, name := range names {
+				writeCIFixture(t, root, "git/_resources/queue/"+resource+"/"+name, "#pragma once\n")
+			}
+			if out, err := exec.Command("git", "init", filepath.Join(root, "git/_resources/queue/", resource)).CombinedOutput(); err != nil {
+				t.Fatalf("fixture source: %v %s", err, out)
+			}
+		}
+		writeCIFixture(t, root, "src/dependencies/apex/module.toml", "name='apex'\ntype='cmake'\ndepends=['flann','queue']\n[source]\nGIT_REPOSITORY='local-fixture'\nGIT_TAG='fixed'\n")
+		writeCIFixture(t, root, "git/apex/CMakeLists.txt", "cmake_minimum_required(VERSION 3.20)\nproject(apex LANGUAGES C)\nadd_library(apex STATIC apex.c)\ninstall(TARGETS apex ARCHIVE DESTINATION lib)\n")
+		writeCIFixture(t, root, "git/apex/apex.c", "int apex_value(void) { return 42; }\n")
+		writeCIFixture(t, root, "src/dependencies/apex/autolib-import.cmake", "add_library(autolib::apex STATIC IMPORTED GLOBAL)\nset_target_properties(autolib::apex PROPERTIES IMPORTED_CONFIGURATIONS RELEASE IMPORTED_LOCATION_RELEASE \"${CMAKE_CURRENT_LIST_DIR}/lib/apex.lib\" INTERFACE_LINK_LIBRARIES \"autolib::flann;autolib::queue\")\n")
+		for _, name := range []string{"apex"} {
+			if out, err := exec.Command("git", "init", filepath.Join(root, "git", name)).CombinedOutput(); err != nil {
+				t.Fatalf("fixture source: %v %s", err, out)
+			}
+		}
+	}
 	assets := []githubAsset{}
 	var nextAssetID int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -375,6 +483,7 @@ int main() {
 			nextAssetID++
 			id := nextAssetID
 			asset := githubAsset{ID: id, Name: r.URL.Query().Get("name"), Label: r.URL.Query().Get("label"), State: "uploaded", Digest: "sha256:" + testDigest(data)}
+			f.uploads[asset.Name] = data
 			assets = append(assets, asset)
 			w.WriteHeader(201)
 			json.NewEncoder(w).Encode(asset)
@@ -394,10 +503,17 @@ int main() {
 	}))
 	defer server.Close()
 	f.client = &githubClient{BaseURL: server.URL, UploadURL: server.URL, Token: "fixture", HTTP: server.Client()}
-	for _, attempt := range []string{"1", "2"} {
+	attempts := []string{"1", "2"}
+	if dynamic {
+		attempts = []string{"2"}
+	}
+	for _, attempt := range attempts {
 		modules := "lz4"
 		if attempt == "2" {
 			modules = "flann"
+			if dynamic {
+				modules = "apex"
+			}
 		}
 		platform := "windows-x86_64"
 		plan, err := planCI(context.Background(), ciPlanOptions{SourceRoot: root, BuilderFile: f.options.BuilderFile, Modules: &modules, Platforms: &platform})
@@ -414,9 +530,9 @@ int main() {
 		if err := writeCIJSON(f.options.RunIdentityFile, f.run); err != nil {
 			t.Fatal(err)
 		}
-		layers := []string{"prepare", "layer0"}
-		if attempt == "2" {
-			layers = append(layers, "layer1")
+		layers := []string{"prepare"}
+		for i := range plan.Platforms[0].Layers {
+			layers = append(layers, fmt.Sprintf("layer%d", i))
 		}
 		layers = append(layers, "verify")
 		for _, layer := range layers {
@@ -430,6 +546,17 @@ int main() {
 		}
 		if attempt == "2" && (!result.Packages[0].Built || !result.Packages[1].Built) {
 			t.Fatalf("selected dependency closure was not rebuilt: %+v", result)
+		}
+		if dynamic && attempt == "2" {
+			if len(result.Packages) != 4 || len(plan.Platforms[0].Layers) != 3 {
+				t.Fatalf("dynamic closure not executed: %+v", result)
+			}
+			for _, name := range []string{"queue-any-any.tar.zst", "apex-windows-x86_64.tar.zst"} {
+				local := mustReadText(t, filepath.Join(f.options.WorkRoot, "release", name))
+				if !bytes.Equal([]byte(local), f.uploads[name]) {
+					t.Fatalf("asset bytes differ: %s", name)
+				}
+			}
 		}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -585,6 +712,10 @@ func runLayerCommandFixture() {
 		os.MkdirAll(filepath.Join(root, "first"), 0755)
 		os.WriteFile(filepath.Join(root, "first", "link-inputs-Release.txt"), nil, 0644)
 		os.WriteFile(filepath.Join(root, "first", "prepared-root.txt"), []byte(filepath.Join(root, "packages")), 0644)
+		if value("-DVALIDATION_MODE") == "relocate" {
+			os.MkdirAll(filepath.Join(root, "second"), 0755)
+			os.WriteFile(filepath.Join(root, "second", "link-inputs-Release.txt"), nil, 0644)
+		}
 		fmt.Println("-- Local binary validation: " + root)
 	}
 	os.Exit(0)

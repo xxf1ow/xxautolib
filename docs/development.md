@@ -56,21 +56,21 @@ cmake -P src/autolib-builder/go-sdk.cmake -- build -mod=readonly -trimpath -o bu
 
 LOCAL_ROOT 平铺固定名宿主程序、可选同名 `.tar.xz` 和 `<name>-<os>-<arch>.tar.zst` 库归档，通用库使用 any-any。工具优先本地程序，再本地归档，最后远端同名归档；只有缺失才继续，坏候选直接失败，不回退远端裸资产。CMake 自带解包，有本地根时生成原裸程序供后续配置复用，不改归档输入。工具命名见[压缩分发约定](agent-notes/proposed/architecture/2026-10-27-importer-distribution-and-branch-release.md#importer-瘦身与生产)。库包安装及解包目录均为 `LOCAL_ROOT/<name>/`，优先于库归档；同名包只保留一个平台/版本，错平台包头直接失败。相对根按顶层源码目录解析；本地根、工作根及实际包路径不得含分号。完整目录可只读复用；缺包或解包工具需要本地根可写，同根写入由调用方串行且不与消费交错，独立构建使用各自工作根。不探测或搬迁旧 `packages/<平台>/` 数据。
 
-CLI 为 `importer prepare --local-root=<目录> --work-root=<目录> --os=<目标OS> --arch=<目标架构> --result=<文件> --package=<根包>`，package 可重复。可选 `--remote-root=<公开GitHub Release tag URL>` 在本地缺包时补齐；省略本地来源跳过本地查找，省略远端来源禁网，不能同时省略或显式传空来源。CMake 内部共享本次 configure 的原始 API 响应，用户不需传响应文件。URI、--uri、--manifest 不兼容；CI 验证仍使用本地入口。
+CLI 为 `importer prepare --local-root=<目录> --work-root=<目录> --os=<目标OS> --arch=<目标架构> --result=<文件> --package=<根包>`，package 可重复。可选 `--remote-root=<公开GitHub tag URL或Gitee download根>` 在本地缺包时补齐；省略本地来源跳过本地查找，省略远端来源禁网，不能同时省略或显式传空来源。CMake共享本次配置的原始API响应，用户无需传响应文件。URI、--uri、--manifest 不兼容；CI 验证仍使用本地入口。
 
-GitHub 消费在 include 前将 `AUTOLIB_REMOTE_ROOT` 设为 `https://github.com/xxf1ow/xxautolib/releases/tag/autolib-release`；默认 Gitee 未接通，不自动回退。工具缺失时 FetchContent 校验证书及摘要后执行；已有坏工具直接失败。入口接受原生重定向，importer 拒绝降级。供给要求与验收见[测试指南](testing.md#github-下载验证)。
+默认根为 `https://gitee.com/xxf1ow/autolib-release/releases/download/autolib-release`；改用 GitHub 时，在 include 前将 `AUTOLIB_REMOTE_ROOT` 设为 `https://github.com/xxf1ow/xxautolib/releases/tag/autolib-release`，不自动换源。工具由 FetchContent 校验证书及预期摘要后解包执行，库包由 importer 校验后准备。GitHub 使用原生摘要；Gitee 要求同步正文索引的完整附件名、SHA256 和附件 ID 一致，缺失或不符失败。正文摘要不认证发布者，本地完整目录仍复用。入口接受原生重定向，importer 拒绝降级；失败终止本次配置，显式重配重新枚举。供给前提及真实网络缺口见[测试指南](testing.md#release-下载验证)。
 
 包头及依赖格式见[包消费设计](agent-notes/proposed/architecture/2026-10-24-manifestless-package-consumption.md#包内身份与依赖)。已有目录只读核对包头及导入文件，adapter 检查其所需文件，不逐文件散列；归档内容校验用于意外损坏检测，不认证来源，本地工具须由用户信任。坏目录、坏归档或缺输入直接失败，不回退低优先级来源或加载上次结果。刷新前保护本地改动，移走对应 `<本地根>/<包名>/`，不删除共享依赖；本地归档仍优先，更新归档不会覆盖目录。FLANN 的包依赖仅 lz4，OpenMP、C++ ABI 和系统运行库由消费环境满足。
 
 ## CI 开发与运行
 
-[手动流水线](../.github/workflows/build-platform.yml)接受同仓库任意分支、拒绝tag，检出事件提交；平台单选默认all，模块列表留空选择首期全部三库。每轮构建所选模块及依赖，逐槽验证后同名替换，不备份或回滚。汇总失败保留成功槽，重跑仍重新构建；不提供 force 输入，不设置资产 label。本地消费目录由用户按上节刷新。验证范围见[测试指南](testing.md#ci-验证)，后续远端操作仍须授权。命令见[入口](../src/autolib-ci/main.go)，固定目标和策略见 [CI 设计](agent-notes/implemented/architecture/2026-10-20-ci-system.md)。
+[手动流水线](../.github/workflows/build-platform.yml)接受同仓库任意分支、拒绝tag，检出事件提交；平台单选默认all，模块列表留空自动发现声明及 adapter，显式列表可选子集。自身或传递依赖缺 adapter 的根包静默过滤；全被过滤时成功且零发布。各平台顺序执行有效闭包的全部依赖层，逐槽验证后同名替换，不备份或回滚。汇总失败保留成功槽，重跑仍重新构建；不提供 force 输入，不设置资产 label。本地消费目录由用户按上节刷新。验证范围见[测试指南](testing.md#ci-验证)，后续远端操作仍须授权。命令见[入口](../src/autolib-ci/main.go)，环境和发布策略见 [CI 设计](agent-notes/implemented/architecture/2026-10-20-ci-system.md)。
 
 ### 独立 Gitee 同步
 
 [同步 workflow](../.github/workflows/sync-gitee.yml)需要 secret `GITEE_TOKEN`；repository variables `GITEE_REPOSITORY`、`GITEE_RELEASE_TAG` 默认分别为 `xxf1ow/autolib-release`、`autolib-release`，两端使用同 tag。自动入口检查全部现存来源附件，包括历史遗漏；手动 `packages` 留空选全部，或填 `lz4,queue` 精确选择各包全部平台，importer 须显式选择 `autolib-importer`。任一包未匹配会在创建 Release 等写入前失败。
 
-手动执行前必须信任所选分支提交：同步代码可读取和外传令牌，脱敏不是沙箱。人工修改 Gitee 正文或附件须避开同步，区块外描述也可能被覆盖。部分失败后重跑独立同步，无需重建；成功索引可跳过，未确认项可能重传，同名重复须人工处理。该入口尚需[真实验收](testing.md#独立-gitee-同步验证)，不接通 Gitee 消费；适配入口见 [Action 说明](../.github/actions/gitee-release/UPSTREAM.md#同步适配)。
+手动执行前必须信任所选分支提交：同步代码可读取和外传令牌，脱敏不是沙箱。人工修改 Gitee 正文或附件须避开同步，区块外描述也可能被覆盖。部分失败后重跑独立同步，无需重建；成功索引可跳过，未确认项可能重传，同名重复须人工处理。该入口尚需[真实验收](testing.md#独立-gitee-同步验证)，与只读消费独立；适配入口见 [Action 说明](../.github/actions/gitee-release/UPSTREAM.md#同步适配)。
 
 ## 日常修改
 

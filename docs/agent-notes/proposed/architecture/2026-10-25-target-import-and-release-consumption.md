@@ -14,7 +14,7 @@ Status: proposed
 
 本设计拥有 CMake 公共接口、来源默认值、公共目标封装及后续交付阶段，部分替代[无全局清单的双来源包消费](2026-10-24-manifestless-package-consumption.md)中的 CMake 调用形式、无远端默认值及后续阶段安排。包内四行头、固定资产名、本地布局、依赖遍历、来源优先级、失败保护、损坏检测及 GitHub 资产发现仍由该记录拥有，不复制另一套协议。[固定槽交付设计](2026-10-20-name-only-artifact-delivery.md)和[Go 工具层设计](2026-10-21-go-tooling-and-offline-import.md)的可搬迁打包、adapter 与纯 Go 运行约束继续有效，公共目标命名以本文为准。
 
-CI 仍是独立系统，其构建编排、发布权限、并发和运行汇总由[CI 系统设计](../../implemented/architecture/2026-10-20-ci-system.md)拥有。Gitee 阶段实施前修订该独立设计，不把发布实现写入 builder 或 importer。本地接口与 GitHub 下载阶段已通过用户验收，Gitee 阶段尚未实施，因此本整体设计保留 proposed。架构及开发、测试指南记录当前行为与验收范围。
+CI 仍是独立系统，其构建编排、发布权限、并发和运行汇总由[CI 系统设计](../../implemented/architecture/2026-10-20-ci-system.md)拥有，不把发布实现写入 builder 或 importer。本地接口与 GitHub 下载阶段已通过用户验收，Gitee 镜像由独立同步 workflow 提供；默认来源消费及正文摘要校验由[双平台消费决定](../../implemented/architecture/2026-10-27-ci-discovery-and-release-sources.md)拥有，已完成本地实现。独立同步与真实 Gitee 消费仍有未验收部分，因此本整体设计保留 proposed。架构及开发、测试指南记录当前行为与验收范围。
 
 ### 已验收范围
 
@@ -22,7 +22,7 @@ CI 仍是独立系统，其构建编排、发布权限、并发和运行汇总�
 
 Windows x86_64 的真实 GitHub 验证从空消费根引导工具、下载依赖、编译并运行，CTest 1/1 及再次 configure 通过。用户确认远程方式可用，并确认 Linux 验收通过；结合前述 Windows 证据，GitHub 阶段按三平台验收完成。Linux 结论采用用户验收，不附未提供的命令、日志或运行指标。
 
-这里验收的是本地发行包与 GitHub Release 消费，不包含由下述独立设计拥有的原始安装树直接消费。Gitee 镜像与默认来源消费继续后置，不由 GitHub 验收推定可用。
+这里验收的是本地发行包与 GitHub Release 消费，不包含由下述独立设计拥有的原始安装树直接消费。Gitee 默认来源消费继续后置，不由 GitHub 或镜像供给验收推定可用。
 
 [本地安装产物直接消费](../../implemented/architecture/2026-10-25-direct-install-consumption.md)独立拥有安装后消费准备、宿主工具输出及扁平目录，替代本文继承的嵌套本地布局。本文继续拥有 CMake 公共接口、来源默认值、唯一公共目标和 Gitee 阶段；本地直接消费不属于 GitHub 阶段的未完成项。
 
@@ -115,7 +115,11 @@ README 按完整交付形态编写，不随阶段反复改写，并包含“使�
 
 同步复用网络连接，并对暂时性网络或服务失败实施有界重试。某个附件最终失败后继续处理其他附件，保留已成功附件；末尾只使独立同步 workflow 失败，不改变已结束的构建与 GitHub 发布结果。失败槽可能缺失，显式重跑结合远端实际附件及正文索引判断跳过、新增或同名替换，不自动回滚，不增加独立 manifest 资产或持久恢复队列。有界重试不承诺在持续网络故障下必然上传成功；具体可重试错误、次数、退避和超时由独立设计拥有。
 
-[importer 压缩分发与功能分支手动发布](2026-10-27-importer-distribution-and-branch-release.md)先独立验收并按授权集成 master；同步 workflow 随后从更新的 master 新建任务分支，以该分支的正式设计指导实现。本节保存交接约束，不将同步视为已实现，也不授权 push、远端合并、触发 CI 或写入 Release。
+[importer 压缩分发与功能分支手动发布](2026-10-27-importer-distribution-and-branch-release.md)与独立同步分别交付；同步实现及验收规则由[独立同步设计](2026-10-27-gitee-release-sync-workflow.md)拥有。本节保存交接约束，不授权 push、远端合并、触发 CI 或写入 Release。
+
+### Gitee 消费与正文摘要校验
+
+Gitee 默认来源消费及 Release 正文 SHA256 校验由[CI 自动发现与双平台消费决定](../../implemented/architecture/2026-10-27-ci-discovery-and-release-sources.md)拥有。小型平台适配隔离来源差异，工具引导、库包下载及正文摘要校验成套提供，保持单文件 CMake 轻量引导、GitHub 现有校验、本地齐全不联网及独立同步边界。Windows 本机受控 TLS 消费通过；真实 Gitee、Linux 双架构及最低 CMake 的验收缺口由该记录与测试指南明确，不从镜像供给推定消费可用。
 
 ## 备选方案
 

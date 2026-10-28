@@ -37,17 +37,21 @@ MODULES表示生产和链接集合，ROOT_PACKAGES只控制首次请求、默认
 
 importer覆盖包头、优先级、依赖图、通用包、安全解包及CRC失败清理。[入口测试](../src/autolib-importer/entry_test.go)覆盖接口、作用域、多个消费者、平台及失败保护；UNC仅词法覆盖。受控PATH阻断运行时和下载器，验证本地消费零网络。真实消费验证FLANN两种API及LZ4，无需补链。本地回归不代替三宿主发行验证。
 
-## GitHub 下载验证
+## Release 下载验证
 
-`TestCMakeImporterArchive` 及[远端入口测试](../src/autolib-importer/remote_entry_test.go)使用真实归档、受控 PATH 和本机 HTTPS 核对字节、优先级、失败保护及分页复用。定向命令：`cmake -P src/autolib-builder/go-sdk.cmake -- test ./src/autolib-importer -run '^Test(CMakeImporterArchive|CMakeGitHubBootstrap|CMakeGitHubEnumerationReuse)$' -count=1 -v`。CMake 接受原生重定向，importer 拒绝降级；Windows 需正常用户 TLS 凭据。真实下载前须先发布本平台工具归档，仅裸资产不满足新入口；命名、最低版本及平台证据见[压缩分发验证](agent-notes/proposed/architecture/2026-10-27-importer-distribution-and-branch-release.md#本地验证与待验收范围)。
+双来源定向命令：`cmake -P src/autolib-builder/go-sdk.cmake -- test ./src/autolib-importer -run 'TestCMake(Gitee|GitHub|ImporterArchive|ReleaseSourceProtocol)' -count=1 -v`。[入口测试](../src/autolib-importer/remote_entry_test.go)使用真实归档及本机TLS；[传递依赖消费测试](../src/autolib-importer/gitee_entry_test.go)实际配置、链接、运行，核对分页共享、本地零请求及失败后新配置。共享向量、拒绝条件与信任限制见[双来源验证](agent-notes/implemented/architecture/2026-10-27-ci-discovery-and-release-sources.md#验证)。CMake接受原生重定向，importer拒绝降级；Windows需要正常用户TLS凭据。
 
-真实验收运行 `cmake -DSOURCE_ROOT=<仓库绝对路径> -DVALIDATION_ROOT=<仓库绝对路径>/build/validation/github -DREMOTE_ROOT=https://github.com/xxf1ow/xxautolib/releases/tag/autolib-release -P tests/autolib/run-github.cmake`，生成器参数沿用本地 driver。[下载 driver](../tests/autolib/run-github.cmake)从空根下载工具及 flann、queue，构建、运行 smoke 并重新配置；不编译第三方源码或发布。
+本机仅验证Windows x86_64、CMake 4.2.3及受控TLS；Linux双架构、最低CMake 3.20和真实Gitee完整消费未执行。真实下载须另行授权发布匹配`--source-response`的宿主工具归档；裸资产、只读API探测或同步成功均不证明完整消费，不得替换现有本地工具冒充空根引导。命名及其余缺口见[压缩分发验证](agent-notes/proposed/architecture/2026-10-27-importer-distribution-and-branch-release.md#本地验证与待验收范围)。
+
+真实验收由[下载入口](../tests/autolib/run-github.cmake)负责：`cmake -DSOURCE_ROOT=<仓库绝对路径> -DVALIDATION_ROOT=<仓库绝对路径>/build/validation/remote -DREMOTE_ROOT=<GitHub-tag-URL或Gitee-download根> -P tests/autolib/run-github.cmake`，生成器参数沿用本地验证入口。从空根下载工具及库包，构建、运行并重新配置；不编译第三方源码或发布。该真实网络命令尚未在本轮执行。
 
 代表集此前使用裸 importer 的三平台供给和真实 GitHub 消费已通过验收；Windows 由下载 driver 验证，Linux 由用户确认通过。供给摘要、公共目标及验收依据集中记录在[消费设计](agent-notes/proposed/architecture/2026-10-25-target-import-and-release-consumption.md#已验收范围)。该历史验收不证明压缩工具新格式或 Gitee 可用。
 
 ## CI 验证
 
-CI 本地资产服务测试覆盖空 label 同名替换、每轮重建、分层及失败汇总，并真实编译消费 Windows 小型依赖；已有发布资产不会短路下一轮构建。`-run TestCIWorkflowContract` 执行分支检查及 Make 准备片段，不模拟完整 Actions；Windows 跳过 Linux FIFO 探针，不证明 Linux 并行。
+CI 测试覆盖同名替换、每轮重建、动态依赖层及失败汇总。`TestCIDiscoveryFiltering` 通过真实 builder 验证自动发现、闭包过滤、通用 publisher 和空工作。`TestCIDynamicRelease` 真实编译、打包并消费 Windows 三层依赖及 queue 通用包，核对上传字节与汇总；无资格资产拒绝上传，全过滤不访问远端。最终复用既有工程验证有效闭包的双搬迁。
+
+`TestCIWorkflowContract` 执行分支检查、Windows 层循环及 Make 准备片段，不模拟完整 Actions。Windows 不验证 Linux FIFO；无法用权限位阻断读取时跳过不可读目录及 adapter 用例。本地 fixture 不代替远端或 Linux 双架构验收。
 
 queue、lz4、flann 的三平台供给、逐槽消费、双搬迁及凭据写入已有真实证据；ABI、-j/FIFO 和历史运行见[CI验证记录](agent-notes/implemented/architecture/2026-10-20-ci-system.md#真实运行)。[每轮重建与空 label 发布](agent-notes/implemented/simplification/2026-10-24-ci-rebuild-without-production-cache.md)的本地回归不替代新策略的三平台远端验收及 GitHub 页面核对；下载消费另按上节验收。
 

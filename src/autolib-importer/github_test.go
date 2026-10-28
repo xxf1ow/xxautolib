@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -18,9 +20,13 @@ import (
 const testReleaseURL = "https://github.com/owner/repo/releases/tag/v1"
 
 // Preserve production URL routing and TLS verification; only the socket destination changes.
-func githubTestClient(t *testing.T, handler http.Handler) *http.Client {
+func githubTestClient(t *testing.T, handler http.Handler, diagnostic ...*log.Logger) *http.Client {
 	t.Helper()
-	server := httptest.NewTLSServer(handler)
+	server := httptest.NewUnstartedServer(handler)
+	if len(diagnostic) != 0 {
+		server.Config.ErrorLog = diagnostic[0]
+	}
+	server.StartTLS()
 	t.Cleanup(server.Close)
 	transport := server.Client().Transport.(*http.Transport).Clone()
 	transport.TLSClientConfig.ServerName = "example.com"
@@ -108,7 +114,7 @@ func TestGitHubSnapshot(t *testing.T) {
 			}
 			c := &githubSourceClient{Source: source, HTTP: client}
 			file := filepath.Join(t.TempDir(), "responses.json")
-			snapshot, err := loadGitHubSnapshot(context.Background(), c, file)
+			snapshot, err := c.snapshot(context.Background(), file)
 			valid := kind == "paged" || kind == "empty" || kind == "prerelease"
 			if (err == nil) != valid {
 				t.Fatalf("snapshot error: %v", err)
@@ -126,7 +132,7 @@ func TestGitHubSnapshot(t *testing.T) {
 			if len(snapshot.Pages) != wantPages || calls.Load() != wantCalls {
 				t.Fatalf("pages %d calls %d", len(snapshot.Pages), calls.Load())
 			}
-			if _, err := loadGitHubSnapshot(context.Background(), c, file); err != nil || calls.Load() != wantCalls {
+			if _, err := c.snapshot(context.Background(), file); err != nil || calls.Load() != wantCalls {
 				t.Fatalf("response not reused: %v, %d", err, calls.Load())
 			}
 			body, _ := json.Marshal(snapshot)
@@ -135,20 +141,21 @@ func TestGitHubSnapshot(t *testing.T) {
 			delete(missingSource, "source")
 			body, _ = json.Marshal(missingSource)
 			putTestFile(t, file, string(body))
-			if _, err := loadGitHubSnapshot(context.Background(), c, file); err == nil || calls.Load() != wantCalls {
+			if _, err := c.snapshot(context.Background(), file); err == nil || calls.Load() != wantCalls {
 				t.Fatalf("response without source accepted or refetched: %v", err)
 			}
-			for _, mutate := range []func(*githubSnapshot){
-				func(s *githubSnapshot) { s.Source = "https://github.com/other/repo/releases/tag/v1" },
-				func(s *githubSnapshot) { s.Pages = nil },
-				func(s *githubSnapshot) { s.Pages = []json.RawMessage{json.RawMessage(`[]`), json.RawMessage(`[]`)} },
-				func(s *githubSnapshot) { s.Pages = []json.RawMessage{json.RawMessage(`null`)} },
+			for _, mutate := range []func(*releaseSnapshot){
+				func(s *releaseSnapshot) { s.Platform = "gitee" },
+				func(s *releaseSnapshot) { s.Source = "https://github.com/other/repo/releases/tag/v1" },
+				func(s *releaseSnapshot) { s.Pages = nil },
+				func(s *releaseSnapshot) { s.Pages = []json.RawMessage{json.RawMessage(`[]`), json.RawMessage(`[]`)} },
+				func(s *releaseSnapshot) { s.Pages = []json.RawMessage{json.RawMessage(`null`)} },
 			} {
 				bad := snapshot
 				mutate(&bad)
 				body, _ := json.Marshal(bad)
 				putTestFile(t, file, string(body))
-				if _, err := loadGitHubSnapshot(context.Background(), c, file); err == nil || calls.Load() != wantCalls {
+				if _, err := c.snapshot(context.Background(), file); err == nil || calls.Load() != wantCalls {
 					t.Fatalf("invalid response accepted or refetched: %v", err)
 				}
 			}
@@ -156,13 +163,13 @@ func TestGitHubSnapshot(t *testing.T) {
 	}
 }
 
-func assetSnapshot(t *testing.T, assets ...map[string]any) githubSnapshot {
+func assetSnapshot(t *testing.T, assets ...map[string]any) releaseSnapshot {
 	t.Helper()
 	page, err := json.Marshal(assets)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return githubSnapshot{Pages: []json.RawMessage{page}}
+	return releaseSnapshot{Pages: []json.RawMessage{page}}
 }
 
 func TestGitHubAssetSelection(t *testing.T) {
@@ -204,9 +211,13 @@ func TestGitHubAssetSelection(t *testing.T) {
 	}
 }
 
-func TestGitHubDownload(t *testing.T) {
+func TestReleaseDownload(t *testing.T) {
 	for _, kind := range []string{"direct", "redirect", "bad certificate", "downgrade", "deleted", "replaced", "mismatch", "truncated"} {
 		t.Run(kind, func(t *testing.T) {
+			var diagnostic *log.Logger
+			if kind == "bad certificate" {
+				diagnostic = log.New(io.Discard, "", 0)
+			}
 			var calls, insecureCalls atomic.Int32
 			insecure := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { insecureCalls.Add(1); fmt.Fprint(w, "payload") }))
 			defer insecure.Close()
@@ -238,7 +249,7 @@ func TestGitHubDownload(t *testing.T) {
 					t.Error("unexpected request", r.URL)
 				}
 				fmt.Fprint(w, "payload")
-			}))
+			}), diagnostic)
 			if kind == "bad certificate" {
 				transport := client.Transport.(*http.Transport).Clone()
 				transport.TLSClientConfig = nil
@@ -246,9 +257,14 @@ func TestGitHubDownload(t *testing.T) {
 				defer transport.CloseIdleConnections()
 			}
 			source, _ := parseGitHubSource(testReleaseURL)
-			a := githubAsset{ID: 7, Name: "demo", State: "uploaded", Digest: fmt.Sprintf("sha256:%X", sha256.Sum256([]byte("payload")))}
+			a := releaseAsset{ID: 7, Name: "demo", URL: fmt.Sprintf("%sassets/7", source.apiRoot()), Accept: "application/octet-stream", SHA256: fmt.Sprintf("%x", sha256.Sum256([]byte("payload")))}
 			file := filepath.Join(t.TempDir(), "download")
-			err := downloadGitHubAsset(context.Background(), &githubSourceClient{Source: source, HTTP: client}, a, file)
+			err := downloadReleaseAsset(context.Background(), client, a, file)
+			if kind == "bad certificate" {
+				if err == nil || !strings.Contains(err.Error(), "certificate") {
+					t.Fatal("missing expected TLS rejection", err)
+				}
+			}
 			valid := kind == "direct" || kind == "redirect"
 			if (err == nil) != valid {
 				t.Fatalf("download: %v", err)
@@ -275,5 +291,21 @@ func TestGitHubDownload(t *testing.T) {
 				t.Fatalf("unexpected retries: got %d, want %d", calls.Load(), want)
 			}
 		})
+	}
+}
+
+func TestReleaseDownloadExisting(t *testing.T) {
+	var requests atomic.Int32
+	client := githubTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		fmt.Fprint(w, "payload")
+	}))
+	destination := putTestFile(t, filepath.Join(t.TempDir(), "download"), "user content")
+	asset := releaseAsset{ID: 7, Name: "demo", URL: "https://gitee.com/download/demo", SHA256: "239f59ed55e737c77147cf55ad0c1b030b6d7ee748a7426952f9b852d5a935e5"}
+	if err := downloadReleaseAsset(context.Background(), client, asset, destination); err == nil {
+		t.Fatal("overwrote existing destination")
+	}
+	if requests.Load() != 0 || readTestFile(t, destination) != "user content" {
+		t.Fatal("existing destination was not preserved without a request")
 	}
 }

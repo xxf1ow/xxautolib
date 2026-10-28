@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -31,7 +32,11 @@ type ciWriteAuthorization struct {
 	sha    string
 }
 
-type ciUploadOptions struct{ File, Name, SHA256 string }
+type ciUploadOptions struct {
+	File, Name, SHA256 string
+	Plan               ciPlan
+	Platform           string
+}
 
 func authorizeCIWrite(ctx context.Context, client *githubClient, sourceRoot string, run ciRunIdentity) (*ciWriteAuthorization, error) {
 	if client == nil || run.Repository != ciGitHubRepository || !commitPattern.MatchString(run.SHA) || run.CheckoutSHA != run.SHA {
@@ -154,18 +159,24 @@ func initCIRelease(ctx context.Context, client *githubClient, auth *ciWriteAutho
 	return release, nil
 }
 
-func validCIPublishAsset(name string) bool {
-	if name == "queue-any-any.tar.zst" {
-		return true
+func validCIPublishAsset(o ciUploadOptions) bool {
+	if !slices.Contains(ciPlatforms, o.Platform) {
+		return false
 	}
-	for _, platform := range ciPlatforms {
-		for _, module := range []string{"lz4", "flann"} {
-			if name == module+"-"+platform+".tar.zst" {
+	for _, platform := range o.Plan.Platforms {
+		if platform.ID != o.Platform || len(platform.Description.Modules) == 0 {
+			continue
+		}
+		if o.Name == ciImporterAsset(o.Platform) {
+			return true
+		}
+		for _, module := range platform.Description.Modules {
+			if !ciModuleName.MatchString(module.Name) || module.PlatformIndependent && o.Plan.Publisher != o.Platform {
+				continue
+			}
+			if o.Name == ciPackageAssetName(ciModuleSlot(module, o.Platform)) {
 				return true
 			}
-		}
-		if name == ciImporterAsset(platform) {
-			return true
 		}
 	}
 	return false
@@ -175,8 +186,8 @@ func uploadCIAsset(ctx context.Context, client *githubClient, auth *ciWriteAutho
 	if err := requireCIWrite(client, auth); err != nil {
 		return githubAsset{}, err
 	}
-	if !validCIPublishAsset(o.Name) || filepath.Base(o.File) != o.Name || !sha256Pattern.MatchString(o.SHA256) {
-		return githubAsset{}, errors.New("upload requires a fixed asset name and local SHA256")
+	if !validCIPublishAsset(o) || filepath.Base(o.File) != o.Name || !sha256Pattern.MatchString(o.SHA256) {
+		return githubAsset{}, errors.New("upload requires an eligible planned asset name and local SHA256")
 	}
 	if release.ID <= 0 || release.TagName != ciGitHubReleaseTag || !sameOrigin(client.BaseURL, release.AssetsURL) {
 		return githubAsset{}, errors.New("upload requires the fixed Release")
@@ -249,11 +260,20 @@ func runCIInit(args []string, stdout, stderr io.Writer, client *githubClient) in
 	flags.SetOutput(stderr)
 	source := flags.String("source-root", "", "repository source root")
 	identityFile := flags.String("run-identity", "", "run identity JSON file")
+	planFile := flags.String("plan", "", "plan JSON file")
 	if err := flags.Parse(args); err != nil {
 		return 1
 	}
-	if *source == "" || *identityFile == "" || flags.NArg() != 0 {
-		return fail(errors.New("init requires --source-root and --run-identity, without positional arguments"))
+	if *source == "" || *identityFile == "" || *planFile == "" || flags.NArg() != 0 {
+		return fail(errors.New("init requires --source-root, --run-identity and --plan, without positional arguments"))
+	}
+	var plan ciPlan
+	if err := decodeStrictJSONFile(*planFile, &plan); err != nil {
+		return fail(err)
+	}
+	if len(plan.Platforms) == 0 {
+		fmt.Fprintln(stdout, "CI selected no work")
+		return 0
 	}
 	var run ciRunIdentity
 	if err := decodeStrictJSONFile(*identityFile, &run); err != nil {
