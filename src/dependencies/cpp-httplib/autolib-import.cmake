@@ -1,0 +1,8 @@
+if(TARGET autolib::cpp-httplib)
+    return()
+endif()
+if(NOT EXISTS "${CMAKE_CURRENT_LIST_DIR}/include/cpp-httplib/httplib.h")
+    message(FATAL_ERROR "AutoLib cpp-httplib requires package-owned include/cpp-httplib/httplib.h")
+endif()
+add_library(autolib::cpp-httplib INTERFACE IMPORTED GLOBAL)
+target_include_directories(autolib::cpp-httplib INTERFACE "${CMAKE_CURRENT_LIST_DIR}/include")

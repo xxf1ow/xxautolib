@@ -35,7 +35,7 @@ CI 每轮构建有效模块及依赖，不跨运行复用 Release 包。各平�
 
 提供 adapter 的模块由 builder 在声明依赖和本模块安装成功后生成 `autolib-import.cmake`，四行头声明名称、平台及直接依赖，正文提供 CMake 链接规则。sentinel/stamp 复用也执行消费准备；实际安装前置为未完成描述，安装失败后不能消费。无 adapter 的模块仍可独立构建，但不能作为可消费包的依赖。
 
-builder 的 `package` 核对并复制已有消费描述及安装树到 staging，只在副本中修正本包及声明 sibling 的生产路径，生成固定名 tar.zst 并复制宿主 importer，不改原安装或补齐描述。归档显式启用 Zstd 内容校验；无全局消费清单或外置摘要文件。
+builder 的 `package` 核对并复制已有消费描述及安装树到 staging，只在副本中修正本包及声明 sibling 的生产路径，生成固定名 tar.zst 并复制宿主 importer，不改原安装或补齐描述。通用包仅用于维护者确认平台无关的 copy 模块，消费准备与打包均核对声明复制映射及来源字节。归档显式启用 Zstd 内容校验；无全局消费清单或外置摘要文件。
 
 下游携带单文件 [autolib.cmake](../src/autolib.cmake)，首次加载固定来源，通过 target 接口准备并链接根包。importer 按已解包目录、固定名归档、配置的公开 Release 查找，仅不存在时继续；安全准备依赖在前的完整结果，CMake 加载每包唯一的全局 `autolib::<name>`。宿主工具依次查找本地程序、本地 `.tar.xz`、远端同名归档，共用摘要校验及原生解包。其他缺包由 importer 补齐；本地齐全不联网，消费者无需外部解压工具、语言运行时或 builder。
 

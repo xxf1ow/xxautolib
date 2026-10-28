@@ -1,0 +1,15 @@
+# pybind11：Python/C++ 绑定头文件及 CMake 配置，构建期不探测 Python。
+name = "pybind11"
+type = "cmake"
+version = "2.13.6"
+sentinel = "include/pybind11/pybind11.h"
+config_dir = "share/cmake/pybind11"
+
+[source] # 固定迁移基线；升级时同步核对布局及导出接口。
+GIT_REPOSITORY = "https://github.com/pybind/pybind11.git"
+GIT_TAG = "a2e59f0e7065404b44dfe92a28aca47ba1378dc4"
+
+[cmake.cache] # 只安装头文件和配置，Python 依赖由实际绑定消费者决定。
+PYBIND11_INSTALL = true
+PYBIND11_TEST = false
+PYBIND11_NOPYTHON = true

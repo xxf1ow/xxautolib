@@ -1,0 +1,10 @@
+# yaml-cpp：YAML 解析与生成，安装参考默认库及导出配置。
+name = "yaml-cpp"
+type = "cmake"
+sentinel = "include/yaml-cpp/yaml.h"
+config_dir = "lib/cmake/yaml-cpp"
+pkgconfig_dir = "lib/pkgconfig"
+
+[source] # 固定迁移基线；升级时同步核对布局及导出接口。
+GIT_REPOSITORY = "https://github.com/jbeder/yaml-cpp.git"
+GIT_TAG = "2decf96e915d2b0c26c68c1659665789dfef2633"

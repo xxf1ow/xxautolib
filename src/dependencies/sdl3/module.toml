@@ -1,0 +1,25 @@
+# sdl3：跨平台多媒体底层，安装启用 OpenGL/OpenGLES 的静态库。
+name = "sdl3"
+type = "cmake"
+version = "3.2.30"
+sentinel = "include/SDL3/SDL.h"
+config_dir = "lib/cmake/SDL3"
+package_name = "SDL3"
+
+[source] # 固定迁移基线；升级时同步核对布局及导出接口。
+GIT_REPOSITORY = "https://github.com/libsdl-org/SDL.git"
+GIT_TAG = "f5e5f6588921eed3d7d048ce43d9eb1ff0da0ffc"
+
+[cmake.cache] # 保留静态视频配置；显式声明 X11、Wayland 和图形开发依赖，不依赖同批其他模块。
+SDL_SHARED = false
+SDL_STATIC = true
+SDL_TESTS = false
+SDL_EXAMPLES = false
+SDL_OPENGL = true
+SDL_OPENGLES = true
+
+[system_dependencies]
+apt = ["libdbus-1-dev","libibus-1.0-dev","libudev-dev","libgl1-mesa-dev","libgles2-mesa-dev","libegl1-mesa-dev","libdrm-dev","libgbm-dev","libxkbcommon-dev","libwayland-dev","libx11-dev","libxext-dev","libxrandr-dev","libxcursor-dev","libxfixes-dev","libxi-dev","libxss-dev","libxtst-dev"]
+
+[platforms.windows]
+config_dir = "cmake"

@@ -1,0 +1,8 @@
+if(TARGET autolib::asio)
+    return()
+endif()
+if(NOT EXISTS "${CMAKE_CURRENT_LIST_DIR}/include/asio.hpp")
+    message(FATAL_ERROR "AutoLib asio requires package-owned include/asio.hpp")
+endif()
+add_library(autolib::asio INTERFACE IMPORTED GLOBAL)
+target_include_directories(autolib::asio INTERFACE "${CMAKE_CURRENT_LIST_DIR}/include")

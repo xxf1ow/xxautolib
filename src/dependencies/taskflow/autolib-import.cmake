@@ -1,0 +1,8 @@
+if(TARGET autolib::taskflow)
+    return()
+endif()
+if(NOT EXISTS "${CMAKE_CURRENT_LIST_DIR}/include/taskflow/taskflow.hpp")
+    message(FATAL_ERROR "AutoLib taskflow requires package-owned include/taskflow/taskflow.hpp")
+endif()
+add_library(autolib::taskflow INTERFACE IMPORTED GLOBAL)
+target_include_directories(autolib::taskflow INTERFACE "${CMAKE_CURRENT_LIST_DIR}/include")

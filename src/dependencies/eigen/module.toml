@@ -1,0 +1,21 @@
+# eigen：线性代数头文件库，通过上游 CMake 安装头文件和配置。
+name = "eigen"
+type = "cmake"
+version = "3.4.0"
+sentinel = "include/Eigen/Eigen"
+config_dir = "share/eigen3/cmake"
+package_name = "Eigen3"
+pkgconfig_dir = "share/pkgconfig" # 上游默认位置；只修正查找元数据，不改变参考安装选项。
+
+[source] # 固定迁移基线；升级时同步核对布局及导出接口。
+URL = ["https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.zip"]
+URL_HASH = "SHA256=eba3f3d414d2f8cba2919c78ec6daab08fc71ba2ba4ae502b7e5d4d99fc02cda"
+DOWNLOAD_NAME = "eigen-3.4.0.zip"
+
+[cmake.cache] # 保留参考 include 布局与配置安装，关闭文档、测试和 BTL。
+INCLUDE_INSTALL_DIR = "<INSTALL_DIR>/include"
+CMAKEPACKAGE_INSTALL_DIR = "<INSTALL_DIR>/share/eigen3/cmake"
+EIGEN_BUILD_PKGCONFIG = true
+EIGEN_BUILD_DOC = false
+BUILD_TESTING = false
+EIGEN_BUILD_BTL = false

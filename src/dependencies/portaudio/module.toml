@@ -1,0 +1,26 @@
+# portaudio：跨平台音频 I/O，安装参考默认静动态库及配置。
+name = "portaudio"
+type = "cmake"
+version = "v190700_20210406"
+sentinel = "lib/cmake/portaudio/portaudioConfig.cmake"
+config_dir = "lib/cmake/portaudio"
+pkgconfig_dir = "lib/pkgconfig"
+
+[source] # 固定迁移基线；升级时同步核对布局及导出接口。
+URL = ["https://files.portaudio.com/archives/pa_stable_v190700_20210406.tgz"]
+URL_HASH = "SHA256=47efbf42c77c19a05d22e627d42873e991ec0c1357219c0d74ce6a2948cb2def"
+DOWNLOAD_NAME = "pa_stable_v190700_20210406.tgz"
+
+[cmake.cache] # 只交付库；Linux ALSA 后端依赖不能因未安装而静默消失。
+PA_BUILD_EXAMPLES = false
+PA_BUILD_TESTS = false
+
+[system_dependencies]
+apt = ["libasound2-dev"]
+
+# 上游 Windows DLL 带架构后缀，保持参考 .pc 修正时机。
+[[platforms.windows.steps]]
+name = "fix-pkgconfig-libs"
+DEPENDEES = ["build"]
+DEPENDERS = ["install"]
+COMMAND = ["bash", "-c", "sed -i 's|-lportaudio|-lportaudio_x64|g' <BINARY_DIR>/portaudio-2.0.pc"]

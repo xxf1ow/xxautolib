@@ -1,0 +1,8 @@
+if(TARGET autolib::expected)
+    return()
+endif()
+if(NOT EXISTS "${CMAKE_CURRENT_LIST_DIR}/include/tl/expected.hpp")
+    message(FATAL_ERROR "AutoLib expected requires package-owned include/tl/expected.hpp")
+endif()
+add_library(autolib::expected INTERFACE IMPORTED GLOBAL)
+target_include_directories(autolib::expected INTERFACE "${CMAKE_CURRENT_LIST_DIR}/include")

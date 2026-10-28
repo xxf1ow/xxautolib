@@ -1,0 +1,13 @@
+# cpp-httplib：HTTP 客户端与服务器，仅安装单头文件。
+name = "cpp-httplib"
+type = "copy"
+platform_independent = true
+sentinel = "include/cpp-httplib/httplib.h"
+
+[source] # 固定迁移基线；升级时同步核对布局及导出接口。
+GIT_REPOSITORY = "https://github.com/yhirose/cpp-httplib.git"
+GIT_TAG = "88956ccad8386f883f7d49ded46e6b0bb198c804"
+
+[[copy]]
+files = ["httplib.h"]
+destination = "include/cpp-httplib"

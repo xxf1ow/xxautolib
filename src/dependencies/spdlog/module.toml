@@ -1,0 +1,11 @@
+# spdlog：日志库，安装参考默认库及导出配置。
+name = "spdlog"
+type = "cmake"
+version = "1.17.0"
+sentinel = "lib/cmake/spdlog/spdlogConfig.cmake"
+config_dir = "lib/cmake/spdlog"
+pkgconfig_dir = "lib/pkgconfig"
+
+[source] # 固定迁移基线；升级时同步核对布局及导出接口。
+GIT_REPOSITORY = "https://github.com/gabime/spdlog.git"
+GIT_TAG = "79524ddd08a4ec981b7fea76afd08ee05f83755d"

@@ -1,0 +1,8 @@
+if(TARGET autolib::websocketpp)
+    return()
+endif()
+if(NOT EXISTS "${CMAKE_CURRENT_LIST_DIR}/include/websocketpp/version.hpp")
+    message(FATAL_ERROR "AutoLib websocketpp requires package-owned include/websocketpp/version.hpp")
+endif()
+add_library(autolib::websocketpp INTERFACE IMPORTED GLOBAL)
+target_include_directories(autolib::websocketpp INTERFACE "${CMAKE_CURRENT_LIST_DIR}/include")
