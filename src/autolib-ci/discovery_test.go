@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -44,6 +45,26 @@ func discoveryModule(t *testing.T, root, name string, adapter bool, depends stri
 
 func TestCIDiscoveryFiltering(t *testing.T) {
 	builder := discoveryBuilder(t)
+	t.Run("workflow default discovers adapter-backed modules", func(t *testing.T) {
+		data, err := os.ReadFile("../../.github/workflows/build-platform.yml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		document := strings.ReplaceAll(string(data), "\r\n", "\n")
+		input := workflowSection(t, document, "      modules:")
+		selection := strings.Trim(workflowField(t, input, "default"), "'\"")
+		root := discoveryRoot(t)
+		discoveryModule(t, root, "fresh", true, "")
+		discoveryModule(t, root, "independent", true, "")
+		discoveryModule(t, root, "local", false, "")
+		plan, err := planCI(context.Background(), ciPlanOptions{SourceRoot: root, BuilderFile: builder, Platforms: stringPointer("linux-x86_64"), Modules: &selection})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(plan.RequestedModules, []string{"fresh", "independent"}) || len(plan.Platforms) != 1 || !reflect.DeepEqual(plan.Platforms[0].Layers, [][]string{{"fresh", "independent"}}) {
+			t.Fatalf("workflow default did not plan all adapter-backed modules: %+v", plan)
+		}
+	})
 	for _, kind := range []string{"missing dependencies directory", "source path is file", "unreadable dependencies directory", "unreadable module directory"} {
 		t.Run(kind, func(t *testing.T) {
 			root := discoveryRoot(t)

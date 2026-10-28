@@ -42,39 +42,38 @@ type giteeSourceClient struct {
 	HTTP   *http.Client
 }
 
-func giteeRelease(raw json.RawMessage, source giteeSource) (int64, string, error) {
+func giteeRelease(raw json.RawMessage, source giteeSource) (int64, map[string]giteeIndexEntry, error) {
 	var release struct {
 		ID   int64   `json:"id"`
 		Tag  string  `json:"tag_name"`
 		Body *string `json:"body"`
 	}
 	if err := json.Unmarshal(raw, &release); err != nil || release.ID <= 0 || release.Tag != source.Tag || release.Body == nil {
-		return 0, "", fmt.Errorf("Gitee Release is incomplete or does not match %s", source.releaseURL())
+		return 0, nil, fmt.Errorf("Gitee Release is incomplete or does not match %s", source.releaseURL())
 	}
-	if _, err := parseGiteeIndex(*release.Body); err != nil {
-		return 0, "", err
-	}
-	return release.ID, *release.Body, nil
+	index, err := parseGiteeIndex(*release.Body)
+	return release.ID, index, err
 }
 
-func validateGiteeSnapshot(snapshot releaseSnapshot, source giteeSource) error {
+func validateGiteeSnapshot(snapshot releaseSnapshot, source giteeSource) (map[string]giteeIndexEntry, error) {
 	actual, err := parseGiteeSource(snapshot.Source)
 	if err != nil || actual != source || snapshot.Platform != "gitee" || len(snapshot.Pages) == 0 {
-		return fmt.Errorf("Gitee response has mismatched platform/source or missing attachment pages")
+		return nil, fmt.Errorf("Gitee response has mismatched platform/source or missing attachment pages")
 	}
-	if _, _, err := giteeRelease(snapshot.Release, source); err != nil {
-		return err
+	_, index, err := giteeRelease(snapshot.Release, source)
+	if err != nil {
+		return nil, err
 	}
 	for i, raw := range snapshot.Pages {
 		page, err := releasePage(raw)
 		if err != nil {
-			return fmt.Errorf("Gitee attachments: %w", err)
+			return nil, fmt.Errorf("Gitee attachments: %w", err)
 		}
 		if (i < len(snapshot.Pages)-1 && len(page) != 100) || (i == len(snapshot.Pages)-1 && len(page) >= 100) {
-			return fmt.Errorf("Gitee response has incomplete attachment pagination")
+			return nil, fmt.Errorf("Gitee response has incomplete attachment pagination")
 		}
 	}
-	return nil
+	return index, nil
 }
 
 func (c *giteeSourceClient) snapshot(ctx context.Context, path string) (releaseSnapshot, error) {
@@ -83,7 +82,8 @@ func (c *giteeSourceClient) snapshot(ctx context.Context, path string) (releaseS
 		return releaseSnapshot{}, err
 	}
 	if exists {
-		return snapshot, validateGiteeSnapshot(snapshot, c.Source)
+		_, err := validateGiteeSnapshot(snapshot, c.Source)
+		return snapshot, err
 	}
 	snapshot = releaseSnapshot{Platform: "gitee", Source: c.Source.releaseURL()}
 	snapshot.Release, err = readReleaseJSON(ctx, c.HTTP, c.Source.apiRoot()+"tags/"+url.PathEscape(c.Source.Tag), "application/json")
@@ -111,7 +111,7 @@ func (c *giteeSourceClient) snapshot(ctx context.Context, path string) (releaseS
 			break
 		}
 	}
-	if err := validateGiteeSnapshot(snapshot, c.Source); err != nil {
+	if _, err := validateGiteeSnapshot(snapshot, c.Source); err != nil {
 		return releaseSnapshot{}, err
 	}
 	if err := writeReleaseSnapshot(path, snapshot); err != nil {
@@ -121,14 +121,7 @@ func (c *giteeSourceClient) snapshot(ctx context.Context, path string) (releaseS
 }
 
 func (c *giteeSourceClient) selectAsset(snapshot releaseSnapshot, names []string) (releaseAsset, error) {
-	if err := validateGiteeSnapshot(snapshot, c.Source); err != nil {
-		return releaseAsset{}, err
-	}
-	_, body, err := giteeRelease(snapshot.Release, c.Source)
-	if err != nil {
-		return releaseAsset{}, err
-	}
-	index, err := parseGiteeIndex(body)
+	index, err := validateGiteeSnapshot(snapshot, c.Source)
 	if err != nil {
 		return releaseAsset{}, err
 	}
