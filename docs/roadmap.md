@@ -24,8 +24,8 @@
 | --- | --- | --- |
 | 本地获取与安装扩展 | 已实现 | 已验证：URL/SHA256/原生镜像回退、平台/架构来源、SOURCE_SUBDIR 和目录复制；lz4、ONNX Runtime 在 Windows x64、Linux aarch64 完成真实安装。lz4 另经三平台 CI；ONNX Runtime 的 Linux x86_64 仅验证声明选择。 |
 | 本地输入与安装复用 | 已实现 | 已验证：持久 Git、哈希归档复用和 sentinel 短路，公共回归双端通过；已接入模块登记 sentinel，不把存在性当版本校验。 |
-| 模块依赖 | 已实现 | 已验证 FLANN → lz4、HarfBuzz → FreeType、OpenCV → FreeType/HarfBuzz；叶子请求得到稳定闭包，显式依赖实际来自本仓库。Boost → zlib 在 109 完成构建与来源核对；PCL 待接入。 |
-| 复杂模块与专用文件 | 已实现 | 已验证 OpenCV 4.14.0 contrib 路径引用、资源补丁、平台安装布局与链接运行；oneTBB HWLOC、ImGui 专用文件仍待接入。 |
+| 模块依赖 | 已实现 | 叶子请求得到稳定闭包，显式依赖来自本仓库；FLANN、HarfBuzz、OpenCV 已有双端验证。Boost、PCL 的依赖在 109 完成构建与来源核对；PCL 消费链接待 CI 验收。 |
+| 复杂模块与专用文件 | 已实现 | OpenCV 的资源补丁、平台布局与链接运行已有双端证据；oneTBB 的 HWLOC 绑定及 ImGui 专用构建在 109 完成安装核对；Windows HWLOC 待 CI。 |
 | 下游导入与可搬迁包 | 已实现 | queue、lz4、flann 的显式包内 adapter 已完成双端搬迁链接运行，原安装树不变；其他模块按需提供 adapter，本地构建资格与发布资格分离。 |
 | 固定槽交付 | 已实现 | 本地消费和 GitHub 发布已验证；CI 每轮重建，不维护跨运行生产包缓存，各槽独立更新、无全局发行清单，汇总只报告结果。Gitee 同步及消费已有本地实现，真实验收与后续远端写操作仍须授权。 |
 | 三平台原生 CI | 已实现 | queue、lz4、flann 的三平台原生单 job、统一环境、FIFO 预算、真实供给已有验证证据。任意分支可手动运行；OpenCV 等其余库按需另行确认。 |
@@ -43,8 +43,9 @@ FLANN、HarfBuzz 与 OpenCV 4.14.0 的具体取舍和双平台安装证据见[�
 | --- | --- | --- |
 | 已验证 | zlib、queue、freetype、lz4、onnxruntime、flann、harfbuzz、opencv | Windows x64、Linux aarch64 本地构建或复制安装通过，不追加下游交付要求；保留系统可选依赖边界。 |
 | 首批常规迁移 | asio、clipper2、cpp-httplib、eigen、expected、gtest、libzmq、nativefiledialog-extended、portaudio、pybind11、sdl3、spdlog、taskflow、websocketpp、yaml-cpp、boost | 配方及导入适配已迁入；109 的 Linux x86_64 构建安装及含 zlib 闭包打包通过，消费链接与三平台 CI 待用户手动验收，见[分批迁移记录](agent-notes/proposed/architecture/2026-10-28-batch-module-migration.md#首批验证结果)。 |
-| 后续复杂模块 | oneTBB、imgui、pcl、sherpa-onnx、lastools | 首批验收后处理专用构建、运行资源、复杂依赖及平台限制。 |
-| 明确排除 | fastdeploy、nndeploy、ftxui、logo、mysql、gtsam | 不迁入，不列为待迁候选。 |
+| 第二批迁移 | oneTBB、imgui、pcl | 配方及导入适配已迁入；109 一次整批构建安装通过，消费链接与三平台 CI 待用户手动验收，见[第二批验证结果](agent-notes/proposed/architecture/2026-10-28-batch-module-migration.md#第二批验证结果)。 |
+| 后置讨论 | sherpa-onnx | 升级至实施前确认的最新上游版本，单独讨论升级及适配方案；不纳入第二批。 |
+| 明确排除 | fastdeploy、nndeploy、ftxui、logo、mysql、gtsam、lastools | 不迁入，不列为待迁候选。 |
 
 参考实现的可搬迁导入适配覆盖 eigen、onnxruntime、portaudio、lz4、flann、pcl、boost、zlib；它们是后续代表集，不意味着其他模块不可本地构建，也不要求新仓库首批同时发布八包。
 

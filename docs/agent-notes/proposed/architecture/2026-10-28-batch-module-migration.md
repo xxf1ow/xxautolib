@@ -14,13 +14,23 @@ Status: proposed
 
 首批一次迁入 16 库：asio、clipper2、cpp-httplib、eigen、expected、gtest、libzmq、nativefiledialog-extended、portaudio、pybind11、sdl3、spdlog、taskflow、websocketpp、yaml-cpp、boost。
 
-后续阶段处理 oneTBB、imgui、pcl、sherpa-onnx、lastools。首批验收后再确认该阶段的具体适配，不预写其实施步骤。
+第二批一次迁入三库：oneTBB、imgui、pcl。sherpa-onnx 后置，目标是升级至实施前确认的最新上游版本；版本、功能选项、依赖与适配方案须单独讨论确认，本批不迁入，也不提前改动其依赖。
 
-明确排除 fastdeploy、nndeploy、ftxui、logo、mysql、gtsam，不迁入，也不保留为待迁候选。已有模块不重复迁移；只为本批依赖闭包补齐必需的既有模块导入适配，例如 Boost 依赖的 zlib，不扩成全库适配。
+明确排除 fastdeploy、nndeploy、ftxui、logo、mysql、gtsam、lastools，不迁入，也不保留为待迁候选。lastools 的参考实现仅支持 Windows；排除该库，不为它扩展公共引擎或 CI 的模块平台筛选。已有模块不重复迁移；只为本批依赖闭包补齐必需的既有模块导入适配，例如 Boost 依赖的 zlib，不扩成全库适配。
+
+### 第二批适配范围
+
+oneTBB 保留共享库、内存分配器及代理、IPO 和 HWLOC 搜索；Windows HWLOC 固定归档作为附属资源，并沿用安装后复制 DLL 的步骤。Linux 的 HWLOC 由系统开发包提供。
+
+imgui 声明依赖 sdl3，保留参考专用 CMake 构建、SDL3/OpenGL3 后端、静态库及 imconfig 配置修改；专用文件和补丁归本模块，不迁入与构建无关的 Orange Pi 系统初始化、自启动脚本。
+
+pcl 声明依赖 lz4、flann、boost、eigen、zlib，保留静态 PCL、共享 FLANN、OpenMP 和参考裁剪选项。导入适配使用实际安装的精确 Config 路径，封装参考列出的组件及声明依赖，不扫描任意配置或回退系统同名库。
+
+三库均沿用现有 TOML、资源、补丁及自定义步骤能力，不修改公共引擎或根 CMake。第二批只在 109 通过普通根入口进行一次整批配置、编译安装，复用既有依赖；核对头文件、静动态库、实际导出配置、运行依赖及打包内容。不新增测试或消费者编译，失败后的修复续跑仍按下文约定确认，三平台消费验收由用户手动触发 CI。
 
 ### 接入与交付
 
-各库使用现有 `src/dependencies/<name>/module.toml` 和同目录 `autolib-import.cmake`。版本、归档摘要、库特定选项及补丁保持参考基线；Git 标签或分支解析为迁移时确认的完整提交，不顺带升级版本或改变功能开关。源码构建、头文件复制、源码子目录、平台覆盖和系统依赖沿用已有能力。
+首批及第二批各库使用现有 `src/dependencies/<name>/module.toml` 和同目录 `autolib-import.cmake`。版本、归档摘要、库特定选项及补丁保持参考基线；Git 标签或分支解析为迁移时确认的完整提交，不顺带升级版本或改变功能开关。源码构建、头文件复制、源码子目录、平台覆盖和系统依赖沿用已有能力。后置的 sherpa-onnx 不适用保留参考版本的约束，其升级方案另行确认。
 
 纯头文件 copy 模块可声明 `platform_independent=true`，通用包检查不绑定模块名、文件数量或文件名；支持主源码与附属资源的文件和目录复制，核对 include 下的实际文件集合及来源字节，拒绝额外载荷或非普通文件。平台无关性由配方维护者确认，字节核对不代替该判断。Clipper2 1.5.4 对 GCC 9 使用模块局部补丁：移除其不识别的 `-Wno-c++20-compat`，仅将 Clipper2Z 的 sign-conversion 保留为警告；其他告警仍按上游 `-Werror` 处理，不修改算法或关闭 Z 坐标库。
 
@@ -64,4 +74,18 @@ Status: proposed
 
 依赖接线补齐后，既有 builder 已刷新消费描述并重新打包，没有重编第三方库。importer 对本地安装的 WebSocket++ 请求实际返回 `zlib;boost;websocketpp` 准备顺序；最终归档包含 Boost 依赖头及三个头文件库的 Threads 接线。该核对不执行 CMake adapter，也不证明消费者编译链接通过。
 
-本次使用 Windows 校验后预传的第三方来源，不验证空缓存自动取源。未在本机编译，未新增或运行测试工程，未编译消费者，未验证 Windows、Linux aarch64、跨平台 ABI 或完整运行功能。公共 Go 回归、adapter 实际加载链接及搬迁验证留给用户手动触发 CI；助手未推送或触发 CI。复杂模块阶段未执行，本记录保留 proposed 状态。
+首批使用 Windows 校验后预传的第三方来源，不验证空缓存自动取源。未在本机编译，未新增或运行测试工程，未编译消费者，未验证 Windows、Linux aarch64、跨平台 ABI 或完整运行功能。公共 Go 回归、adapter 实际加载链接及搬迁验证留给用户手动触发 CI；助手未推送或触发 CI。
+
+## 第二批验证结果
+
+oneTBB、imgui、pcl 在同一台 109 通过普通根入口完成一次整批配置、编译安装，两者退出码均为 0；日志为 `/home/lxx/xxautolib/build/stage2-configure.log` 与 `build/stage2-build.log`，退出码另存同名 `.exit` 文件。oneTBB 的系统前置包为 libhwloc-dev 2.1.0；参考 yum 声明不迁入，当前引擎只支持 apt/choco，本批不扩展 Fedora 自动安装能力。
+
+oneTBB 安装共享 tbb、tbbmalloc、tbbmalloc_proxy 及 tbbbind_2_0，保留严格告警与 IPO；绑定库的动态依赖解析到系统 libhwloc.so.15。代理需要运行环境能找到同包的 libtbbmalloc.so.2；在本包 lib 加入 LD_LIBRARY_PATH 后依赖解析完整。Windows HWLOC 2.12.2 归档摘要与 include/lib/bin 路径已静态核对，DLL 由模块局部安装补丁复制，不扩展公共引擎。
+
+imgui 的静态归档包含核心及 SDL3/OpenGL3 后端对象，两个后端头文件按参考平铺到 `include/ImGui`；五项 imconfig 修改均在安装头中生效，SDL3 头文件与静态库复制保留。adapter 传递 sibling SDL3，不重复链接复制的 SDL3 库，并保留系统 OpenGL、动态加载及线程要求。
+
+PCL 的十一项消费组件静态库、公开头和 Config 均已核对；Linux Config 实装为 `share/pcl-1.15/PCLConfig.cmake`，据此修正参考的 Windows 专用 `cmake` 路径，Windows 布局不变。cache 和编译输入中的 lz4、flann、boost、eigen、zlib 均指向本仓库 `3rdparty`，FLANN 保持共享，OpenMP 保持开启；静态 PCL 不等于系统依赖自包含。
+
+既有 importer 对三个根包返回九包准备闭包，未执行 CMake adapter。builder 打包退出码为 0，日志 `build/stage2-package.log`，输出 `/home/lxx/xxautolib/build/stage2-release/` 含九份 linux-x86_64 归档及宿主 importer。全部归档通过 Zstd 完整性检查；包头、代表静动态库、链接和后端头齐全，PCL Config 的 FLANN 生产前缀在 staging 中改为 sibling 相对位置，importer 与安装工具字节一致。
+
+本阶段不新增测试、不在本机编译、不编译消费者，未验证 adapter 实际加载链接、搬迁运行、Windows 或 Linux aarch64；系统 HWLOC、OpenGL、OpenMP 与 C/C++ 运行环境仍由消费方满足，三平台验收留给用户手动触发 CI。助手未推送、发布或触发 CI。sherpa-onnx 升级方案尚待讨论，本记录保留 proposed 状态。

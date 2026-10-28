@@ -1,0 +1,20 @@
+# ImGui：即时模式图形界面，安装核心及 SDL3/OpenGL3 后端的静态库。
+name = "imgui"
+type = "cmake"
+version = "065f9e02695c4eab92dab548f0c37f5297fc7a63"
+depends = ["sdl3"]
+sentinel = "include/ImGui/imgui.h"
+
+[source] # 保持参考冻结提交，专用构建及 imconfig 修改由同目录补丁维护。
+GIT_REPOSITORY = "https://github.com/ocornut/imgui.git"
+GIT_TAG = "065f9e02695c4eab92dab548f0c37f5297fc7a63"
+
+[cmake.cache]
+IMGUI_SOURCE_DIR = "<SOURCE_DIR>"
+BUILD_WITH_OPENGL_ES = false # 保留参考 SDL3/OpenGL3 后端，不切换至 GLES2。
+
+[[patches]] # 原样保留参考专用 CMakeLists，启用参考五项 imconfig 配置。
+file = "imgui-build.patch"
+
+[system_dependencies]
+apt = ["libgl1-mesa-dev"]

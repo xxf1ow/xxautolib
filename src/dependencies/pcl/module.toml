@@ -1,0 +1,35 @@
+# PCL：点云处理库，安装静态组件并复用本仓库共享 FLANN 与基础依赖。
+name = "pcl"
+type = "cmake"
+version = "pcl-1.15.1"
+depends = ["lz4", "flann", "boost", "eigen", "zlib"]
+package_name = "PCL"
+config_dir = "share/pcl-1.15"
+sentinel = "share/pcl-1.15/PCLConfig.cmake"
+
+[source] # 固定参考 pcl-1.15.1 标签对应提交，不跟随分支。
+GIT_REPOSITORY = "https://github.com/PointCloudLibrary/pcl.git"
+GIT_TAG = "3346843ea6b97697a1577293aa9cdf236b5c7ffb"
+
+[platforms.windows] # 上游原生 Windows 与 Unix 安装布局不同。
+config_dir = "cmake"
+sentinel = "cmake/PCLConfig.cmake"
+
+[cmake.cache] # 保留参考静态 PCL、共享 FLANN、OpenMP 及功能裁剪，不扩展可选后端。
+PCL_SHARED_LIBS = false
+PCL_FLANN_REQUIRED_TYPE = "SHARED"
+WITH_VTK = false
+WITH_OPENGL = false
+WITH_CUDA = false
+WITH_QHULL = false
+WITH_PNG = false
+WITH_LIBUSB = false
+WITH_PCAP = false
+WITH_GLEW = false
+WITH_OPENMP = true
+BUILD_visualization = false
+BUILD_tools = false
+BUILD_apps = false
+BUILD_examples = false
+BUILD_simulation = false
+BUILD_global_tests = false
