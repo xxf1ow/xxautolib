@@ -2,19 +2,25 @@
 
 本仓库按能力分批接入模块，先完成本地构建安装，再建立下游导入、二进制交付和 CI。本文维护阶段目标与迁移范围；各阶段的理由和约束由链接的 Agent Note 拥有，具体实现开始前再确认该批设计。
 
-工具层重建及导入链路按 [Go 工具层与离线导入设计](agent-notes/proposed/architecture/2026-10-21-go-tooling-and-offline-import.md)分阶段推进：Go 生成器替换自有 Python 路径，保留 TOML 和原生构建契约；第二阶段实现本地打包、独立 importer 和单文件消费入口。queue、lz4、flann 在 Windows x64/v143、Linux aarch64 完成发行与准备包搬迁后的真实链接运行，第二阶段已通过用户验收。[分阶段消费设计](agent-notes/proposed/architecture/2026-10-25-target-import-and-release-consumption.md#已验收范围)的本地接口与三平台 GitHub 下载阶段已通过用户验收；builder 安装产物直接复用由独立设计拥有，Gitee 消费的本地实现及远端缺口见下节。
+[Go 工具层与离线导入设计](agent-notes/proposed/architecture/2026-10-21-go-tooling-and-offline-import.md)的 Go 重建与本地交付阶段已通过用户验收；[分阶段消费设计](agent-notes/proposed/architecture/2026-10-25-target-import-and-release-consumption.md#已验收范围)记录本地接口和三平台 GitHub 下载验收。具体平台、搬迁链接及协议证据由对应设计拥有，Gitee 消费验收见下节。
 
-独立的 [CI 系统](agent-notes/implemented/architecture/2026-10-20-ci-system.md)完成三平台代表库的原生构建、Release 供给，不作为 Go 工具层的子阶段，也不要求先批量增加第三方库。[无全局清单包消费](agent-notes/proposed/architecture/2026-10-24-manifestless-package-consumption.md)的本地协议已通过用户验收，三平台新协议均完成搬迁链接运行。CI 的同名替换、分层编排、手动 workflow 和 token 写入已有真实证据；[每轮重建与文件名发布](agent-notes/implemented/simplification/2026-10-24-ci-rebuild-without-production-cache.md)替代跨运行生产缓存，三平台远端验证及文件名展示已核对；后续远端操作仍须授权。后续设计交接及扩库由用户确认，不自动推进。
+独立的[CI 系统](agent-notes/implemented/architecture/2026-10-20-ci-system.md)完成三平台代表库的原生构建与发布，不依赖扩库进度。[无全局清单包消费](agent-notes/proposed/architecture/2026-10-24-manifestless-package-consumption.md)的本地协议及三平台搬迁链接已验收；[每轮重建与文件名发布](agent-notes/implemented/simplification/2026-10-24-ci-rebuild-without-production-cache.md)记录替代生产缓存后的三平台远端证据。后续设计交接、扩库及远端操作仍须确认，不自动推进。
 
 ## 状态与依据
 
 [importer 压缩分发与功能分支手动发布](agent-notes/proposed/architecture/2026-10-27-importer-distribution-and-branch-release.md)提供正式工具去符号、CI 单程序 tar.xz 和 CMake 原生引导。压缩格式的跨平台、最低 CMake 及真实 CI 验收仍待完成；[Gitee 独立同步](agent-notes/proposed/architecture/2026-10-27-gitee-release-sync-workflow.md)已有本地实现，真实 runner 验收仍独立进行。
 
-[CI 自动发现与双平台消费](agent-notes/implemented/architecture/2026-10-27-ci-discovery-and-release-sources.md)提供资格静默过滤、实际依赖层及正文摘要校验。本机验证空根引导、传递依赖链接运行及本地零网络；真实Gitee消费、Linux双架构及最低CMake尚无本轮证据，须另行授权发布匹配工具，不能由同步成功推定可用。
+[CI 自动发现与双平台消费](agent-notes/implemented/architecture/2026-10-27-ci-discovery-and-release-sources.md#验证)提供资格静默过滤、实际依赖层及正文摘要校验。真实 Gitee 消费已通过用户手动验收；平台、最低 CMake 及新 CI 策略的证据分别记录，不从该结果推定全部专项通过。
 
 本仓库支持 TOML 定义、Go builder、原生 ExternalProject、固定来源、多资源、补丁、自定义步骤、平台输入及依赖闭包。下表已验证模块均通过 Windows x64、Linux aarch64 本地安装；除 CI 代表集外，Linux x86_64 实机及全部 v142 实机仍待验收。流程由[模块技能](../.agents/skills/add-third-party-module/SKILL.md)维护；当前职责见[架构](architecture.md)，验证入口见[测试](testing.md)。
 
 “参考已实现”指参考实现中存在对应代码或模块，并有相关决定；不表示本仓库支持，也不表示本轮重新验证了参考实现的全部模块。“参考待实施”指已有方向但尚未落地。迁移不导入历史提交、旧发布数据或所有辅助机制。
+
+## 后续维护方向
+
+待实施：增加不发布资产的轻量回归 CI，复用现有 Go 测试、vet 及独立同步单元测试；不持有发布凭据、不修改 Release、不重编全部第三方库。完成标志是代码检查自动运行、失败可见且不触发发布；触发条件与平台范围在实施前确认。
+
+消费 adapter 随后续三方库接入或相关模块扩展一起补齐，按实际下游需求验证依赖闭包、链接运行与搬迁，不单独启动全库适配。
 
 ## 建议接入顺序
 
@@ -27,7 +33,7 @@
 | 模块依赖 | 已实现 | 叶子请求得到稳定闭包，显式依赖来自本仓库；FLANN、HarfBuzz、OpenCV 已有双端验证。Boost、PCL 的依赖在 109 完成构建与来源核对；PCL 消费链接待 CI 验收。 |
 | 复杂模块与专用文件 | 已实现 | OpenCV 的资源补丁、平台布局与链接运行已有双端证据；oneTBB 的 HWLOC 绑定及 ImGui 专用构建在 109 完成安装核对；Windows HWLOC 待 CI。 |
 | 下游导入与可搬迁包 | 已实现 | queue、lz4、flann 的显式包内 adapter 已完成双端搬迁链接运行，原安装树不变；其他模块按需提供 adapter，本地构建资格与发布资格分离。 |
-| 固定槽交付 | 已实现 | 本地消费和 GitHub 发布已验证；CI 每轮重建，不维护跨运行生产包缓存，各槽独立更新、无全局发行清单，汇总只报告结果。Gitee 同步及消费已有本地实现，真实验收与后续远端写操作仍须授权。 |
+| 固定槽交付 | 已实现 | 本地消费和 GitHub 发布已验证；CI 每轮重建，不维护跨运行生产包缓存，各槽独立更新、无全局发行清单，汇总只报告结果。Gitee 消费已通过用户手动验收；同步专项证据独立记录，后续远端写操作仍须授权。 |
 | 三平台原生 CI | 已实现 | queue、lz4、flann 的三平台原生单 job、统一环境、FIFO 预算、真实供给已有验证证据。任意分支可手动运行；OpenCV 等其余库按需另行确认。 |
 | 平台无关头文件槽位 | 已实现 | queue-any-any 的打包、导入、唯一 publisher 和三平台消费已验证，只有一个通用资产；机器码包与 importer 仍限定平台。 |
 
@@ -37,11 +43,12 @@ FLANN、HarfBuzz 与 OpenCV 4.14.0 的具体取舍和双平台安装证据见[�
 
 ## 模块迁移候选
 
-下表覆盖参考仓库的 36 个模块定义。分组用于选择有代表性的下一批，不表示组内模块复杂度相同或全部平台已验证；不把参考版本号和选项表复制为另一份维护清单。
+下表保留参考仓库的迁移候选，并记录本仓库另行接入的模块。分组用于选择有代表性的下一批，不表示组内模块复杂度相同或全部平台已验证；不把参考版本号和选项表复制为另一份维护清单。
 
 | 分组 | 模块 | 本仓库状态或接入重点 |
 | --- | --- | --- |
 | 已验证 | zlib、queue、freetype、lz4、onnxruntime、flann、harfbuzz、opencv | Windows x64、Linux aarch64 本地构建或复制安装通过，不追加下游交付要求；保留系统可选依赖边界。 |
+| 已接入的 RSUSB 依赖链 | librealsense、libusb、nlohmann | Windows x64/v143、Linux aarch64 本地安装及无相机检查通过；不提供 adapter，不表示已验收实机取流。依据见[RSUSB 决定](agent-notes/implemented/architecture/2026-10-27-librealsense-rsusb.md)。 |
 | 首批常规迁移 | asio、clipper2、cpp-httplib、eigen、expected、gtest、libzmq、nativefiledialog-extended、portaudio、pybind11、sdl3、spdlog、taskflow、websocketpp、yaml-cpp、boost | 配方及导入适配已迁入；109 的 Linux x86_64 构建安装及含 zlib 闭包打包通过，消费链接与三平台 CI 待用户手动验收，见[分批迁移记录](agent-notes/proposed/architecture/2026-10-28-batch-module-migration.md#首批验证结果)。 |
 | 第二批迁移 | oneTBB、imgui、pcl | 配方及导入适配已迁入；109 一次整批构建安装通过，消费链接与三平台 CI 待用户手动验收，见[第二批验证结果](agent-notes/proposed/architecture/2026-10-28-batch-module-migration.md#第二批验证结果)。 |
 | 暂停迁入 | sherpa-onnx | 版本管理完成后再恢复，使 PCL 与 sherpa 的独立项目分别选择 Eigen 3.4.0 与 5.0.1，不全局升级；已确认基线与未完成状态见[迁移记录](agent-notes/proposed/architecture/2026-10-28-batch-module-migration.md#第三批暂停状态)。 |
