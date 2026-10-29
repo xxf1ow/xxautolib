@@ -16,6 +16,8 @@ Status: proposed
 
 第二批一次迁入三库：oneTBB、imgui、pcl。sherpa-onnx 后置，目标是升级至实施前确认的最新上游版本；版本、功能选项、依赖与适配方案须单独讨论确认，本批不迁入，也不提前改动其依赖。
 
+第三批 sherpa-onnx 迁入与配套 onnxruntime 1.28.2 升级一并后置，待版本管理完成后另行恢复。当前分支交付范围仅为前两批共 19 库及其必要接线，onnxruntime 保持 1.24.4。下文保留已确认的 sherpa-onnx v2.0.1 与 onnxruntime 1.28.2 适配基线，不代表迁入或升级已验证完成，也不包含 VoiceAsst 源码或模型修改。
+
 明确排除 fastdeploy、nndeploy、ftxui、logo、mysql、gtsam、lastools，不迁入，也不保留为待迁候选。lastools 的参考实现仅支持 Windows；排除该库，不为它扩展公共引擎或 CI 的模块平台筛选。已有模块不重复迁移；只为本批依赖闭包补齐必需的既有模块导入适配，例如 Boost 依赖的 zlib，不扩成全库适配。
 
 ### 第二批适配范围
@@ -28,9 +30,31 @@ pcl 声明依赖 lz4、flann、boost、eigen、zlib，保留静态 PCL、共享 
 
 三库均沿用现有 TOML、资源、补丁及自定义步骤能力，不修改公共引擎或根 CMake。第二批只在 109 通过普通根入口进行一次整批配置、编译安装，复用既有依赖；核对头文件、静动态库、实际导出配置、运行依赖及打包内容。不新增测试或消费者编译，失败后的修复续跑仍按下文约定确认，三平台消费验收由用户手动触发 CI。
 
+### 暂停原因与版本管理前置要求
+
+版本管理面向不同项目选择同一库的不同版本，而不是在同一个程序内混用两个 Eigen 版本。PCL 项目保留 Eigen 3.4.0，sherpa-onnx 项目使用 Eigen 5.0.1；不能为迁入 sherpa 而全局升级 Eigen、迫使 PCL 一起适配。当前 PCL 的 Eigen3 查找约束与 Eigen 5 的版本配置不兼容，统一升级不是本次迁移的必要步骤。
+
+后续版本管理须支持同一包的不同版本分别发布和保留，并让各项目选择所需版本及其依赖闭包；安装和消费结果不得相互覆盖或混用。具体发布标识、目录布局和版本选择接口留待独立设计，本轮不实现，也不引入自动依赖求解。
+
+恢复 sherpa 迁入前，须先验证 PCL 与 sherpa 两个独立项目分别取得指定 Eigen 版本及对应依赖，不依赖修改全局单一版本。恢复时再确认上游发行版与下文基线是否需要更新；本轮不继续修补或编译 sherpa。
+
+### sherpa-onnx 适配基线（暂停）
+
+以 [v2.0.1 正式发行版](https://github.com/k2-fsa/sherpa-onnx/releases/tag/v2.0.1)为来源，Git 固定完整提交 `af2d8d81dbfa61c4cea4c568da78f3982edca005`。沿用参考静态 CPU 构建，启用 TTS 和说话人分离，使用本仓库独立 onnxruntime 的共享 CPU 运行库；静态 sherpa 不意味着整个依赖链静态自包含。
+
+只交付 `sherpa-onnx-core` 原生 C++ 接口。`SHERPA_ONNX_ENABLE_C_API`、`SHERPA_ONNX_ENABLE_PYTHON`、`SHERPA_ONNX_ENABLE_JNI`、WASM 总开关及所有 WASM 子开关关闭，不构建语言绑定；上游依赖 C API 的 `sherpa-onnx-cxx-api` 封装也不交付。PortAudio、WebSocket、工具程序、C/C++ 接口示例、测试、断言检查及 Sanitizer 关闭；GPU、DirectML、D3D 和各专用硬件后端保持关闭。Windows 保留动态 CRT `/MD`，Linux 不静态链接 libstdc++，不以语言接口裁剪为由关闭 TTS 或说话人分离算法。
+
+接受 v2.0 的 TTS 前端调整，不恢复内置 espeak-ng 或 piper-phonemize，也不新增外部音素转换模块。依赖这些组件的模型须由消费应用采用词典或自行提供音素；普通文本推理并未整体删除。VoiceAsst 的默认 `matcha-icefall-zh-baker` 配置使用词典、tokens、FST 与 vocos，不配置 espeak 数据目录；源码核对不构成新版模型推理验收，发音、标点、停顿和流式分块仍可能变化。旧 Generate 重载仍存在且已标记弃用，本阶段不修改下游调用。行为依据为[上游 TTS 前端变更](https://github.com/k2-fsa/sherpa-onnx/pull/4055)。
+
+onnxruntime 继续完整复制 Microsoft 官方 CPU 归档，三种目标来源统一为 1.28.2，不换成 sherpa 作者的另一套预编译包，不在 sherpa 资源内重复构建或下载运行库。新增其模块导入适配，供 sherpa 声明 `depends=["onnxruntime"]` 并传递唯一的 `autolib::onnxruntime`。升级配套更新版本、三平台 URL、SHA256 和查找元数据；已有来源、构建状态或安装内容先核对并保留备份，不能因旧 sentinel 存在而跳过升级。
+
+sherpa 只通过模块局部补丁适配本仓库运行库位置，保留参考 Windows CPU 的 DLL/导入库定位修正；不扩展公共引擎。安装原生 C++ 头文件、必要依赖头文件和构建产物，按新版删除 espeak/piper 静态依赖并加入 utf8proc。`autolib::sherpa-onnx` 精确列举本次配置的静态库及系统链接要求，传递 sibling onnxruntime，不扫描任意库或照抄仍含 C API 的上游静态 `.pc` 链接清单。
+
+第三批仍只在 109 通过普通根入口进行一次配置与编译安装，不新增测试或消费者编译。核对原生 C++ 头文件、TTS/说话人分离开关、静态库符号、C/JNI/Python/WASM 产物缺席、实际 onnxruntime 路径及共享库依赖，随后使用已有工具核对两包闭包与打包内容。不启动模型推理，也不把编译、符号或归档检查当成语音效果验收；Windows、Linux aarch64 和真实消费链接由用户 CI 验收。失败后先报告原因，取得确认再修复续跑。
+
 ### 接入与交付
 
-首批及第二批各库使用现有 `src/dependencies/<name>/module.toml` 和同目录 `autolib-import.cmake`。版本、归档摘要、库特定选项及补丁保持参考基线；Git 标签或分支解析为迁移时确认的完整提交，不顺带升级版本或改变功能开关。源码构建、头文件复制、源码子目录、平台覆盖和系统依赖沿用已有能力。后置的 sherpa-onnx 不适用保留参考版本的约束，其升级方案另行确认。
+首批及第二批各库使用现有 `src/dependencies/<name>/module.toml` 和同目录 `autolib-import.cmake`。版本、归档摘要、库特定选项及补丁保持参考基线；Git 标签或分支解析为迁移时确认的完整提交，不顺带升级版本或改变功能开关。源码构建、头文件复制、源码子目录、平台覆盖和系统依赖沿用已有能力。第三批 sherpa-onnx 及其 onnxruntime 依赖不适用保留参考版本的约束，升级范围由上文拥有。
 
 纯头文件 copy 模块可声明 `platform_independent=true`，通用包检查不绑定模块名、文件数量或文件名；支持主源码与附属资源的文件和目录复制，核对 include 下的实际文件集合及来源字节，拒绝额外载荷或非普通文件。平台无关性由配方维护者确认，字节核对不代替该判断。Clipper2 1.5.4 对 GCC 9 使用模块局部补丁：移除其不识别的 `-Wno-c++20-compat`，仅将 Clipper2Z 的 sign-conversion 保留为警告；其他告警仍按上游 `-Werror` 处理，不修改算法或关闭 Z 坐标库。
 
@@ -88,4 +112,10 @@ PCL 的十一项消费组件静态库、公开头和 Config 均已核对；Linux
 
 既有 importer 对三个根包返回九包准备闭包，未执行 CMake adapter。builder 打包退出码为 0，日志 `build/stage2-package.log`，输出 `/home/lxx/xxautolib/build/stage2-release/` 含九份 linux-x86_64 归档及宿主 importer。全部归档通过 Zstd 完整性检查；包头、代表静动态库、链接和后端头齐全，PCL Config 的 FLANN 生产前缀在 staging 中改为 sibling 相对位置，importer 与安装工具字节一致。
 
-本阶段不新增测试、不在本机编译、不编译消费者，未验证 adapter 实际加载链接、搬迁运行、Windows 或 Linux aarch64；系统 HWLOC、OpenGL、OpenMP 与 C/C++ 运行环境仍由消费方满足，三平台验收留给用户手动触发 CI。助手未推送、发布或触发 CI。sherpa-onnx 升级方案尚待讨论，本记录保留 proposed 状态。
+本阶段不新增测试、不在本机编译、不编译消费者，未验证 adapter 实际加载链接、搬迁运行、Windows 或 Linux aarch64；系统 HWLOC、OpenGL、OpenMP 与 C/C++ 运行环境仍由消费方满足，三平台验收留给用户手动触发 CI。助手未推送、发布或触发 CI。sherpa-onnx 尚未迁入，本记录保留 proposed 状态。
+
+## 第三批暂停状态
+
+109 的第三批根配置退出码为 0，首次构建退出码为 2，日志为 `build/stage3-configure.log` 与 `build/stage3-build.log`。失败发生在 sherpa 子配置阶段：新增许可证安装规则把 json、kissfft 的 `LICENSES` 目录交给 `install(FILES)`，尚未进入 sherpa C++ 编译。该额外安装规则不属于必要迁移适配，恢复迁入时应撤回，不扩修许可证搜集机制。
+
+sherpa 配方、补丁、导入适配及 onnxruntime 升级均未完成安装、消费和打包验收，不计入前两批成果。五个草稿文件已完整备份至本地忽略目录 `.superpowers/sherpa-paused-draft/`，移出模块发现范围；onnxruntime 配方恢复为分支已有的 1.24.4，不新增其导入适配。该本地备份不随 Git 交付，后续恢复前须核对草稿与正式适配基线，不直接视为可发布模块。109 的源码、安装和构建数据保持原样，不作为恢复后版本已就绪的依据。

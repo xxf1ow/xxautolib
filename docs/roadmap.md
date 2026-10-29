@@ -44,7 +44,7 @@ FLANN、HarfBuzz 与 OpenCV 4.14.0 的具体取舍和双平台安装证据见[�
 | 已验证 | zlib、queue、freetype、lz4、onnxruntime、flann、harfbuzz、opencv | Windows x64、Linux aarch64 本地构建或复制安装通过，不追加下游交付要求；保留系统可选依赖边界。 |
 | 首批常规迁移 | asio、clipper2、cpp-httplib、eigen、expected、gtest、libzmq、nativefiledialog-extended、portaudio、pybind11、sdl3、spdlog、taskflow、websocketpp、yaml-cpp、boost | 配方及导入适配已迁入；109 的 Linux x86_64 构建安装及含 zlib 闭包打包通过，消费链接与三平台 CI 待用户手动验收，见[分批迁移记录](agent-notes/proposed/architecture/2026-10-28-batch-module-migration.md#首批验证结果)。 |
 | 第二批迁移 | oneTBB、imgui、pcl | 配方及导入适配已迁入；109 一次整批构建安装通过，消费链接与三平台 CI 待用户手动验收，见[第二批验证结果](agent-notes/proposed/architecture/2026-10-28-batch-module-migration.md#第二批验证结果)。 |
-| 后置讨论 | sherpa-onnx | 升级至实施前确认的最新上游版本，单独讨论升级及适配方案；不纳入第二批。 |
+| 暂停迁入 | sherpa-onnx | 版本管理完成后再恢复，使 PCL 与 sherpa 的独立项目分别选择 Eigen 3.4.0 与 5.0.1，不全局升级；已确认基线与未完成状态见[迁移记录](agent-notes/proposed/architecture/2026-10-28-batch-module-migration.md#第三批暂停状态)。 |
 | 明确排除 | fastdeploy、nndeploy、ftxui、logo、mysql、gtsam、lastools | 不迁入，不列为待迁候选。 |
 
 参考实现的可搬迁导入适配覆盖 eigen、onnxruntime、portaudio、lz4、flann、pcl、boost、zlib；它们是后续代表集，不意味着其他模块不可本地构建，也不要求新仓库首批同时发布八包。
