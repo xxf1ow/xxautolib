@@ -1,0 +1,14 @@
+# libzmq：ZeroMQ 消息引擎，保留上游默认静动态产物。
+name = "libzmq"
+type = "cmake"
+version = "4.3.5"
+sentinel = "include/zmq.h"
+config_dir = "lib/cmake/ZeroMQ"
+package_name = "ZeroMQ"
+
+[source] # 固定迁移基线；升级时同步核对布局及导出接口。
+GIT_REPOSITORY = "https://github.com/zeromq/libzmq.git"
+GIT_TAG = "622fc6dde99ee172ebaa9c8628d85a7a1995a21d"
+
+[platforms.windows]
+config_dir = "CMake"

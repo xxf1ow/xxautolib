@@ -1,0 +1,13 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -411,4 +411,9 @@
+ endif()
+ 
++# The HWLOC resource is outside the oneTBB installation tree.
++if(WIN32 AND CMAKE_HWLOC_2_5_DLL_PATH)
++    install(FILES "${CMAKE_HWLOC_2_5_DLL_PATH}" DESTINATION bin)
++endif()
++
+ # Keep it the last instruction.
+ add_subdirectory(cmake/post_install)

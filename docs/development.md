@@ -72,6 +72,10 @@ CLI 为 `importer prepare --local-root=<目录> --work-root=<目录> --os=<目�
 
 手动执行前必须信任所选分支提交：同步代码可读取和外传令牌，脱敏不是沙箱。人工修改 Gitee 正文或附件须避开同步，区块外描述也可能被覆盖。部分失败后重跑独立同步，无需重建；成功索引可跳过，未确认项可能重传，同名重复须人工处理。该入口尚需[真实验收](testing.md#独立-gitee-同步验证)，与只读消费独立；适配入口见 [Action 说明](../.github/actions/gitee-release/UPSTREAM.md#同步适配)。
 
+## 远端构建与源码传输授权
+
+109 机器（`lxx@192.168.0.109`）是局域网内安全可信设备。用户永久授权将本仓库任务相关源码传输至该机器的 `/home/lxx/xxautolib`。本轮第三方库迁移只在该目录执行整批编译安装验证，失败后的修复与增量续跑按用户确认执行；本机不执行任何编译，包括 Go 工具编译。传输前检查并保留已有数据，不传本仓库 `.git/`、凭据或 Windows 构建产物，不清空目标目录。该授权不包含 Git 推送、Release 上传或触发 CI；本轮迁移全部完成后，由用户手动推送并触发 CI 验收。
+
 ## 日常修改
 
 修改带注释的 module.toml 或同目录专用文件，不手改 `build/generated/`。Go/TOML、go.mod/go.sum、CMake helper 变化触发重新 configure；补丁及 DEPENDS 脚本由原生步骤跟踪。目录职责见[架构](architecture.md)，验证命令见[测试](testing.md)。不提交环境、来源、构建、安装和 `.superpowers/`；不整体跨平台复制，也不清空已有目录。

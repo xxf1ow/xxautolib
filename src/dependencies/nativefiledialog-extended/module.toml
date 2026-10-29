@@ -1,0 +1,16 @@
+# nativefiledialog-extended：原生文件对话框，安装静态库与 C/C++ 头文件。
+name = "nativefiledialog-extended"
+type = "cmake"
+sentinel = "include/nfd.h"
+config_dir = "lib/cmake/nfd"
+package_name = "nfd"
+
+[source] # 固定迁移基线；升级时同步核对布局及导出接口。
+GIT_REPOSITORY = "https://github.com/btzy/nativefiledialog-extended.git"
+GIT_TAG = "3cd252a8f7ca32419b1ca235c2990ba6a0ecba7c"
+
+[cmake.cache] # 保留参考静态构建；Linux GTK 后端需要独立声明开发包。
+BUILD_SHARED_LIBS = false
+
+[system_dependencies]
+apt = ["libgtk-3-dev"]

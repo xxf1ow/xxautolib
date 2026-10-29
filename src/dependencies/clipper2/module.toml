@@ -1,0 +1,25 @@
+# clipper2：多边形布尔运算，安装普通及 Z 坐标静态库。
+name = "clipper2"
+type = "cmake"
+version = "1.5.4"
+sentinel = "lib/cmake/clipper2/Clipper2Config.cmake"
+config_dir = "lib/cmake/clipper2"
+package_name = "Clipper2"
+pkgconfig_dir = "lib/pkgconfig"
+
+[source] # 固定迁移基线；升级时同步核对布局及导出接口。
+GIT_REPOSITORY = "https://github.com/AngusJohnson/Clipper2.git"
+GIT_TAG = "ef88ee97c0e759792e43a2b2d8072def6c9244e8"
+
+[cmake]
+SOURCE_SUBDIR = "CPP"
+
+[cmake.cache] # 保留参考的双坐标域静态产物，不构建工具、示例或测试。
+BUILD_SHARED_LIBS = false
+CLIPPER2_USINGZ = true
+CLIPPER2_UTILS = false
+CLIPPER2_EXAMPLES = false
+CLIPPER2_TESTS = false
+
+[[patches]]
+file = "clipper2-1.5.4-gcc9-warnings.patch" # GCC 9 跳过未知告警选项，并仅将 Z 库的符号转换告警保留为警告；其他 -Werror 不变。

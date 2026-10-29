@@ -1,0 +1,11 @@
+# gtest：GoogleTest 测试框架，安装参考默认库及导出配置。
+name = "gtest"
+type = "cmake"
+version = "1.17.0"
+sentinel = "include/gtest/gtest.h"
+config_dir = "lib/cmake/GTest"
+package_name = "GTest"
+
+[source] # 固定迁移基线；升级时同步核对布局及导出接口。
+GIT_REPOSITORY = "https://github.com/google/googletest.git"
+GIT_TAG = "52eb8108c5bdec04579160ae17225d66034bd723"

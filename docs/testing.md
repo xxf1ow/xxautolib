@@ -41,9 +41,9 @@ importer覆盖包头、优先级、依赖图、通用包、安全解包及CRC失
 
 双来源定向命令：`cmake -P src/autolib-builder/go-sdk.cmake -- test ./src/autolib-importer -run 'TestCMake(Gitee|GitHub|ImporterArchive|ReleaseSourceProtocol)' -count=1 -v`。[入口测试](../src/autolib-importer/remote_entry_test.go)使用真实归档及本机TLS；[传递依赖消费测试](../src/autolib-importer/gitee_entry_test.go)实际配置、链接、运行，核对分页共享、本地零请求及失败后新配置。共享向量、拒绝条件与信任限制见[双来源验证](agent-notes/implemented/architecture/2026-10-27-ci-discovery-and-release-sources.md#验证)。CMake接受原生重定向，importer拒绝降级；Windows需要正常用户TLS凭据。
 
-本机仅验证Windows x86_64、CMake 4.2.3及受控TLS；Linux双架构、最低CMake 3.20和真实Gitee完整消费未执行。真实下载须另行授权发布匹配`--source-response`的宿主工具归档；裸资产、只读API探测或同步成功均不证明完整消费，不得替换现有本地工具冒充空根引导。命名及其余缺口见[压缩分发验证](agent-notes/proposed/architecture/2026-10-27-importer-distribution-and-branch-release.md#本地验证与待验收范围)。
+真实 Gitee 消费已通过用户手动验收，依据及未细分的平台、版本范围见[双来源验收记录](agent-notes/implemented/architecture/2026-10-27-ci-discovery-and-release-sources.md#验证)。本机受控 TLS 证据为 Windows x86_64、CMake 4.2.3，不代替 Linux 双架构或最低 CMake 3.20 的专项证据。裸资产、只读 API 探测或同步成功均不证明完整消费，不得替换现有本地工具冒充空根引导。
 
-真实验收由[下载入口](../tests/autolib/run-github.cmake)负责：`cmake -DSOURCE_ROOT=<仓库绝对路径> -DVALIDATION_ROOT=<仓库绝对路径>/build/validation/remote -DREMOTE_ROOT=<GitHub-tag-URL或Gitee-download根> -P tests/autolib/run-github.cmake`，生成器参数沿用本地验证入口。从空根下载工具及库包，构建、运行并重新配置；不编译第三方源码或发布。该真实网络命令尚未在本轮执行。
+需要复验时使用[下载入口](../tests/autolib/run-github.cmake)：`cmake -DSOURCE_ROOT=<仓库绝对路径> -DVALIDATION_ROOT=<仓库绝对路径>/build/validation/remote -DREMOTE_ROOT=<GitHub-tag-URL或Gitee-download根> -P tests/autolib/run-github.cmake`，生成器参数沿用本地验证入口。从空根下载工具及库包，构建、运行并重新配置；不编译第三方源码或发布。用户手动验收未注明使用此 driver，不将其记为该命令的执行证据。
 
 代表集此前使用裸 importer 的三平台供给和真实 GitHub 消费已通过验收；Windows 由下载 driver 验证，Linux 由用户确认通过。供给摘要、公共目标及验收依据集中记录在[消费设计](agent-notes/proposed/architecture/2026-10-25-target-import-and-release-consumption.md#已验收范围)。该历史验收不证明压缩工具新格式或 Gitee 可用。
 

@@ -1,0 +1,13 @@
+# asio：跨平台异步 I/O，仅复制上游头文件。
+name = "asio"
+type = "copy"
+platform_independent = true
+sentinel = "include/asio.hpp"
+
+[source] # 固定迁移基线；升级时同步核对布局及导出接口。
+GIT_REPOSITORY = "https://github.com/chriskohlhoff/asio.git"
+GIT_TAG = "8806a6803cde7054c3049d3666d3ec36786568c5"
+
+[[copy]]
+directories = ["include"]
+destination = "include"

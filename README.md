@@ -95,7 +95,7 @@ cmake --build build --parallel
 
 ## 支持范围
 
-支持 Windows x86_64、Linux x86_64、Linux aarch64；不提供 macOS 发行物或通用交叉编译环境。源码构建与预编译发布是不同能力，包的实际供给范围以 Release 资产为准。queue、lz4、flann 的完整消费示例见上文；OpenCV、Boost、PCL 等复杂模块也通过相同构建体系管理来源与依赖，不要求全部库都作为二进制发行物。
+支持 Windows x86_64、Linux x86_64、Linux aarch64；不提供 macOS 发行物或通用交叉编译环境。源码构建与预编译发布是不同能力，包的实际供给范围以 Release 资产为准。queue、lz4、flann 的完整消费示例见上文；OpenCV、Boost、PCL 等复杂模块通过相同构建体系管理来源与依赖，不要求全部库都作为二进制发行物。各库迁入及验收状态见[路线图](docs/roadmap.md#模块迁移候选)。
 
 Windows 包使用 VS 2022、v143、Release、动态 CRT（`/MD`），运行时需提供实际依赖的 DLL 搜索路径；Linux 需满足对应 glibc、C++ ABI 和 OpenMP 要求。系统运行库不由 importer 安装。每包只维护当前槽位，没有多版本求解、工具链变体或整套发行快照，本地包也不会自动追随远端更新。
 

@@ -202,36 +202,47 @@ func stagePackage(o stageOptions) (staged string, err error) {
 }
 
 func validateUniversalPackage(module *moduleDefinition, installRoot string, adapter []byte) error {
-	if module.Name != "queue" || len(module.Copies) != 2 {
-		return fmt.Errorf("universal packages are only eligible for the declared queue layout")
+	if module.Kind != "copy" || len(adapter) == 0 {
+		return fmt.Errorf("universal package %s requires copy installation and a nonempty adapter", module.Name)
 	}
-	want := map[string]string{
-		"include/queue/atomicops.h":                  "readerwriterqueue/atomicops.h",
-		"include/queue/readerwriterqueue.h":          "readerwriterqueue/readerwriterqueue.h",
-		"include/queue/readerwritercircularbuffer.h": "readerwriterqueue/readerwritercircularbuffer.h",
-		"include/queue/concurrentqueue.h":            "concurrentqueue/concurrentqueue.h",
-		"include/queue/lightweightsemaphore.h":       "concurrentqueue/lightweightsemaphore.h",
-		"include/queue/blockingconcurrentqueue.h":    "concurrentqueue/blockingconcurrentqueue.h",
-	}
-	declared := map[string]string{}
+	sourceRoot := filepath.Clean(filepath.Join(filepath.Dir(module.Path), "../../.."))
+	want := map[string]string{}
 	for _, mapping := range module.Copies {
-		if mapping.Destination == "" || len(mapping.Files) == 0 || len(mapping.Directories) != 0 {
-			return fmt.Errorf("queue universal package requires explicit header file mappings")
+		if mapping.Destination != "include" && !strings.HasPrefix(filepath.ToSlash(mapping.Destination), "include/") {
+			return fmt.Errorf("universal package %s must copy its payload under include/", module.Name)
+		}
+		source := filepath.Join(sourceRoot, "git", module.Name)
+		if mapping.Resource != "" {
+			source = filepath.Join(sourceRoot, "git", "_resources", module.Name, mapping.Resource)
 		}
 		for _, file := range mapping.Files {
-			declared[filepath.ToSlash(filepath.Join(mapping.Destination, file))] = filepath.ToSlash(filepath.Join(mapping.Resource, file))
+			want[filepath.Join(mapping.Destination, filepath.Base(file))] = filepath.Join(source, file)
+		}
+		for _, directory := range mapping.Directories {
+			input := filepath.Join(source, directory)
+			if err := filepath.WalkDir(input, func(path string, entry fs.DirEntry, err error) error {
+				if err != nil {
+					return err
+				}
+				if entry.IsDir() {
+					return nil
+				}
+				if !entry.Type().IsRegular() {
+					return fmt.Errorf("universal package source must be a regular file: %s", path)
+				}
+				rel, err := filepath.Rel(input, path)
+				if err != nil {
+					return err
+				}
+				want[filepath.Join(mapping.Destination, rel)] = path
+				return nil
+			}); err != nil {
+				return err
+			}
 		}
 	}
-	if len(declared) != len(want) {
-		return fmt.Errorf("queue universal package must declare exactly the six fixed headers")
-	}
-	for path, source := range want {
-		if declared[path] != source {
-			return fmt.Errorf("queue universal package declaration differs at %s", path)
-		}
-	}
-	if len(adapter) == 0 {
-		return fmt.Errorf("queue adapter is empty")
+	if len(want) == 0 {
+		return fmt.Errorf("universal package %s has no source payload", module.Name)
 	}
 	actual := map[string]bool{}
 	root := filepath.Join(installRoot, module.Name)
@@ -246,42 +257,35 @@ func validateUniversalPackage(module *moduleDefinition, installRoot string, adap
 		if err != nil {
 			return err
 		}
-		if filepath.ToSlash(rel) == "autolib-import.cmake" {
-			if !entry.Type().IsRegular() {
-				return fmt.Errorf("queue consumption file must be regular: %s", path)
-			}
+		if !entry.Type().IsRegular() {
+			return fmt.Errorf("universal package file must be regular: %s", path)
+		}
+		if rel == "autolib-import.cmake" {
 			return nil
 		}
-		actual[filepath.ToSlash(rel)] = true
+		actual[rel] = true
 		return nil
 	}); err != nil {
 		return err
 	}
 	if len(actual) != len(want) {
-		return fmt.Errorf("queue universal installation must contain exactly the six declared headers")
+		return fmt.Errorf("universal package %s installation differs from its copy mappings", module.Name)
 	}
-	for path := range want {
+	for path, source := range want {
 		if !actual[path] {
-			return fmt.Errorf("queue universal installation is missing %s", path)
+			return fmt.Errorf("universal package %s installation is missing %s", module.Name, path)
 		}
-		resource := "readerwriterqueue"
-		if strings.HasPrefix(want[path], "concurrentqueue/") {
-			resource = "concurrentqueue"
-		}
-		moduleRoot := filepath.Dir(module.Path)
-		sourceRoot := filepath.Clean(filepath.Join(moduleRoot, "../../.."))
-		source := filepath.Join(sourceRoot, "git", "_resources", module.Name, resource, filepath.Base(want[path]))
 		installed := filepath.Join(root, filepath.FromSlash(path))
 		sourceBytes, err := os.ReadFile(source)
 		if err != nil {
-			return fmt.Errorf("queue universal source %s: %w", source, err)
+			return fmt.Errorf("universal package source %s: %w", source, err)
 		}
 		installedBytes, err := os.ReadFile(installed)
 		if err != nil {
 			return err
 		}
 		if !bytes.Equal(sourceBytes, installedBytes) {
-			return fmt.Errorf("queue universal header differs from its fixed source: %s", path)
+			return fmt.Errorf("universal package %s file differs from its source: %s", module.Name, path)
 		}
 	}
 	return nil

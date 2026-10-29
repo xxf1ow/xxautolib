@@ -1,0 +1,38 @@
+diff --git a/CPP/CMakeLists.txt b/CPP/CMakeLists.txt
+--- a/CPP/CMakeLists.txt
++++ b/CPP/CMakeLists.txt
+@@ -26,5 +26,12 @@ set(CLIPPER2_MAX_DECIMAL_PRECISION 8 CACHE STRING "Maximum decimal precision range")
+ 
+ 
++# GCC 9 does not recognize this warning option. Keep strict warnings elsewhere.
++set(CLIPPER2_CXX20_COMPAT_OPTION -Wno-c++20-compat)
++if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND
++   CMAKE_CXX_COMPILER_VERSION VERSION_LESS 10)
++  set(CLIPPER2_CXX20_COMPAT_OPTION "")
++endif()
++
+ if (APPLE)
+     set(CMAKE_SHARED_LIBRARY_SUFFIX ".dylib")
+ endif ()
+@@ -73,7 +80,7 @@ if (NOT (CLIPPER2_USINGZ STREQUAL "ONLY"))
+   if (MSVC)
+     target_compile_options(Clipper2 PRIVATE /W4 /WX)
+   else()
+-    target_compile_options(Clipper2 PRIVATE -Wall -Wextra -Wpedantic -Werror -Wno-c++20-compat)
++    target_compile_options(Clipper2 PRIVATE -Wall -Wextra -Wpedantic -Werror ${CLIPPER2_CXX20_COMPAT_OPTION})
+     target_link_libraries(Clipper2 PUBLIC -lm)
+   endif()
+ endif()
+@@ -101,7 +108,11 @@ if (NOT (CLIPPER2_USINGZ STREQUAL "OFF"))
+   if (MSVC)
+     target_compile_options(Clipper2Z PRIVATE /W4 /WX)
+   else()
+-    target_compile_options(Clipper2Z PRIVATE -Wall -Wextra -Wpedantic -Werror -Wno-c++20-compat -Wsign-conversion)
++    target_compile_options(Clipper2Z PRIVATE -Wall -Wextra -Wpedantic -Werror ${CLIPPER2_CXX20_COMPAT_OPTION} -Wsign-conversion)
++    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND
++       CMAKE_CXX_COMPILER_VERSION VERSION_LESS 10)
++      target_compile_options(Clipper2Z PRIVATE -Wno-error=sign-conversion)
++    endif()
+     target_link_libraries(Clipper2Z PUBLIC -lm)
+   endif()
+ endif()
