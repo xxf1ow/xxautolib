@@ -1,6 +1,6 @@
 # 架构
 
-本文是后续开发的架构基准：按精确版本构建和消费包，本地安装结果可直接消费，远端以专用 Git 仓库提供元数据、以同仓库 Release 提供归档。完整约束、取舍和验收要求由[版本化包与统一产物交付设计](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md)拥有；该设计尚未实施，不将本文的目标流程视为当前代码已经提供的能力。[开发指南](development.md)和[测试指南](testing.md)继续说明当前实现的命令及验证范围，随实施同步更新。
+本文是后续开发的架构基准：按精确版本构建和消费包，本地安装结果可直接消费，远端以专用 Git 仓库提供元数据、以同仓库 Release 提供归档。完整约束、取舍和验收要求由[版本化包与统一产物交付设计](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md)拥有。版本化构建与安装已落实；下文消费、打包、远端及 CI 仍为目标流程。[开发指南](development.md)和[测试指南](testing.md)说明当前命令及验证范围。
 
 ## 包与版本
 

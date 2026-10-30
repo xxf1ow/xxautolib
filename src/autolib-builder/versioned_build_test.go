@@ -10,6 +10,70 @@ import (
 	"testing"
 )
 
+func TestVersionedInstallCoexistence(t *testing.T) {
+	f := newEntryFixture(t)
+	installRoot := filepath.Join(f.root, "versioned install")
+	t.Setenv("AUTOLIB_INSTALL_ROOT", installRoot)
+	for _, version := range []string{"3.4.0", "5.0.1"} {
+		source := f.repository("eigen-"+version, map[string]string{
+			"eigen-version.h": "#define FIXTURE_EIGEN_VERSION \"" + version + "\"\n",
+			"CMakeLists.txt":  "cmake_minimum_required(VERSION 3.20)\nproject(eigen NONE)\ninstall(FILES eigen-version.h DESTINATION include)\n",
+		})
+		f.definitionVersion("eigen", version, "cmake", "sentinel='include/eigen-version.h'\n[source]\n"+source)
+		putFile(t, filepath.Join(f.root, "src/dependencies/eigen", version, "autolib-import.cmake"), "# fixture adapter\n")
+	}
+	putFile(t, filepath.Join(f.root, "src/dependencies/eigen/package.toml"), "latest='9.9.9'\n")
+	sentinel := putFile(t, filepath.Join(installRoot, "eigen/0.1/include/eigen-version.h"), "unrelated installed version\n")
+	shared := f.repository("shared", map[string]string{"CMakeLists.txt": `cmake_minimum_required(VERSION 3.20)
+project(shared NONE)
+install(CODE "file(APPEND \"\${CMAKE_INSTALL_PREFIX}/install-count\" \"installed\\n\")")
+`})
+	f.definitionVersion("shared", "1", "cmake", "[source]\n"+shared)
+	putFile(t, filepath.Join(f.root, "src/dependencies/shared/1/autolib-import.cmake"), "# fixture adapter\n")
+	rootSource := f.repository("root", map[string]string{
+		"probe.cpp": `#include <eigen-version.h>
+#include <fstream>
+int main(int argc, char** argv) {
+    if (argc != 2) return 1;
+    std::ofstream marker(argv[1], std::ios::binary);
+    marker << "eigen=" << FIXTURE_EIGEN_VERSION;
+    return marker ? 0 : 1;
+}
+`,
+		"CMakeLists.txt": `cmake_minimum_required(VERSION 3.20)
+project(root CXX)
+add_executable(probe probe.cpp)
+add_custom_command(OUTPUT "${CMAKE_BINARY_DIR}/marker"
+    COMMAND "$<TARGET_FILE:probe>" "${CMAKE_BINARY_DIR}/marker"
+    DEPENDS probe VERBATIM)
+add_custom_target(marker ALL DEPENDS "${CMAKE_BINARY_DIR}/marker")
+install(FILES "${CMAKE_BINARY_DIR}/marker" DESTINATION .)
+`,
+	})
+	for _, root := range []struct{ name, version string }{{"left", "3.4.0"}, {"right", "5.0.1"}} {
+		f.definitionVersion(root.name, "1", "cmake", "depends=['eigen@"+root.version+"','shared@1']\n[source]\n"+rootSource)
+		putFile(t, filepath.Join(f.root, "src/dependencies", root.name, "1/autolib-import.cmake"), "# fixture adapter\n")
+	}
+	f.mustEntry("-DBUILD_LIST=left@1,right@1,left@1")
+	f.build()
+	requireFile(t, filepath.Join(installRoot, "left/1/marker"), "eigen=3.4.0")
+	requireFile(t, filepath.Join(installRoot, "right/1/marker"), "eigen=5.0.1")
+	requireFile(t, filepath.Join(installRoot, "shared/1/install-count"), "installed\n")
+	requireFile(t, sentinel, "unrelated installed version\n")
+	requireFile(t, filepath.Join(installRoot, "eigen/package.toml"), "latest='9.9.9'\n")
+	if _, err := os.Stat(filepath.Join(installRoot, "eigen/9.9.9")); !os.IsNotExist(err) {
+		t.Fatalf("unselected latest must remain uninstalled: %v", err)
+	}
+	for _, root := range []struct{ name, version string }{{"left", "3.4.0"}, {"right", "5.0.1"}} {
+		metadata, err := readConsumptionMetadata(filepath.Join(installRoot, root.name, "1/autolib-import.cmake"))
+		if err != nil || metadata.Name != root.name || metadata.Version != "1" || !reflect.DeepEqual(metadata.Dependencies, []string{"eigen@" + root.version, "shared@1"}) {
+			t.Fatalf("wrong installed root identity: %+v, %v", metadata, err)
+		}
+	}
+	f.build()
+	requireFile(t, filepath.Join(installRoot, "shared/1/install-count"), "installed\n")
+}
+
 func TestVersionedBuildLocations(t *testing.T) {
 	f := newEntryFixture(t)
 	main := f.repository("main", map[string]string{"main.h": "main"})

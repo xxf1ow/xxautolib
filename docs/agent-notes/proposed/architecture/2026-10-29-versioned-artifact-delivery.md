@@ -10,7 +10,7 @@ Status: proposed
 
 ## 方案
 
-采用精确版本包、独立 latest 指针、统一安装结果和专用 Git 元数据仓库。实际归档放在同仓库的固定 Release 中，按完整文件名定位；消费端只克隆元数据并下载归档，不编译源码。[架构](../../../architecture.md)是后续开发入口，本文拥有版本、缓存、元数据和发布约束，不表示当前代码已经实现这些能力。
+采用精确版本包、独立 latest 指针、统一安装结果和专用 Git 元数据仓库。实际归档放在同仓库的固定 Release 中，按完整文件名定位；消费端只克隆元数据并下载归档，不编译源码。[架构](../../../architecture.md)是后续开发入口，本文拥有版本、缓存、元数据和发布约束；版本化构建安装的实现证据见下文，消费、打包及远端交付仍待实施。
 
 ### 版本与依赖
 
@@ -211,6 +211,23 @@ latest 指向的版本没有当前平台产物时，消费按缺包失败，不�
 ### 已有机制验证
 
 Windows、本机 CMake 4.2.3 和 Git 2.37.1 下，临时本地仓库的 FetchContent 实验连续执行两轮 configure：同次两次获取复用同目录与提交，即使上游中途产生新提交也不切换快照；下一次配置使用新目录并取得新提交，两轮提交深度都为 1。该证据只覆盖重新浅克隆和配置内复用机制，不证明真实网络、最低 CMake、Linux、本方案的端到端消费或发布已通过。
+
+### 版本化构建与安装验证
+
+2026-10-30，Linux x86_64、GNU 9.4.0、CMake 3.31.12、Go 1.27.3 上，`cmake -P src/autolib-builder/go-sdk.cmake -- test ./src/autolib-builder -run '^TestVersion' -count=1 -v` 通过 17 个顶层测试、61 个节点；`vet ./src/autolib-builder` 通过。声明发现覆盖 30 包、31 配方，Eigen latest 为 3.4.0，PCL 固定 `eigen@3.4.0`。
+
+[版本测试](../../../../src/autolib-builder/versions_test.go)验证引用、跨平台保留名称及目录身份；[根入口测试](../../../../src/autolib-builder/entry_test.go)验证全部版本、裸名 latest、精确选择及重配置；[原生安装测试](../../../../src/autolib-builder/versioned_build_test.go)验证独立根分别使用两个 Eigen 版本、精确共享依赖仅安装一次、其他版本 sentinel 不被复用及 latest 未安装时显式旧版本仍成功。安装 marker 由实际编译运行的程序读取所选依赖头文件生成；将 5.0.1 的编译 include 错接到 3.4.0 时，右根 marker 断言失败，恢复接线后通过。闭包冲突、冻结依赖、reuse 拒绝重标依赖和生成文件无碰撞也有正负样本。
+
+真实 Eigen 使用普通根入口，从空的专用 build/install 根完成配置与安装：
+
+```sh
+env AUTOLIB_INSTALL_ROOT=/home/lxx/xxautolib/build/versioned-stage1-install cmake -S . -B build/versioned-stage1 -G "Unix Makefiles" "-DBUILD_LIST=eigen@3.4.0,eigen@5.0.1"
+cmake --build build/versioned-stage1 --config Release
+```
+
+两个版本前缀分别包含真实头文件、`share/eigen3/cmake/Eigen3Config[Version].cmake` 和 `share/pkgconfig/eigen3.pc`；版本头、Config/pkg-config 均为 3.4.0、正式 5.0.1，五行安装身份分别记录 eigen、精确版本、linux、x86_64 和空依赖。包级 latest 保持 3.4.0。旧 `3rdparty/eigen` 在构建前后使用同一排序 tar 流检查，SHA256 均为 `b4a2852da34d3dba5cdc71ba934019db44a0400bc3e9e5664df2ce5b3c245587`；没有迁移或覆盖旧安装。
+
+命名规则在该 Linux 主机上验证，不代替 Windows 文件系统、Visual Studio 或 Linux aarch64 实机验收；最低 CMake 3.20 也未实测。真实 PCL、Boost 全库、其他库的版本化重建及 CI 未运行。既有消费/打包测试仍有九组旧协议缺口，不表示 builder 全集通过；版本化复制与路径修正、importer/`autolib.cmake`、Git 元数据快照及 CI/发布接口分别属于后续阶段，本设计保持 proposed，阶段成果仍需用户验收。
 
 ## 风险
 
