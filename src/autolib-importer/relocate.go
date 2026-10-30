@@ -7,9 +7,10 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
-	pathpkg "path"
 	"path/filepath"
 	"strings"
+
+	"xxautolib/src/internal/packagemetadata"
 )
 
 //go:embed fixup-metadata.cmake
@@ -82,32 +83,9 @@ func checkProducerReferences(root, prefix string, allowed []string) error {
 		if err != nil {
 			return err
 		}
-		text := strings.ReplaceAll(string(data), `\`, "/")
-		prefix := filepath.ToSlash(prefix)
-		for rest := text; ; {
-			i := strings.Index(rest, prefix)
-			if i < 0 {
-				return nil
-			}
-			rest = rest[i+len(prefix):]
-			if !strings.HasPrefix(rest, "/") {
-				return fmt.Errorf("%s: unhandled producer path at %s%s", path, prefix, rest)
-			}
-			end := strings.IndexAny(rest, "\"'\t\r\n;)")
-			if end < 0 {
-				end = len(rest)
-			}
-			reference := pathpkg.Clean(strings.TrimSuffix(strings.TrimSpace(rest[:end]), "/"))
-			valid := false
-			for _, candidate := range allowed {
-				if reference == "/"+candidate || strings.HasPrefix(reference, "/"+candidate+"/") {
-					valid = true
-					break
-				}
-			}
-			if !valid {
-				return fmt.Errorf("%s: producer reference must name this package version or an exact direct dependency: %s", path, reference)
-			}
+		if err := packagemetadata.CheckProducerReferences(string(data), prefix, allowed); err != nil {
+			return fmt.Errorf("%s: %w", path, err)
 		}
+		return nil
 	})
 }
