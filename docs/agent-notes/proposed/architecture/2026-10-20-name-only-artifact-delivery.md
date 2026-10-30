@@ -8,6 +8,8 @@ Status: proposed
 
 ## 方案
 
+后续开发中的版本身份、布局、消费获取和发布交接以[版本化包与统一产物交付设计](2026-10-29-versioned-artifact-delivery.md)为准。本文保留未受替代的可搬迁打包、adapter 约束及既有验证依据，不作为单版本消费限制的新增实施要求。
+
 默认分支发布限制由[importer 分发与分支发布设计](2026-10-27-importer-distribution-and-branch-release.md)替代，下文相应限制仅为历史约定；同仓库任意分支可手动发布，tag 和 PR ref 拒绝。
 
 本记录中的统一发行清单、单一消费来源和调用者列全包规则，由[无全局清单的双来源包消费](2026-10-24-manifestless-package-consumption.md)部分替代。下文相应规则仅保留为历史本地协议及其验证基线，不描述当前接口或构成实施要求；生产缓存与输入身份要求由[每轮重建决定](../../implemented/simplification/2026-10-24-ci-rebuild-without-production-cache.md)替代；固定槽、可搬迁打包和 adapter 约束继续有效，独立发布规则由[CI 系统设计](../../implemented/architecture/2026-10-20-ci-system.md#固定槽发布与汇总)拥有。

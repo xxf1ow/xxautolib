@@ -197,7 +197,7 @@ SDK 准备或版本校验、模块获取、builder 编译、TOML 解析或生成
 
 zlib 验证本地获取、修改、配置、编译、安装及安装结果验证的闭环。使用 `https://github.com/madler/zlib.git` 的 v1.3.1，固定完整提交 `51b7f2abdade71cd9bb0e7a373ef2610ec6f9daf`，不跟随浮动标签或分支，不为固定提交开启不适用的浅克隆。
 
-带中文维护注释的定义由 [zlib/module.toml](../../../../src/dependencies/zlib/module.toml)拥有，静态专用补丁保存在同目录。
+带中文维护注释的定义由 [zlib/module.toml](../../../../src/dependencies/zlib/1.3.1/module.toml)拥有，静态专用补丁保存在同目录。
 
 保留静态专用补丁的有效内容，移除动态库目标及相关安装定义，不仅传入 `BUILD_SHARED_LIBS=OFF`。保留必要许可证与归属，不借补丁重写上游 CMake。禁用示例，启用位置无关代码，最终安装到源码根的 `3rdparty/zlib/`。
 
@@ -211,7 +211,7 @@ queue 是无主来源的 header-only 聚合模块，获取两个固定资源并�
 
 资源固定为 readerwriterqueue 提交 `6867b56452352acf077fccd5f6cc7e3a8cfde0fb` 和 concurrentqueue 提交 `683b9e31ea15eb69f1b81cc1defc7850d5f20b71`。这两个值经只读上游 refs 查询核对，不在实际构建时重新解析 master。
 
-带中文维护注释的来源和安装清单由 [queue/module.toml](../../../../src/dependencies/queue/module.toml)拥有。两个资源版本彼此独立，不增加聚合版本号；安装清单保留各组头文件的同目录 include 关系。
+带中文维护注释的来源和安装清单由 [queue/module.toml](../../../../src/dependencies/queue/45db9a8b443122184c1f6b9db2c57453a9da1c6bcc18a5d7cfa4da29832fafed/module.toml)拥有。两个资源版本彼此独立，不增加统一上游版本号；包版本显式标识资源组合，安装清单保留各组头文件的同目录 include 关系。
 
 queue 目标完成意味着两个资源均已准备好且所有映射文件安装完成；不能只创建一个没有正确依赖的聚合目标。内部 smoke 验证仅使用安装前缀的 include 路径，覆盖两组头文件的编译及简单入队、出队结果；检查六个文件齐全，不扩展为上游队列并发正确性或性能测试。
 

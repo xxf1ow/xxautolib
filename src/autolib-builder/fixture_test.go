@@ -98,7 +98,12 @@ func (f *fixture) repository(name string, files map[string]string) string {
 
 func (f *fixture) definition(name, kind, body string) *moduleDefinition {
 	f.t.Helper()
-	path := definitionFile(f.t, f.root, name, kind, body)
+	return f.definitionVersion(name, "1.0", kind, body)
+}
+
+func (f *fixture) definitionVersion(name, version, kind, body string) *moduleDefinition {
+	f.t.Helper()
+	path := definitionVersionFile(f.t, f.root, name, version, kind, body)
 	m, err := loadDefinition(path, f.context.SystemName, f.context.Architecture)
 	if err != nil {
 		f.t.Fatal(err)
@@ -111,6 +116,7 @@ func (f *fixture) project(modules []*moduleDefinition, suffix string) {
 	byName := map[string]*moduleDefinition{}
 	for _, m := range modules {
 		byName[m.Name] = m
+		byName[m.Name+"@"+m.Version] = m
 	}
 	var generated strings.Builder
 	for _, m := range modules {
@@ -146,7 +152,7 @@ func (f *fixture) installed(name, path string) string {
 	if root == "" {
 		root = filepath.Join(f.root, "3rdparty")
 	}
-	return filepath.Join(root, name, path)
+	return filepath.Join(root, name, "1.0", path)
 }
 func readFile(t *testing.T, path string) string {
 	t.Helper()

@@ -44,7 +44,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	multiConfig := flags.String("multi-config", "", "ON or OFF")
 	runtime := flags.String("msvc-runtime-library", "", "explicit CMake runtime selection")
 	var modules, defaults repeatedFlag
-	flags.Var(&modules, "module", "selected module (repeatable)")
+	flags.Var(&modules, "module", "package[@version] (repeatable; empty selection discovers every recipe version)")
 	flags.Var(&defaults, "cmake-default", "KEY=VALUE (repeatable)")
 	if err := flags.Parse(args[1:]); err != nil {
 		return 1

@@ -31,24 +31,25 @@ func generate(context buildContext, names []string) error {
 	if err != nil {
 		return err
 	}
-	byName := map[string]*moduleDefinition{}
+	byRef := map[string]*moduleDefinition{}
 	for _, m := range definitions {
-		byName[m.Name] = m
+		byRef[(moduleRef{m.Name, m.Version}).String()] = m
 	}
 	type output struct{ path, content string }
 	outputs := []output{}
 	inputs := []string{slashJoin(context.SourceRoot, "go.mod"), slashJoin(context.SourceRoot, "go.sum")}
 	for _, m := range definitions {
 		dependencies := []*moduleDefinition{}
-		for _, name := range m.Depends {
-			dependencies = append(dependencies, byName[name])
+		for _, ref := range m.Depends {
+			dependencies = append(dependencies, byRef[ref])
 		}
 		content, err := renderModule(m, context, dependencies)
 		if err != nil {
 			return err
 		}
-		outputs = append(outputs, output{slashJoin(context.BuildRoot, "generated", m.Name+".cmake"), content})
+		outputs = append(outputs, output{slashJoin(context.BuildRoot, "generated", m.Name, m.Version+".cmake"), content})
 		inputs = append(inputs, filepath.ToSlash(m.Path))
+		inputs = append(inputs, slashJoin(filepath.Dir(filepath.Dir(m.Path)), "package.toml"))
 		adapter := slashJoin(filepath.Dir(m.Path), "autolib-import.cmake")
 		if _, err := os.Stat(adapter); err == nil {
 			inputs = append(inputs, adapter)
@@ -91,40 +92,100 @@ func generate(context buildContext, names []string) error {
 }
 
 func loadModuleClosure(sourceRoot string, names []string, systemName, architecture string) ([]*moduleDefinition, error) {
-	result := []*moduleDefinition{}
-	complete := map[string]bool{}
-	stack := []string{}
-	var visit func(string) error
-	visit = func(moduleName string) error {
-		path := filepath.Join(sourceRoot, "src", "dependencies", moduleName, "module.toml")
-		chain := strings.Join(append(slices.Clone(stack), moduleName), " -> ")
-		if slices.Contains(stack, moduleName) {
-			return fmt.Errorf("%s: dependency cycle: %s", path, chain)
+	if len(names) == 0 {
+		refs, err := discoverModuleRefs(sourceRoot)
+		if err != nil {
+			return nil, err
 		}
-		if complete[moduleName] {
+		for _, ref := range refs {
+			names = append(names, ref.String())
+		}
+	}
+	resolved := map[string]moduleRef{}
+	resolve := func(value string) (moduleRef, error) {
+		if ref, ok := resolved[value]; ok {
+			return ref, nil
+		}
+		ref, err := parseModuleRef(value)
+		if err != nil {
+			return moduleRef{}, err
+		}
+		ref, err = resolveModuleRef(sourceRoot, ref)
+		if err == nil {
+			resolved[value] = ref
+			resolved[ref.String()] = ref
+		}
+		return ref, err
+	}
+	definitions := map[string]*moduleDefinition{}
+	merged := map[string]bool{}
+	result := []*moduleDefinition{}
+	for _, request := range names {
+		root, err := resolve(request)
+		if err != nil {
+			return nil, fmt.Errorf("root %s: %w", request, err)
+		}
+		type selection struct {
+			ref   moduleRef
+			chain string
+		}
+		selected := map[string]selection{}
+		complete := map[string]bool{}
+		stack := []string{}
+		closure := []*moduleDefinition{}
+		var visit func(moduleRef) error
+		visit = func(ref moduleRef) error {
+			key := ref.String()
+			path := filepath.Join(sourceRoot, "src", "dependencies", ref.Name, ref.Version, "module.toml")
+			chain := strings.Join(append(slices.Clone(stack), key), " -> ")
+			if previous, ok := selected[ref.Name]; ok && previous.ref.Version != ref.Version {
+				return fmt.Errorf("root %s: conflicting dependency versions %s and %s; dependency chains: %s; %s", root, previous.ref, ref, previous.chain, chain)
+			}
+			if slices.Contains(stack, key) {
+				return fmt.Errorf("%s: dependency cycle: %s", path, chain)
+			}
+			if complete[key] {
+				return nil
+			}
+			selected[ref.Name] = selection{ref, chain}
+			module, ok := definitions[key]
+			if !ok {
+				var err error
+				module, err = loadDefinition(path, systemName, architecture)
+				if err != nil {
+					return fmt.Errorf("%w; dependency chain: %s", err, chain)
+				}
+				depends := []string{}
+				for _, dependency := range module.Depends {
+					dep, err := resolve(dependency)
+					if err != nil {
+						return fmt.Errorf("%s: %w; dependency chain: %s -> %s", path, err, chain, dependency)
+					}
+					depends = append(depends, dep.String())
+				}
+				module.Depends = unique(depends)
+				definitions[key] = module
+			}
+			stack = append(stack, key)
+			defer func() { stack = stack[:len(stack)-1] }()
+			for _, dependency := range module.Depends {
+				if err := visit(resolved[dependency]); err != nil {
+					return err
+				}
+			}
+			complete[key] = true
+			closure = append(closure, module)
 			return nil
 		}
-		if _, err := name(moduleName, "module name"); err != nil {
-			return fmt.Errorf("%s: %w; dependency chain: %s", path, err, chain)
-		}
-		module, err := loadDefinition(path, systemName, architecture)
-		if err != nil {
-			return fmt.Errorf("%w; dependency chain: %s", err, chain)
-		}
-		stack = append(stack, moduleName)
-		defer func() { stack = stack[:len(stack)-1] }()
-		for _, dependency := range module.Depends {
-			if err := visit(dependency); err != nil {
-				return fmt.Errorf("%s: %w", module.Path, err)
-			}
-		}
-		complete[moduleName] = true
-		result = append(result, module)
-		return nil
-	}
-	for _, moduleName := range names {
-		if err := visit(moduleName); err != nil {
+		if err := visit(root); err != nil {
 			return nil, err
+		}
+		for _, module := range closure {
+			key := (moduleRef{module.Name, module.Version}).String()
+			if !merged[key] {
+				merged[key] = true
+				result = append(result, module)
+			}
 		}
 	}
 	return result, nil

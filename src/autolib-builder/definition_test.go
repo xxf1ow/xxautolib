@@ -23,7 +23,21 @@ func putFile(t *testing.T, path, body string) string {
 
 func definitionFile(t *testing.T, root, name, kind, body string) string {
 	t.Helper()
-	return putFile(t, filepath.Join(root, "src", "dependencies", name, "module.toml"), "name='"+name+"'\ntype='"+kind+"'\n"+body)
+	version := "1.0"
+	for _, line := range strings.Split(body, "\n") {
+		if strings.HasPrefix(line, "version=") {
+			version = strings.Trim(strings.TrimPrefix(line, "version="), "'\"")
+			body = strings.Replace(body, line+"\n", "", 1)
+			break
+		}
+	}
+	return definitionVersionFile(t, root, name, version, kind, body)
+}
+
+func definitionVersionFile(t *testing.T, root, name, version, kind, body string) string {
+	t.Helper()
+	putFile(t, filepath.Join(root, "src", "dependencies", name, "package.toml"), "latest='"+version+"'\n")
+	return putFile(t, filepath.Join(root, "src", "dependencies", name, version, "module.toml"), "name='"+name+"'\nversion='"+version+"'\ntype='"+kind+"'\n"+body)
 }
 
 func TestDefinitionPlatformSelection(t *testing.T) {
@@ -285,7 +299,7 @@ func TestSystemDependencies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	flann, err := loadDefinition(filepath.Join(root, "src", "dependencies", "flann", "module.toml"), "Linux", "x86_64")
+	flann, err := loadDefinition(filepath.Join(root, "src", "dependencies", "flann", "f9caaf609d8b8cb2b7104a85cf59eb92c275a25d", "module.toml"), "Linux", "x86_64")
 	if err != nil {
 		t.Fatal(err)
 	}

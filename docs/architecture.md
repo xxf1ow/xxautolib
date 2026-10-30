@@ -1,50 +1,66 @@
 # 架构
 
-根 [CMakeLists.txt](../CMakeLists.txt) 设置编译选项、安装目录并输出构建环境摘要，通过 `BUILD_LIST` 或目录扫描选择模块。它启用 C/C++ 编译器，并通过[公共入口](../src/autolib-builder/index.cmake)探测 Git、自动准备固定 Go SDK 和模块缓存、独立构建 builder 与宿主 importer，再一次生成并加载所选模块。SDK、编译或生成失败时 configure 直接失败，不加载旧程序或生成结果，不升级工具链或依赖。
+本文是后续开发的架构基准：按精确版本构建和消费包，本地安装结果可直接消费，远端以专用 Git 仓库提供元数据、以同仓库 Release 提供归档。完整约束、取舍和验收要求由[版本化包与统一产物交付设计](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md)拥有。版本化构建与安装已落实；下文消费、打包、远端及 CI 仍为目标流程。[开发指南](development.md)和[测试指南](testing.md)说明当前命令及验证范围。
 
-## 目录职责
+## 包与版本
 
-模块定义与流水线引擎分为两层。`src/dependencies/<模块名>/module.toml` 只声明数据，中文注释说明维护约束；补丁与专用执行文件放在同一模块目录。默认发现全部 module.toml，`BUILD_LIST` 使用逗号分隔模块名并去重，缺少声明时报错。
+源码配方采用 `src/dependencies/<包名>/package.toml` 和 `<版本>/module.toml`、`<版本>/autolib-import.cmake`。各版本平等，安装位置为 `<安装根>/<包名>/<版本>/`，源码、构建和缓存身份也区分版本。`package.toml` 的 `latest` 是显式版本选择，不是版本排序结果或发布完成标记。
 
-`src/autolib-builder/` 中 definition.go 校验 TOML，generate.go 展开稳定依赖闭包并登记实际 Go/TOML 输入，cmake.go 输出原生 ExternalProject。根 Go module 固定 TOML 解析依赖，SDK 只用于生产端。CMake 负责自动重配置；生成内容不变时保留时间戳。ExternalProject 执行获取、补丁、构建、安装和自定义步骤；apply_patch.cmake 支持主源码或资源补丁，不自动恢复冲突源码。
+构建列表、配方依赖和下游请求统一使用 `包名@版本`；省略版本时读取对应来源的 latest，显式版本必须严格匹配。`BUILD_LIST` 留空发现全部配方版本，不增加 `BUILD_VERSIONS`。构建时解析依赖，安装包记录精确版本，消费时不重新选择依赖 latest。不做版本范围求解或同一消费工程的多版本隔离；全版本构建允许不同根包各自使用不同依赖版本，消费闭包的同名版本冲突直接报错。
 
-模块使用 cmake 构建或 copy 安装。独立依赖用 `depends` 声明，contrib 等附属输入归消费模块。原生目标等待直接依赖安装及资源补丁；配置代理只为当前子配置注入直接依赖的前缀、包、pkg-config 和 include 位置，保留调用方 include。窄引用提供资源源码根，不注入 Python 解释器；规则见[依赖接线决定](agent-notes/implemented/architecture/2026-10-20-flann-opencv-dependencies.md)。
+版本采用统一的跨平台 ASCII 路径规则，拒绝保留名称、固定文件名冲突及仅大小写不同的版本；合法字符串不改写。具体规则由正式设计拥有。
 
-子项目沿用父生成器身份、显式 CRT，固定 Release；模块 cache 优先于父级值，再采用引擎 policy、PIC、C++ 标准兜底值，不向父级 cache 写默认值。
+本地和 CI 都只做原生构建，不交叉编译或共用跨平台安装树。三个 CI 平台各有独立安装根；不同平台仅在 Release 中按不同文件名平铺共存，平台无关包继续使用 any/any。
 
-各工作副本独立维护 `.tools/go/`、`git/`、`build/` 和 `3rdparty/`，不整体跨平台传输。私有 SDK 与 Go 缓存在 `.tools/go/`，不随 build 清理，也不修改全局环境。主 Git 位于 `git/<模块>/`，Git 资源位于 `git/_resources/<模块>/<资源>/`，归档下载共用根 `git/`；解压、编译和步骤留在 `build/ep/`，builder 留在 `build/tools/`，生成结果留在 `build/generated/`。configure 检查本地 `.git` 与安装 sentinel；命中 sentinel 保留同名复用目标及依赖顺序，仍执行声明校验及可消费模块的消费准备。复用限制见[本地复用设计](agent-notes/implemented/architecture/2026-10-20-local-reuse-and-platform-inputs.md)。builder 同目录的 Go 测试验证公共引擎，库专用测试验证安装产物。
+## 组件职责
 
-## 工具与流水线职责
+根 [CMakeLists.txt](../CMakeLists.txt) 和[构建入口](../src/autolib-builder/index.cmake)准备固定 Go SDK、builder 和宿主 importer，再由 CMake/ExternalProject 执行构建。模块声明、资源、补丁、依赖接线和安装机制归 builder；它也拥有安装副本的路径修正及归档机制，不认识托管平台或发布凭据。
 
-构建机制与生产发布决策分别维护。三个工具使用独立源码目录和可执行入口，通过命令行协作，不互相导入或混编业务实现。
+`autolib-importer` 负责包选择、精确依赖遍历、复制或解包、下载、校验和缓存准备。单文件 [autolib.cmake](../src/autolib.cmake) 负责 importer 引导、FetchContent 元数据获取和包就绪后的 target 加载。消费端只有 CMake 负责 clone，importer 不保留 Git 获取或隐式重克隆能力。
 
-- autolib-builder 维护构建与本地打包机制；CMake/ExternalProject 执行实际构建，CI 不重写构建规则。
-- autolib-importer 维护消费校验和准备，不承担生产缓存策略或远端发布。
-- autolib-ci 维护生产策略：根据 builder 提供的事实规划模块依赖层与通用包 publisher，调用既有工具完成构建、打包和消费验证；不重新解析模块声明或复制构建、打包和解包引擎。
-- 发布编排、Release 写入和结果汇总归 autolib-ci，触发、runner/container、环境准备、权限、job 依赖与运行串行化归 [workflow](../.github/workflows/build-platform.yml)；接线与验收要求由独立的 [CI 系统设计](agent-notes/implemented/architecture/2026-10-20-ci-system.md)约定，不在 builder 或 importer 中实现。
+`autolib-ci` 负责构建计划、依赖层、通用包 publisher、消费验证和结果汇总；workflow 负责平台环境、触发、权限与任务串行。独立发布任务接收构建结果，调用既有打包机制，上传产物并提交元数据，不在三个工具之间混编业务实现。
 
-普通本地构建和离线消费不依赖 CI 发布流程，builder 不读取 CI 配置或凭据。importer 按固定宿主名输出到 configure 确定的绝对安装根；正式构建去符号，本地安装和打包附带裸程序，CI 发布单程序 tar.xz。命名见[压缩分发约定](agent-notes/proposed/architecture/2026-10-27-importer-distribution-and-branch-release.md#importer-瘦身与生产)。
+## 构建与交付
 
-CI 模块输入留空时扫描模块目录中的声明与 adapter，显式列表可选子集；builder 继续解析声明及依赖。自身或传递依赖缺 adapter 的根包静默过滤，各平台仅执行有效根的完整闭包；坏声明、不可读或非文件 adapter 仍失败。计划不执行 adapter 正文，实际消费负责核对目标及链接。全被过滤时成功汇总，不启动平台生产、发布工具或修改 Release。
+本地和 CI 使用同一构建流程，生成相同结构的安装结果，包含宿主 importer、消费所需的路径修正规则、包内身份、精确依赖和包级 `package.toml`。本地编译结束即可消费，不要求打包、上传或源码树参与下游运行。
 
-CI 每轮构建有效模块及依赖，不跨运行复用 Release 包。各平台顺序执行全部实际依赖层，共用本轮隔离安装根，共享依赖只构建一次；通用包由包含通用模块的唯一优先平台发布。逐槽真实消费及全闭包搬迁验证复用同一工程，既有三库保留运行检查，新模块通过实际导入和链接验证。上传资格绑定当前计划、平台与通用 publisher，按正式文件名同名替换，不设置显示 label，finalize 只汇总执行集合、不写发行清单。取舍见[生产缓存收缩决定](agent-notes/implemented/simplification/2026-10-24-ci-rebuild-without-production-cache.md)。
+公开二进制沿用既有 CI 的单一平台 ABI 基准和发布前验证；本地产物结构一致不代表任意工具链二进制兼容。本地自定义配置及混用远端依赖时，由使用者保持兼容；包身份和摘要校验不替代 ABI 判断，不增加 ABI 变体。
 
-[独立同步 workflow](../.github/workflows/sync-gitee.yml)在发布成功后检查完整 Release，或手动按包同步；原流水线不等待 Gitee。[本地 Action](../.github/actions/gitee-release/UPSTREAM.md)批量读元数据，以正文 SHA256、附件 ID 和大小判断跳过，按可用 CPU 数的两倍并发传输变化附件，由协调器合并成功索引。它不进入三个 Go 工具或 Gitee 消费；信任及恢复限制见[同步设计](agent-notes/proposed/architecture/2026-10-27-gitee-release-sync-workflow.md)。
+CI 编译成功后自动触发独立发布流程。安装结果经保留 Linux 软链接和权限的运输归档交接，再生成发布归档和 SHA256，上传专用产物仓库的 Release，批量提交成功项的独立摘要文件。源码仓库不再承担二进制 Release 中转；历史资产不自动迁移或删除。发布输入绑定触发构建的结果，不误用后续构建或源码提交的产物。
 
-## 二进制消费
+latest 与产物发布独立：可以不构建、不上传，只更新某个包的 `package.toml`；上传成功不会自动推进 latest，也不以任一平台产物齐备为更新条件。摘要和 latest 可以同次提交，但分别决定更新内容。
 
-提供 adapter 的模块由 builder 在声明依赖和本模块安装成功后生成 `autolib-import.cmake`，四行头声明名称、平台及直接依赖，正文提供 CMake 链接规则。sentinel/stamp 复用也执行消费准备；实际安装前置为未完成描述，安装失败后不能消费。无 adapter 的模块仍可独立构建，但不能作为可消费包的依赖。
+## 消费与缓存
 
-builder 的 `package` 核对并复制已有消费描述及安装树到 staging，只在副本中修正本包及声明 sibling 的生产路径，生成固定名 tar.zst 并复制宿主 importer，不改原安装或补齐描述。通用包仅用于维护者确认平台无关的 copy 模块，消费准备与打包均核对声明复制映射及来源字节。归档显式启用 Zstd 内容校验；无全局消费清单或外置摘要文件。
+`autolib.cmake` 所在目录是固定消费缓存；`AUTOLIB_LOCAL_ROOT` 默认空，空值禁用本地来源，非空时不得与缓存目录指向同一真实目录。来源首次加载后固定，远端仍由 `AUTOLIB_REMOTE_ROOT` 选择，不自动换源。
 
-下游携带单文件 [autolib.cmake](../src/autolib.cmake)，首次加载固定来源，通过 target 接口准备并链接根包。importer 按已解包目录、固定名归档、配置的公开 Release 查找，仅不存在时继续；安全准备依赖在前的完整结果，CMake 加载每包唯一的全局 `autolib::<name>`。宿主工具依次查找本地程序、本地 `.tar.xz`、远端同名归档，共用摘要校验及原生解包。其他缺包由 importer 补齐；本地齐全不联网，消费者无需外部解压工具、语言运行时或 builder。
+```text
+① 入口目录已解压缓存
+  → ② 本地来源已解压安装结果
+  → ③ 本地来源归档
+  → ④ 远端仓库对应的 Release 归档
+```
 
-远端适配提供下载地址和预期摘要：GitHub 使用原生 SHA256，Gitee 使用正文索引及附件 ID。工具与库包在解包或执行前校验字节，共享绑定来源和平台的配置期快照，完整枚举仅取一次，不跨配置缓存。默认使用 Gitee，GitHub 可覆盖；信任限制见[双平台消费决定](agent-notes/implemented/architecture/2026-10-27-ci-discovery-and-release-sources.md)。
+只有候选不存在才继续；损坏、身份不符或校验失败直接报错。无版本请求按各来源的 latest 查找，没有 latest 就是该来源未命中；进入远端选择后不回头复用本地同版本。包内精确依赖逐个使用同一查找顺序。
 
-queue、lz4、flann 提供精确布局 adapter；flann 传递 sibling lz4，不回退系统包。安装与解包统一使用 `<本地根>/<包名>/`，包头核对平台，通用包使用 any/any；不探测旧嵌套缓存。完整本地目录权威，更新由用户显式刷新；同根写入由调用方串行，不与消费交错。系统运行库不作为包下载。来源、工作根和目标在同次 configure 固定。协议见[包消费设计](agent-notes/proposed/architecture/2026-10-24-manifestless-package-consumption.md)，安装及布局见[直接消费设计](agent-notes/implemented/architecture/2026-10-25-direct-install-consumption.md)，用法见开发、测试指南。
+②使用 `cp -a` 语义保留 Linux 包内相对软链接，复制到缓存暂存区后修正生产路径，不修改原安装树；③④安全解包并校验。所有来源准备成功后都在入口目录留下完整已解压包，完整闭包就绪后才加载 adapter 和公共 `autolib::<包名>` 目标。同次 configure 复用准备结果。
+
+已有缓存及其 latest 不自动更新，补充新包只获取缺失部分；用户手动清理缓存后才重新选择。精确版本请求不自动改写缓存 latest。完整缓存可离线消费，本地来源和远端都禁用时也允许缓存命中；不回退系统包或源码编译，同缓存根写入由调用方串行。
+
+缓存 latest 仅在其指向的完整包仍存在时有效；删除目标版本目录后，该选择失效，重新按来源发现并在成功后保存新选择，不猜测其他缓存版本。包损坏仍报错，缺少依赖则只补齐已记录的精确依赖。
+
+## 元数据获取与远端托管
+
+GitHub、Gitee 的专用公开仓库使用相同元数据布局：仓库身份标识、`tools/<工具归档名>.sha256`、`<包名>/package.toml` 和 `<包名>/<版本>/<归档名>.sha256`。每个摘要文件只存 SHA256，归档文件名携带平台身份，不另存 URL、附件 ID 或重复平台字段；实际归档平铺在固定 Release。
+
+仅在需要远端时，CMake 使用 FetchContent 新建浅克隆；每次需要远端的新 configure 重新获取，同次配置只准备并检查一份快照。首次 importer 引导与后续包获取复用该快照，从下载 base URL 推导仓库和附件地址，不使用 Release/contents API、Raw 或静态页面发现元数据。尚未取得快照时由 CMake 获取；已准备的快照意外丢失则报错，重新 configure，不在 importer 中增加恢复路径。
+
+发布任务从 `GITEE_REPOSITORY`、`GITEE_TOKEN` 获取 Gitee 目标与凭据。目标不存在时创建仓库，以项目自定义 README 和身份标识初始化；已有仓库必须通过身份与内容检查，不能自动认领源码仓库。每轮只准备一个本地 Git 工作副本，并行上传结束后串行提交成功摘要及独立的 latest 变更。GitHub 使用同一协议，发布 API 和写入凭据各自适配。
+
+同名产物允许替换。上传与元数据提交不是事务，短暂缺包或摘要不一致时消费失败；部分失败保留成功项，提交失败报告失败，显式重跑补齐，不增加不可变修订、回滚、分布式锁或全局发行清单。
+
+重跑以选定的原构建结果重新打包、上传，并登记本次上传字节的摘要，不因同名附件存在就跳过。元数据 push 确认后才报告成功；没有显式重跑时，不一致可能持续存在，不承诺自动修复。
 
 ## 文档职责
 
-[开发指南](development.md)拥有环境和构建命令，[测试指南](testing.md)拥有验证入口。长期理由与授权见[仓库基础设施决定](agent-notes/implemented/process/2026-10-19-repository-foundation.md)；模块定义与生成规则见[流水线设计](agent-notes/implemented/architecture/2026-10-19-toml-externalproject-zlib.md)。
-
-[路线图](roadmap.md)区分本仓库已验收能力、待迁移能力及待实施方向，不作为当前接口说明。
+本页拥有整体流程，正式设计拥有协议细节与长期理由；[路线图](roadmap.md)记录实施与验收范围。既有构建引擎见[流水线设计](agent-notes/implemented/architecture/2026-10-19-toml-externalproject-zlib.md)，平台环境和原生并行约束见[CI 系统设计](agent-notes/implemented/architecture/2026-10-20-ci-system.md)。后续设计与实现不得重新引入与本基准冲突的单版本槽位、消费 API 摘要查询或 latest 发布门槛。

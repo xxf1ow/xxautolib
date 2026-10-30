@@ -2,6 +2,8 @@
 
 本仓库按能力分批接入模块，先完成本地构建安装，再建立下游导入、二进制交付和 CI。本文维护阶段目标与迁移范围；各阶段的理由和约束由链接的 Agent Note 拥有，具体实现开始前再确认该批设计。
 
+后续开发遵循[架构基准](architecture.md)。版本化构建安装已实现并通过 Linux x86_64 双 Eigen 验证；[阶段证据与缺口](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md#版本化构建与安装验证)不代替用户验收。消费缓存、远端元数据和 CI 发布按[四阶段交付](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md#实施阶段)另行确认；sherpa 独立接入。
+
 [Go 工具层与离线导入设计](agent-notes/proposed/architecture/2026-10-21-go-tooling-and-offline-import.md)的 Go 重建与本地交付阶段已通过用户验收；[分阶段消费设计](agent-notes/proposed/architecture/2026-10-25-target-import-and-release-consumption.md#已验收范围)记录本地接口和三平台 GitHub 下载验收。具体平台、搬迁链接及协议证据由对应设计拥有，Gitee 消费验收见下节。
 
 独立的[CI 系统](agent-notes/implemented/architecture/2026-10-20-ci-system.md)完成三平台代表库的原生构建与发布，不依赖扩库进度。[无全局清单包消费](agent-notes/proposed/architecture/2026-10-24-manifestless-package-consumption.md)的本地协议及三平台搬迁链接已验收；[每轮重建与文件名发布](agent-notes/implemented/simplification/2026-10-24-ci-rebuild-without-production-cache.md)记录替代生产缓存后的三平台远端证据。后续设计交接、扩库及远端操作仍须确认，不自动推进。
@@ -37,9 +39,7 @@
 | 三平台原生 CI | 已实现 | queue、lz4、flann 的三平台原生单 job、统一环境、FIFO 预算、真实供给已有验证证据。任意分支可手动运行；OpenCV 等其余库按需另行确认。 |
 | 平台无关头文件槽位 | 已实现 | queue-any-any 的打包、导入、唯一 publisher 和三平台消费已验证，只有一个通用资产；机器码包与 importer 仍限定平台。 |
 
-本地能力的既有决定见[模块扩展](agent-notes/proposed/architecture/2026-10-20-module-expansion.md)，本批方案见[本地复用与平台输入设计](agent-notes/implemented/architecture/2026-10-20-local-reuse-and-platform-inputs.md)；导入、打包和固定槽见[二进制交付](agent-notes/proposed/architecture/2026-10-20-name-only-artifact-delivery.md)；流水线、环境、ABI、并行和通用槽位见独立的[CI 系统设计](agent-notes/implemented/architecture/2026-10-20-ci-system.md)。
-
-FLANN、HarfBuzz 与 OpenCV 4.14.0 的具体取舍和双平台安装证据见[依赖与复杂资源决定](agent-notes/implemented/architecture/2026-10-20-flann-opencv-dependencies.md)；本地二进制闭环入口见[测试指南](testing.md#本地二进制闭环)。这些证据不表示其他复杂模块或远端二进制发行已经完成。
+机制与设计索引见[架构](architecture.md)；FLANN、HarfBuzz、OpenCV 的双平台证据见[依赖与复杂资源决定](agent-notes/implemented/architecture/2026-10-20-flann-opencv-dependencies.md)，不证明其他模块或远端发行通过。
 
 ## 模块迁移候选
 

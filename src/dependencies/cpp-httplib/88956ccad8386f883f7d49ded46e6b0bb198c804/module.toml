@@ -1,5 +1,6 @@
 # cpp-httplib：HTTP 客户端与服务器，仅安装单头文件。
 name = "cpp-httplib"
+version = "88956ccad8386f883f7d49ded46e6b0bb198c804"
 type = "copy"
 platform_independent = true
 sentinel = "include/cpp-httplib/httplib.h"

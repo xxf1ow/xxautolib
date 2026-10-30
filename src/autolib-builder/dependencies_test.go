@@ -72,7 +72,7 @@ install(FILES "${CMAKE_BINARY_DIR}/paths" "${CMAKE_BINARY_DIR}/args" "${CMAKE_BI
 		f.project([]*moduleDefinition{dep, cached, leaf}, "")
 		f.build()
 		requireFile(t, f.installed("leaf", "marker"), "installed")
-		if _, err := os.Stat(filepath.Join(f.root, "git/_resources/cached/unavailable")); !os.IsNotExist(err) {
+		if _, err := os.Stat(filepath.Join(f.root, "git/_resources/cached/1.0/unavailable")); !os.IsNotExist(err) {
 			t.Fatal("cached resource work executed")
 		}
 	})
@@ -103,9 +103,9 @@ func TestDependencyConfigurationIdentity(t *testing.T) {
 			t.Fatal(err)
 		}
 		putFile(t, filepath.Join(f.root, "modules.cmake"), generated)
-		putFile(t, filepath.Join(f.root, "CMakeLists.txt"), "cmake_minimum_required(VERSION 3.20)\nproject(fixture NONE)\ninclude(ExternalProject)\nadd_custom_target(dep)\ninclude(modules.cmake)\n")
+		putFile(t, filepath.Join(f.root, "CMakeLists.txt"), "cmake_minimum_required(VERSION 3.20)\nproject(fixture NONE)\ninclude(ExternalProject)\nadd_custom_target(_al_pkg_646570_312e30)\ninclude(modules.cmake)\n")
 		f.configure()
-		script := putFile(t, filepath.Join(f.root, "inspect.cmake"), "include(\""+filepath.ToSlash(filepath.Join(f.context.BuildRoot, "generated/leaf-dependency-setup.cmake"))+"\")\nforeach(arg IN LISTS _al_command)\nmessage(\"ARG=${arg}\")\nendforeach()\n")
+		script := putFile(t, filepath.Join(f.root, "inspect.cmake"), "include(\""+filepath.ToSlash(filepath.Join(f.context.BuildRoot, "generated/_dependency-setup/leaf/1.0/dependency-setup.cmake"))+"\")\nforeach(arg IN LISTS _al_command)\nmessage(\"ARG=${arg}\")\nendforeach()\n")
 		out := f.must(f.context.CMakeCommand, "-P", script)
 		if multi {
 			for _, want := range []string{"ARG=Visual Studio 17 2022\n", "ARG=-A\n", "ARG=x64\n", "ARG=-T\n", "ARG=v142,host=x64\n", "ARG=-DCMAKE_GENERATOR_INSTANCE:INTERNAL=C:/VS instance\n", "ARG=-DCMAKE_MSVC_RUNTIME_LIBRARY:STRING=" + crt + "\n"} {

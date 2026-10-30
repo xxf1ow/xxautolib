@@ -36,7 +36,7 @@ func TestNativePipeline(t *testing.T) {
 		f := newFixture(t)
 		repo := f.repository("child", map[string]string{"public.h": "subdir header", "build/cmake/CMakeLists.txt": "cmake_minimum_required(VERSION 3.20)\nproject(child NONE)\ninstall(FILES ../../public.h DESTINATION include)\n"})
 		m := f.definition("demo", "cmake", "[source]\n"+repo+"[cmake]\nSOURCE_SUBDIR='build/cmake'\n")
-		if err := os.MkdirAll(filepath.Join(f.root, "git", "demo"), 0755); err != nil {
+		if err := os.MkdirAll(filepath.Join(f.root, "git", "demo", "1.0"), 0755); err != nil {
 			t.Fatal(err)
 		}
 		f.project([]*moduleDefinition{m}, "")
@@ -122,7 +122,7 @@ project(fixture NONE)
 include(ExternalProject)
 include(modules.cmake)
 foreach(key CMAKE_GENERATOR CMAKE_GENERATOR_PLATFORM CMAKE_GENERATOR_TOOLSET CMAKE_GENERATOR_INSTANCE CMAKE_ARGS BUILD_COMMAND INSTALL_COMMAND)
- get_property(value TARGET demo PROPERTY _EP_${key})
+ get_property(value TARGET _al_pkg_64656d6f_312e30 PROPERTY _EP_${key})
  file(WRITE "${CMAKE_BINARY_DIR}/${key}" "${value}")
 endforeach()
 `)
@@ -184,7 +184,7 @@ func TestMakePropagation(t *testing.T) {
 		args = append(args, "-A", outerPlatform, "-T", outerToolset)
 	}
 	f.must(args...)
-	setup := readFile(t, filepath.Join(f.context.BuildRoot, "generated", "demo-dependency-setup.cmake"))
+	setup := readFile(t, filepath.Join(f.context.BuildRoot, "generated", "_dependency-setup", "demo", "1.0", "dependency-setup.cmake"))
 	if !strings.Contains(setup, "-DCMAKE_MAKE_PROGRAM:STRING=/opt/ci-tools/bin/make") {
 		t.Fatalf("generated ExternalProject child configure omitted pinned Make program:\n%s", setup)
 	}
@@ -214,8 +214,8 @@ func TestPersistentInputs(t *testing.T) {
 	m := f.definition("demo", "copy", "[source]\n"+main+"[resources.extra]\n"+extra+"[[copy]]\nfiles=['main.h']\ndestination='first'\n[[copy]]\nresource='extra'\nfiles=['extra.h']\ndestination='second'\n")
 	f.project([]*moduleDefinition{m}, "")
 	f.build()
-	putFile(t, filepath.Join(f.root, "git/demo/main.h"), "manual edit")
-	putFile(t, filepath.Join(f.root, "git/_resources/demo/extra/extra.h"), "resource edit")
+	putFile(t, filepath.Join(f.root, "git/demo/1.0/main.h"), "manual edit")
+	putFile(t, filepath.Join(f.root, "git/_resources/demo/1.0/extra/extra.h"), "resource edit")
 	m.Source.GitTag = "does-not-exist"
 	r := m.Resources["extra"]
 	r.GitTag = "does-not-exist"
@@ -230,8 +230,8 @@ func TestPersistentInputs(t *testing.T) {
 	t.Run("git file", func(t *testing.T) {
 		f := newFixture(t)
 		m := f.definition("demo", "copy", testSource+"[[copy]]\nfiles=['x.h']\ndestination='include'\n")
-		putFile(t, filepath.Join(f.root, "git/demo/.git"), "gitdir: unavailable")
-		putFile(t, filepath.Join(f.root, "git/demo/x.h"), "local worktree")
+		putFile(t, filepath.Join(f.root, "git/demo/1.0/.git"), "gitdir: unavailable")
+		putFile(t, filepath.Join(f.root, "git/demo/1.0/x.h"), "local worktree")
 		f.project([]*moduleDefinition{m}, "")
 		f.build()
 		requireFile(t, f.installed("demo", "include/x.h"), "local worktree")
@@ -240,10 +240,10 @@ func TestPersistentInputs(t *testing.T) {
 		t.Run(fmt.Sprint("hidden/", resource), func(t *testing.T) {
 			f := newFixture(t)
 			body := testSource + "[[copy]]\nfiles=['x.h']\ndestination='.'\n"
-			local := filepath.Join(f.root, "git/demo")
+			local := filepath.Join(f.root, "git/demo/1.0")
 			if resource {
 				body = "[resources.extra]\nGIT_REPOSITORY='unused'\nGIT_TAG='fixed'\n[[copy]]\nresource='extra'\nfiles=['x.h']\ndestination='.'\n"
-				local = filepath.Join(f.root, "git/_resources/demo/extra")
+				local = filepath.Join(f.root, "git/_resources/demo/1.0/extra")
 			}
 			m := f.definition("demo", "copy", body)
 			marker := putFile(t, filepath.Join(local, ".manual"), "preserve me")
@@ -268,10 +268,10 @@ func TestSentinel(t *testing.T) {
 	sentinel := putFile(t, f.installed("demo", "include/x.h"), "cached")
 	m.Patches = append(m.Patches, patchDefinition{File: filepath.Join(f.root, "must-not-apply.patch")})
 	m.Steps = append(m.Steps, stepDefinition{Name: "must_not_run", Dependees: []string{"build"}, Commands: [][]string{{"unavailable-command"}}})
-	f.project([]*moduleDefinition{m}, `if(TARGET _al_resource_4_demo_extra)
+	f.project([]*moduleDefinition{m}, `if(TARGET _al_resource_23__al_pkg_64656d6f_312e30_extra)
 message(FATAL_ERROR "cached module contains work targets")
 endif()
-get_property(external TARGET demo PROPERTY _EP_IS_EXTERNAL_PROJECT)
+get_property(external TARGET _al_pkg_64656d6f_312e30 PROPERTY _EP_IS_EXTERNAL_PROJECT)
 if(external)
 message(FATAL_ERROR "cached module is external")
 endif()

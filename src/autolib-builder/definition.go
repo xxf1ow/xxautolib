@@ -370,25 +370,46 @@ func loadDefinition(path, systemName, architecture string) (definition *moduleDe
 	if d.Name, err = name(m["name"], "name"); err != nil {
 		return nil, err
 	}
-	if d.Name != filepath.Base(filepath.Dir(path)) {
+	versionDirectory := filepath.Dir(path)
+	packageDirectory := filepath.Dir(versionDirectory)
+	if d.Name != filepath.Base(packageDirectory) {
 		return nil, fmt.Errorf("name: must match the module directory name")
 	}
 	d.Kind, _ = m["type"].(string)
 	if d.Kind != "cmake" && d.Kind != "copy" {
 		return nil, fmt.Errorf("type: expected cmake or copy")
 	}
-	if v, ok := m["version"]; ok {
-		if d.Version, err = text(v, "version"); err != nil {
-			return nil, err
-		}
+	if d.Version, err = text(m["version"], "version"); err != nil {
+		return nil, err
+	}
+	if err = validatePackageVersion(d.Version); err != nil {
+		return nil, err
+	}
+	if d.Version != filepath.Base(versionDirectory) {
+		return nil, fmt.Errorf("version: must match the version directory name")
+	}
+	if filepath.Base(path) != "module.toml" {
+		return nil, fmt.Errorf("recipe filename: expected module.toml")
+	}
+	if err = exactEntry(filepath.Dir(packageDirectory), d.Name, true); err != nil {
+		return nil, err
+	}
+	if _, err = versionDirectories(packageDirectory); err != nil {
+		return nil, err
+	}
+	if err = exactEntry(packageDirectory, d.Version, true); err != nil {
+		return nil, err
+	}
+	if err = exactEntry(versionDirectory, "module.toml", false); err != nil {
+		return nil, err
 	}
 	depends, err := stringArray(optional(m, "depends", []any{}), "depends")
 	if err != nil {
 		return nil, err
 	}
 	for _, dep := range depends {
-		if _, err = name(dep, "depends"); err != nil {
-			return nil, err
+		if _, err = parseModuleRef(dep); err != nil {
+			return nil, fmt.Errorf("depends: %w", err)
 		}
 		if !slices.Contains(d.Depends, dep) {
 			d.Depends = append(d.Depends, dep)

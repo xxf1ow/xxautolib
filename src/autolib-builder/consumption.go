@@ -16,12 +16,13 @@ import (
 const incompleteConsumption = "# AutoLib installation incomplete\n"
 
 type consumptionOptions struct {
-	SourceRoot, InstallRoot, Name, OS, Arch, Phase string
+	SourceRoot, InstallRoot, Name, Version, OS, Arch, Phase string
+	Dependencies                                            []string
 }
 
 type consumptionMetadata struct {
-	Name, OS, Arch string
-	Dependencies   []string
+	Name, Version, OS, Arch string
+	Dependencies            []string
 }
 
 func readConsumptionMetadata(path string) (metadata consumptionMetadata, err error) {
@@ -47,7 +48,7 @@ func readConsumptionMetadata(path string) (metadata consumptionMetadata, err err
 	for _, field := range []struct {
 		key   string
 		value *string
-	}{{"AUTOLIB_PACKAGE_NAME", &metadata.Name}, {"AUTOLIB_OS", &metadata.OS}, {"AUTOLIB_ARCH", &metadata.Arch}, {"AUTOLIB_DEPENDENCIES", &dependencies}} {
+	}{{"AUTOLIB_PACKAGE_NAME", &metadata.Name}, {"AUTOLIB_PACKAGE_VERSION", &metadata.Version}, {"AUTOLIB_OS", &metadata.OS}, {"AUTOLIB_ARCH", &metadata.Arch}, {"AUTOLIB_DEPENDENCIES", &dependencies}} {
 		if !scanner.Scan() {
 			return metadata, fmt.Errorf("missing %s: %v", field.key, scanner.Err())
 		}
@@ -61,6 +62,9 @@ func readConsumptionMetadata(path string) (metadata consumptionMetadata, err err
 	if err := validatePackageName(metadata.Name); err != nil {
 		return metadata, err
 	}
+	if err := validatePackageVersion(metadata.Version); err != nil {
+		return metadata, err
+	}
 	if metadata.OS != "any" || metadata.Arch != "any" {
 		if err := validatePackagePlatform(metadata.OS, metadata.Arch); err != nil {
 			return metadata, err
@@ -69,12 +73,12 @@ func readConsumptionMetadata(path string) (metadata consumptionMetadata, err err
 	if dependencies != "" {
 		metadata.Dependencies = strings.Split(dependencies, ";")
 		for _, dependency := range metadata.Dependencies {
-			if err := validatePackageName(dependency); err != nil {
-				return metadata, err
+			ref, err := parseModuleRef(dependency)
+			if err != nil || ref.Version == "" {
+				return metadata, fmt.Errorf("dependency %q must be an exact name@version reference: %v", dependency, err)
 			}
 		}
-		slices.Sort(metadata.Dependencies)
-		metadata.Dependencies = slices.Compact(metadata.Dependencies)
+		metadata.Dependencies = unique(metadata.Dependencies)
 	}
 	return metadata, nil
 }
@@ -86,12 +90,22 @@ func prepareConsumption(o consumptionOptions) error {
 	if err := validatePackageName(o.Name); err != nil {
 		return err
 	}
+	if o.Version == "" {
+		return fmt.Errorf("prepare-consumption requires --version")
+	}
+	ref, err := resolveModuleRef(o.SourceRoot, moduleRef{o.Name, o.Version})
+	if err != nil {
+		return err
+	}
 	if err := validatePackagePlatform(o.OS, o.Arch); err != nil {
 		return err
 	}
 	system := map[string]string{"windows": "Windows", "linux": "Linux"}[o.OS]
-	module, err := loadDefinition(filepath.Join(o.SourceRoot, "src/dependencies", o.Name, "module.toml"), system, o.Arch)
+	module, err := loadDefinition(filepath.Join(o.SourceRoot, "src/dependencies", ref.Name, ref.Version, "module.toml"), system, o.Arch)
 	if err != nil {
+		return err
+	}
+	if err := validateArtifactVersionPath(filepath.Join(o.InstallRoot, o.Name, o.Version)); err != nil {
 		return err
 	}
 	adapterPath := filepath.Join(filepath.Dir(module.Path), "autolib-import.cmake")
@@ -103,7 +117,39 @@ func prepareConsumption(o consumptionOptions) error {
 		return fmt.Errorf("%s: %w", adapterPath, err)
 	}
 	packageOS, packageArch := packagePlatform(module, o.OS, o.Arch)
-	output := filepath.Join(o.InstallRoot, o.Name, "autolib-import.cmake")
+	dependencies := unique(o.Dependencies)
+	selected := map[string]moduleRef{}
+	for _, dependency := range dependencies {
+		ref, err := parseModuleRef(dependency)
+		if err != nil || ref.Version == "" {
+			return fmt.Errorf("package %s: dependency %q must be an exact name@version reference: %v", o.Name, dependency, err)
+		}
+		if previous, ok := selected[ref.Name]; ok && previous != ref {
+			return fmt.Errorf("package %s: conflicting frozen dependencies %s and %s", o.Name, previous, ref)
+		}
+		selected[ref.Name] = ref
+		if err := validateArtifactVersionPath(filepath.Join(o.InstallRoot, ref.Name, ref.Version)); err != nil {
+			return err
+		}
+	}
+	declared := map[string]bool{}
+	for _, dependency := range module.Depends {
+		ref, err := parseModuleRef(dependency)
+		if err != nil {
+			return err
+		}
+		actual, ok := selected[ref.Name]
+		if !ok || (ref.Version != "" && ref != actual) {
+			return fmt.Errorf("package %s: frozen dependencies do not match declaration %s", o.Name, ref)
+		}
+		declared[ref.Name] = true
+	}
+	for _, ref := range selected {
+		if !declared[ref.Name] {
+			return fmt.Errorf("package %s: frozen dependency %s is not declared", o.Name, ref)
+		}
+	}
+	output := filepath.Join(o.InstallRoot, o.Name, o.Version, "autolib-import.cmake")
 	old, err := os.ReadFile(output)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("%s: %w", output, err)
@@ -113,8 +159,17 @@ func prepareConsumption(o consumptionOptions) error {
 		if err != nil {
 			return err
 		}
-		if metadata.Name != o.Name || metadata.OS != packageOS || metadata.Arch != packageArch {
-			return fmt.Errorf("%s: existing package identity %s/%s/%s does not match %s/%s/%s", output, metadata.Name, metadata.OS, metadata.Arch, o.Name, packageOS, packageArch)
+		if metadata.Name != o.Name || metadata.Version != o.Version || metadata.OS != packageOS || metadata.Arch != packageArch {
+			return fmt.Errorf("%s: existing package identity %s@%s/%s/%s does not match %s@%s/%s/%s", output, metadata.Name, metadata.Version, metadata.OS, metadata.Arch, o.Name, o.Version, packageOS, packageArch)
+		}
+		if o.Phase == "reuse" {
+			sameDependencies := len(metadata.Dependencies) == len(dependencies)
+			for _, dependency := range dependencies {
+				sameDependencies = sameDependencies && slices.Contains(metadata.Dependencies, dependency)
+			}
+			if !sameDependencies {
+				return fmt.Errorf("%s: installed dependencies %v do not match configured dependencies %v; rebuild %s@%s before reuse", output, metadata.Dependencies, dependencies, o.Name, o.Version)
+			}
 		}
 	}
 	if o.Phase == "begin" {
@@ -128,31 +183,37 @@ func prepareConsumption(o consumptionOptions) error {
 	if !info.IsDir() {
 		return fmt.Errorf("installation must be a directory: %s", filepath.Dir(output))
 	}
-	dependencies := slices.Clone(module.Depends)
-	slices.Sort(dependencies)
-	dependencies = slices.Compact(dependencies)
 	for _, dependency := range dependencies {
-		if err := validatePackageName(dependency); err != nil {
-			return err
-		}
-		adapter := filepath.Join(o.SourceRoot, "src/dependencies", dependency, "autolib-import.cmake")
+		ref, _ := parseModuleRef(dependency)
+		adapter := filepath.Join(o.SourceRoot, "src/dependencies", ref.Name, ref.Version, "autolib-import.cmake")
 		if _, err := os.Stat(adapter); err != nil {
 			return fmt.Errorf("package %s: dependency %s has no readable adapter %s: %w", o.Name, dependency, adapter, err)
 		}
-		metadata, err := readConsumptionMetadata(filepath.Join(o.InstallRoot, dependency, "autolib-import.cmake"))
+		metadata, err := readConsumptionMetadata(filepath.Join(o.InstallRoot, ref.Name, ref.Version, "autolib-import.cmake"))
 		if err != nil {
 			return fmt.Errorf("package %s: dependency %s: %w", o.Name, dependency, err)
 		}
-		if metadata.Name != dependency || !((metadata.OS == o.OS && metadata.Arch == o.Arch) || (metadata.OS == "any" && metadata.Arch == "any")) {
+		if metadata.Name != ref.Name || metadata.Version != ref.Version || !((metadata.OS == o.OS && metadata.Arch == o.Arch) || (metadata.OS == "any" && metadata.Arch == "any")) {
 			return fmt.Errorf("package %s: dependency %s identity does not match %s/%s", o.Name, dependency, o.OS, o.Arch)
 		}
 	}
 	if module.PlatformIndependent {
-		if err := validateUniversalPackage(module, o.InstallRoot, adapter); err != nil {
+		if err := validateSourceVersionPaths(module, o.SourceRoot); err != nil {
+			return err
+		}
+		if err := validateUniversalPackage(module, o.SourceRoot, o.InstallRoot, adapter); err != nil {
 			return err
 		}
 	}
-	header := fmt.Sprintf("set(AUTOLIB_PACKAGE_NAME %q)\nset(AUTOLIB_OS %q)\nset(AUTOLIB_ARCH %q)\nset(AUTOLIB_DEPENDENCIES %q)\n", o.Name, packageOS, packageArch, strings.Join(dependencies, ";"))
+	packageFile := filepath.Join(filepath.Dir(filepath.Dir(module.Path)), "package.toml")
+	metadata, err := os.ReadFile(packageFile)
+	if err != nil {
+		return err
+	}
+	if _, err := writeIfChanged(filepath.Join(o.InstallRoot, o.Name, "package.toml"), string(metadata)); err != nil {
+		return err
+	}
+	header := fmt.Sprintf("set(AUTOLIB_PACKAGE_NAME %q)\nset(AUTOLIB_PACKAGE_VERSION %q)\nset(AUTOLIB_OS %q)\nset(AUTOLIB_ARCH %q)\nset(AUTOLIB_DEPENDENCIES %q)\n", o.Name, o.Version, packageOS, packageArch, strings.Join(dependencies, ";"))
 	_, err = writeIfChanged(output, header+string(adapter))
 	return err
 }
@@ -164,9 +225,10 @@ func runConsumption(args []string, stderr io.Writer) int {
 	for _, field := range []struct {
 		name  string
 		value *string
-	}{{"source-root", &o.SourceRoot}, {"install-root", &o.InstallRoot}, {"name", &o.Name}, {"os", &o.OS}, {"arch", &o.Arch}, {"phase", &o.Phase}} {
+	}{{"source-root", &o.SourceRoot}, {"install-root", &o.InstallRoot}, {"name", &o.Name}, {"version", &o.Version}, {"os", &o.OS}, {"arch", &o.Arch}, {"phase", &o.Phase}} {
 		flags.StringVar(field.value, field.name, "", field.name)
 	}
+	flags.Var((*repeatedFlag)(&o.Dependencies), "dependency", "exact name@version dependency (repeatable)")
 	if err := flags.Parse(args); err != nil {
 		return 1
 	}

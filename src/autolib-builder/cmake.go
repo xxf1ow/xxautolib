@@ -85,17 +85,33 @@ func unique(values []string) []string {
 }
 
 func renderModule(module *moduleDefinition, context buildContext, dependencies []*moduleDefinition) (string, error) {
-	prefix := filepath.Join(context.BuildRoot, "ep", module.Name)
+	target := moduleTarget(moduleRef{module.Name, module.Version})
+	prefix := filepath.Join(context.BuildRoot, "ep", module.Name, module.Version)
 	installRoot := context.InstallRoot
 	if installRoot == "" {
 		installRoot = filepath.Join(context.SourceRoot, "3rdparty")
 	}
-	install := slashJoin(installRoot, module.Name)
+	install := slashJoin(installRoot, module.Name, module.Version)
 	persistent := filepath.Join(context.SourceRoot, "git")
 	cmake := filepath.ToSlash(context.CMakeCommand)
 	driver := slashJoin(context.SourceRoot, "src/autolib-builder/apply_patch.cmake")
 	proxy := slashJoin(context.SourceRoot, "src/autolib-builder/configure_dependencies.cmake")
-	setupPath := slashJoin(context.BuildRoot, "generated", module.Name+"-dependency-setup.cmake")
+	setupPath := slashJoin(context.BuildRoot, "generated", "_dependency-setup", module.Name, module.Version, "dependency-setup.cmake")
+	paths := []string{install, prefix, filepath.Join(context.BuildRoot, "generated", module.Name, module.Version+".cmake")}
+	if module.Kind == "cmake" && len(dependencies) > 0 {
+		paths = append(paths, filepath.Dir(setupPath))
+	}
+	for _, dep := range dependencies {
+		paths = append(paths, filepath.Join(installRoot, dep.Name, dep.Version))
+	}
+	for _, path := range paths {
+		if err := validateArtifactVersionPath(path); err != nil {
+			return "", err
+		}
+	}
+	if err := validateSourceVersionPaths(module, context.SourceRoot); err != nil {
+		return "", err
+	}
 	separator := "__AL_LIST__"
 	values := fmt.Sprintf("%#v %#v %#v %#v %#v %#v %#v", module, context, module.Cache, module.Source, module.Resources, module.Steps, module.Copies)
 	for strings.Contains(values, separator) {
@@ -109,21 +125,27 @@ func renderModule(module *moduleDefinition, context buildContext, dependencies [
 	}
 	consumable := adapterErr == nil
 	prepare := func(phase string) []string {
-		return []string{filepath.ToSlash(context.BuilderFile), "prepare-consumption", "--source-root=" + filepath.ToSlash(context.SourceRoot), "--install-root=" + filepath.ToSlash(installRoot), "--name=" + module.Name, "--os=" + strings.ToLower(context.SystemName), "--arch=" + normalizeArchitecture(context.Architecture), "--phase=" + phase}
+		args := []string{filepath.ToSlash(context.BuilderFile), "prepare-consumption", "--source-root=" + filepath.ToSlash(context.SourceRoot), "--install-root=" + filepath.ToSlash(installRoot), "--name=" + module.Name, "--version=" + module.Version, "--os=" + strings.ToLower(context.SystemName), "--arch=" + normalizeArchitecture(context.Architecture), "--phase=" + phase}
+		for _, dep := range dependencies {
+			args = append(args, "--dependency="+(moduleRef{dep.Name, dep.Version}).String())
+		}
+		return args
+	}
+	postBuildCommand := []string{cmake, "-E", "copy_if_different", slashJoin(filepath.Dir(filepath.Dir(module.Path)), "package.toml"), slashJoin(installRoot, module.Name, "package.toml")}
+	if consumable {
+		postBuildCommand = prepare("reuse")
 	}
 	if module.Sentinel != "" {
-		lines = append(lines, "if(EXISTS "+cmakeArgument(slashJoin(install, module.Sentinel))+")", "    message(STATUS "+cmakeArgument("  [Info] ["+module.Name+"] cached")+")", "    add_custom_target("+cmakeArgument(module.Name)+" ALL)")
-		if consumable {
-			arguments := []string{}
-			for _, arg := range prepare("reuse") {
-				arguments = append(arguments, cmakeArgument(arg))
-			}
-			lines = append(lines, "    add_custom_command(TARGET "+cmakeArgument(module.Name)+" POST_BUILD COMMAND "+strings.Join(arguments, " ")+" VERBATIM)")
+		lines = append(lines, "if(EXISTS "+cmakeArgument(slashJoin(install, module.Sentinel))+")", "    message(STATUS "+cmakeArgument("  [Info] ["+(moduleRef{module.Name, module.Version}).String()+"] cached")+")", "    add_custom_target("+cmakeArgument(target)+" ALL)")
+		arguments := []string{}
+		for _, arg := range postBuildCommand {
+			arguments = append(arguments, cmakeArgument(arg))
 		}
+		lines = append(lines, "    add_custom_command(TARGET "+cmakeArgument(target)+" POST_BUILD COMMAND "+strings.Join(arguments, " ")+" VERBATIM)")
 		if len(dependencies) > 0 {
-			args := []string{cmakeArgument(module.Name)}
+			args := []string{cmakeArgument(target)}
 			for _, dep := range dependencies {
-				args = append(args, cmakeArgument(dep.Name))
+				args = append(args, cmakeArgument(moduleTarget(moduleRef{dep.Name, dep.Version})))
 			}
 			lines = append(lines, "    add_dependencies("+strings.Join(args, " ")+")")
 		}
@@ -189,29 +211,29 @@ func renderModule(module *moduleDefinition, context buildContext, dependencies [
 	}
 	resourceDirectory := func(name string) string {
 		source := module.Resources[name]
-		return sourceDirectory(&source, filepath.Join(persistent, "_resources", module.Name, name), filepath.Join(prefix, "res", name))
+		return sourceDirectory(&source, filepath.Join(persistent, "_resources", module.Name, module.Version, name), filepath.Join(prefix, "res", name))
 	}
 	for _, name := range sortedKeys(module.Resources) {
 		source := module.Resources[name]
 		resourcePrefix := filepath.Join(prefix, "res", name)
-		local := filepath.Join(persistent, "_resources", module.Name, name)
+		local := filepath.Join(persistent, "_resources", module.Name, module.Version, name)
 		options := directories(resourcePrefix, install, resourceDirectory(name), persistent)
 		options = append(options, sourceOptions(&source, local)...)
 		options = append(options, option("LIST_SEPARATOR", separator), option("UPDATE_COMMAND", ""), option("CONFIGURE_COMMAND", ""), option("BUILD_COMMAND", ""), option("INSTALL_COMMAND", ""))
 		options = append(options, patchOptions(name)...)
-		emit("ExternalProject_Add", []string{resourceTarget(module.Name, name)}, options)
-		patchDependencies(resourceTarget(module.Name, name), name)
+		emit("ExternalProject_Add", []string{resourceTarget(target, name)}, options)
+		patchDependencies(resourceTarget(target, name), name)
 	}
-	local := filepath.Join(persistent, module.Name)
+	local := filepath.Join(persistent, module.Name, module.Version)
 	options := directories(prefix, install, sourceDirectory(module.Source, local, prefix), persistent)
 	options = append(options, option("LIST_SEPARATOR", separator), option("UPDATE_COMMAND", ""))
 	options = append(options, sourceOptions(module.Source, local)...)
 	targets := []string{}
 	for _, name := range sortedKeys(module.Resources) {
-		targets = append(targets, resourceTarget(module.Name, name))
+		targets = append(targets, resourceTarget(target, name))
 	}
 	for _, dep := range dependencies {
-		targets = append(targets, dep.Name)
+		targets = append(targets, moduleTarget(moduleRef{dep.Name, dep.Version}))
 	}
 	if len(targets) > 0 {
 		options = append(options, option("DEPENDS", targets...))
@@ -270,7 +292,7 @@ func renderModule(module *moduleDefinition, context buildContext, dependencies [
 		callerInclude := []string{}
 		if len(dependencies) > 0 {
 			for _, dep := range dependencies {
-				location := slashJoin(installRoot, dep.Name)
+				location := slashJoin(installRoot, dep.Name, dep.Version)
 				prefixes = append(prefixes, location)
 				if dep.ConfigDir != "" {
 					packageName := dep.PackageName
@@ -381,14 +403,12 @@ func renderModule(module *moduleDefinition, context buildContext, dependencies [
 		}
 	}
 	options = append(options, patchOptions("")...)
-	emit("ExternalProject_Add", []string{module.Name}, options)
-	if consumable {
-		emit("add_custom_command", []string{"TARGET", module.Name, "POST_BUILD"}, []cmakeOption{option("COMMAND", prepare("reuse")...), option("VERBATIM")})
-	}
+	emit("ExternalProject_Add", []string{target}, options)
+	emit("add_custom_command", []string{"TARGET", target, "POST_BUILD"}, []cmakeOption{option("COMMAND", postBuildCommand...), option("VERBATIM")})
 	if len(dependencies) > 0 && module.Kind == "cmake" {
-		emit("ExternalProject_Add_StepDependencies", []string{module.Name, "configure", setupPath, proxy}, nil)
+		emit("ExternalProject_Add_StepDependencies", []string{target, "configure", setupPath, proxy}, nil)
 	}
-	patchDependencies(module.Name, "")
+	patchDependencies(target, "")
 	for _, step := range module.Steps {
 		options := []cmakeOption{}
 		for _, opt := range []cmakeOption{option("DEPENDEES", step.Dependees...), option("DEPENDERS", step.Dependers...), option("DEPENDS", step.Depends...)} {
@@ -402,7 +422,7 @@ func renderModule(module *moduleDefinition, context buildContext, dependencies [
 		for _, argv := range step.Commands {
 			options = append(options, option("COMMAND", argv...))
 		}
-		emit("ExternalProject_Add_Step", []string{module.Name, step.Name}, options)
+		emit("ExternalProject_Add_Step", []string{target, step.Name}, options)
 	}
 	if module.Sentinel != "" {
 		lines = append(lines, "endif()")
