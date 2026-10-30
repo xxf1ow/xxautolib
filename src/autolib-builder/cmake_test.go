@@ -184,7 +184,7 @@ func TestMakePropagation(t *testing.T) {
 		args = append(args, "-A", outerPlatform, "-T", outerToolset)
 	}
 	f.must(args...)
-	setup := readFile(t, filepath.Join(f.context.BuildRoot, "generated", "demo", "1.0-dependency-setup.cmake"))
+	setup := readFile(t, filepath.Join(f.context.BuildRoot, "generated", "_dependency-setup", "demo", "1.0", "dependency-setup.cmake"))
 	if !strings.Contains(setup, "-DCMAKE_MAKE_PROGRAM:STRING=/opt/ci-tools/bin/make") {
 		t.Fatalf("generated ExternalProject child configure omitted pinned Make program:\n%s", setup)
 	}

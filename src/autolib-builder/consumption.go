@@ -156,6 +156,15 @@ func prepareConsumption(o consumptionOptions) error {
 		if metadata.Name != o.Name || metadata.Version != o.Version || metadata.OS != packageOS || metadata.Arch != packageArch {
 			return fmt.Errorf("%s: existing package identity %s@%s/%s/%s does not match %s@%s/%s/%s", output, metadata.Name, metadata.Version, metadata.OS, metadata.Arch, o.Name, o.Version, packageOS, packageArch)
 		}
+		if o.Phase == "reuse" {
+			sameDependencies := len(metadata.Dependencies) == len(dependencies)
+			for _, dependency := range dependencies {
+				sameDependencies = sameDependencies && slices.Contains(metadata.Dependencies, dependency)
+			}
+			if !sameDependencies {
+				return fmt.Errorf("%s: installed dependencies %v do not match configured dependencies %v; rebuild %s@%s before reuse", output, metadata.Dependencies, dependencies, o.Name, o.Version)
+			}
+		}
 	}
 	if o.Phase == "begin" {
 		_, err := writeIfChanged(output, incompleteConsumption)

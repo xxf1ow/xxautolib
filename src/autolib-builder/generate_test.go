@@ -69,6 +69,32 @@ func TestGenerationWrites(t *testing.T) {
 	}
 }
 
+func TestVersionedGeneratedSetupIsolation(t *testing.T) {
+	f := newEntryFixture(t)
+	depSource := f.repository("dep", map[string]string{"dep.h": "dependency"})
+	f.definitionVersion("dep", "1", "copy", "[source]\n"+depSource+"[[copy]]\nfiles=['dep.h']\ndestination='include'\n")
+	source := f.repository("demo", map[string]string{"input.h": "installed", "CMakeLists.txt": "cmake_minimum_required(VERSION 3.20)\nproject(demo NONE)\ninstall(FILES input.h DESTINATION include)\n"})
+	f.definitionVersion("demo", "1", "cmake", "depends=['dep@1']\n[source]\n"+source)
+	f.definitionVersion("demo", "1-dependency-setup", "cmake", "[source]\n"+source)
+	f.definitionVersion("demo", "1.cmake", "cmake", "depends=['dep@1']\n[source]\n"+source)
+	if err := generate(f.context, []string{"demo@1", "demo@1-dependency-setup", "demo@1.cmake"}); err != nil {
+		t.Fatal(err)
+	}
+	modulePath := filepath.Join(f.context.BuildRoot, "generated/demo/1-dependency-setup.cmake")
+	before := readFile(t, modulePath)
+	putFile(t, filepath.Join(f.root, "CMakeLists.txt"), "cmake_minimum_required(VERSION 3.20)\nproject(fixture NONE)\ninclude(ExternalProject)\ninclude(build/generated/inputs.cmake)\nforeach(module IN LISTS XXAUTOLIB_GENERATED_MODULES)\ninclude(\"${module}\")\nendforeach()\n")
+	f.configure()
+	if readFile(t, modulePath) != before {
+		t.Error("dependency setup overwrote a version's module file")
+	}
+	f.configure()
+	f.build()
+	for _, version := range []string{"1", "1-dependency-setup", "1.cmake"} {
+		requireFile(t, filepath.Join(f.root, "3rdparty/demo", version, "include/input.h"), "installed")
+	}
+	requireFile(t, modulePath, before)
+}
+
 func TestGenericInstall(t *testing.T) {
 	f := newFixture(t)
 	f.context.InstallRoot = filepath.Join(f.root, "isolated install")

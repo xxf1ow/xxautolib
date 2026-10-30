@@ -98,6 +98,30 @@ func TestConsumptionPreparation(t *testing.T) {
 	}
 }
 
+func TestConsumptionReuseDependencyOrder(t *testing.T) {
+	f := newFixture(t)
+	for _, name := range []string{"zlib", "lz4"} {
+		consumptionModule(f, name, "")
+		if err := consumptionCommand(f, name, "reuse"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	adapter := consumptionModule(f, "demo", "depends=['zlib','lz4']\n")
+	if err := consumptionCommand(f, "demo", "reuse"); err != nil {
+		t.Fatal(err)
+	}
+	definitionFile(t, f.root, "demo", "cmake", "depends=['lz4','zlib']\n"+testSource)
+	putFile(t, adapter, "# refreshed adapter\n")
+	if err := consumptionCommand(f, "demo", "reuse"); err != nil {
+		t.Fatal(err)
+	}
+	output := readFile(t, f.installed("demo", "autolib-import.cmake"))
+	if !strings.HasSuffix(output, "# refreshed adapter\n") || !strings.Contains(output, `AUTOLIB_DEPENDENCIES "lz4@1.0;zlib@1.0"`) {
+		t.Fatalf("equivalent dependency set prevented adapter refresh: %s", output)
+	}
+	requireFile(t, f.installed("demo", "include/input.h"), "demo")
+}
+
 func consumptionEntryFixture(t *testing.T, sentinel bool) *fixture {
 	f := newEntryFixture(t)
 	f.must(f.context.GitExecutable, "init", f.root)

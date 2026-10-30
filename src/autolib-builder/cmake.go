@@ -96,7 +96,7 @@ func renderModule(module *moduleDefinition, context buildContext, dependencies [
 	cmake := filepath.ToSlash(context.CMakeCommand)
 	driver := slashJoin(context.SourceRoot, "src/autolib-builder/apply_patch.cmake")
 	proxy := slashJoin(context.SourceRoot, "src/autolib-builder/configure_dependencies.cmake")
-	setupPath := slashJoin(context.BuildRoot, "generated", module.Name, module.Version+"-dependency-setup.cmake")
+	setupPath := slashJoin(context.BuildRoot, "generated", "_dependency-setup", module.Name, module.Version, "dependency-setup.cmake")
 	separator := "__AL_LIST__"
 	values := fmt.Sprintf("%#v %#v %#v %#v %#v %#v %#v", module, context, module.Cache, module.Source, module.Resources, module.Steps, module.Copies)
 	for strings.Contains(values, separator) {

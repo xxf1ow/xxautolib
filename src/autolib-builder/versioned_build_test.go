@@ -175,6 +175,56 @@ func TestVersionedUniversalSource(t *testing.T) {
 	}
 }
 
+func TestVersionedConsumptionReuseIdentity(t *testing.T) {
+	f := newEntryFixture(t)
+	f.context.Architecture = "x86_64"
+	f.context.BuilderFile = filepath.Join(f.root, "builder")
+	f.must(goExecutable(), "build", "-o", f.context.BuilderFile, ".")
+	for _, version := range []string{"1", "2"} {
+		source := f.repository("dep"+version, map[string]string{"dep.h": "dependency " + version})
+		f.definitionVersion("dep", version, "copy", "sentinel='include/dep.h'\n[source]\n"+source+"[[copy]]\nfiles=['dep.h']\ndestination='include'\n")
+		putFile(t, filepath.Join(f.root, "src/dependencies/dep", version, "autolib-import.cmake"), "# dep adapter\n")
+	}
+	source := f.repository("leaf", map[string]string{"CMakeLists.txt": `cmake_minimum_required(VERSION 3.20)
+project(leaf NONE)
+file(READ "${CMAKE_PREFIX_PATH}/include/dep.h" dependency)
+file(WRITE "${CMAKE_BINARY_DIR}/payload" "${dependency}")
+install(FILES "${CMAKE_BINARY_DIR}/payload" DESTINATION .)
+`})
+	for _, version := range []string{"1", "2"} {
+		f.definitionVersion("leaf", version, "cmake", "depends=['dep']\nsentinel='payload'\n[source]\n"+source)
+	}
+	adapter := putFile(t, filepath.Join(f.root, "src/dependencies/leaf/1/autolib-import.cmake"), "# original adapter\n")
+	depLatest := putFile(t, filepath.Join(f.root, "src/dependencies/dep/package.toml"), "latest='1'\n")
+	leafLatest := putFile(t, filepath.Join(f.root, "src/dependencies/leaf/package.toml"), "latest='1'\n")
+	if err := generate(f.context, []string{"leaf@1"}); err != nil {
+		t.Fatal(err)
+	}
+	putFile(t, filepath.Join(f.root, "CMakeLists.txt"), "cmake_minimum_required(VERSION 3.20)\nproject(fixture NONE)\ninclude(ExternalProject)\ninclude(build/generated/inputs.cmake)\nforeach(module IN LISTS XXAUTOLIB_GENERATED_MODULES)\ninclude(\"${module}\")\nendforeach()\n")
+	f.configure()
+	f.build()
+	output := filepath.Join(f.root, "3rdparty/leaf/1/autolib-import.cmake")
+	before := readFile(t, output)
+	requireFile(t, filepath.Join(f.root, "3rdparty/leaf/1/payload"), "dependency 1")
+	putFile(t, depLatest, "latest='2'\n")
+	putFile(t, leafLatest, "latest='2'\n")
+	putFile(t, adapter, "# changed adapter\n")
+	if err := generate(f.context, []string{"leaf@1"}); err != nil {
+		t.Fatal(err)
+	}
+	f.configure()
+	out, stderr, err := f.command(f.context.CMakeCommand, "--build", f.context.BuildRoot, "--config", "Release")
+	if err == nil {
+		t.Error("sentinel reuse accepted changed exact dependencies")
+	} else if !strings.Contains(out+stderr, "rebuild") {
+		t.Errorf("dependency identity failure must request rebuild: %s%s", out, stderr)
+	}
+	requireFile(t, output, before)
+	requireFile(t, filepath.Join(f.root, "3rdparty/leaf/1/payload"), "dependency 1")
+	requireFile(t, filepath.Join(f.root, "3rdparty/leaf/package.toml"), "latest='1'\n")
+	requireFile(t, filepath.Join(f.root, "3rdparty/dep/2/include/dep.h"), "dependency 2")
+}
+
 func TestVersionedClosureRoots(t *testing.T) {
 	root := t.TempDir()
 	definitionVersionFile(t, root, "eigen", "3.4.0", "cmake", testSource)
