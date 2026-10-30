@@ -133,7 +133,7 @@ func testCMakeReleaseEntry(t *testing.T, kind, platform string) {
 	archive := readTestFile(t, filepath.Join(f.release, "demo-linux-aarch64.tar.zst"))
 	extraArchive := ""
 	if kind == "paged" {
-		extraArchive = readTestFile(t, testArchive(t, []archiveMember{{Name: "extra/autolib-import.cmake", Body: identityHeader(packageIdentity{"extra", "any", "any"}) + "if(NOT TARGET autolib::extra)\nadd_library(autolib::extra INTERFACE IMPORTED GLOBAL)\nendif()\n"}}))
+		extraArchive = readTestFile(t, testArchive(t, []archiveMember{{Name: "extra/autolib-import.cmake", Body: identityHeader(packageIdentity{"extra", "1.0", "any", "any"}) + "if(NOT TARGET autolib::extra)\nadd_library(autolib::extra INTERFACE IMPORTED GLOBAL)\nendif()\n"}}))
 		consumer := filepath.Join(f.source, "CMakeLists.txt")
 		body := readTestFile(t, consumer)
 		index := strings.LastIndex(body, "autolib_import(")

@@ -29,7 +29,7 @@ func TestCMakeGiteeEnumerationReuse(t *testing.T) {
 					adapter += "set_target_properties(autolib::demo PROPERTIES INTERFACE_LINK_LIBRARIES autolib::dep)\n"
 					header = "#pragma once\n#include <dep.h>\ninline int demo_value() { return dep_value() + 40; }\n"
 				}
-				prefix := strings.Replace(identityHeader(packageIdentity{name, "any", "any"}), `set(AUTOLIB_DEPENDENCIES "")`, `set(AUTOLIB_DEPENDENCIES "`+dependencies+`")`, 1)
+				prefix := strings.Replace(identityHeader(packageIdentity{name, "1.0", "any", "any"}), `set(AUTOLIB_DEPENDENCIES "")`, `set(AUTOLIB_DEPENDENCIES "`+dependencies+`")`, 1)
 				archive := testArchive(t, []archiveMember{{Name: name + "/autolib-import.cmake", Body: prefix + adapter}, {Name: name + "/include/" + name + ".h", Body: header}})
 				assets = append(assets, remoteAssetFixture{id: i + 2, name: name + "-any-any.tar.zst", data: []byte(readTestFile(t, archive))})
 			}

@@ -225,7 +225,7 @@ func TestCMakeImporterArchive(t *testing.T) {
 func TestCMakeBootstrap(t *testing.T) {
 	f := newEntryFixture(t, false, "")
 	f.mustConfigure()
-	want := filepath.ToSlash(packageDirectory(f.release, packageIdentity{"demo", f.options.OS, f.options.Arch}))
+	want := filepath.ToSlash(packageDirectory(f.release, packageIdentity{"demo", "1.0", f.options.OS, f.options.Arch}))
 	if got := readTestFile(t, filepath.Join(f.root, "consumer-build/observed.txt")); got != want {
 		t.Fatalf("%q != %q", got, want)
 	}
@@ -240,14 +240,14 @@ func TestCMakeBootstrap(t *testing.T) {
 
 func TestUniversalPackageThroughCMakeEntry(t *testing.T) {
 	f := newEntryFixture(t, false, "")
-	id := packageIdentity{"demo", "any", "any"}
+	id := packageIdentity{"demo", "1.0", "any", "any"}
 	archive := testArchive(t, []archiveMember{{Name: "demo/autolib-import.cmake", Body: identityHeader(id) + "if(NOT TARGET autolib::demo)\nadd_library(autolib::demo INTERFACE IMPORTED GLOBAL)\nendif()\n"}})
 	if err := os.Rename(filepath.Join(f.release, "demo-"+f.options.OS+"-"+f.options.Arch+".tar.zst"), filepath.Join(f.release, "old-away")); err != nil {
 		t.Fatal(err)
 	}
 	putTestFile(t, filepath.Join(f.release, "demo-any-any.tar.zst"), readTestFile(t, archive))
 	f.mustConfigure()
-	m, err := readPackageMetadata(packageDirectory(f.release, packageIdentity{"demo", f.options.OS, f.options.Arch}))
+	m, err := readPackageMetadata(packageDirectory(f.release, packageIdentity{"demo", "1.0", f.options.OS, f.options.Arch}))
 	if err != nil || m.Identity != id {
 		t.Fatalf("%+v %v", m, err)
 	}
@@ -713,7 +713,7 @@ func TestCMakeMultipleConsumers(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			f := representativeFixture(t, "lz4")
 			if kind == "adapter failure" {
-				id := packageIdentity{"flann", "linux", "aarch64"}
+				id := packageIdentity{"flann", "1.0", "linux", "aarch64"}
 				a := testArchive(t, []archiveMember{{Name: "flann/autolib-import.cmake", Body: strings.Replace(identityHeader(id), `set(AUTOLIB_DEPENDENCIES "")`, `set(AUTOLIB_DEPENDENCIES "lz4")`, 1) + "add_library(autolib::partial INTERFACE IMPORTED GLOBAL)\nmessage(FATAL_ERROR EXPECTED_ADAPTER_FAILURE)\n"}})
 				putTestFile(t, filepath.Join(f.release, "flann-linux-aarch64.tar.zst"), readTestFile(t, a))
 			}

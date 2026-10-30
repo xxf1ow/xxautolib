@@ -35,7 +35,7 @@ func newRemotePrepareFixture(t *testing.T) *remotePrepareFixture {
 	f.options.SourceResponse = filepath.Join(f.options.WorkRoot, "api.json")
 	source := t.TempDir()
 	for i, node := range [][4]string{{"flann", "linux", "aarch64", "lz4"}, {"lz4", "linux", "aarch64", ""}, {"queue", "any", "any", ""}} {
-		path := graphArchive(t, source, packageIdentity{node[0], node[1], node[2]}, node[3])
+		path := graphArchive(t, source, packageIdentity{node[0], "1.0", node[1], node[2]}, node[3])
 		f.assets = append(f.assets, remoteAssetFixture{id: i + 1, name: filepath.Base(path), data: []byte(readTestFile(t, path))})
 	}
 	client := githubTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -95,11 +95,11 @@ func TestPrepareRemote(t *testing.T) {
 			o := f.options
 			o.Packages = []string{"flann", "queue", "flann"}
 			if kind == "existing root" {
-				putTestFile(t, filepath.Join(graphSlot(o, "flann"), "autolib-import.cmake"), strings.Replace(identityHeader(packageIdentity{"flann", o.OS, o.Arch}), `set(AUTOLIB_DEPENDENCIES "")`, `set(AUTOLIB_DEPENDENCIES "lz4")`, 1))
+				putTestFile(t, filepath.Join(graphSlot(o, "flann"), "autolib-import.cmake"), strings.Replace(identityHeader(packageIdentity{"flann", "1.0", o.OS, o.Arch}), `set(AUTOLIB_DEPENDENCIES "")`, `set(AUTOLIB_DEPENDENCIES "lz4")`, 1))
 				putTestFile(t, filepath.Join(graphSlot(o, "flann"), "data"), "user content")
 			}
 			if kind == "cycle" {
-				path := graphArchive(t, t.TempDir(), packageIdentity{"lz4", o.OS, o.Arch}, "flann")
+				path := graphArchive(t, t.TempDir(), packageIdentity{"lz4", "1.0", o.OS, o.Arch}, "flann")
 				f.assets[1].data = []byte(readTestFile(t, path))
 			}
 			got, err := prepare(o)
@@ -146,11 +146,11 @@ func TestPrepareSourcePriority(t *testing.T) {
 			o.Packages = []string{"queue"}
 			switch kind {
 			case "directory":
-				putTestFile(t, filepath.Join(graphSlot(o, "queue"), "autolib-import.cmake"), identityHeader(packageIdentity{"queue", "any", "any"}))
+				putTestFile(t, filepath.Join(graphSlot(o, "queue"), "autolib-import.cmake"), identityHeader(packageIdentity{"queue", "1.0", "any", "any"}))
 				o.RemoteRoot = "https://unavailable.invalid/release"
 				o.SourceResponse = putTestFile(t, filepath.Join(o.WorkRoot, "bad.json"), "invalid")
 			case "archive":
-				graphArchive(t, o.LocalRoot, packageIdentity{"queue", "any", "any"}, "")
+				graphArchive(t, o.LocalRoot, packageIdentity{"queue", "1.0", "any", "any"}, "")
 			case "bad directory":
 				putTestFile(t, filepath.Join(graphSlot(o, "queue"), "autolib-import.cmake"), "invalid")
 			case "bad archive":

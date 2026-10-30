@@ -39,7 +39,7 @@ func TestPrepareReuse(t *testing.T) {
 	if readTestFile(t, filepath.Join(got[0].Directory, "data")) != "local authority" {
 		t.Fatal("overwrote directory")
 	}
-	putTestFile(t, filepath.Join(got[0].Directory, "autolib-import.cmake"), identityHeader(packageIdentity{"wrong", o.OS, o.Arch}))
+	putTestFile(t, filepath.Join(got[0].Directory, "autolib-import.cmake"), identityHeader(packageIdentity{"wrong", "1.0", o.OS, o.Arch}))
 	if _, err := prepare(o); err == nil {
 		t.Fatal("accepted wrong directory")
 	}

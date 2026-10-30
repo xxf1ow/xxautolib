@@ -32,7 +32,7 @@ func TestLocalCandidatePriority(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			o := localGraphFixture(t)
 			o.Packages = []string{"demo"}
-			id := packageIdentity{"demo", o.OS, o.Arch}
+			id := packageIdentity{"demo", "1.0", o.OS, o.Arch}
 			archive := graphArchive(t, o.LocalRoot, id, "")
 			switch kind {
 			case "directory wins":
@@ -41,7 +41,7 @@ func TestLocalCandidatePriority(t *testing.T) {
 			case "bad directory":
 				putTestFile(t, filepath.Join(graphSlot(o, "demo"), "autolib-import.cmake"), "invalid")
 			case "wrong platform directory":
-				putTestFile(t, filepath.Join(graphSlot(o, "demo"), "autolib-import.cmake"), identityHeader(packageIdentity{"demo", "windows", "x86_64"}))
+				putTestFile(t, filepath.Join(graphSlot(o, "demo"), "autolib-import.cmake"), identityHeader(packageIdentity{"demo", "1.0", "windows", "x86_64"}))
 			case "old nested directory":
 				putTestFile(t, filepath.Join(o.LocalRoot, "packages/linux-aarch64/demo/autolib-import.cmake"), "invalid")
 			case "bad archive":
@@ -54,7 +54,7 @@ func TestLocalCandidatePriority(t *testing.T) {
 					t.Fatal(err)
 				}
 			case "wrong identity":
-				wrong := testArchive(t, []archiveMember{{Name: "demo/autolib-import.cmake", Body: identityHeader(packageIdentity{"other", o.OS, o.Arch})}})
+				wrong := testArchive(t, []archiveMember{{Name: "demo/autolib-import.cmake", Body: identityHeader(packageIdentity{"other", "1.0", o.OS, o.Arch})}})
 				putTestFile(t, archive, readTestFile(t, wrong))
 			}
 			_, err := prepare(o)
@@ -79,7 +79,7 @@ func TestPrepareDependencyOrder(t *testing.T) {
 	o := localGraphFixture(t)
 	o.Packages = []string{"app", "tool", "app"}
 	for _, node := range [][2]string{{"app", "beta;alpha;beta"}, {"alpha", "core"}, {"beta", "core"}, {"tool", "core"}, {"core", ""}} {
-		graphArchive(t, o.LocalRoot, packageIdentity{node[0], o.OS, o.Arch}, node[1])
+		graphArchive(t, o.LocalRoot, packageIdentity{node[0], "1.0", o.OS, o.Arch}, node[1])
 	}
 	got, err := prepare(o)
 	if err != nil {
@@ -113,7 +113,7 @@ func TestPrepareDependencyCycle(t *testing.T) {
 	o := localGraphFixture(t)
 	o.Packages = []string{"a", "later"}
 	for _, node := range [][2]string{{"a", "b"}, {"b", "a"}, {"later", ""}} {
-		graphArchive(t, o.LocalRoot, packageIdentity{node[0], o.OS, o.Arch}, node[1])
+		graphArchive(t, o.LocalRoot, packageIdentity{node[0], "1.0", o.OS, o.Arch}, node[1])
 	}
 	for range 2 {
 		if _, err := prepare(o); err == nil || !strings.Contains(err.Error(), "cycle") {
@@ -134,7 +134,7 @@ func TestPrepareDependencyCycle(t *testing.T) {
 	t.Run("case collision", func(t *testing.T) {
 		o := localGraphFixture(t)
 		o.Packages = []string{"app"}
-		graphArchive(t, o.LocalRoot, packageIdentity{"app", o.OS, o.Arch}, "App")
+		graphArchive(t, o.LocalRoot, packageIdentity{"app", "1.0", o.OS, o.Arch}, "App")
 		if _, err := prepare(o); err == nil || !strings.Contains(err.Error(), "case") {
 			t.Fatalf("%v", err)
 		}
@@ -144,7 +144,7 @@ func TestPrepareDependencyCycle(t *testing.T) {
 func TestUniversalLocalSlots(t *testing.T) {
 	o := localGraphFixture(t)
 	o.Packages = []string{"queue"}
-	id := packageIdentity{"queue", "any", "any"}
+	id := packageIdentity{"queue", "1.0", "any", "any"}
 	graphArchive(t, o.LocalRoot, id, "")
 	first, err := prepare(o)
 	if err != nil {
@@ -165,11 +165,11 @@ func TestUniversalLocalSlots(t *testing.T) {
 		}
 	}
 	o.OS, o.Arch = "linux", "x86_64"
-	graphArchive(t, o.LocalRoot, packageIdentity{"queue", "windows", "aarch64"}, "")
+	graphArchive(t, o.LocalRoot, packageIdentity{"queue", "1.0", "windows", "aarch64"}, "")
 	if _, err := prepare(o); err != nil {
 		t.Fatal("unrelated platform conflicted:", err)
 	}
-	graphArchive(t, o.LocalRoot, packageIdentity{"queue", "linux", "aarch64"}, "")
+	graphArchive(t, o.LocalRoot, packageIdentity{"queue", "1.0", "linux", "aarch64"}, "")
 	// Only a missing directory consults competing archive slots.
 	o.Arch = "aarch64"
 	if err := os.Rename(first[0].Directory, first[0].Directory+"-away"); err != nil {
@@ -185,8 +185,8 @@ func TestPrepareArchiveFailure(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			o := localGraphFixture(t)
 			o.Packages = []string{"sentinel", "demo"}
-			graphArchive(t, o.LocalRoot, packageIdentity{"sentinel", o.OS, o.Arch}, "")
-			archive := graphArchive(t, o.LocalRoot, packageIdentity{"demo", o.OS, o.Arch}, "")
+			graphArchive(t, o.LocalRoot, packageIdentity{"sentinel", "1.0", o.OS, o.Arch}, "")
+			archive := graphArchive(t, o.LocalRoot, packageIdentity{"demo", "1.0", o.OS, o.Arch}, "")
 			data := []byte(readTestFile(t, archive))
 			if kind == "corrupt" {
 				data[len(data)-1] ^= 1

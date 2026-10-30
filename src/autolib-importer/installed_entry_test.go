@@ -39,7 +39,7 @@ enable_testing()
 add_test(NAME installed COMMAND "${CMAKE_COMMAND}" -E true)
 `)
 			for _, name := range []string{"queue", "lz4", "flann"} {
-				id := packageIdentity{name, "linux", "aarch64"}
+				id := packageIdentity{name, "1.0", "linux", "aarch64"}
 				if name == "queue" {
 					id.OS, id.Arch = "any", "any"
 				}

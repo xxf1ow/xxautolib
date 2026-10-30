@@ -21,7 +21,7 @@ func TestGiteePrepare(t *testing.T) {
 			o.Packages = []string{"flann", "queue"}
 			var assets []remoteAssetFixture
 			for i, node := range [][4]string{{"flann", "linux", "aarch64", "lz4"}, {"lz4", "linux", "aarch64", ""}, {"queue", "any", "any", ""}} {
-				path := graphArchive(t, t.TempDir(), packageIdentity{node[0], node[1], node[2]}, node[3])
+				path := graphArchive(t, t.TempDir(), packageIdentity{node[0], "1.0", node[1], node[2]}, node[3])
 				assets = append(assets, remoteAssetFixture{id: i + 1, name: filepath.Base(path), data: []byte(readTestFile(t, path))})
 			}
 			if kind == "corrupt" {

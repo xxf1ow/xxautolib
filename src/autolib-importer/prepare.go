@@ -110,7 +110,7 @@ func prepare(o prepareOptions) ([]preparedPackage, error) {
 			return nil
 		}
 		state[name] = 1
-		id := packageIdentity{name, o.OS, o.Arch}
+		id := packageIdentity{Name: name, OS: o.OS, Arch: o.Arch}
 		directory := packageDirectory(destinationRoot, id)
 		info, err := os.Lstat(directory)
 		if os.IsNotExist(err) {
@@ -149,7 +149,7 @@ func prepare(o prepareOptions) ([]preparedPackage, error) {
 			}
 		}
 		state[name] = 2
-		packages = append(packages, preparedPackage{name, directory})
+		packages = append(packages, preparedPackage{Name: name, Directory: directory})
 		return nil
 	}
 	for _, name := range o.Packages {

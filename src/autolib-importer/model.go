@@ -7,12 +7,12 @@ import (
 	"strings"
 )
 
-type packageIdentity struct{ Name, OS, Arch string }
+type packageIdentity struct{ Name, Version, OS, Arch string }
 type packageMetadata struct {
 	Identity     packageIdentity
 	Dependencies []string
 }
-type preparedPackage struct{ Name, Directory string }
+type preparedPackage struct{ Name, Version, Directory string }
 
 var packageName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.+\-]*$`)
 
@@ -30,6 +30,9 @@ func validateIdentity(id packageIdentity) error {
 	if err := validatePackageName(id.Name); err != nil {
 		return err
 	}
+	if err := validatePackageVersion(id.Version); err != nil {
+		return err
+	}
 	if id.OS == "any" || id.Arch == "any" {
 		if id.OS == "any" && id.Arch == "any" {
 			return nil
@@ -40,7 +43,7 @@ func validateIdentity(id packageIdentity) error {
 }
 
 func matchesPackageIdentity(actual, requested packageIdentity) bool {
-	if actual.Name != requested.Name || validatePlatform(requested.OS, requested.Arch) != nil {
+	if actual.Name != requested.Name || actual.Version != requested.Version || validateIdentity(actual) != nil || validatePlatform(requested.OS, requested.Arch) != nil {
 		return false
 	}
 	return (actual.OS == requested.OS && actual.Arch == requested.Arch) || (actual.OS == "any" && actual.Arch == "any")

@@ -14,7 +14,7 @@ func localReleaseFixture(t *testing.T, names ...string) prepareOptions {
 	o := localGraphFixture(t)
 	o.Packages = names
 	for _, name := range names {
-		graphArchive(t, o.LocalRoot, packageIdentity{name, o.OS, o.Arch}, "")
+		graphArchive(t, o.LocalRoot, packageIdentity{name, "1.0", o.OS, o.Arch}, "")
 	}
 	return o
 }
@@ -45,7 +45,7 @@ type archiveMember struct {
 }
 
 func identityHeader(id packageIdentity) string {
-	return "set(AUTOLIB_PACKAGE_NAME \"" + id.Name + "\")\nset(AUTOLIB_OS \"" + id.OS + "\")\nset(AUTOLIB_ARCH \"" + id.Arch + "\")\nset(AUTOLIB_DEPENDENCIES \"\")\n"
+	return "set(AUTOLIB_PACKAGE_NAME \"" + id.Name + "\")\nset(AUTOLIB_PACKAGE_VERSION \"" + id.Version + "\")\nset(AUTOLIB_OS \"" + id.OS + "\")\nset(AUTOLIB_ARCH \"" + id.Arch + "\")\nset(AUTOLIB_DEPENDENCIES \"\")\n"
 }
 
 func testArchive(t *testing.T, members []archiveMember) string {
