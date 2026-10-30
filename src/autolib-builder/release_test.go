@@ -317,6 +317,34 @@ func TestLocalReleasePreservesInputs(t *testing.T) {
 	}
 }
 
+func TestVersionedReleaseArchiveCollision(t *testing.T) {
+	for _, existing := range []bool{false, true} {
+		t.Run(map[bool]string{false: "selected references", true: "existing other identity"}[existing], func(t *testing.T) {
+			o := releaseFixture(t)
+			o.OS, o.Arch, o.HostOS = "linux", "x86_64", "linux"
+			putInstalledRelease(t, o.InstallRoot, "foo", "bar-1", "linux", "x86_64", "")
+			putInstalledRelease(t, o.InstallRoot, "foo-bar", "1", "linux", "x86_64", "")
+			o.Modules = []string{"foo@bar-1", "foo-bar@1"}
+			if existing {
+				o.Modules = []string{"foo-bar@1"}
+				if err := packageRelease(o); err != nil {
+					t.Fatal(err)
+				}
+				o.Modules = []string{"foo@bar-1"}
+			}
+			putFile(t, filepath.Join(o.OutputRoot, "unrelated/package.toml"), "latest='keep'\n")
+			before := releaseSnapshot(t, o.OutputRoot)
+			err := packageRelease(o)
+			if err == nil {
+				t.Error("accepted two package identities for one archive name")
+			}
+			if after := releaseSnapshot(t, o.OutputRoot); !reflect.DeepEqual(before, after) {
+				t.Fatal("archive collision changed existing release entries, bytes or metadata")
+			}
+		})
+	}
+}
+
 func packageArguments(o packageOptions) []string {
 	args := []string{"package"}
 	for _, pair := range [][2]string{{"source-root", o.SourceRoot}, {"install-root", o.InstallRoot}, {"output-root", o.OutputRoot}, {"os", o.OS}, {"arch", o.Arch}, {"host-os", o.HostOS}, {"host-arch", o.HostArch}, {"importer-file", o.ImporterFile}, {"cmake-command", o.CMakeCommand}} {

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"archive/tar"
+	"bufio"
 	"crypto/sha256"
 	"flag"
 	"fmt"
@@ -11,6 +13,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/klauspost/compress/zstd"
 	"github.com/pelletier/go-toml/v2"
 )
 
@@ -105,6 +108,7 @@ func packageRelease(o packageOptions) error {
 		return fmt.Errorf("archive importer: %w\n%s", err, output)
 	}
 	assets := []string{toolArchive}
+	archiveRefs := map[string]moduleRef{}
 	for _, ref := range refs {
 		directory, err := stagePackage(stageOptions{SourceRoot: source, InstallRoot: install, StageRoot: filepath.Join(work, "staging"), Name: ref.Name, Version: ref.Version, OS: o.OS, Arch: o.Arch, CMakeCommand: o.CMakeCommand})
 		if err != nil {
@@ -115,6 +119,13 @@ func packageRelease(o packageOptions) error {
 			return err
 		}
 		asset := fmt.Sprintf("%s-%s-%s-%s.tar.zst", ref.Name, ref.Version, metadata.OS, metadata.Arch)
+		if previous, ok := archiveRefs[asset]; ok && previous != ref {
+			return fmt.Errorf("archive %s: package references %s and %s have the same output name", asset, previous, ref)
+		}
+		archiveRefs[asset] = ref
+		if err := checkExistingReleaseArchive(filepath.Join(output, asset), metadata); err != nil {
+			return err
+		}
 		if err := writePackageArchive(directory, filepath.Join(work, asset), ref); err != nil {
 			return err
 		}
@@ -150,6 +161,65 @@ func packageRelease(o packageOptions) error {
 		if err := os.Rename(filepath.Join(work, asset), filepath.Join(output, asset)); err != nil {
 			return fmt.Errorf("publish %s: %w", asset, err)
 		}
+	}
+	return nil
+}
+
+func checkExistingReleaseArchive(path string, metadata consumptionMetadata) error {
+	info, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("%s: existing archive must be a regular file", path)
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	z, err := zstd.NewReader(file)
+	if err != nil {
+		return fmt.Errorf("%s: cannot identify existing archive: %w", path, err)
+	}
+	defer z.Close()
+	tr := tar.NewReader(z)
+	root := metadata.Name + "/" + metadata.Version
+	found := false
+	for {
+		header, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("%s: cannot identify existing archive: %w", path, err)
+		}
+		member := strings.TrimSuffix(header.Name, "/")
+		if member != root && !strings.HasPrefix(member, root+"/") {
+			return fmt.Errorf("%s: existing archive member %q does not belong to %s@%s", path, header.Name, metadata.Name, metadata.Version)
+		}
+		if header.Name != root+"/autolib-import.cmake" {
+			continue
+		}
+		if header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA {
+			return fmt.Errorf("%s: existing archive identity must be a regular file", path)
+		}
+		scanner := bufio.NewScanner(tr)
+		for _, field := range []struct{ key, value string }{{"AUTOLIB_PACKAGE_NAME", metadata.Name}, {"AUTOLIB_PACKAGE_VERSION", metadata.Version}, {"AUTOLIB_OS", metadata.OS}, {"AUTOLIB_ARCH", metadata.Arch}} {
+			if !scanner.Scan() || scanner.Text() != fmt.Sprintf("set(%s %q)", field.key, field.value) {
+				return fmt.Errorf("%s: existing archive identity does not match %s@%s %s/%s", path, metadata.Name, metadata.Version, metadata.OS, metadata.Arch)
+			}
+		}
+		found = true
+	}
+	if _, err := io.Copy(io.Discard, z); err != nil {
+		return fmt.Errorf("%s: cannot read existing archive: %w", path, err)
+	}
+	if !found {
+		return fmt.Errorf("%s: existing archive has no package identity", path)
 	}
 	return nil
 }
