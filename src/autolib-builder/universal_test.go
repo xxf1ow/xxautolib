@@ -60,7 +60,7 @@ func TestUniversalPackageAcrossTargets(t *testing.T) {
 		if _, err := os.Stat(asset); err != nil {
 			t.Fatal(err)
 		}
-		staged, err := stagePackage(stageOptions{SourceRoot: o.SourceRoot, InstallRoot: o.InstallRoot, StageRoot: filepath.Join(o.SourceRoot, "build/universal-stage", target[0]+"-"+target[1]), Name: "queue", OS: target[0], Arch: target[1], CMakeCommand: o.CMakeCommand})
+		staged, err := stagePackage(stageOptions{SourceRoot: o.SourceRoot, InstallRoot: o.InstallRoot, StageRoot: filepath.Join(o.SourceRoot, "build/universal-stage", target[0]+"-"+target[1]), Name: "queue", Version: "1.0", OS: target[0], Arch: target[1], CMakeCommand: o.CMakeCommand})
 		if err != nil {
 			t.Fatal(err)
 		}
