@@ -170,7 +170,7 @@ func stagePackage(o stageOptions) (staged string, err error) {
 		return "", fmt.Errorf("%s: installed consumption identity or dependencies do not match module declaration", input)
 	}
 	if module.PlatformIndependent {
-		if err = validateUniversalPackage(module, installRoot, adapter); err != nil {
+		if err = validateUniversalPackage(module, o.SourceRoot, installRoot, adapter); err != nil {
 			return "", err
 		}
 	}
@@ -201,19 +201,18 @@ func stagePackage(o stageOptions) (staged string, err error) {
 	return staged, nil
 }
 
-func validateUniversalPackage(module *moduleDefinition, installRoot string, adapter []byte) error {
+func validateUniversalPackage(module *moduleDefinition, sourceRoot, installRoot string, adapter []byte) error {
 	if module.Kind != "copy" || len(adapter) == 0 {
 		return fmt.Errorf("universal package %s requires copy installation and a nonempty adapter", module.Name)
 	}
-	sourceRoot := filepath.Clean(filepath.Join(filepath.Dir(module.Path), "../../.."))
 	want := map[string]string{}
 	for _, mapping := range module.Copies {
 		if mapping.Destination != "include" && !strings.HasPrefix(filepath.ToSlash(mapping.Destination), "include/") {
 			return fmt.Errorf("universal package %s must copy its payload under include/", module.Name)
 		}
-		source := filepath.Join(sourceRoot, "git", module.Name)
+		source := filepath.Join(sourceRoot, "git", module.Name, module.Version)
 		if mapping.Resource != "" {
-			source = filepath.Join(sourceRoot, "git", "_resources", module.Name, mapping.Resource)
+			source = filepath.Join(sourceRoot, "git", "_resources", module.Name, module.Version, mapping.Resource)
 		}
 		for _, file := range mapping.Files {
 			want[filepath.Join(mapping.Destination, filepath.Base(file))] = filepath.Join(source, file)
@@ -245,7 +244,7 @@ func validateUniversalPackage(module *moduleDefinition, installRoot string, adap
 		return fmt.Errorf("universal package %s has no source payload", module.Name)
 	}
 	actual := map[string]bool{}
-	root := filepath.Join(installRoot, module.Name)
+	root := filepath.Join(installRoot, module.Name, module.Version)
 	if err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err

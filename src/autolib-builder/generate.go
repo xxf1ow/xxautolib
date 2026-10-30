@@ -47,7 +47,7 @@ func generate(context buildContext, names []string) error {
 		if err != nil {
 			return err
 		}
-		outputs = append(outputs, output{slashJoin(context.BuildRoot, "generated", m.Name+".cmake"), content})
+		outputs = append(outputs, output{slashJoin(context.BuildRoot, "generated", m.Name, m.Version+".cmake"), content})
 		inputs = append(inputs, filepath.ToSlash(m.Path))
 		inputs = append(inputs, slashJoin(filepath.Dir(filepath.Dir(m.Path)), "package.toml"))
 		adapter := slashJoin(filepath.Dir(m.Path), "autolib-import.cmake")

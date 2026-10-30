@@ -116,6 +116,7 @@ func (f *fixture) project(modules []*moduleDefinition, suffix string) {
 	byName := map[string]*moduleDefinition{}
 	for _, m := range modules {
 		byName[m.Name] = m
+		byName[m.Name+"@"+m.Version] = m
 	}
 	var generated strings.Builder
 	for _, m := range modules {
@@ -151,7 +152,7 @@ func (f *fixture) installed(name, path string) string {
 	if root == "" {
 		root = filepath.Join(f.root, "3rdparty")
 	}
-	return filepath.Join(root, name, path)
+	return filepath.Join(root, name, "1.0", path)
 }
 func readFile(t *testing.T, path string) string {
 	t.Helper()

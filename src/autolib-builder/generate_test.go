@@ -37,7 +37,7 @@ func TestGenerationWrites(t *testing.T) {
 	if !stat.ModTime().Equal(now.ModTime()) {
 		t.Fatal("unchanged output rewritten")
 	}
-	generated := filepath.Join(f.context.BuildRoot, "generated/dep.cmake")
+	generated := filepath.Join(f.context.BuildRoot, "generated/dep/1.0.cmake")
 	old := readFile(t, generated)
 	putFile(t, dep, strings.ReplaceAll(readFile(t, dep), "VALUE='one'", "VALUE='two'"))
 	if err := generate(f.context, []string{"leaf"}); err != nil {
@@ -81,7 +81,7 @@ func TestGenericInstall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(generated, filepath.ToSlash(filepath.Join(f.context.InstallRoot, "app"))) || !strings.Contains(generated, "[[dep]]") || strings.Contains(generated, "3rdparty") {
+	if !strings.Contains(generated, filepath.ToSlash(filepath.Join(f.context.InstallRoot, "app", "1.0"))) || !strings.Contains(generated, "[[_al_pkg_646570_312e30]]") || strings.Contains(generated, "3rdparty") {
 		t.Fatalf("generated install/dependency prefix did not use isolated root:\n%s", generated)
 	}
 	f.project([]*moduleDefinition{dep, app}, "")
@@ -99,11 +99,11 @@ func TestGenericInstall(t *testing.T) {
 	module := entry.copyModule("demo")
 	putFile(t, module.Path, "sentinel='include/x.h'\n"+readFile(t, module.Path))
 	entry.mustEntry("-DBUILD_LIST=demo")
-	if !strings.Contains(readFile(t, filepath.Join(entry.context.BuildRoot, "generated", "demo.cmake")), filepath.ToSlash(filepath.Join(installRoot, "demo", "include", "x.h"))) {
+	if !strings.Contains(readFile(t, filepath.Join(entry.context.BuildRoot, "generated", "demo", "1.0.cmake")), filepath.ToSlash(filepath.Join(installRoot, "demo", "1.0", "include", "x.h"))) {
 		t.Fatal("AUTOLIB_INSTALL_ROOT did not reach the root builder sentinel path")
 	}
 	entry.build()
-	requireFile(t, filepath.Join(installRoot, "demo", "include", "x.h"), "demo")
+	requireFile(t, filepath.Join(installRoot, "demo", "1.0", "include", "x.h"), "demo")
 }
 
 func TestModuleClosureStable(t *testing.T) {

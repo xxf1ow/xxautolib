@@ -14,6 +14,10 @@ type moduleRef struct {
 	Name, Version string
 }
 
+func moduleTarget(ref moduleRef) string {
+	return fmt.Sprintf("_al_pkg_%x_%x", ref.Name, ref.Version)
+}
+
 func (r moduleRef) String() string {
 	if r.Version == "" {
 		return r.Name

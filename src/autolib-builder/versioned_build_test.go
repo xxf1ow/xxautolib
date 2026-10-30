@@ -3,11 +3,177 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestVersionedBuildLocations(t *testing.T) {
+	f := newEntryFixture(t)
+	main := f.repository("main", map[string]string{"main.h": "main"})
+	extra := f.repository("extra", map[string]string{"extra.h": "extra"})
+	for _, version := range []string{"a+b", "a_b", "a-b"} {
+		f.definitionVersion("demo", version, "copy", "sentinel='include/main.h'\n[source]\n"+main+"[resources.extra]\n"+extra+"[[copy]]\nfiles=['main.h']\ndestination='include'\n[[copy]]\nresource='extra'\nfiles=['extra.h']\ndestination='include'\n")
+	}
+	if err := generate(f.context, nil); err != nil {
+		t.Fatal(err)
+	}
+	manifest := readFile(t, filepath.Join(f.context.BuildRoot, "generated/inputs.cmake"))
+	untouched := putFile(t, filepath.Join(f.root, "3rdparty/untouched/package.toml"), "unrelated metadata\n")
+	putFile(t, filepath.Join(f.root, "CMakeLists.txt"), "cmake_minimum_required(VERSION 3.20)\nproject(fixture NONE)\ninclude(ExternalProject)\n"+manifest+"\nforeach(module IN LISTS XXAUTOLIB_GENERATED_MODULES)\ninclude(\"${module}\")\nendforeach()\n")
+	f.configure()
+	f.build()
+	requireFile(t, filepath.Join(f.root, "3rdparty/demo/package.toml"), "latest='a-b'\n")
+	requireFile(t, untouched, "unrelated metadata\n")
+	metadataBefore, _ := os.Stat(filepath.Join(f.root, "3rdparty/demo/package.toml"))
+	for version, target := range map[string]string{"a+b": "_al_pkg_64656d6f_612b62", "a_b": "_al_pkg_64656d6f_615f62", "a-b": "_al_pkg_64656d6f_612d62"} {
+		for _, path := range []string{"git/demo/" + version + "/main.h", "git/_resources/demo/" + version + "/extra/extra.h", "build/generated/demo/" + version + ".cmake", "build/ep/demo/" + version + "/stamp/" + target + "-install", "3rdparty/demo/" + version + "/include/main.h", "3rdparty/demo/" + version + "/include/extra.h"} {
+			if _, err := os.Stat(filepath.Join(f.root, path)); err != nil {
+				t.Error(path, err)
+			}
+		}
+	}
+	putFile(t, filepath.Join(f.root, "3rdparty/demo/a+b/include/main.h"), "cached only a+b")
+	f.configure()
+	f.build()
+	metadataAfter, _ := os.Stat(filepath.Join(f.root, "3rdparty/demo/package.toml"))
+	if !metadataBefore.ModTime().Equal(metadataAfter.ModTime()) {
+		t.Fatal("source-only reuse rewrote package metadata")
+	}
+	requireFile(t, filepath.Join(f.root, "3rdparty/demo/a+b/include/main.h"), "cached only a+b")
+	requireFile(t, filepath.Join(f.root, "3rdparty/demo/a_b/include/main.h"), "main")
+}
+
+func TestVersionedDependencyWiring(t *testing.T) {
+	f := newFixture(t)
+	t.Setenv("PKG_CONFIG_PATH", "existing-pc")
+	depSource := f.repository("dep", map[string]string{"dep.h": "#define DEP 17\n", "CMakeLists.txt": "cmake_minimum_required(VERSION 3.20)\nproject(dep NONE)\ninstall(FILES dep.h DESTINATION include)\n"})
+	for _, version := range []string{"1", "2"} {
+		f.definitionVersion("dep", version, "cmake", "config_dir='lib/cmake/Dep'\npackage_name='Dep'\npkgconfig_dir='lib/pkgconfig'\n[source]\n"+depSource)
+	}
+	leafSource := f.repository("leaf", map[string]string{"check.cpp": "#include <dep.h>\nint value() { return DEP; }\n", "CMakeLists.txt": `cmake_minimum_required(VERSION 3.20)
+project(leaf CXX)
+file(WRITE "${CMAKE_BINARY_DIR}/paths" "${CMAKE_PREFIX_PATH}|${Dep_DIR}|$ENV{PKG_CONFIG_PATH}")
+add_library(check STATIC check.cpp)
+install(FILES "${CMAKE_BINARY_DIR}/paths" DESTINATION .)
+`})
+	for _, version := range []string{"1", "2"} {
+		f.definitionVersion("leaf", version, "cmake", "depends=['dep@"+version+"']\n[source]\n"+leafSource)
+	}
+	modules, err := loadModuleClosure(f.root, []string{"leaf@1", "leaf@2"}, f.context.SystemName, f.context.Architecture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.project(modules, "")
+	f.build()
+	separator := ":"
+	if f.context.SystemName == "Windows" {
+		separator = ";"
+	}
+	for _, version := range []string{"1", "2"} {
+		prefix := filepath.ToSlash(filepath.Join(f.root, "3rdparty/dep", version))
+		requireFile(t, filepath.Join(f.root, "3rdparty/leaf", version, "paths"), prefix+"|"+prefix+"/lib/cmake/Dep|"+prefix+"/lib/pkgconfig"+separator+"existing-pc")
+	}
+}
+
+func TestVersionedConsumptionFreeze(t *testing.T) {
+	f := newEntryFixture(t)
+	f.context.Architecture = "x86_64"
+	source := f.repository("leaf", map[string]string{"leaf.h": "leaf"})
+	f.definitionVersion("eigen", "3.4.0", "cmake", testSource)
+	f.definitionVersion("eigen", "5.0.1", "cmake", testSource)
+	f.definitionVersion("leaf", "1", "copy", "depends=['eigen','eigen@3.4.0']\n[source]\n"+source+"[[copy]]\nfiles=['leaf.h']\ndestination='include'\n")
+	putFile(t, filepath.Join(f.root, "src/dependencies/eigen/package.toml"), "latest='3.4.0'\n")
+	for _, ref := range []string{"eigen/3.4.0", "eigen/5.0.1", "leaf/1"} {
+		putFile(t, filepath.Join(f.root, "src/dependencies", ref, "autolib-import.cmake"), "# adapter\n")
+	}
+	modules, err := loadModuleClosure(f.root, []string{"leaf@1"}, f.context.SystemName, f.context.Architecture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.context.BuilderFile = filepath.Join(f.root, "builder")
+	f.must(goExecutable(), "build", "-o", f.context.BuilderFile, ".")
+	putFile(t, filepath.Join(f.root, "3rdparty/eigen/3.4.0/autolib-import.cmake"), "set(AUTOLIB_PACKAGE_NAME \"eigen\")\nset(AUTOLIB_PACKAGE_VERSION \"3.4.0\")\nset(AUTOLIB_OS \""+strings.ToLower(f.context.SystemName)+"\")\nset(AUTOLIB_ARCH \"x86_64\")\nset(AUTOLIB_DEPENDENCIES \"\")\n# adapter\n")
+	modules[0].Sentinel = "autolib-import.cmake"
+	f.project(modules, "")
+	putFile(t, filepath.Join(f.root, "src/dependencies/eigen/package.toml"), "latest='5.0.1'\n")
+	f.build()
+	output := filepath.Join(f.root, "3rdparty/leaf/1/autolib-import.cmake")
+	metadata, err := readConsumptionMetadata(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if metadata.Name != "leaf" || metadata.Version != "1" || !reflect.DeepEqual(metadata.Dependencies, []string{"eigen@3.4.0"}) {
+		t.Fatalf("installation reselected latest: %+v", metadata)
+	}
+	requireFile(t, filepath.Join(f.root, "3rdparty/eigen/package.toml"), "latest='5.0.1'\n")
+	before, _ := os.Stat(output)
+	f.build()
+	after, _ := os.Stat(output)
+	if !before.ModTime().Equal(after.ModTime()) {
+		t.Fatal("reuse rewrote unchanged metadata")
+	}
+	dep := filepath.Join(f.root, "3rdparty/eigen/3.4.0/autolib-import.cmake")
+	putFile(t, filepath.Join(f.root, "3rdparty/eigen/5.0.1/autolib-import.cmake"), strings.Replace(readFile(t, dep), "\"3.4.0\"", "\"5.0.1\"", 1))
+	baseArgs := []string{f.context.BuilderFile, "prepare-consumption", "--source-root=" + f.root, "--install-root=" + filepath.Join(f.root, "3rdparty"), "--name=leaf", "--version=1", "--os=" + strings.ToLower(f.context.SystemName), "--arch=x86_64"}
+	for _, tc := range []struct {
+		name         string
+		dependencies []string
+	}{
+		{"missing", nil},
+		{"bare", []string{"--dependency=eigen"}},
+		{"mismatched declaration", []string{"--dependency=eigen@5.0.1"}},
+		{"undeclared", []string{"--dependency=eigen@3.4.0", "--dependency=leaf@1"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			args := append(append([]string{}, baseArgs...), tc.dependencies...)
+			if _, _, err := f.command(append(args, "--phase=reuse")...); err == nil {
+				t.Fatal("invalid frozen dependencies accepted")
+			}
+		})
+	}
+	args := append(append([]string{}, baseArgs...), "--dependency=eigen@3.4.0")
+	f.must(append(append([]string{}, args...), "--dependency=eigen@3.4.0", "--phase=reuse")...)
+	withoutVersion := []string{}
+	for _, arg := range args {
+		if arg != "--version=1" {
+			withoutVersion = append(withoutVersion, arg)
+		}
+	}
+	if _, _, err := f.command(append(withoutVersion, "--phase=reuse")...); err == nil {
+		t.Fatal("missing --version accepted")
+	}
+	putFile(t, dep, strings.Replace(readFile(t, dep), "\"3.4.0\"", "\"5.0.1\"", 1))
+	f.must(append(args, "--phase=begin")...)
+	if _, _, err := f.command(append(args, "--phase=installed")...); err == nil {
+		t.Fatal("wrong dependency version accepted")
+	}
+	requireFile(t, output, incompleteConsumption)
+}
+
+func TestVersionedUniversalSource(t *testing.T) {
+	f := newFixture(t)
+	for _, version := range []string{"1", "2"} {
+		f.definitionVersion("headers", version, "copy", "platform_independent=true\n"+testSource+"[[copy]]\nfiles=['input.h']\ndestination='include'\n")
+		putFile(t, filepath.Join(f.root, "src/dependencies/headers", version, "autolib-import.cmake"), "# adapter\n")
+		putFile(t, filepath.Join(f.root, "git/headers", version, "input.h"), version)
+		output := putFile(t, filepath.Join(f.root, "3rdparty/headers", version, "include/input.h"), version)
+		o := consumptionOptions{SourceRoot: f.root, InstallRoot: filepath.Join(f.root, "3rdparty"), Name: "headers", Version: version, OS: "windows", Arch: "x86_64", Phase: "reuse"}
+		if err := prepareConsumption(o); err != nil {
+			t.Fatal(err)
+		}
+		metadata, err := readConsumptionMetadata(filepath.Join(filepath.Dir(filepath.Dir(output)), "autolib-import.cmake"))
+		if err != nil || metadata.Version != version || metadata.OS != "any" || metadata.Arch != "any" {
+			t.Fatalf("wrong universal identity: %+v, %v", metadata, err)
+		}
+	}
+	putFile(t, filepath.Join(f.root, "3rdparty/headers/1/include/input.h"), "2")
+	if err := prepareConsumption(consumptionOptions{SourceRoot: f.root, InstallRoot: filepath.Join(f.root, "3rdparty"), Name: "headers", Version: "1", OS: "linux", Arch: "aarch64", Phase: "reuse"}); err == nil || !strings.Contains(err.Error(), "differs from its source") {
+		t.Fatalf("universal validation used the other version: %v", err)
+	}
+}
 
 func TestVersionedClosureRoots(t *testing.T) {
 	root := t.TempDir()
