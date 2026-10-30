@@ -2,11 +2,13 @@ package main
 
 import (
 	"bytes"
+	"net/http"
+	"sync/atomic"
 	"testing"
 )
 
 func prepareArguments(o prepareOptions) []string {
-	args := []string{"prepare", "--work-root=" + o.WorkRoot, "--os=" + o.OS, "--arch=" + o.Arch, "--result=" + o.ResultPath}
+	args := []string{"prepare", "--cache-root=" + o.CacheRoot, "--cmake-command=" + o.CMakeCommand, "--work-root=" + o.WorkRoot, "--os=" + o.OS, "--arch=" + o.Arch, "--result=" + o.ResultPath}
 	if o.LocalRoot != "" {
 		args = append(args, "--local-root="+o.LocalRoot)
 	}
@@ -35,16 +37,28 @@ func TestImporterCLI(t *testing.T) {
 			t.Fatalf("accepted %q: %d %s", bad, code, stderr.String())
 		}
 	}
-	for _, remoteOnly := range []bool{false, true} {
-		f := newRemotePrepareFixture(t)
-		o := f.options
-		o.Packages = []string{"flann"}
-		if remoteOnly {
-			o.LocalRoot = ""
-		}
+	for _, option := range []string{"--cache-root=", "--cmake-command="} {
 		stderr.Reset()
-		if code := run(prepareArguments(o), &stdout, &stderr); code != 0 {
-			t.Fatalf("remote CLI %d: %s", code, stderr.String())
+		if code := run(append(append([]string{}, args...), option), &stdout, &stderr); code == 0 {
+			t.Fatal("accepted missing required internal option", option)
 		}
+	}
+	o.LocalRoot, o.RemoteRoot = "", ""
+	stderr.Reset()
+	if code := run(prepareArguments(o), &stdout, &stderr); code != 0 {
+		t.Fatalf("offline CLI %d: %s", code, stderr.String())
+	}
+	var requests atomic.Int32
+	client := githubTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	previous := http.DefaultTransport
+	http.DefaultTransport = client.Transport
+	t.Cleanup(func() { http.DefaultTransport = previous })
+	o.Packages, o.RemoteRoot = []string{"missing@1"}, testReleaseURL
+	stderr.Reset()
+	if code := run(prepareArguments(o), &stdout, &stderr); code == 0 || requests.Load() != 0 {
+		t.Fatalf("remote miss: %d requests=%d %s", code, requests.Load(), stderr.String())
 	}
 }

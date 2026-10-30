@@ -2,7 +2,12 @@ package main
 
 import (
 	"bufio"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -19,11 +24,226 @@ func normalizeLocalSource(uri string) (string, error) {
 	if scheme := sourceScheme.FindString(uri); len(scheme) > 2 {
 		return "", fmt.Errorf("only local source directories are supported: %q", uri)
 	}
-	absolute, err := filepath.Abs(uri)
+	absolute, err := resolveLocalPath(uri)
 	if err != nil {
 		return "", err
 	}
 	return filepath.ToSlash(filepath.Clean(absolute)), nil
+}
+
+// Resolve existing parents without creating missing source or cache directories.
+func resolveLocalPath(path string) (string, error) {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	resolved, err := filepath.EvalSymlinks(absolute)
+	if err == nil {
+		info, err := os.Stat(resolved)
+		if err != nil {
+			return "", err
+		}
+		if !info.IsDir() {
+			return "", fmt.Errorf("local root is not a directory: %s", resolved)
+		}
+		return resolved, nil
+	}
+	if !os.IsNotExist(err) {
+		return "", err
+	}
+	if _, statErr := os.Lstat(absolute); statErr == nil {
+		return "", err
+	} else if !os.IsNotExist(statErr) {
+		return "", statErr
+	}
+	parent := filepath.Dir(absolute)
+	if parent == absolute {
+		return "", err
+	}
+	resolved, err = resolveLocalPath(parent)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(resolved, filepath.Base(absolute)), nil
+}
+
+func packageCandidateExists(root string, id packageIdentity) (bool, error) {
+	if err := exactPackageEntry(root, id.Name, true); err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	parent := filepath.Join(root, id.Name)
+	if err := validatePackageVersionEntries(parent, id.Version); err != nil {
+		return false, err
+	}
+	if err := exactPackageEntry(parent, id.Version, true); err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+func stageInstalledPackage(sourceRoot, cacheRoot string, id packageIdentity, cmake string) (staged string, err error) {
+	source := packageDirectory(sourceRoot, id)
+	metadata, err := readPackageMetadata(source)
+	if err != nil {
+		return "", err
+	}
+	if !matchesPackageIdentity(metadata.Identity, id) {
+		return "", fmt.Errorf("installed package %s: expected identity %+v, got %+v", source, id, metadata.Identity)
+	}
+	if err := checkProducerReferences(source, sourceRoot, append([]string{id.Name + "/" + id.Version}, dependencyPaths(metadata.Dependencies)...)); err != nil {
+		return "", err
+	}
+	work, err := os.MkdirTemp(cacheRoot, ".copy-")
+	if err != nil {
+		return "", err
+	}
+	defer func() {
+		if err != nil {
+			_ = os.RemoveAll(work)
+		}
+	}()
+	staged = packageDirectory(work, id)
+	if err := copyInstalledPackage(source, staged); err != nil {
+		return "", err
+	}
+	if err := relocatePackage(staged, sourceRoot, work, cmake, metadata); err != nil {
+		return "", err
+	}
+	checked, err := readPackageMetadata(staged)
+	if err != nil {
+		return "", err
+	}
+	if checked.Identity != metadata.Identity || !slices.Equal(checked.Dependencies, metadata.Dependencies) {
+		return "", fmt.Errorf("relocation changed package identity: %s", staged)
+	}
+	return staged, nil
+}
+
+func dependencyPaths(dependencies []string) []string {
+	paths := make([]string, len(dependencies))
+	for i, dependency := range dependencies {
+		paths[i] = strings.Replace(dependency, "@", "/", 1)
+	}
+	return paths
+}
+
+func copyInstalledPackage(source, destination string) error {
+	type directoryMode struct {
+		path string
+		mode fs.FileMode
+	}
+	var directories []directoryMode
+	err := filepath.WalkDir(source, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(source, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(destination, rel)
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		switch {
+		case entry.IsDir():
+			directories = append(directories, directoryMode{target, info.Mode().Perm()})
+			return os.MkdirAll(target, 0755)
+		case info.Mode().IsRegular():
+			input, err := os.Open(path)
+			if err != nil {
+				return err
+			}
+			defer input.Close()
+			output, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, info.Mode().Perm())
+			if err != nil {
+				return err
+			}
+			_, copyErr := io.Copy(output, input)
+			return errors.Join(copyErr, output.Chmod(info.Mode().Perm()), output.Close())
+		case info.Mode()&os.ModeSymlink != 0:
+			link, err := os.Readlink(path)
+			if err != nil {
+				return err
+			}
+			return os.Symlink(link, target)
+		default:
+			return fmt.Errorf("%s: unsupported package file type %s", path, info.Mode())
+		}
+	})
+	if err != nil {
+		return err
+	}
+	for i := len(directories) - 1; i >= 0; i-- {
+		if err := os.Chmod(directories[i].path, directories[i].mode); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func verifyLocalDigest(archive string) error {
+	path := archive + ".sha256"
+	if err := exactPackageEntry(filepath.Dir(path), filepath.Base(path), false); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	digest := strings.TrimSuffix(string(data), "\n")
+	if len(digest) != 64 || strings.ToLower(digest) != digest {
+		return fmt.Errorf("%s: expected one lowercase SHA256", path)
+	}
+	if _, err := hex.DecodeString(digest); err != nil {
+		return fmt.Errorf("%s: invalid SHA256", path)
+	}
+	input, err := os.Open(archive)
+	if err != nil {
+		return err
+	}
+	defer input.Close()
+	hash := sha256.New()
+	if _, err := io.Copy(hash, input); err != nil {
+		return err
+	}
+	if hex.EncodeToString(hash.Sum(nil)) != digest {
+		return fmt.Errorf("%s: SHA256 mismatch", archive)
+	}
+	return nil
+}
+
+func writePackageLatest(root, name, version string) error {
+	path := filepath.Join(root, name, "package.toml")
+	if current, err := readPackageLatest(root, name); err == nil && current == version {
+		return nil
+	} else if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	f, err := os.CreateTemp(filepath.Dir(path), ".latest-")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(f.Name())
+	_, writeErr := fmt.Fprintf(f, "latest = %q\n", version)
+	if err := errors.Join(writeErr, f.Close()); err != nil {
+		return err
+	}
+	// Windows Rename does not replace an existing file. Cache writers are serialized.
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return os.Rename(f.Name(), path)
 }
 
 func packageDirectory(localRoot string, id packageIdentity) string {
