@@ -22,6 +22,9 @@ func TestDescribeParity(t *testing.T) {
 	if len(got.Modules) != 2 || got.Modules[0].Name != "lz4" || got.Modules[1].Name != "flann" {
 		t.Fatalf("closure: %+v", got.Modules)
 	}
+	if got.Modules[1].Version != "1.0" || !reflect.DeepEqual(got.Modules[1].Depends, []string{"lz4@1.0"}) {
+		t.Fatalf("imprecise dependency description: %+v", got.Modules[1])
+	}
 	if !reflect.DeepEqual(got.Modules[1].SystemDependencies["apt"], []string{"pkg-config"}) || got.Modules[1].SystemDependencies["choco"] == nil {
 		t.Fatalf("system dependencies were not normalized: %+v", got.Modules[1].SystemDependencies)
 	}
@@ -49,7 +52,7 @@ func TestDescribeParity(t *testing.T) {
 func TestDescribeInputs(t *testing.T) {
 	f := newFixture(t)
 	describeRootInputs(t, f.root)
-	moduleDir := filepath.Join(f.root, "src", "dependencies", "plain")
+	moduleDir := filepath.Join(f.root, "src", "dependencies", "plain", "1.0")
 	putFile(t, filepath.Join(moduleDir, "fix.patch"), "patch\n")
 	putFile(t, filepath.Join(moduleDir, "run.cmake"), "step input\n")
 	body := "version='1.0'\nconfig_dir='config/linux'\n" + testSource + "[resources.assets]\nGIT_REPOSITORY='assets'\nGIT_TAG='fixed'\n[cmake.cache]\nVALUE='selected'\n" +
@@ -61,7 +64,7 @@ func TestDescribeInputs(t *testing.T) {
 		t.Fatal(err)
 	}
 	module := description.Modules[0]
-	if !reflect.DeepEqual(module.InputFiles, []string{"src/dependencies/plain/fix.patch", "src/dependencies/plain/run.cmake"}) || module.AdapterFile != "src/dependencies/plain/autolib-import.cmake" {
+	if !reflect.DeepEqual(module.InputFiles, []string{"src/dependencies/plain/1.0/autolib-import.cmake", "src/dependencies/plain/1.0/fix.patch", "src/dependencies/plain/1.0/module.toml", "src/dependencies/plain/1.0/run.cmake", "src/dependencies/plain/package.toml"}) || module.AdapterFile != "src/dependencies/plain/1.0/autolib-import.cmake" {
 		t.Fatalf("module inputs/adapter: %+v", module)
 	}
 	var configuration map[string]any
@@ -73,9 +76,9 @@ func TestDescribeInputs(t *testing.T) {
 	resources := configuration["Resources"].(map[string]any)
 	copies := configuration["Copies"].([]any)
 	if configuration["Cache"].(map[string]any)["PLATFORM"] != "linux" ||
-		patches[0].(map[string]any)["File"] != "src/dependencies/plain/fix.patch" ||
+		patches[0].(map[string]any)["File"] != "src/dependencies/plain/1.0/fix.patch" ||
 		steps[0].(map[string]any)["WorkingDirectory"] != "<RESOURCE_SOURCE_DIR:assets>" ||
-		steps[0].(map[string]any)["Depends"].([]any)[0] != "src/dependencies/plain/run.cmake" ||
+		steps[0].(map[string]any)["Depends"].([]any)[0] != "src/dependencies/plain/1.0/run.cmake" ||
 		steps[0].(map[string]any)["Depends"].([]any)[1] != "<RESOURCE_SOURCE_DIR:assets>/run.cmake" ||
 		resources["assets"] == nil || len(copies) != 1 ||
 		len(description.BuilderFiles) == 0 || !slices.Contains(description.BuilderFiles, "CMakeLists.txt") ||
@@ -131,7 +134,7 @@ func TestDescribeCLI(t *testing.T) {
 	definitionFile(t, f.root, "plain", "cmake", testSource)
 	definitionFile(t, f.root, "cycle-a", "cmake", "depends=['cycle-b']\n"+testSource)
 	definitionFile(t, f.root, "cycle-b", "cmake", "depends=['cycle-a']\n"+testSource)
-	putFile(t, filepath.Join(f.root, "src", "dependencies", "invalid", "module.toml"), "name='invalid'\ntype='cmake'\nunknown=true\n"+testSource)
+	definitionFile(t, f.root, "invalid", "cmake", "unknown=true\n"+testSource)
 	var stdout, stderr bytes.Buffer
 	args := []string{"describe", "--source-root", f.root, "--system-name", "Linux", "--architecture", "x86_64", "--module", "plain"}
 	if code := run(args, &stdout, &stderr); code != 0 {

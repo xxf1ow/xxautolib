@@ -22,12 +22,12 @@ func TestGenerationWrites(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, part := range []string{"dep/module.toml", "leaf/module.toml", "go.mod", "go.sum", "cmake.go", "apply_patch.cmake", "configure_dependencies.cmake"} {
+	for _, part := range []string{"dep/1.0/module.toml", "leaf/1.0/module.toml", "dep/package.toml", "leaf/package.toml", "go.mod", "go.sum", "cmake.go", "apply_patch.cmake", "configure_dependencies.cmake"} {
 		if !strings.Contains(before, part) {
 			t.Fatalf("missing input %s", part)
 		}
 	}
-	if strings.Contains(before, "unused/module.toml") {
+	if strings.Contains(before, "unused/") {
 		t.Fatal("unselected input")
 	}
 	if err := generate(f.context, []string{"leaf"}); err != nil {
@@ -125,7 +125,7 @@ func TestModuleClosureStable(t *testing.T) {
 }
 
 func TestModuleClosureErrors(t *testing.T) {
-	for _, tc := range []struct{ left, right, chain string }{{"missing", "", "left -> missing"}, {"left", "", "left -> left"}, {"right", "left", "left -> right -> left"}} {
+	for _, tc := range []struct{ left, right, chain string }{{"missing", "", "left@1.0 -> missing"}, {"left", "", "left@1.0 -> left@1.0"}, {"right", "left", "left@1.0 -> right@1.0 -> left@1.0"}} {
 		t.Run(tc.chain, func(t *testing.T) {
 			root := t.TempDir()
 			definitionFile(t, root, "left", "cmake", "depends=['"+tc.left+"']\n"+testSource)
@@ -138,7 +138,7 @@ func TestModuleClosureErrors(t *testing.T) {
 			}
 		})
 	}
-	if _, err := loadModuleClosure(t.TempDir(), []string{"../escape"}, "Linux", ""); err == nil || !strings.Contains(err.Error(), "module name") {
+	if _, err := loadModuleClosure(t.TempDir(), []string{"../escape"}, "Linux", ""); err == nil || !strings.Contains(err.Error(), "module reference") {
 		t.Fatal(err)
 	}
 }

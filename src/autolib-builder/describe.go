@@ -21,6 +21,7 @@ type moduleDescription struct {
 
 type describedModule struct {
 	Name                string              `json:"name"`
+	Version             string              `json:"version"`
 	Depends             []string            `json:"depends"`
 	PlatformIndependent bool                `json:"platform_independent"`
 	SystemDependencies  map[string][]string `json:"system_dependencies"`
@@ -87,7 +88,7 @@ func describeModules(sourceRoot, systemName, architecture string, names []string
 }
 
 func describeModule(root string, definition *moduleDefinition) (describedModule, error) {
-	result := describedModule{Name: definition.Name, Depends: slices.Clone(definition.Depends), PlatformIndependent: definition.PlatformIndependent, SystemDependencies: map[string][]string{}, InputFiles: []string{}}
+	result := describedModule{Name: definition.Name, Version: definition.Version, Depends: slices.Clone(definition.Depends), PlatformIndependent: definition.PlatformIndependent, SystemDependencies: map[string][]string{}, InputFiles: []string{}}
 	if result.Depends == nil {
 		result.Depends = []string{}
 	}
@@ -122,6 +123,13 @@ func describeModule(root string, definition *moduleDefinition) (describedModule,
 			return "", fmt.Errorf("referenced path escapes source root: %s", value)
 		}
 		return filepath.ToSlash(rel), nil
+	}
+	for _, input := range []string{definition.Path, filepath.Join(filepath.Dir(filepath.Dir(definition.Path)), "package.toml")} {
+		path, err := toRelative(input, false)
+		if err != nil {
+			return result, err
+		}
+		paths[path] = true
 	}
 	resources := map[string]sourceDefinition{}
 	for name, source := range definition.Resources {
@@ -211,6 +219,7 @@ func describeModule(root string, definition *moduleDefinition) (describedModule,
 		if err != nil {
 			return result, err
 		}
+		paths[result.AdapterFile] = true
 	} else if !os.IsNotExist(err) {
 		return result, err
 	}
