@@ -98,7 +98,12 @@ func (f *fixture) repository(name string, files map[string]string) string {
 
 func (f *fixture) definition(name, kind, body string) *moduleDefinition {
 	f.t.Helper()
-	path := definitionFile(f.t, f.root, name, kind, body)
+	return f.definitionVersion(name, "1.0", kind, body)
+}
+
+func (f *fixture) definitionVersion(name, version, kind, body string) *moduleDefinition {
+	f.t.Helper()
+	path := definitionVersionFile(f.t, f.root, name, version, kind, body)
 	m, err := loadDefinition(path, f.context.SystemName, f.context.Architecture)
 	if err != nil {
 		f.t.Fatal(err)
