@@ -10,6 +10,8 @@ Status: proposed
 
 ## 方案
 
+后续开发中的精确版本引用、来源默认值、缓存布局和独立产物仓库交接以[版本化包与统一产物交付设计](2026-10-29-versioned-artifact-delivery.md)为准。本文保留 target 导入、公共目标封装和已有验收依据，不将源码仓库 Release 中转或 API 发现作为新实现要求。
+
 以 `autolib_import(TARGET app PRIVATE queue flann)` 一次表达消费 target、链接可见性和根包需求。来源在单文件 `autolib.cmake` 内设默认值并允许外部一次性覆盖；每包只提供一个 `autolib::` 公共目标，由 adapter 封装上游库和传递依赖。
 
 本设计拥有 CMake 公共接口、来源默认值、公共目标封装及后续交付阶段，部分替代[无全局清单的双来源包消费](2026-10-24-manifestless-package-consumption.md)中的 CMake 调用形式、无远端默认值及后续阶段安排。包内四行头、固定资产名、本地布局、依赖遍历、来源优先级、失败保护、损坏检测及 GitHub 资产发现仍由该记录拥有，不复制另一套协议。[固定槽交付设计](2026-10-20-name-only-artifact-delivery.md)和[Go 工具层设计](2026-10-21-go-tooling-and-offline-import.md)的可搬迁打包、adapter 与纯 Go 运行约束继续有效，公共目标命名以本文为准。

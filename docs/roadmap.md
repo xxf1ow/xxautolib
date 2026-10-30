@@ -2,6 +2,10 @@
 
 本仓库按能力分批接入模块，先完成本地构建安装，再建立下游导入、二进制交付和 CI。本文维护阶段目标与迁移范围；各阶段的理由和约束由链接的 Agent Note 拥有，具体实现开始前再确认该批设计。
 
+后续开发遵循[架构基准](architecture.md)。版本目录、独立 latest、入口缓存和专用产物仓库尚未实施，下文已有验收不证明该方案已交付。
+
+版本机制按[四阶段交付](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md#实施阶段)，逐阶段规划与验收；sherpa另行接入。
+
 [Go 工具层与离线导入设计](agent-notes/proposed/architecture/2026-10-21-go-tooling-and-offline-import.md)的 Go 重建与本地交付阶段已通过用户验收；[分阶段消费设计](agent-notes/proposed/architecture/2026-10-25-target-import-and-release-consumption.md#已验收范围)记录本地接口和三平台 GitHub 下载验收。具体平台、搬迁链接及协议证据由对应设计拥有，Gitee 消费验收见下节。
 
 独立的[CI 系统](agent-notes/implemented/architecture/2026-10-20-ci-system.md)完成三平台代表库的原生构建与发布，不依赖扩库进度。[无全局清单包消费](agent-notes/proposed/architecture/2026-10-24-manifestless-package-consumption.md)的本地协议及三平台搬迁链接已验收；[每轮重建与文件名发布](agent-notes/implemented/simplification/2026-10-24-ci-rebuild-without-production-cache.md)记录替代生产缓存后的三平台远端证据。后续设计交接、扩库及远端操作仍须确认，不自动推进。
