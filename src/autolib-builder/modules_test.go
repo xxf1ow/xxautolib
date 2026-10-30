@@ -1,11 +1,77 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestVersionedLibrealsenseDependencyPrefixes(t *testing.T) {
+	f := newFixture(t)
+	patches, err := filepath.Glob("../dependencies/librealsense/*/local-dependencies.patch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(patches) != 1 {
+		t.Fatalf("want one librealsense patch, got %v", patches)
+	}
+	text := readFile(t, patches[0])
+	section := ""
+	usb, json := []string{}, []string{}
+	for _, line := range strings.Split(text, "\n") {
+		if strings.HasPrefix(line, "diff --git ") {
+			section = strings.Fields(line)[2]
+		}
+		if section == "a/CMake/libusb_config.cmake" && strings.HasPrefix(line, " ") {
+			usb = append(usb, line[1:])
+		}
+		if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") {
+			switch section {
+			case "a/CMake/libusb_config.cmake":
+				usb = append(usb, line[1:])
+			case "a/third-party/CMakeLists.txt":
+				json = append(json, line[1:])
+			}
+		}
+	}
+	root := filepath.ToSlash(filepath.Join(f.root, "libusb/ancestor/nlohmann/ancestor/selected install"))
+	usbPrefix, jsonPrefix := root+"/libusb/chosen-usb", root+"/nlohmann/chosen-json"
+	library := "libusb-1.0.a"
+	if f.context.SystemName == "Windows" {
+		library = "usb-1.0.lib"
+	}
+	putFile(t, filepath.Join(usbPrefix, "lib", library), "")
+	putFile(t, filepath.Join(usbPrefix, "include/libusb-1.0/libusb.h"), "")
+	putFile(t, filepath.Join(jsonPrefix, "include/nlohmann/json.hpp"), "")
+	udev := putFile(t, filepath.Join(f.root, "system/libudev.a"), "")
+	project := "cmake_minimum_required(VERSION 3.20)\nproject(prefix_check C)\n" +
+		"set(CMAKE_INSTALL_PREFIX " + cmakeArgument(root+"/librealsense/sdk") + ")\n" +
+		"set(CMAKE_PREFIX_PATH " + cmakeArgument(root+"/lz4/chosen-lz4") + " " + cmakeArgument(jsonPrefix) + " " + cmakeArgument(usbPrefix) + ")\n" +
+		"set(AUTOLIB_UDEV_LIB " + cmakeArgument(filepath.ToSlash(udev)) + ")\n" +
+		strings.Join(usb, "\n") + "\n" +
+		"add_library(rsutils STATIC stub.c)\n" + strings.Join(json, "\n") + "\n" +
+		"get_target_property(usb_includes usb INTERFACE_INCLUDE_DIRECTORIES)\nget_target_property(usb_libraries usb INTERFACE_LINK_LIBRARIES)\n" +
+		"get_target_property(json_includes rsutils INTERFACE_INCLUDE_DIRECTORIES)\n" +
+		"file(WRITE \"${CMAKE_BINARY_DIR}/prefix-results\" \"${usb_includes}|${usb_libraries}|${json_includes}\")\n"
+	putFile(t, filepath.Join(f.root, "stub.c"), "int stub;\n")
+	putFile(t, filepath.Join(f.root, "CMakeLists.txt"), project)
+	f.configure()
+	got := readFile(t, filepath.Join(f.context.BuildRoot, "prefix-results"))
+	for _, want := range []string{usbPrefix + "/include/libusb-1.0", usbPrefix + "/lib/" + library, jsonPrefix + "/include"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("missing selected prefix %s: %s", want, got)
+		}
+	}
+	if err := os.Remove(filepath.Join(jsonPrefix, "include/nlohmann/json.hpp")); err != nil {
+		t.Fatal(err)
+	}
+	_, stderr, err := f.command(f.context.CMakeCommand, "-S", f.root, "-B", f.context.BuildRoot)
+	if err == nil || !strings.Contains(stderr, "Local nlohmann headers missing") {
+		t.Fatalf("missing selected dependency accepted: %v %s", err, stderr)
+	}
+}
 
 func TestRealModuleDeclarations(t *testing.T) {
 	root, err := filepath.Abs(filepath.Join("..", ".."))
@@ -26,6 +92,7 @@ func TestRealModuleDeclarations(t *testing.T) {
 			byName := map[string]*moduleDefinition{}
 			for _, m := range modules {
 				byName[m.Name] = m
+				byName[m.Name+"@"+m.Version] = m
 			}
 			for _, m := range modules {
 				deps := []*moduleDefinition{}
@@ -50,7 +117,7 @@ func TestRealModuleDeclarations(t *testing.T) {
 			}
 			ft, hb, cv, flann, lz4, onnx := byName["freetype"], byName["harfbuzz"], byName["opencv"], byName["flann"], byName["lz4"], byName["onnxruntime"]
 			check(hb.Version, "8.5.0")
-			check(hb.Depends, []string{"freetype"})
+			check(hb.Depends, []string{"freetype@2.13.2"})
 			check(hb.Source.URL, []string{"https://github.com/harfbuzz/harfbuzz/archive/refs/tags/8.5.0.zip"})
 			check(hb.Source.URLHash, "SHA256=734985456b60c198da41f4c85280963795b9baa6fb6f3b91c6b85026da837933")
 			check(hb.Cache["HB_HAVE_FREETYPE"], true)
@@ -59,7 +126,7 @@ func TestRealModuleDeclarations(t *testing.T) {
 			check(ft.ConfigDir, "lib/cmake/freetype")
 			check(ft.PkgconfigDir, "lib/pkgconfig")
 			check(cv.Version, "4.14.0")
-			check(cv.Depends, []string{"freetype", "harfbuzz"})
+			check(cv.Depends, []string{"freetype@2.13.2", "harfbuzz@8.5.0"})
 			check(cv.PackageName, "OpenCV")
 			config, sentinel := "lib/cmake/opencv4", "lib/cmake/opencv4/OpenCVConfig.cmake"
 			if slot.system == "Windows" {
@@ -96,7 +163,7 @@ BUILD_opencv_signal WITH_GSTREAMER WITH_PROTOBUF`) {
 			}
 			check(cv.Cache["OPENCV_EXTRA_MODULES_PATH"], "<RESOURCE_SOURCE_DIR:opencv_contrib>/modules")
 			check(cv.Patches[0].Resource, "opencv_contrib")
-			check(flann.Depends, []string{"lz4"})
+			check(flann.Depends, []string{"lz4@1.10.0"})
 			check(flann.Version, "f9caaf609d8b8cb2b7104a85cf59eb92c275a25d")
 			check(flann.Source.GitTag, "f9caaf609d8b8cb2b7104a85cf59eb92c275a25d")
 			check(flann.ConfigDir, "lib/cmake/flann")
@@ -119,7 +186,64 @@ BUILD_opencv_signal WITH_GSTREAMER WITH_PROTOBUF`) {
 			}
 		})
 	}
-	if _, err := loadDefinition(filepath.Join(root, "src/dependencies/onnxruntime/module.toml"), "Windows", "ARM64"); err == nil {
+	if _, err := loadDefinition(filepath.Join(root, "src/dependencies/onnxruntime/1.24.4/module.toml"), "Windows", "ARM64"); err == nil {
 		t.Fatal("unsupported ONNX target accepted")
+	}
+}
+
+func TestVersionedRealDeclarations(t *testing.T) {
+	root, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	versions := map[string]string{
+		"asio": "8806a6803cde7054c3049d3666d3ec36786568c5", "boost": "1.87.0", "clipper2": "1.5.4",
+		"cpp-httplib": "88956ccad8386f883f7d49ded46e6b0bb198c804", "eigen": "3.4.0", "expected": "1.3.1",
+		"flann": "f9caaf609d8b8cb2b7104a85cf59eb92c275a25d", "freetype": "2.13.2", "gtest": "1.17.0", "harfbuzz": "8.5.0",
+		"imgui": "065f9e02695c4eab92dab548f0c37f5297fc7a63", "librealsense": "2.58.1", "libusb": "1.0.27", "libzmq": "4.3.5", "lz4": "1.10.0",
+		"nativefiledialog-extended": "3cd252a8f7ca32419b1ca235c2990ba6a0ecba7c", "nlohmann": "3.12.0", "oneTBB": "628c90df6867d1c56563b6dc14d554e910a48770", "onnxruntime": "1.24.4", "opencv": "4.14.0",
+		"pcl": "pcl-1.15.1", "portaudio": "v190700_20210406", "pybind11": "2.13.6", "queue": "45db9a8b443122184c1f6b9db2c57453a9da1c6bcc18a5d7cfa4da29832fafed",
+		"sdl3": "3.2.30", "spdlog": "1.17.0", "taskflow": "83f90a279aaab33fd4ce1deed00ca07819cbc8f8", "websocketpp": "4dfe1be74e684acca19ac1cf96cce0df9eac2a2d", "yaml-cpp": "2decf96e915d2b0c26c68c1659665789dfef2633", "zlib": "1.3.1",
+	}
+	for _, slot := range []struct{ system, arch string }{{"Windows", "x86_64"}, {"Linux", "x86_64"}, {"Linux", "aarch64"}} {
+		t.Run(slot.system+"/"+slot.arch, func(t *testing.T) {
+			modules, err := loadModuleClosure(root, nil, slot.system, slot.arch)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(modules) != 31 {
+				t.Fatalf("want 31 versions, got %d", len(modules))
+			}
+			byRef := map[string]*moduleDefinition{}
+			for _, m := range modules {
+				byRef[m.Name+"@"+m.Version] = m
+			}
+			for name, version := range versions {
+				ref, err := resolveModuleRef(root, moduleRef{Name: name})
+				if err != nil || ref.Version != version {
+					t.Fatalf("%s latest: %v %v", name, ref, err)
+				}
+				if byRef[name+"@"+version] == nil {
+					t.Fatal("missing recipe", name, version)
+				}
+			}
+			if byRef["eigen@5.0.1"] == nil {
+				t.Fatal("missing explicit Eigen 5.0.1")
+			}
+			pcl := byRef["pcl@pcl-1.15.1"]
+			if !reflect.DeepEqual(pcl.Depends, []string{"lz4@1.10.0", "flann@f9caaf609d8b8cb2b7104a85cf59eb92c275a25d", "boost@1.87.0", "eigen@3.4.0", "zlib@1.3.1"}) {
+				t.Fatal(pcl.Depends)
+			}
+			for _, m := range modules {
+				deps := []*moduleDefinition{}
+				for _, ref := range m.Depends {
+					deps = append(deps, byRef[ref])
+				}
+				ctx := buildContext{SourceRoot: root, BuildRoot: t.TempDir(), SystemName: slot.system, Architecture: slot.arch, Generator: "Unix Makefiles", CMakeCommand: "cmake", GitExecutable: "git"}
+				if _, err := renderModule(m, ctx, deps); err != nil {
+					t.Error(m.Name, m.Version, err)
+				}
+			}
+		})
 	}
 }

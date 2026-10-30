@@ -299,7 +299,7 @@ func TestSystemDependencies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	flann, err := loadDefinition(filepath.Join(root, "src", "dependencies", "flann", "module.toml"), "Linux", "x86_64")
+	flann, err := loadDefinition(filepath.Join(root, "src", "dependencies", "flann", "f9caaf609d8b8cb2b7104a85cf59eb92c275a25d", "module.toml"), "Linux", "x86_64")
 	if err != nil {
 		t.Fatal(err)
 	}

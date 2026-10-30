@@ -83,11 +83,11 @@ cmake -S . -B build -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release "-DBUILD_LIST
 cmake --build build --parallel
 ```
 
-`BUILD_LIST` 以逗号分隔，留空或省略则选择全部模块；依赖自动补齐，flann 会同时构建 lz4。默认安装到 `3rdparty/<模块名>/`。FLANN 还需 pkg-config 和 OpenMP，其他模块要求见各自声明。
+`BUILD_LIST` 以逗号分隔 `包名@版本`，裸包名读取包级 `package.toml` 的 `latest`，留空或省略则选择全部配方版本；依赖自动补齐，flann 会同时构建 lz4。默认安装到 `3rdparty/<包名>/<版本>/`。FLANN 还需 pkg-config 和 OpenMP，其他模块要求见各自声明。
 
-通用 CMake 参数通过 `-D` 或 toolchain 设置；库特定选项修改对应 `src/dependencies/<name>/module.toml`，模块显式配置优先于父级参数。变更版本或选项后，按[重建说明](docs/development.md#准备与配置)处理受影响的源码、构建状态和安装树；已有安装标记可能跳过构建。
+通用 CMake 参数通过 `-D` 或 toolchain 设置；库特定选项修改对应 `src/dependencies/<name>/<version>/module.toml`，模块显式配置优先于父级参数。变更版本或选项后，按[重建说明](docs/development.md#准备与配置)处理受影响的源码、构建状态和安装树；已有安装标记可能跳过构建。
 
-提供消费适配的模块在安装后即可快捷导入，宿主 importer 也自动输出到安装根。将消费工程的 `AUTOLIB_LOCAL_ROOT` 指向该根即可复用，无需移动库、打包或解包；纯本地消费可将 `AUTOLIB_REMOTE_ROOT` 设为空。自定义根、重建和分发操作见[开发指南](docs/development.md#本地打包与消费)。
+版本化构建输出宿主 importer，但消费、打包与 CI 尚未适配新布局。自定义安装根和重建操作见[开发指南](docs/development.md#准备与配置)。
 
 ## 二进制发布
 

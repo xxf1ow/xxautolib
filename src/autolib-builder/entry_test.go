@@ -87,6 +87,9 @@ func goExecutable() string {
 func newEntryFixture(t *testing.T) *fixture {
 	t.Helper()
 	f := newFixture(t)
+	if err := os.MkdirAll(filepath.Join(f.root, "src/dependencies"), 0755); err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("GOPROXY", "off")
 	t.Setenv("GOSUMDB", "off")
 	for _, file := range []string{"CMakeLists.txt", "go.mod", "go.sum"} {
@@ -165,7 +168,7 @@ func TestEntryInstalledImporter(t *testing.T) {
 			other := filepath.Join(f.root, "must not install here")
 			t.Setenv("AUTOLIB_INSTALL_ROOT", other)
 			f.build()
-			requireFile(t, filepath.Join(root, "demo/include/x.h"), "demo")
+			requireFile(t, filepath.Join(root, "demo/1.0/include/x.h"), "demo")
 			if _, err := os.Stat(other); !os.IsNotExist(err) {
 				t.Fatal("build re-read installation environment", err)
 			}
@@ -265,7 +268,7 @@ func TestEntryFailureStopsBeforeInclude(t *testing.T) {
 			f := newEntryFixture(t)
 			m := f.copyModule("demo")
 			f.mustEntry()
-			putFile(t, filepath.Join(f.context.BuildRoot, "generated/demo.cmake"), "message(FATAL_ERROR \"STALE_OUTPUT_LOADED\")\n")
+			putFile(t, filepath.Join(f.context.BuildRoot, "generated/demo/1.0.cmake"), "message(FATAL_ERROR \"STALE_OUTPUT_LOADED\")\n")
 			args := []string{}
 			switch mode {
 			case "toml":
@@ -323,7 +326,7 @@ install(FILES "${CMAKE_BINARY_DIR}/value" "${CMAKE_BINARY_DIR}/policy" DESTINATI
 	}
 	requireFile(t, f.installed("dep", "value"), "two")
 	for _, file := range []string{leaf.Path, filepath.Join(f.root, "src/autolib-builder/apply_patch.cmake"), filepath.Join(f.root, "src/autolib-builder/main.go")} {
-		generated := filepath.Join(f.context.BuildRoot, "generated/leaf.cmake")
+		generated := filepath.Join(f.context.BuildRoot, "generated/leaf/1.0.cmake")
 		before, _ := os.Stat(generated)
 		time.Sleep(1100 * time.Millisecond)
 		comment := "\n# input change\n"
@@ -374,10 +377,10 @@ func TestEntrySelection(t *testing.T) {
 	f.mustEntry("-DBUILD_LIST= first,first , first")
 	f.build()
 	requireFile(t, f.installed("first", "include/x.h"), "first")
-	if _, err := os.Stat(filepath.Join(f.root, "git/second/.git")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(f.root, "git/second/1.0/.git")); !os.IsNotExist(err) {
 		t.Fatal("unselected source acquired")
 	}
-	if out, err := f.entry("-DBUILD_LIST=missing"); err == nil || !strings.Contains(out, "Module file NOT found") {
+	if out, err := f.entry("-DBUILD_LIST=missing"); err == nil || !strings.Contains(out, "root missing") {
 		t.Fatalf("%v %s", err, out)
 	}
 	t.Run("compiled dependency and include", func(t *testing.T) {
@@ -398,6 +401,74 @@ install(FILES "${CMAKE_BINARY_DIR}/settings" DESTINATION .)
 		f.build()
 		requireFile(t, f.installed("leaf", "settings"), "3.5|17|ON|caller preserved")
 	})
+}
+
+func TestVersionedRootSelection(t *testing.T) {
+	for _, tc := range []struct {
+		name, list string
+		versions   []string
+	}{
+		{"all", "", []string{"1", "2"}},
+		{"latest", "demo", []string{"2"}},
+		{"exact", "demo@1", []string{"1"}},
+		{"duplicate", " demo@2, demo@1,demo@2 ", []string{"1", "2"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newEntryFixture(t)
+			for _, version := range []string{"1", "2"} {
+				repo := f.repository("demo-"+version, map[string]string{"x.h": version})
+				f.definitionVersion("demo", version, "copy", "[source]\n"+repo+"[[copy]]\nfiles=['x.h']\ndestination='include'\n")
+			}
+			f.mustEntry("-DBUILD_LIST=" + tc.list)
+			manifest := readFile(t, filepath.Join(f.context.BuildRoot, "generated/inputs.cmake"))
+			if strings.Count(manifest, "generated/demo/") != len(tc.versions) {
+				t.Fatal(manifest)
+			}
+			for _, version := range tc.versions {
+				if !strings.Contains(manifest, "generated/demo/"+version+".cmake") {
+					t.Fatal(manifest)
+				}
+			}
+			f.build()
+			for _, version := range tc.versions {
+				requireFile(t, filepath.Join(f.root, "3rdparty/demo", version, "include/x.h"), version)
+			}
+		})
+	}
+}
+
+func TestVersionedReconfigure(t *testing.T) {
+	for _, selection := range []string{"", "demo"} {
+		t.Run(map[string]string{"": "all", "demo": "latest"}[selection], func(t *testing.T) {
+			f := newEntryFixture(t)
+			repo := f.repository("demo", map[string]string{"x.h": "demo"})
+			body := "[source]\n" + repo + "[[copy]]\nfiles=['x.h']\ndestination='include'\n"
+			f.definitionVersion("demo", "1", "copy", body)
+			f.mustEntry("-DBUILD_LIST=" + selection)
+			f.build()
+			time.Sleep(1100 * time.Millisecond)
+			putFile(t, filepath.Join(f.root, "src/dependencies/demo/2/module.toml"), "name='demo'\nversion='2'\ntype='copy'\n"+body)
+			if out := f.build(); !strings.Contains(out, "Building Summary") {
+				t.Fatal("new version did not reconfigure", out)
+			}
+			manifest := filepath.Join(f.context.BuildRoot, "generated/inputs.cmake")
+			if strings.Contains(readFile(t, manifest), "generated/demo/2.cmake") != (selection == "") {
+				t.Fatal(readFile(t, manifest))
+			}
+			time.Sleep(1100 * time.Millisecond)
+			putFile(t, filepath.Join(f.root, "src/dependencies/demo/package.toml"), "latest='2'\n")
+			if out := f.build(); !strings.Contains(out, "Building Summary") {
+				t.Fatal("latest change did not reconfigure", out)
+			}
+			if !strings.Contains(readFile(t, manifest), "generated/demo/2.cmake") || selection == "demo" && strings.Contains(readFile(t, manifest), "generated/demo/1.cmake") {
+				t.Fatal(readFile(t, manifest))
+			}
+			putFile(t, filepath.Join(f.context.BuildRoot, "generated/demo/2.cmake"), "message(FATAL_ERROR \"STALE_OUTPUT_LOADED\")\n")
+			if out, err := f.entry("-DBUILD_LIST=demo@missing"); err == nil || strings.Contains(out, "STALE_OUTPUT_LOADED") || !strings.Contains(out, "missing") {
+				t.Fatalf("%v %s", err, out)
+			}
+		})
+	}
 }
 
 func TestEntryArchitecture(t *testing.T) {
@@ -506,7 +577,7 @@ func TestNoPythonTooling(t *testing.T) {
 	f.mustEntry()
 	f.build()
 	requireFile(t, f.installed("demo", "include/x.h"), "demo")
-	output := filepath.Join(f.context.BuildRoot, "generated/demo.cmake")
+	output := filepath.Join(f.context.BuildRoot, "generated/demo/1.0.cmake")
 	before, err := os.Stat(output)
 	if err != nil {
 		t.Fatal(err)

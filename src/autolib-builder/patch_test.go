@@ -101,7 +101,7 @@ install(FILES value.c DESTINATION .)
 	if len(after) <= len(before) {
 		t.Fatal("patch did not invalidate configure")
 	}
-	resource := putFile(t, filepath.Join(f.root, "git/_resources/demo/extra/value.c"), "manual content\n")
+	resource := putFile(t, filepath.Join(f.root, "git/_resources/demo/1.0/extra/value.c"), "manual content\n")
 	time.Sleep(1100 * time.Millisecond)
 	if err := os.Chtimes(patch, time.Now(), time.Now()); err != nil {
 		t.Fatal(err)

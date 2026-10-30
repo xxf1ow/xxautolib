@@ -1,6 +1,6 @@
 # 测试
 
-公共 Go 测试通过受控 Git、归档及本机 HTTP/HTTPS fixture 验证声明、原生构建、安装、打包、消费和 CI 接线，不下载真实三方库。需要固定 Go SDK、模块缓存及 C/C++ 工具链；真实库与跨平台结果由下文独立验收，不从 fixture 推定。
+Go fixture 验证声明、原生构建和安装，不下载真实库。固定 SDK、模块缓存及 C/C++ 工具链为前提；打包、消费和 CI 测试及下文历史验收不证明版本化布局已端到端可用。
 
 ## 执行
 
@@ -12,6 +12,8 @@ cmake -P src/autolib-builder/go-sdk.cmake -- vet ./src/autolib-builder ./src/aut
 ```
 
 测试源码与各工具同目录。CMake 包装入口自动准备私有 SDK 和缓存；fixture 不下载真实依赖。builder 在 `build/tests/` 创建含空格和中文的隔离副本，importer 使用 Go 临时目录，结束时仅清理自身目录。SDK 获取、失败及离线复用、根入口与环境隔离由 [builder 测试](../src/autolib-builder/fixture_test.go)覆盖。定向验证用 `-run TestDefinition`；依赖接线用 `-run TestDirectDependencies`，资源补丁用 `-run TestPatch`，真实模块声明用 `-run TestRealModuleDeclarations`。修改公共入口或跨文件接线时运行全集；同批定向验证后在批末运行一次全集。
+
+版本化根入口命令为 `cmake -P src/autolib-builder/go-sdk.cmake -- test ./src/autolib-builder -run '^TestVersioned(RootSelection|Reconfigure|RealDeclarations)$' -count=1 -v`，覆盖全部版本、latest、精确选择和重配置。三平台声明选择不代替实机构建；Eigen 双版本安装另行验收。
 
 仅修改文档时使用 doc-standards、agent-notes 技能校验链接、归属和 `scripts/doc-budgets.manifest.json` 预算；校验器不是构建依赖。仓库没有自动 Git hook 或覆盖率门槛；CI 的接线与实机验收由独立的 [CI 系统设计](agent-notes/implemented/architecture/2026-10-20-ci-system.md)拥有。
 
@@ -69,7 +71,7 @@ build/tools/gitee-sync-venv/Scripts/python.exe -m unittest discover -s tests/ci/
 
 ## 安装产物集成验证
 
-先按[开发指南](development.md)构建安装模块。以下命令在仓库根目录执行；将 `<zlib绝对前缀>`、`<queue绝对前缀>` 分别替换为当前副本的 `3rdparty/zlib`、`3rdparty/queue` 绝对路径：
+先按[开发指南](development.md)构建安装模块。以下命令在仓库根目录执行；将 `<zlib绝对前缀>`、`<queue绝对前缀>` 分别替换为当前副本的 `3rdparty/zlib/<版本>`、`3rdparty/queue/<版本>` 绝对路径：
 
 ```text
 cmake -S tests/zlib -B build/check/zlib "-DZLIB_INSTALL_PREFIX:PATH=<zlib绝对前缀>"
@@ -83,7 +85,7 @@ cmake --build build/check/opencv --config Release
 ctest --test-dir build/check/opencv -C Release --output-on-failure
 ```
 
-验证工程沿用开发指南的 `-G`、Windows 的 `-A`/`-T`，Linux 添加 `-DCMAKE_BUILD_TYPE=Release`；若父项目显式指定 `CMAKE_MSVC_RUNTIME_LIBRARY`，这里传入相同值。上述工程各通过一项检查。zlib 使用该前缀静态库；queue 检查六个安装头文件；OpenCV 前缀替换为 `3rdparty/opencv` 绝对路径，精确查找 4.14.0，创建 StereoSGBM、WLS 和 freetype。Windows 测试进程 PATH 需含实际 `opencv/x64/vc17/bin`。缺失输入即失败，不回退系统库。
+验证工程沿用开发指南的 `-G`、Windows 的 `-A`/`-T`，Linux 添加 `-DCMAKE_BUILD_TYPE=Release`；若父项目显式指定 `CMAKE_MSVC_RUNTIME_LIBRARY`，这里传入相同值。上述工程的既有验证各通过一项检查，不表示已重验版本化安装。zlib 使用该前缀静态库；queue 检查六个安装头文件；OpenCV 前缀替换为 `3rdparty/opencv/<版本>` 绝对路径，精确查找 4.14.0，创建 StereoSGBM、WLS 和 freetype。Windows 测试进程 PATH 需含实际版本前缀的 `x64/vc17/bin`。缺失输入即失败，不回退系统库。
 
 librealsense 按[无相机验证说明](../tests/librealsense/README.md)运行两项检查，不替代实机取流。
 

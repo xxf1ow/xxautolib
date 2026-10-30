@@ -41,11 +41,11 @@ func TestCLI(t *testing.T) {
 		t.Fatalf("%d %s", code, stderr.String())
 	}
 	inputs := readFile(t, filepath.Join(f.context.BuildRoot, "generated/inputs.cmake"))
-	if strings.Count(inputs, "generated/demo.cmake") != 1 {
+	if strings.Count(inputs, "generated/demo/1.0.cmake") != 1 {
 		t.Fatal(inputs)
 	}
-	generated := readFile(t, filepath.Join(f.context.BuildRoot, "generated/demo.cmake"))
-	if !strings.Contains(generated, filepath.ToSlash(filepath.Join(f.context.InstallRoot, "demo"))) {
+	generated := readFile(t, filepath.Join(f.context.BuildRoot, "generated/demo/1.0.cmake"))
+	if !strings.Contains(generated, filepath.ToSlash(filepath.Join(f.context.InstallRoot, "demo", "1.0"))) {
 		t.Fatalf("--install-root was not applied:\n%s", generated)
 	}
 	if f.context.Generator == "Unix Makefiles" && !strings.Contains(generated, "CMAKE_MAKE_PROGRAM:STRING=/explicit/toolchain/make") {
@@ -59,7 +59,7 @@ func TestCLI(t *testing.T) {
 		}
 	}
 	stderr.Reset()
-	if code := run(cliArguments(f.context, "missing"), &stdout, &stderr); code == 0 || !strings.Contains(stderr.String(), "module.toml") || !strings.Contains(stderr.String(), "missing") {
+	if code := run(cliArguments(f.context, "missing"), &stdout, &stderr); code == 0 || !strings.Contains(stderr.String(), "root missing") {
 		t.Fatal(stderr.String())
 	}
 }

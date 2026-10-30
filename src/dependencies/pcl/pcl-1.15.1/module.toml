@@ -2,7 +2,7 @@
 name = "pcl"
 type = "cmake"
 version = "pcl-1.15.1"
-depends = ["lz4", "flann", "boost", "eigen", "zlib"]
+depends = ["lz4", "flann", "boost", "eigen@3.4.0", "zlib"]
 package_name = "PCL"
 config_dir = "share/pcl-1.15"
 sentinel = "share/pcl-1.15/PCLConfig.cmake"

@@ -1,0 +1,30 @@
+# eigen：线性代数头文件库，通过上游 CMake 安装头文件和配置。
+name = "eigen"
+type = "cmake"
+version = "5.0.1"
+sentinel = "include/Eigen/Eigen"
+config_dir = "share/eigen3/cmake"
+package_name = "Eigen3"
+pkgconfig_dir = "share/pkgconfig"
+
+[source]
+URL = ["https://gitlab.com/libeigen/eigen/-/archive/5.0.1/eigen-5.0.1.zip"]
+URL_HASH = "SHA256=0dbb1f9e3aaad66f352c03227d8c983f6f0b49e0b07e71a7300f4abcc01aee12"
+DOWNLOAD_NAME = "eigen-5.0.1.zip"
+
+[cmake.cache]
+INCLUDE_INSTALL_DIR = "<INSTALL_DIR>/include"
+CMAKEPACKAGE_INSTALL_DIR = "<INSTALL_DIR>/share/eigen3/cmake"
+PKGCONFIG_INSTALL_DIR = "<INSTALL_DIR>/share/pkgconfig"
+EIGEN_BUILD_PKGCONFIG = true
+EIGEN_BUILD_CMAKE_PACKAGE = true
+EIGEN_BUILD_DOC = false
+BUILD_TESTING = false
+EIGEN_BUILD_TESTING = false
+EIGEN_BUILD_BTL = false
+# 5.0.1 顶层默认构建这些二进制组件；本包仅交付头文件和查找元数据。
+EIGEN_BUILD_BLAS = false
+EIGEN_BUILD_LAPACK = false
+EIGEN_BUILD_DEMOS = false
+# 正式归档的 CMake 默认 prerelease 为 dev，须显式保留正式版本身份。
+EIGEN_PRERELEASE_VERSION = ""

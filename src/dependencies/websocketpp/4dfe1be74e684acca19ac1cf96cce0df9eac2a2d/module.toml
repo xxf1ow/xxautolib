@@ -1,5 +1,6 @@
 # websocketpp：WebSocket 协议库，仅安装头文件。
 name = "websocketpp"
+version = "4dfe1be74e684acca19ac1cf96cce0df9eac2a2d"
 type = "copy"
 depends = ["boost"] # 上游默认 Asio transport 使用 Boost；不强制切换到 standalone Asio。
 platform_independent = true
