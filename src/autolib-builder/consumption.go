@@ -105,6 +105,9 @@ func prepareConsumption(o consumptionOptions) error {
 	if err != nil {
 		return err
 	}
+	if err := validateArtifactVersionPath(filepath.Join(o.InstallRoot, o.Name, o.Version)); err != nil {
+		return err
+	}
 	adapterPath := filepath.Join(filepath.Dir(module.Path), "autolib-import.cmake")
 	adapter, err := os.ReadFile(adapterPath)
 	if errors.Is(err, os.ErrNotExist) {
@@ -125,6 +128,9 @@ func prepareConsumption(o consumptionOptions) error {
 			return fmt.Errorf("package %s: conflicting frozen dependencies %s and %s", o.Name, previous, ref)
 		}
 		selected[ref.Name] = ref
+		if err := validateArtifactVersionPath(filepath.Join(o.InstallRoot, ref.Name, ref.Version)); err != nil {
+			return err
+		}
 	}
 	declared := map[string]bool{}
 	for _, dependency := range module.Depends {
@@ -192,6 +198,9 @@ func prepareConsumption(o consumptionOptions) error {
 		}
 	}
 	if module.PlatformIndependent {
+		if err := validateSourceVersionPaths(module, o.SourceRoot); err != nil {
+			return err
+		}
 		if err := validateUniversalPackage(module, o.SourceRoot, o.InstallRoot, adapter); err != nil {
 			return err
 		}

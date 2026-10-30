@@ -97,6 +97,21 @@ func renderModule(module *moduleDefinition, context buildContext, dependencies [
 	driver := slashJoin(context.SourceRoot, "src/autolib-builder/apply_patch.cmake")
 	proxy := slashJoin(context.SourceRoot, "src/autolib-builder/configure_dependencies.cmake")
 	setupPath := slashJoin(context.BuildRoot, "generated", "_dependency-setup", module.Name, module.Version, "dependency-setup.cmake")
+	paths := []string{install, prefix, filepath.Join(context.BuildRoot, "generated", module.Name, module.Version+".cmake")}
+	if module.Kind == "cmake" && len(dependencies) > 0 {
+		paths = append(paths, filepath.Dir(setupPath))
+	}
+	for _, dep := range dependencies {
+		paths = append(paths, filepath.Join(installRoot, dep.Name, dep.Version))
+	}
+	for _, path := range paths {
+		if err := validateArtifactVersionPath(path); err != nil {
+			return "", err
+		}
+	}
+	if err := validateSourceVersionPaths(module, context.SourceRoot); err != nil {
+		return "", err
+	}
 	separator := "__AL_LIST__"
 	values := fmt.Sprintf("%#v %#v %#v %#v %#v %#v %#v", module, context, module.Cache, module.Source, module.Resources, module.Steps, module.Copies)
 	for strings.Contains(values, separator) {

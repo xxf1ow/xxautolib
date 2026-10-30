@@ -63,6 +63,6 @@ Git 与归档复用根 git/；本地 `.git` 存在即保留当前源码，不自
 
 仅在任务明确包含打包或下游消费时提供同目录 `autolib-import.cmake`；本地构建无需 adapter。正文以包实际目录定位，使用目标存在性 guard，每包只建立一个 `autolib::<name>` 全局 INTERFACE IMPORTED 公共目标，统一封装所支持的上游库及声明依赖的公共目标，不保留大写兼容别名。参考 queue 的固定 include、lz4 的精确 Config、flann 的 C/C++ 封装及显式 sibling 依赖；实际使用的直接包依赖必须在模块声明中列出。不得聚合互斥静动态产物，不扫描任意 Config、不回退系统包、不在 adapter 下载或编译。
 
-提供 adapter 的模块由 builder 在普通安装后生成带身份及依赖头的消费文件，sentinel/stamp 复用不跳过准备；所声明依赖也必须有 adapter。没有 adapter 的独立模块照常构建。打包及 CI 复用安装中的描述，不另行生成；仅在 staging 修正生产前缀。产物布局及时序由[架构](../../../docs/architecture.md#二进制消费)拥有，adapter 不回写解包元数据，也不为搬迁更改第三方编译方式。
+提供 adapter 的模块由 builder 在普通安装后生成带身份及依赖头的消费文件，sentinel/stamp 复用不跳过准备；所声明依赖也必须有 adapter。没有 adapter 的独立模块照常构建。打包及 CI 复用安装中的描述，不另行生成；仅在 staging 修正生产前缀。产物布局及时序由[架构](../../../docs/architecture.md#消费与缓存)拥有，adapter 不回写解包元数据，也不为搬迁更改第三方编译方式。
 
 按[测试指南](../../../docs/testing.md#本地二进制闭环)验证原安装直接消费、真实链接、动态运行及打包搬迁；OpenMP 等系统运行要求按实际产物说明。消费、打包及人工刷新由[开发指南](../../../docs/development.md#本地打包与消费)拥有，远端发布仍须独立授权。

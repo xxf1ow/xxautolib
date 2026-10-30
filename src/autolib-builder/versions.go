@@ -106,6 +106,43 @@ func versionDirectories(directory string) ([]os.DirEntry, error) {
 	return versions, nil
 }
 
+func validateArtifactVersionPath(path string) error {
+	directory, requested := filepath.Dir(path), filepath.Base(path)
+	entries, err := os.ReadDir(directory)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	seen := map[string]string{}
+	for _, entry := range entries {
+		key := strings.ToLower(entry.Name())
+		if previous, ok := seen[key]; ok {
+			return fmt.Errorf("%s: case-colliding version entries %q and %q; preserve them and resolve the collision manually", directory, previous, entry.Name())
+		}
+		seen[key] = entry.Name()
+		if entry.Name() != requested && strings.EqualFold(entry.Name(), requested) {
+			return fmt.Errorf("%s: case alias %q does not match exact version entry %q; preserve it and resolve the spelling manually", directory, entry.Name(), requested)
+		}
+	}
+	return nil
+}
+
+func validateSourceVersionPaths(module *moduleDefinition, sourceRoot string) error {
+	if module.Source != nil && module.Source.GitRepository != "" {
+		if err := validateArtifactVersionPath(filepath.Join(sourceRoot, "git", module.Name, module.Version)); err != nil {
+			return err
+		}
+	}
+	for _, resource := range module.Resources {
+		if resource.GitRepository != "" {
+			return validateArtifactVersionPath(filepath.Join(sourceRoot, "git", "_resources", module.Name, module.Version))
+		}
+	}
+	return nil
+}
+
 func discoverModuleRefs(sourceRoot string) ([]moduleRef, error) {
 	dependencies := filepath.Join(sourceRoot, "src", "dependencies")
 	packages, err := os.ReadDir(dependencies)
