@@ -115,9 +115,9 @@ func TestVersionCatalog(t *testing.T) {
 	})
 	t.Run("invalid recipe version", func(t *testing.T) {
 		root := t.TempDir()
-		versionRecipe(t, root, "demo", "Lpt1")
+		versionRecipe(t, root, "demo", "a@b")
 		if _, err := discoverModuleRefs(root); err == nil {
-			t.Fatal("discovery accepted reserved version directory")
+			t.Fatal("discovery accepted invalid version directory")
 		}
 	})
 	t.Run("invalid structured package name", func(t *testing.T) {
