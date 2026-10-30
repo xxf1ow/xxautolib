@@ -119,10 +119,11 @@ func packageRelease(o packageOptions) error {
 			return err
 		}
 		asset := fmt.Sprintf("%s-%s-%s-%s.tar.zst", ref.Name, ref.Version, metadata.OS, metadata.Arch)
-		if previous, ok := archiveRefs[asset]; ok && previous != ref {
+		archiveKey := strings.ToLower(asset)
+		if previous, ok := archiveRefs[archiveKey]; ok && previous != ref {
 			return fmt.Errorf("archive %s: package references %s and %s have the same output name", asset, previous, ref)
 		}
-		archiveRefs[asset] = ref
+		archiveRefs[archiveKey] = ref
 		if err := checkExistingReleaseArchive(filepath.Join(output, asset), metadata); err != nil {
 			return err
 		}

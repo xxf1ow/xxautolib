@@ -318,19 +318,26 @@ func TestLocalReleasePreservesInputs(t *testing.T) {
 }
 
 func TestVersionedReleaseArchiveCollision(t *testing.T) {
-	for _, existing := range []bool{false, true} {
-		t.Run(map[bool]string{false: "selected references", true: "existing other identity"}[existing], func(t *testing.T) {
+	for _, tc := range []struct {
+		label, version string
+		existing       bool
+	}{
+		{"selected references", "bar-1", false},
+		{"selected case aliases", "BAR-1", false},
+		{"existing other identity", "bar-1", true},
+	} {
+		t.Run(tc.label, func(t *testing.T) {
 			o := releaseFixture(t)
 			o.OS, o.Arch, o.HostOS = "linux", "x86_64", "linux"
-			putInstalledRelease(t, o.InstallRoot, "foo", "bar-1", "linux", "x86_64", "")
+			putInstalledRelease(t, o.InstallRoot, "foo", tc.version, "linux", "x86_64", "")
 			putInstalledRelease(t, o.InstallRoot, "foo-bar", "1", "linux", "x86_64", "")
-			o.Modules = []string{"foo@bar-1", "foo-bar@1"}
-			if existing {
+			o.Modules = []string{"foo@" + tc.version, "foo-bar@1"}
+			if tc.existing {
 				o.Modules = []string{"foo-bar@1"}
 				if err := packageRelease(o); err != nil {
 					t.Fatal(err)
 				}
-				o.Modules = []string{"foo@bar-1"}
+				o.Modules = []string{"foo@" + tc.version}
 			}
 			putFile(t, filepath.Join(o.OutputRoot, "unrelated/package.toml"), "latest='keep'\n")
 			before := releaseSnapshot(t, o.OutputRoot)
