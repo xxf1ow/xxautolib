@@ -51,7 +51,7 @@ func TestPackageArchiveChecksum(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "demo")
 	putFile(t, filepath.Join(dir, "data"), strings.Repeat("archive content\n", 1000))
 	archive := filepath.Join(t.TempDir(), "demo.tar.zst")
-	if err := writePackageArchive(dir, archive); err != nil {
+	if err := writePackageArchive(dir, archive, moduleRef{"demo", "1.0"}); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(archive)
@@ -399,7 +399,7 @@ func TestPackageArchive(t *testing.T) {
 	putFile(t, filepath.Join(dir, "include/data.h"), data)
 	putFile(t, filepath.Join(dir, "empty"), "")
 	archive := filepath.Join(t.TempDir(), "package.tar.zst")
-	if err := writePackageArchive(dir, archive); err != nil {
+	if err := writePackageArchive(dir, archive, moduleRef{"demo", "1.0"}); err != nil {
 		t.Fatal(err)
 	}
 	f, err := os.Open(archive)
@@ -422,7 +422,7 @@ func TestPackageArchive(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if h.Name != "demo/" && !strings.HasPrefix(h.Name, "demo/") {
+		if h.Name != "demo/1.0/" && !strings.HasPrefix(h.Name, "demo/1.0/") {
 			t.Fatal(h.Name)
 		}
 		b, err := io.ReadAll(tr)
@@ -431,17 +431,17 @@ func TestPackageArchive(t *testing.T) {
 		}
 		seen[h.Name] = string(b)
 	}
-	if seen["demo/include/data.h"] != data {
+	if seen["demo/1.0/include/data.h"] != data {
 		t.Fatal("archive lost bytes")
 	}
-	if _, ok := seen["demo/empty"]; !ok {
+	if _, ok := seen["demo/1.0/empty"]; !ok {
 		t.Fatal("missing empty file")
 	}
 	t.Run("internal symlink", func(t *testing.T) {
 		if err := os.Symlink("include/data.h", filepath.Join(dir, "link")); err != nil {
 			t.Skipf("host cannot create symlink: %v", err)
 		}
-		if err := writePackageArchive(dir, filepath.Join(t.TempDir(), "linked.tar.zst")); err != nil {
+		if err := writePackageArchive(dir, filepath.Join(t.TempDir(), "linked.tar.zst"), moduleRef{"demo", "1.0"}); err != nil {
 			t.Fatal(err)
 		}
 		if err := os.Remove(filepath.Join(dir, "link")); err != nil {
@@ -450,7 +450,7 @@ func TestPackageArchive(t *testing.T) {
 		if err := os.Symlink("../../outside", filepath.Join(dir, "link")); err != nil {
 			t.Fatal(err)
 		}
-		if err := writePackageArchive(dir, filepath.Join(t.TempDir(), "unsafe.tar.zst")); err == nil {
+		if err := writePackageArchive(dir, filepath.Join(t.TempDir(), "unsafe.tar.zst"), moduleRef{"demo", "1.0"}); err == nil {
 			t.Fatal("accepted external symlink")
 		}
 	})

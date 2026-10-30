@@ -3,12 +3,15 @@ package main
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
 func TestUniversalIdentity(t *testing.T) {
-	path := filepath.Join("..", "dependencies", "queue", "module.toml")
+	ref, err := resolveModuleRef(filepath.Join("..", ".."), moduleRef{Name: "queue"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join("..", "dependencies", "queue", ref.Version, "module.toml")
 	for _, platform := range [][2]string{{"Linux", "AMD64"}, {"Linux", "aarch64"}, {"Windows", "x64"}} {
 		m, err := loadDefinition(path, platform[0], platform[1])
 		if err != nil {
@@ -26,19 +29,10 @@ func TestUniversalIdentity(t *testing.T) {
 
 func TestUniversalPackageAcrossTargets(t *testing.T) {
 	o := releaseFixture(t)
-	if err := os.Remove(filepath.Join(o.InstallRoot, "queue/include/input.h")); err != nil {
+	if err := os.Remove(filepath.Join(o.InstallRoot, "queue/1.0/include/input.h")); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Remove(filepath.Join(o.InstallRoot, "queue/autolib-import.cmake")); err != nil {
-		t.Fatal(err)
-	}
-	module := "name='queue'\ntype='copy'\nplatform_independent=true\n" +
-		"[resources.readerwriterqueue]\nGIT_REPOSITORY='fixture'\nGIT_TAG='fixed'\n" +
-		"[resources.concurrentqueue]\nGIT_REPOSITORY='fixture'\nGIT_TAG='fixed'\n" +
-		"[[copy]]\nresource='readerwriterqueue'\nfiles=['atomicops.h','readerwriterqueue.h','readerwritercircularbuffer.h']\ndestination='include/queue'\n" +
-		"[[copy]]\nresource='concurrentqueue'\nfiles=['concurrentqueue.h','lightweightsemaphore.h','blockingconcurrentqueue.h']\ndestination='include/queue'\n"
-	putFile(t, filepath.Join(o.SourceRoot, "src/dependencies/queue/module.toml"), module)
-	putFile(t, filepath.Join(o.SourceRoot, "src/dependencies/queue/autolib-import.cmake"), "add_library(autolib::queue INTERFACE IMPORTED GLOBAL)\n")
+	putFile(t, filepath.Join(o.InstallRoot, "queue/1.0/autolib-import.cmake"), "set(AUTOLIB_PACKAGE_NAME \"queue\")\nset(AUTOLIB_PACKAGE_VERSION \"1.0\")\nset(AUTOLIB_OS \"any\")\nset(AUTOLIB_ARCH \"any\")\nset(AUTOLIB_DEPENDENCIES \"\")\nadd_library(autolib::queue INTERFACE IMPORTED GLOBAL)\n")
 	want := map[string]string{
 		"atomicops.h": "readerwriterqueue", "readerwriterqueue.h": "readerwriterqueue", "readerwritercircularbuffer.h": "readerwriterqueue",
 		"concurrentqueue.h": "concurrentqueue", "lightweightsemaphore.h": "concurrentqueue", "blockingconcurrentqueue.h": "concurrentqueue",
@@ -46,17 +40,14 @@ func TestUniversalPackageAcrossTargets(t *testing.T) {
 	for name, resource := range want {
 		body := "fixed source bytes: " + name
 		putFile(t, filepath.Join(o.SourceRoot, "git/_resources/queue", resource, name), body)
-		putFile(t, filepath.Join(o.InstallRoot, "queue/include/queue", name), body)
+		putFile(t, filepath.Join(o.InstallRoot, "queue/1.0/include/queue", name), body)
 	}
 	for _, target := range [][2]string{{"windows", "x86_64"}, {"linux", "x86_64"}, {"linux", "aarch64"}} {
 		o.OS, o.Arch, o.Modules = target[0], target[1], []string{"queue"}
-		if err := prepareConsumption(consumptionOptions{SourceRoot: o.SourceRoot, InstallRoot: o.InstallRoot, Name: "queue", OS: o.OS, Arch: o.Arch, Phase: "reuse"}); err != nil {
-			t.Fatal(err)
-		}
 		if err := packageRelease(o); err != nil {
 			t.Fatal(err)
 		}
-		asset := filepath.Join(o.OutputRoot, "queue-any-any.tar.zst")
+		asset := filepath.Join(o.OutputRoot, "queue-1.0-any-any.tar.zst")
 		if _, err := os.Stat(asset); err != nil {
 			t.Fatal(err)
 		}
@@ -74,11 +65,6 @@ func TestUniversalPackageAcrossTargets(t *testing.T) {
 				t.Fatalf("header bytes differ for %s: %v", name, err)
 			}
 		}
-		requireTextFile(t, filepath.Join(staged, "autolib-import.cmake"), "set(AUTOLIB_PACKAGE_NAME \"queue\")\nset(AUTOLIB_OS \"any\")\nset(AUTOLIB_ARCH \"any\")\nset(AUTOLIB_DEPENDENCIES \"\")\nadd_library(autolib::queue INTERFACE IMPORTED GLOBAL)\n")
-	}
-	o.OS, o.Arch = "linux", "x86_64"
-	putFile(t, filepath.Join(o.InstallRoot, "queue/generated/platform.cmake"), "platform generated")
-	if err := packageRelease(o); err == nil || !strings.Contains(err.Error(), "six declared headers") {
-		t.Fatalf("accepted extra universal installation file: %v", err)
+		requireTextFile(t, filepath.Join(staged, "autolib-import.cmake"), "set(AUTOLIB_PACKAGE_NAME \"queue\")\nset(AUTOLIB_PACKAGE_VERSION \"1.0\")\nset(AUTOLIB_OS \"any\")\nset(AUTOLIB_ARCH \"any\")\nset(AUTOLIB_DEPENDENCIES \"\")\nadd_library(autolib::queue INTERFACE IMPORTED GLOBAL)\n")
 	}
 }

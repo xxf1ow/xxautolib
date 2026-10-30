@@ -1,12 +1,17 @@
 package main
 
 import (
+	"crypto/sha256"
 	"flag"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
+	"strings"
+
+	"github.com/pelletier/go-toml/v2"
 )
 
 type packageOptions struct {
@@ -49,16 +54,31 @@ func packageRelease(o packageOptions) error {
 	if !toolInfo.Mode().IsRegular() {
 		return fmt.Errorf("importer must be a regular file: %s", o.ImporterFile)
 	}
-	names := []string{}
-	for _, n := range o.Modules {
-		if err := validatePackageName(n); err != nil {
+	refs := []moduleRef{}
+	pointers := map[string][]byte{}
+	for _, value := range o.Modules {
+		ref, err := parseModuleRef(value)
+		if err != nil {
 			return err
 		}
-		if !slices.Contains(names, n) {
-			names = append(names, n)
+		if err := exactEntry(install, ref.Name, true); err != nil {
+			return err
+		}
+		latest, content, err := installedPackageLatest(install, ref.Name)
+		if err != nil && (!os.IsNotExist(err) || ref.Version == "") {
+			return err
+		}
+		if err == nil {
+			pointers[ref.Name] = content
+		}
+		if ref.Version == "" {
+			ref.Version = latest
+		}
+		if !slices.Contains(refs, ref) {
+			refs = append(refs, ref)
 		}
 	}
-	slices.Sort(names)
+	slices.SortFunc(refs, func(a, b moduleRef) int { return strings.Compare(a.String(), b.String()) })
 	if err := os.MkdirAll(filepath.Join(source, "build"), 0755); err != nil {
 		return err
 	}
@@ -71,35 +91,118 @@ func packageRelease(o packageOptions) error {
 	if o.HostOS == "windows" {
 		toolAsset += ".exe"
 	}
-	if err := copyPackageFile(o.ImporterFile, filepath.Join(work, toolAsset), 0755); err != nil {
+	toolDirectory := filepath.Join(work, "tool")
+	if err := os.Mkdir(toolDirectory, 0755); err != nil {
 		return err
 	}
-	assets := []string{toolAsset}
-	for _, n := range names {
-		module, err := loadDefinition(filepath.Join(source, "src/dependencies", n, "module.toml"), map[string]string{"windows": "Windows", "linux": "Linux"}[o.OS], o.Arch)
+	if err := copyPackageFile(o.ImporterFile, filepath.Join(toolDirectory, toolAsset), 0755); err != nil {
+		return err
+	}
+	toolArchive := toolAsset + ".tar.xz"
+	cmd := exec.Command(o.CMakeCommand, "-E", "tar", "cJf", filepath.Join(work, toolArchive), "--format=gnutar", toolAsset)
+	cmd.Dir = toolDirectory
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("archive importer: %w\n%s", err, output)
+	}
+	assets := []string{toolArchive}
+	for _, ref := range refs {
+		directory, err := stagePackage(stageOptions{SourceRoot: source, InstallRoot: install, StageRoot: filepath.Join(work, "staging"), Name: ref.Name, Version: ref.Version, OS: o.OS, Arch: o.Arch, CMakeCommand: o.CMakeCommand})
 		if err != nil {
 			return err
 		}
-		packageOS, packageArch := packagePlatform(module, o.OS, o.Arch)
-		directory, err := stagePackage(stageOptions{SourceRoot: source, InstallRoot: install, StageRoot: filepath.Join(work, "staging"), Name: n, OS: o.OS, Arch: o.Arch, CMakeCommand: o.CMakeCommand})
+		metadata, err := readConsumptionMetadata(filepath.Join(directory, "autolib-import.cmake"))
 		if err != nil {
 			return err
 		}
-		asset := fmt.Sprintf("%s-%s-%s.tar.zst", n, packageOS, packageArch)
-		if err := writePackageArchive(directory, filepath.Join(work, asset)); err != nil {
+		asset := fmt.Sprintf("%s-%s-%s-%s.tar.zst", ref.Name, ref.Version, metadata.OS, metadata.Arch)
+		if err := writePackageArchive(directory, filepath.Join(work, asset), ref); err != nil {
 			return err
 		}
 		assets = append(assets, asset)
+	}
+	for _, asset := range slices.Clone(assets) {
+		if err := writeArchiveDigest(filepath.Join(work, asset)); err != nil {
+			return err
+		}
+		assets = append(assets, asset+".sha256")
+	}
+	for name, content := range pointers {
+		if err := os.MkdirAll(filepath.Join(work, name), 0755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(work, name, "package.toml"), content, 0644); err != nil {
+			return err
+		}
+		assets = append(assets, filepath.Join(name, "package.toml"))
+		if info, err := os.Lstat(filepath.Join(output, name)); err == nil && !info.IsDir() {
+			return fmt.Errorf("release package metadata parent must be a directory: %s", filepath.Join(output, name))
+		} else if err != nil && !os.IsNotExist(err) {
+			return err
+		}
 	}
 	if err := os.MkdirAll(output, 0755); err != nil {
 		return err
 	}
 	for _, asset := range assets {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(output, asset)), 0755); err != nil {
+			return err
+		}
 		if err := os.Rename(filepath.Join(work, asset), filepath.Join(output, asset)); err != nil {
 			return fmt.Errorf("publish %s: %w", asset, err)
 		}
 	}
 	return nil
+}
+
+func installedPackageLatest(root, name string) (string, []byte, error) {
+	directory := filepath.Join(root, name)
+	path := filepath.Join(directory, "package.toml")
+	info, err := os.Lstat(path)
+	if err != nil {
+		return "", nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return "", nil, fmt.Errorf("%s: expected a regular latest pointer", path)
+	}
+	if err := exactEntry(directory, "package.toml", false); err != nil {
+		return "", nil, err
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return "", nil, err
+	}
+	var raw map[string]any
+	if err := toml.Unmarshal(content, &raw); err != nil {
+		return "", nil, fmt.Errorf("%s: %w", path, err)
+	}
+	latest, ok := raw["latest"].(string)
+	if !ok || len(raw) != 1 {
+		return "", nil, fmt.Errorf("%s: expected only latest as a version string", path)
+	}
+	if err := validatePackageVersion(latest); err != nil {
+		return "", nil, fmt.Errorf("%s: %w", path, err)
+	}
+	if err := validateArtifactVersionPath(filepath.Join(directory, latest)); err != nil {
+		return "", nil, err
+	}
+	return latest, content, nil
+}
+
+func writeArchiveDigest(path string) error {
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	hash := sha256.New()
+	_, copyErr := io.Copy(hash, file)
+	closeErr := file.Close()
+	if copyErr != nil {
+		return copyErr
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	return os.WriteFile(path+".sha256", []byte(fmt.Sprintf("%x\n", hash.Sum(nil))), 0644)
 }
 
 // Resolve existing ancestors so output containment also accounts for directory links.

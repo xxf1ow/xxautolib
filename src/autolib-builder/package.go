@@ -320,7 +320,13 @@ func checkProducerReferences(root, prefix string, allowed []string) error {
 	})
 }
 
-func writePackageArchive(packageDir, destination string) (err error) {
+func writePackageArchive(packageDir, destination string, ref moduleRef) (err error) {
+	if err := validatePackageName(ref.Name); err != nil {
+		return err
+	}
+	if err := validatePackageVersion(ref.Version); err != nil {
+		return err
+	}
 	packageDir, err = filepath.Abs(packageDir)
 	if err != nil {
 		return err
@@ -364,11 +370,11 @@ func writePackageArchive(packageDir, destination string) (err error) {
 		if err != nil {
 			return err
 		}
-		rel, err := filepath.Rel(filepath.Dir(packageDir), path)
+		rel, err := filepath.Rel(packageDir, path)
 		if err != nil {
 			return err
 		}
-		header.Name = filepath.ToSlash(rel)
+		header.Name = filepath.ToSlash(filepath.Join(ref.Name, ref.Version, rel))
 		if info.IsDir() {
 			header.Name += "/"
 		}
