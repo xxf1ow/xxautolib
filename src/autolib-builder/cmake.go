@@ -131,22 +131,17 @@ func renderModule(module *moduleDefinition, context buildContext, dependencies [
 		}
 		return args
 	}
-	packageMetadata := []string{cmake, "-E", "copy_if_different", slashJoin(filepath.Dir(filepath.Dir(module.Path)), "package.toml"), slashJoin(installRoot, module.Name, "package.toml")}
+	postBuildCommand := []string{cmake, "-E", "copy_if_different", slashJoin(filepath.Dir(filepath.Dir(module.Path)), "package.toml"), slashJoin(installRoot, module.Name, "package.toml")}
+	if consumable {
+		postBuildCommand = prepare("reuse")
+	}
 	if module.Sentinel != "" {
 		lines = append(lines, "if(EXISTS "+cmakeArgument(slashJoin(install, module.Sentinel))+")", "    message(STATUS "+cmakeArgument("  [Info] ["+(moduleRef{module.Name, module.Version}).String()+"] cached")+")", "    add_custom_target("+cmakeArgument(target)+" ALL)")
-		if consumable {
-			arguments := []string{}
-			for _, arg := range prepare("reuse") {
-				arguments = append(arguments, cmakeArgument(arg))
-			}
-			lines = append(lines, "    add_custom_command(TARGET "+cmakeArgument(target)+" POST_BUILD COMMAND "+strings.Join(arguments, " ")+" VERBATIM)")
-		} else {
-			arguments := []string{}
-			for _, arg := range packageMetadata {
-				arguments = append(arguments, cmakeArgument(arg))
-			}
-			lines = append(lines, "    add_custom_command(TARGET "+cmakeArgument(target)+" POST_BUILD COMMAND "+strings.Join(arguments, " ")+" VERBATIM)")
+		arguments := []string{}
+		for _, arg := range postBuildCommand {
+			arguments = append(arguments, cmakeArgument(arg))
 		}
+		lines = append(lines, "    add_custom_command(TARGET "+cmakeArgument(target)+" POST_BUILD COMMAND "+strings.Join(arguments, " ")+" VERBATIM)")
 		if len(dependencies) > 0 {
 			args := []string{cmakeArgument(target)}
 			for _, dep := range dependencies {
@@ -409,11 +404,7 @@ func renderModule(module *moduleDefinition, context buildContext, dependencies [
 	}
 	options = append(options, patchOptions("")...)
 	emit("ExternalProject_Add", []string{target}, options)
-	if consumable {
-		emit("add_custom_command", []string{"TARGET", target, "POST_BUILD"}, []cmakeOption{option("COMMAND", prepare("reuse")...), option("VERBATIM")})
-	} else {
-		emit("add_custom_command", []string{"TARGET", target, "POST_BUILD"}, []cmakeOption{option("COMMAND", packageMetadata...), option("VERBATIM")})
-	}
+	emit("add_custom_command", []string{"TARGET", target, "POST_BUILD"}, []cmakeOption{option("COMMAND", postBuildCommand...), option("VERBATIM")})
 	if len(dependencies) > 0 && module.Kind == "cmake" {
 		emit("ExternalProject_Add_StepDependencies", []string{target, "configure", setupPath, proxy}, nil)
 	}
