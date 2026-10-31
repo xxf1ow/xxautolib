@@ -31,8 +31,8 @@ set(AUTOLIB_LOCAL_ROOT "${RELEASE_ROOT}")
 include("${AUTOLIB_ENTRY}")
 add_library(app INTERFACE)
 autolib_import(TARGET app INTERFACE ${ROOT_PACKAGES})
-if(NOT AUTOLIB_PACKAGE_DIR_flann STREQUAL "`+filepath.ToSlash(install)+`/flann")
-    message(FATAL_ERROR "driver did not consume the original installation")
+if(NOT AUTOLIB_PACKAGE_DIR_flann STREQUAL "`+filepath.ToSlash(filepath.Join(root, "src"))+`/flann/1.0")
+    message(FATAL_ERROR "driver did not copy the installation into the entry cache")
 endif()
 file(WRITE "${CMAKE_BINARY_DIR}/prepared-root.txt" "${RELEASE_ROOT}")
 enable_testing()
@@ -45,9 +45,10 @@ add_test(NAME installed COMMAND "${CMAKE_COMMAND}" -E true)
 				}
 				header := identityHeader(id)
 				if name == "flann" {
-					header = strings.Replace(header, `AUTOLIB_DEPENDENCIES ""`, `AUTOLIB_DEPENDENCIES "lz4"`, 1)
+					header = strings.Replace(header, `AUTOLIB_DEPENDENCIES ""`, `AUTOLIB_DEPENDENCIES "lz4@1.0"`, 1)
 				}
-				putTestFile(t, filepath.Join(install, name, "autolib-import.cmake"), header+"add_library(autolib::"+name+" INTERFACE IMPORTED GLOBAL)\n")
+				putTestFile(t, filepath.Join(install, name, "1.0", "autolib-import.cmake"), header+"add_library(autolib::"+name+" INTERFACE IMPORTED GLOBAL)\n")
+				versionedLatest(t, install, name, "1.0")
 			}
 			if kind != "missing tool" {
 				asset := "autolib-importer-" + runtime.GOOS + "-" + map[string]string{"amd64": "x86_64", "arm64": "aarch64"}[runtime.GOARCH]
@@ -60,7 +61,7 @@ add_test(NAME installed COMMAND "${CMAKE_COMMAND}" -E true)
 				}
 			}
 			if kind == "missing descriptor" {
-				if err := os.Remove(filepath.Join(install, "flann/autolib-import.cmake")); err != nil {
+				if err := os.Remove(filepath.Join(install, "flann/1.0/autolib-import.cmake")); err != nil {
 					t.Fatal(err)
 				}
 			}

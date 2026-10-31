@@ -394,3 +394,58 @@ func TestVersionedLocalDigest(t *testing.T) {
 		})
 	}
 }
+
+func TestVersionedReadonlyInstallation(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("requires native Linux chmod permission semantics")
+	}
+	for _, kind := range []string{"copy and relocate", "missing dependency cleans staging", "relocation failure cleans staging"} {
+		t.Run(kind, func(t *testing.T) {
+			o, cache := versionedFixture(t, "demo@1")
+			dependencies := ""
+			if kind == "missing dependency cleans staging" {
+				dependencies = "absent@2"
+			}
+			dir := versionedInstalled(t, o.LocalRoot, "demo", "1", dependencies, "keep")
+			putTestFile(t, filepath.Join(dir, "lib/cmake/demo/config.cmake"), "set(PREFIX \""+filepath.ToSlash(dir)+"\")\n")
+			if kind == "relocation failure cleans staging" {
+				o.CMakeCommand = filepath.Join(t.TempDir(), "missing-cmake")
+			}
+			readonlyEntrySource(t, o.LocalRoot)
+			entryDirectoryCleanup(t, cache)
+			before := sourceSnapshot(t, o.LocalRoot)
+			_, err := prepare(o)
+			if (err == nil) != (kind == "copy and relocate") {
+				t.Fatalf("readonly prepare: %v", err)
+			}
+			if !slices.Equal(before, sourceSnapshot(t, o.LocalRoot)) {
+				t.Fatal("readonly installation changed")
+			}
+			entries, readErr := os.ReadDir(cache)
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			for _, entry := range entries {
+				if strings.HasPrefix(entry.Name(), ".") {
+					t.Fatal("readonly failure retained owned staging", entry.Name())
+				}
+			}
+			if err != nil {
+				requireNoResult(t, o)
+				if _, err := os.Lstat(filepath.Join(cache, "demo/1")); !os.IsNotExist(err) {
+					t.Fatal("failed copy committed package", err)
+				}
+				return
+			}
+			for path, want := range map[string]fs.FileMode{"demo/1": 0555, "demo/1/lib/cmake/demo": 0555, "demo/1/lib/cmake/demo/config.cmake": 0444, "demo/1/data": 0444} {
+				info, err := os.Stat(filepath.Join(cache, path))
+				if err != nil || info.Mode().Perm() != want {
+					t.Fatalf("copy permissions %s: %v %v, want %v", path, info, err, want)
+				}
+			}
+			if strings.Contains(readTestFile(t, filepath.Join(cache, "demo/1/lib/cmake/demo/config.cmake")), filepath.ToSlash(o.LocalRoot)) {
+				t.Fatal("readonly metadata was not relocated")
+			}
+		})
+	}
+}

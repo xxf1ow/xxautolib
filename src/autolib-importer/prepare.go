@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -70,7 +71,7 @@ func prepare(o prepareOptions) (packages []preparedPackage, err error) {
 	state := map[string]uint8{}
 	latest := map[string]string{}
 	var visit func(packageRef, []string, bool) error
-	visit = func(ref packageRef, chain []string, root bool) error {
+	visit = func(ref packageRef, chain []string, root bool) (visitErr error) {
 		bare := ref.Version == ""
 		if bare {
 			version, err := readPackageLatest(cache, ref.Name)
@@ -158,7 +159,9 @@ func prepare(o prepareOptions) (packages []preparedPackage, err error) {
 			if err != nil {
 				return err
 			}
-			defer os.RemoveAll(filepath.Dir(filepath.Dir(candidate)))
+			defer func() {
+				visitErr = errors.Join(visitErr, removePackageStaging(filepath.Dir(filepath.Dir(candidate))))
+			}()
 		}
 		metadata, err := readPackageMetadata(candidate)
 		if err != nil {
@@ -213,8 +216,16 @@ func commitPreparedPackage(staged, directory string) error {
 	} else if !os.IsNotExist(err) {
 		return err
 	}
+	info, err := os.Stat(staged)
+	if err != nil {
+		return err
+	}
+	// Moving a directory changes its parent entry, which requires owner write access on Linux.
+	if err := os.Chmod(staged, info.Mode().Perm()|0200); err != nil {
+		return err
+	}
 	if err := os.Rename(staged, directory); err != nil {
 		return fmt.Errorf("commit package %s: %w", directory, err)
 	}
-	return nil
+	return os.Chmod(directory, info.Mode().Perm())
 }

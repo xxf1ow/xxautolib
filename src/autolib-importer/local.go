@@ -105,7 +105,7 @@ func stageInstalledPackage(sourceRoot, cacheRoot string, id packageIdentity, cma
 	}
 	defer func() {
 		if err != nil {
-			_ = os.RemoveAll(work)
+			err = errors.Join(err, removePackageStaging(work))
 		}
 	}()
 	staged = packageDirectory(work, id)
@@ -123,6 +123,28 @@ func stageInstalledPackage(sourceRoot, cacheRoot string, id packageIdentity, cma
 		return "", fmt.Errorf("relocation changed package identity: %s", staged)
 	}
 	return staged, nil
+}
+
+// Only importer-owned staging trees may be made writable for removal; links are never followed.
+func removePackageStaging(root string) error {
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.Type()&os.ModeSymlink != 0 {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		mode := info.Mode().Perm() | 0200
+		if entry.IsDir() {
+			mode |= 0500
+		}
+		return os.Chmod(path, mode)
+	})
+	return errors.Join(err, os.RemoveAll(root))
 }
 
 func dependencyPaths(dependencies []string) []string {
