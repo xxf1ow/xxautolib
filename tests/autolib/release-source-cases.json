@@ -1,4 +1,27 @@
 {
+  "metadata_sources": [
+    {"name":"github","input":"https://github.com/owner/repo/releases/download/v1","valid":true,"repository_url":"https://github.com/owner/repo.git","download_root":"https://github.com/owner/repo/releases/download/v1"},
+    {"name":"gitee","input":"https://gitee.com/owner/repo/releases/download/v1","valid":true,"repository_url":"https://gitee.com/owner/repo.git","download_root":"https://gitee.com/owner/repo/releases/download/v1"},
+    {"name":"escaped-tag-github","input":"https://github.com/owner/repo/releases/download/release%2fstable","valid":true,"repository_url":"https://github.com/owner/repo.git","download_root":"https://github.com/owner/repo/releases/download/release%2Fstable"},
+    {"name":"escaped-tag-gitee","input":"https://gitee.com/owner/repo/releases/download/release%2Fstable","valid":true,"repository_url":"https://gitee.com/owner/repo.git","download_root":"https://gitee.com/owner/repo/releases/download/release%2Fstable"},
+    {"name":"escaped-percent","input":"https://gitee.com/owner/repo/releases/download/release%252Fstable","valid":true,"repository_url":"https://gitee.com/owner/repo.git","download_root":"https://gitee.com/owner/repo/releases/download/release%252Fstable"},
+    {"name":"github-tag-url","input":"https://github.com/owner/repo/releases/tag/v1","valid":false},
+    {"name":"gitee-tag-url","input":"https://gitee.com/owner/repo/releases/tag/v1","valid":false},
+    {"name":"credentials","input":"https://user:secret@gitee.com/owner/repo/releases/download/v1","valid":false},
+    {"name":"http","input":"http://gitee.com/owner/repo/releases/download/v1","valid":false},
+    {"name":"port","input":"https://gitee.com:443/owner/repo/releases/download/v1","valid":false},
+    {"name":"unknown-host","input":"https://example.com/owner/repo/releases/download/v1","valid":false},
+    {"name":"query","input":"https://gitee.com/owner/repo/releases/download/v1?x=1","valid":false},
+    {"name":"empty-query","input":"https://gitee.com/owner/repo/releases/download/v1?","valid":false},
+    {"name":"fragment","input":"https://gitee.com/owner/repo/releases/download/v1#x","valid":false},
+    {"name":"empty-fragment","input":"https://gitee.com/owner/repo/releases/download/v1#","valid":false},
+    {"name":"empty-tag","input":"https://gitee.com/owner/repo/releases/download/","valid":false},
+    {"name":"extra-path","input":"https://gitee.com/owner/repo/releases/download/v1/asset.tar.zst","valid":false},
+    {"name":"unescaped-tag-slash","input":"https://gitee.com/owner/repo/releases/download/release/stable","valid":false},
+    {"name":"encoded-owner-slash","input":"https://gitee.com/owner%2Fother/repo/releases/download/v1","valid":false},
+    {"name":"tag-control","input":"https://gitee.com/owner/repo/releases/download/v1%0A","valid":false},
+    {"name":"tag-space","input":"https://gitee.com/owner/repo/releases/download/v1%20","valid":false}
+  ],
   "sources": [
     {
       "name": "github",
