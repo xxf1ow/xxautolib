@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -12,8 +13,11 @@ import (
 type prepareOptions struct {
 	LocalRoot, RemoteRoot, WorkRoot, CacheRoot, CMakeCommand, OS, Arch, ResultPath string
 	SourceResponse                                                                 string
+	MetadataRoot                                                                   string
 	Packages                                                                       []string
 }
+
+var errMetadataRequired = errors.New("metadata snapshot required")
 
 // Writes to one cache root must be serialized by the caller. Completed directories are authoritative.
 func prepare(o prepareOptions) (packages []preparedPackage, err error) {
@@ -70,9 +74,28 @@ func prepare(o prepareOptions) (packages []preparedPackage, err error) {
 	chains := map[string]string{}
 	state := map[string]uint8{}
 	latest := map[string]string{}
+	var remote metadataSource
+	requireMetadata := func() error {
+		if o.RemoteRoot == "" {
+			return fmt.Errorf("missing package input: remote source is disabled")
+		}
+		if o.MetadataRoot == "" {
+			return errMetadataRequired
+		}
+		info, err := os.Stat(o.MetadataRoot)
+		if err != nil {
+			return fmt.Errorf("metadata snapshot %s: %w", o.MetadataRoot, err)
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("metadata snapshot is not a directory: %s", o.MetadataRoot)
+		}
+		remote, err = parseMetadataSource(o.RemoteRoot)
+		return err
+	}
 	var visit func(packageRef, []string, bool) error
 	visit = func(ref packageRef, chain []string, root bool) (visitErr error) {
 		bare := ref.Version == ""
+		remoteSelected := false
 		if bare {
 			version, err := readPackageLatest(cache, ref.Name)
 			if err != nil && !os.IsNotExist(err) {
@@ -93,11 +116,32 @@ func prepare(o prepareOptions) (packages []preparedPackage, err error) {
 					return err
 				}
 				if err == nil {
-					ref.Version = version
+					id := packageIdentity{Name: ref.Name, Version: version, OS: o.OS, Arch: o.Arch}
+					found, err := packageCandidateExists(local, id)
+					if err != nil {
+						return err
+					}
+					if !found {
+						archive, _, err := selectLocalArchive(local, id)
+						if err != nil {
+							return err
+						}
+						found = archive != ""
+					}
+					if found {
+						ref.Version = version
+					}
 				}
 			}
 			if ref.Version == "" {
-				return fmt.Errorf("missing local input for %s: no valid cache latest or local source latest; remote retrieval is not available", ref.Name)
+				if err := requireMetadata(); err != nil {
+					return err
+				}
+				ref.Version, err = readPackageLatest(o.MetadataRoot, ref.Name)
+				if err != nil {
+					return err
+				}
+				remoteSelected = true
 			}
 		}
 		chain = append(append([]string{}, chain...), ref.String())
@@ -126,13 +170,16 @@ func prepare(o prepareOptions) (packages []preparedPackage, err error) {
 		id := packageIdentity{Name: ref.Name, Version: ref.Version, OS: o.OS, Arch: o.Arch}
 		directory := packageDirectory(cache, id)
 		candidate := directory
-		found, err := packageCandidateExists(cache, id)
+		found := false
+		if !remoteSelected {
+			found, err = packageCandidateExists(cache, id)
+		}
 		if err != nil {
 			return err
 		}
 		if !found {
 			installed := false
-			if local != "" {
+			if !remoteSelected && local != "" {
 				installed, err = packageCandidateExists(local, id)
 				if err != nil {
 					return err
@@ -142,19 +189,28 @@ func prepare(o prepareOptions) (packages []preparedPackage, err error) {
 				candidate, err = stageInstalledPackage(local, cache, id, o.CMakeCommand)
 			} else {
 				archive, identity := "", packageIdentity{}
-				if local != "" {
+				if !remoteSelected && local != "" {
 					archive, identity, err = selectLocalArchive(local, id)
 					if err != nil {
 						return err
 					}
 				}
 				if archive == "" {
-					return fmt.Errorf("missing local package %s for %s/%s; remote retrieval is not available", ref, o.OS, o.Arch)
+					if err := requireMetadata(); err != nil {
+						return err
+					}
+					var asset releaseAsset
+					asset, identity, err = metadataPackageAsset(o.MetadataRoot, remote, id)
+					if err != nil {
+						return err
+					}
+					candidate, err = stageRemotePackage(cache, asset, identity)
+				} else {
+					if err := verifyLocalDigest(archive); err != nil {
+						return err
+					}
+					candidate, err = extractPackage(archive, cache, identity)
 				}
-				if err := verifyLocalDigest(archive); err != nil {
-					return err
-				}
-				candidate, err = extractPackage(archive, cache, identity)
 			}
 			if err != nil {
 				return err
@@ -205,6 +261,19 @@ func prepare(o prepareOptions) (packages []preparedPackage, err error) {
 		return nil, err
 	}
 	return packages, nil
+}
+
+func stageRemotePackage(cache string, asset releaseAsset, id packageIdentity) (candidate string, err error) {
+	work, err := os.MkdirTemp(cache, ".remote-")
+	if err != nil {
+		return "", err
+	}
+	defer func() { err = errors.Join(err, removePackageStaging(work)) }()
+	archive := filepath.Join(work, asset.Name)
+	if err := downloadReleaseAsset(context.Background(), nil, asset, archive); err != nil {
+		return "", err
+	}
+	return extractPackage(archive, cache, id)
 }
 
 func commitPreparedPackage(staged, directory string) error {

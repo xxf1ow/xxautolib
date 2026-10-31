@@ -15,6 +15,9 @@ func prepareArguments(o prepareOptions) []string {
 	if o.SourceResponse != "" {
 		args = append(args, "--source-response="+o.SourceResponse)
 	}
+	if o.MetadataRoot != "" {
+		args = append(args, "--metadata-root="+o.MetadataRoot)
+	}
 	if o.RemoteRoot != "" {
 		args = append(args, "--remote-root="+o.RemoteRoot)
 	}
@@ -58,7 +61,7 @@ func TestImporterCLI(t *testing.T) {
 	t.Cleanup(func() { http.DefaultTransport = previous })
 	o.Packages, o.RemoteRoot = []string{"missing@1"}, testReleaseURL
 	stderr.Reset()
-	if code := run(prepareArguments(o), &stdout, &stderr); code == 0 || requests.Load() != 0 {
+	if code := run(prepareArguments(o), &stdout, &stderr); code != 2 || requests.Load() != 0 {
 		t.Fatalf("remote miss: %d requests=%d %s", code, requests.Load(), stderr.String())
 	}
 }
