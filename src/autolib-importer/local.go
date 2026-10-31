@@ -96,9 +96,6 @@ func stageInstalledPackage(sourceRoot, cacheRoot string, id packageIdentity, cma
 	if !matchesPackageIdentity(metadata.Identity, id) {
 		return "", fmt.Errorf("installed package %s: expected identity %+v, got %+v", source, id, metadata.Identity)
 	}
-	if err := checkProducerReferences(source, sourceRoot, append([]string{id.Name + "/" + id.Version}, dependencyPaths(metadata.Dependencies)...)); err != nil {
-		return "", err
-	}
 	work, err := os.MkdirTemp(cacheRoot, ".copy-")
 	if err != nil {
 		return "", err
@@ -145,14 +142,6 @@ func removePackageStaging(root string) error {
 		return os.Chmod(path, mode)
 	})
 	return errors.Join(err, os.RemoveAll(root))
-}
-
-func dependencyPaths(dependencies []string) []string {
-	paths := make([]string, len(dependencies))
-	for i, dependency := range dependencies {
-		paths[i] = strings.Replace(dependency, "@", "/", 1)
-	}
-	return paths
 }
 
 func copyInstalledPackage(source, destination string) error {
