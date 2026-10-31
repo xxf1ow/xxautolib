@@ -17,21 +17,31 @@ const versionedDownloadRoot = "https://github.com/owner/repo/releases/download/v
 
 type versionedRemoteFixture struct {
 	root     string
+	host     string
 	mu       sync.Mutex
 	assets   map[string]string
 	status   map[string]int
 	requests map[string]int
 }
 
-func versionedRemote(t *testing.T) *versionedRemoteFixture {
+func versionedRemote(t *testing.T, hosts ...string) *versionedRemoteFixture {
 	t.Helper()
-	f := &versionedRemoteFixture{root: t.TempDir(), assets: map[string]string{}, status: map[string]int{}, requests: map[string]int{}}
+	host := "github.com"
+	if len(hosts) != 0 {
+		host = hosts[0]
+	}
+	f := &versionedRemoteFixture{host: host, root: t.TempDir(), assets: map[string]string{}, status: map[string]int{}, requests: map[string]int{}}
 	client := githubTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		f.requests[r.URL.Path]++
-		if r.Host != "github.com" || !strings.HasPrefix(r.URL.Path, "/owner/repo/releases/download/v1/") {
+		if r.Header.Get("Authorization") != "" {
+			t.Error("consumer sent credentials")
+		}
+		if r.Host != host || !strings.HasPrefix(r.URL.Path, "/owner/repo/releases/download/v1/") {
 			t.Errorf("unexpected request %s", r.URL)
+			w.WriteHeader(500)
+			return
 		}
 		name := filepath.Base(r.URL.Path)
 		if status := f.status[name]; status != 0 {

@@ -5,11 +5,24 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
-func TestCMakeReleaseSourceProtocol(t *testing.T) {
+func TestVersionedMetadataSourceParity(t *testing.T) {
+	var cases struct {
+		Sources []struct {
+			Name, Input   string
+			Valid         bool
+			RepositoryURL string `json:"repository_url"`
+			DownloadRoot  string `json:"download_root"`
+		} `json:"metadata_sources"`
+	}
+	if err := json.Unmarshal([]byte(readTestFile(t, "../../tests/autolib/release-source-cases.json")), &cases); err != nil {
+		t.Fatal(err)
+	}
+	if len(cases.Sources) == 0 {
+		t.Fatal("missing shared source cases")
+	}
 	cmake, err := exec.LookPath("cmake")
 	if err != nil {
 		t.Fatal(err)
@@ -18,40 +31,20 @@ func TestCMakeReleaseSourceProtocol(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	run := func(t *testing.T, body string, valid bool) {
-		t.Helper()
-		path := putTestFile(t, filepath.Join(t.TempDir(), "case.cmake"), "cmake_minimum_required(VERSION 3.20)\ninclude([==["+filepath.ToSlash(entry)+"]==])\n"+body)
-		out, err := exec.Command(cmake, "-P", path).CombinedOutput()
-		if (err == nil) != valid {
-			t.Fatalf("CMake valid=%v: %v\n%s", valid, err, out)
-		}
-	}
-	cases := readSourceCases(t)
 	for _, tc := range cases.Sources {
-		t.Run("source/"+tc.Name, func(t *testing.T) {
-			run(t, fmt.Sprintf("_autolib_release_source([==[%s]==])\nif(NOT platform STREQUAL [==[%s]==] OR NOT tag STREQUAL [==[%s]==])\nmessage(FATAL_ERROR incorrect_source)\nendif()\n", tc.Input, tc.Platform, tc.Tag), tc.Valid)
-		})
-	}
-	for _, tc := range cases.Indexes {
-		t.Run("index/"+tc.Name, func(t *testing.T) {
-			body := fmt.Sprintf("_autolib_gitee_index(index [==[%s]==])\n", tc.Body)
-			if tc.Valid && tc.ID != 0 {
-				body += fmt.Sprintf("string(JSON id GET \"${index}\" files demo-linux-aarch64.tar.zst gitee_asset_id)\nstring(JSON digest GET \"${index}\" files demo-linux-aarch64.tar.zst sha256)\nstring(TOLOWER \"${digest}\" digest)\nif(NOT id STREQUAL \"%d\" OR NOT digest STREQUAL \"%s\")\nmessage(FATAL_ERROR incorrect_index)\nendif()\n", tc.ID, tc.SHA256)
+		t.Run(tc.Name, func(t *testing.T) {
+			got, goErr := parseMetadataSource(tc.Input)
+			root := t.TempDir()
+			script, result := filepath.Join(root, "source.cmake"), filepath.Join(root, "source.result")
+			putTestFile(t, script, fmt.Sprintf("cmake_minimum_required(VERSION 3.20)\ninclude([==[%s]==])\n_autolib_metadata_source([==[%s]==] repository download)\nfile(WRITE [==[%s]==] \"${repository}\\n${download}\")\n", filepath.ToSlash(entry), tc.Input, filepath.ToSlash(result)))
+			out, cmakeErr := exec.Command(cmake, "-P", script).CombinedOutput()
+			goValid, cmakeValid := goErr == nil, cmakeErr == nil
+			if goValid != cmakeValid || goValid != tc.Valid {
+				t.Fatalf("source parity failed: %s: Go=%v CMake=%v\n%s", tc.Name, goErr, cmakeErr, out)
 			}
-			run(t, body, tc.Valid)
-		})
-	}
-	for _, tc := range cases.Selections {
-		t.Run("selection/"+tc.Name, func(t *testing.T) {
-			snapshot, err := json.Marshal(tc.Snapshot)
-			if err != nil {
-				t.Fatal(err)
+			if tc.Valid && (got.RepositoryURL != tc.RepositoryURL || got.DownloadRoot != tc.DownloadRoot || readTestFile(t, result) != tc.RepositoryURL+"\n"+tc.DownloadRoot) {
+				t.Fatalf("source output differs: Go=%+v CMake=%s", got, readTestFile(t, result))
 			}
-			body := fmt.Sprintf("_autolib_release_source([==[%s]==])\n_autolib_gitee_select([==[%s]==] [==[%s]==])\n", tc.Source, snapshot, strings.Join(tc.Names, ";"))
-			if tc.Valid {
-				body += fmt.Sprintf("if(NOT asset_name STREQUAL [==[%s]==] OR NOT asset_id STREQUAL \"%d\" OR NOT digest STREQUAL \"%s\" OR NOT url STREQUAL \"https://gitee.com/download/demo\")\nmessage(FATAL_ERROR incorrect_asset)\nendif()\n", tc.AssetName, tc.ID, tc.SHA256)
-			}
-			run(t, body, tc.Valid)
 		})
 	}
 }

@@ -7,13 +7,20 @@ import (
 	"testing"
 )
 
+func TestVersionedRejectSourceResponse(t *testing.T) {
+	o, cache := versionedFixture(t, "demo@1")
+	versionedInstalled(t, cache, "demo", "1", "", "cache")
+	args := append(prepareArguments(o), "--source-response=obsolete.json")
+	var stdout, stderr bytes.Buffer
+	if code := run(args, &stdout, &stderr); code == 0 || !bytes.Contains(stderr.Bytes(), []byte("flag provided but not defined")) {
+		t.Fatalf("obsolete consumer option accepted: code=%d stderr=%s", code, stderr.String())
+	}
+}
+
 func prepareArguments(o prepareOptions) []string {
 	args := []string{"prepare", "--cache-root=" + o.CacheRoot, "--cmake-command=" + o.CMakeCommand, "--work-root=" + o.WorkRoot, "--os=" + o.OS, "--arch=" + o.Arch, "--result=" + o.ResultPath}
 	if o.LocalRoot != "" {
 		args = append(args, "--local-root="+o.LocalRoot)
-	}
-	if o.SourceResponse != "" {
-		args = append(args, "--source-response="+o.SourceResponse)
 	}
 	if o.MetadataRoot != "" {
 		args = append(args, "--metadata-root="+o.MetadataRoot)

@@ -1,97 +1,29 @@
 package main
 
 import (
-	"encoding/json"
-	"os"
+	"path/filepath"
 	"testing"
 )
 
-type sourceCases struct {
-	Sources []struct {
-		Name, Input, Platform, Tag string
-		Valid                      bool
-	}
-	Indexes []struct {
-		Name, Body, SHA256 string
-		ID                 int64
-		Valid              bool
-	}
-	Selections []struct {
-		Name, Source string
-		Snapshot     releaseSnapshot
-		Names        []string
-		Valid        bool
-		AssetName    string `json:"asset_name"`
-		ID           int64
-		SHA256       string
-	}
-}
-
-func readSourceCases(t *testing.T) sourceCases {
-	t.Helper()
-	data, err := os.ReadFile("../../tests/autolib/release-source-cases.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var cases sourceCases
-	if err := json.Unmarshal(data, &cases); err != nil {
-		t.Fatal(err)
-	}
-	return cases
-}
-
-func TestReleaseSourceProtocol(t *testing.T) {
-	cases := readSourceCases(t)
-	for _, tc := range cases.Sources {
-		t.Run(tc.Name, func(t *testing.T) {
-			source, err := newReleaseSource(tc.Input)
-			if (err == nil) != tc.Valid {
-				t.Fatalf("source: %v", err)
+func TestVersionedNoConsumerAPI(t *testing.T) {
+	for _, host := range []string{"github.com", "gitee.com"} {
+		t.Run(host, func(t *testing.T) {
+			e := remoteEntry(t, host)
+			tool := e.f.toolAsset + ".tar.xz"
+			e.asset(t, "tools/"+tool, readTestFile(t, e.f.importerArchive(e.f.toolAsset, readTestFile(t, e.f.tool))))
+			pkg := e.pkg(t, "demo", "1.0", "")
+			e.consumer(t, "demo@1.0", "if(NOT TARGET autolib::demo)\nmessage(FATAL_ERROR missing_demo)\nendif()\n")
+			if out, err := e.configure(t); err != nil {
+				t.Fatalf("real consumption: %v\n%s", err, out)
 			}
-			if !tc.Valid {
-				return
+			if got := readTestFile(t, filepath.Join(entryCache(e.f), "demo/1.0/data")); got != "archive" {
+				t.Fatalf("wrong downloaded bytes: %q", got)
 			}
-			var platform, tag string
-			switch c := source.(type) {
-			case *githubSourceClient:
-				platform, tag = "github", c.Source.Tag
-			case *giteeSourceClient:
-				platform, tag = "gitee", c.Source.Tag
-			}
-			if platform != tc.Platform || tag != tc.Tag {
-				t.Fatalf("got platform %q tag %q", platform, tag)
-			}
-		})
-	}
-	for _, tc := range cases.Selections {
-		t.Run("selection/"+tc.Name, func(t *testing.T) {
-			source, err := newReleaseSource(tc.Source)
-			if err != nil {
-				t.Fatal(err)
-			}
-			asset, err := source.selectAsset(tc.Snapshot, tc.Names)
-			if (err == nil) != tc.Valid {
-				t.Fatalf("asset %+v: %v", asset, err)
-			}
-			if tc.Valid && (asset.Name != tc.AssetName || asset.ID != tc.ID || asset.SHA256 != tc.SHA256 || asset.URL != "https://gitee.com/download/demo") {
-				t.Fatal(asset)
-			}
-		})
-	}
-}
-
-func TestGiteeIndex(t *testing.T) {
-	for _, tc := range readSourceCases(t).Indexes {
-		t.Run(tc.Name, func(t *testing.T) {
-			index, err := parseGiteeIndex(tc.Body)
-			if (err == nil) != tc.Valid {
-				t.Fatalf("index %+v: %v", index, err)
-			}
-			if tc.Valid && tc.ID != 0 {
-				entry := index["demo-linux-aarch64.tar.zst"]
-				if entry.ID != tc.ID || entry.SHA256 != tc.SHA256 {
-					t.Fatal(entry)
-				}
+			e.counts(t, 1, map[string]int{tool: 1, pkg: 1})
+			e.mu.Lock()
+			defer e.mu.Unlock()
+			if e.apiRequests != 0 {
+				t.Fatalf("consumer made %d API/Raw requests", e.apiRequests)
 			}
 		})
 	}

@@ -86,7 +86,7 @@ func TestVersionedMetadataAsset(t *testing.T) {
 				if tc.Universal {
 					wantID.OS, wantID.Arch = "any", "any"
 				}
-				if err != nil || asset.Name != tc.AssetName || asset.SHA256 != tc.SHA256 || asset.URL != "https://gitee.com/owner/repo/releases/download/v1/"+tc.AssetName || asset.ID != 0 || asset.Accept != "application/octet-stream" || id != wantID {
+				if err != nil || asset.Name != tc.AssetName || asset.SHA256 != tc.SHA256 || asset.URL != "https://gitee.com/owner/repo/releases/download/v1/"+tc.AssetName || asset.Accept != "application/octet-stream" || id != wantID {
 					t.Fatalf("asset %+v identity %+v: %v", asset, id, err)
 				}
 			default:

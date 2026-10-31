@@ -16,14 +16,17 @@ type versionedRemoteEntry struct {
 	repo, trace, ca, host string
 	mu                    sync.Mutex
 	assets                map[string]string
+	status                map[string]int
+	redirects             map[string]string
 	requests              map[string]int
 	offline               bool
+	apiRequests           int
 }
 
 func remoteEntry(t *testing.T, host string) *versionedRemoteEntry {
 	t.Helper()
 	f := versionedEntryFixture(t, false)
-	e := &versionedRemoteEntry{f: f, host: host, trace: filepath.Join(f.root, "git.trace"), assets: map[string]string{}, requests: map[string]int{}}
+	e := &versionedRemoteEntry{f: f, host: host, trace: filepath.Join(f.root, "git.trace"), assets: map[string]string{}, status: map[string]int{}, redirects: map[string]string{}, requests: map[string]int{}}
 	e.repo = snapshotRepository(t, metadataRepositoryCase{Files: map[string]string{".autolib-repository.json": `{"type":"xxautolib-artifacts","schema":1,"upstream":"https://github.com/xxf1ow/xxautolib"}`}})
 	redirect := "url.file://" + filepath.ToSlash(e.repo) + ".insteadOf=https://" + host + "/owner/repo.git"
 	t.Setenv("GIT_CONFIG_PARAMETERS", "'"+strings.ReplaceAll(redirect, "'", "'\\''")+"'")
@@ -33,12 +36,25 @@ func remoteEntry(t *testing.T, host string) *versionedRemoteEntry {
 		defer e.mu.Unlock()
 		key := r.Host + r.URL.Path
 		e.requests[key]++
+		if r.Header.Get("Authorization") != "" {
+			t.Error("consumer sent credentials")
+		}
 		if r.Host != host || !strings.HasPrefix(r.URL.Path, "/owner/repo/releases/download/v1/") || strings.Contains(r.URL.Path, "/api/") || strings.Contains(r.URL.Path, "/contents/") {
+			e.apiRequests++
 			t.Errorf("forbidden request: %s%s", r.Host, r.URL)
 			w.WriteHeader(500)
 			return
 		}
-		body, ok := e.assets[filepath.Base(r.URL.Path)]
+		name := filepath.Base(r.URL.Path)
+		if status := e.status[name]; status != 0 {
+			w.WriteHeader(status)
+			return
+		}
+		if redirect := e.redirects[name]; redirect != "" {
+			http.Redirect(w, r, redirect, http.StatusFound)
+			return
+		}
+		body, ok := e.assets[name]
 		if !ok {
 			w.WriteHeader(404)
 			return
@@ -73,14 +89,14 @@ func (e *versionedRemoteEntry) consumer(t *testing.T, packages, tail string) {
 	putTestFile(t, path, strings.Replace(readTestFile(t, path), `set(AUTOLIB_REMOTE_ROOT "")`, `set(AUTOLIB_REMOTE_ROOT "https://`+e.host+`/owner/repo/releases/download/v1")`, 1))
 }
 
-func (e *versionedRemoteEntry) configure(t *testing.T) (string, error) {
+func (e *versionedRemoteEntry) configure(t *testing.T, extra ...string) (string, error) {
 	t.Helper()
 	snapshotGit(t, e.repo, "add", ".")
 	snapshotGit(t, e.repo, "commit", "--allow-empty", "-m", "entry assets")
 	if e.offline {
 		t.Setenv("PATH", t.TempDir())
 	}
-	return e.f.configure("-DCMAKE_TLS_CAINFO=" + filepath.ToSlash(e.ca))
+	return e.f.configure(append([]string{"-DCMAKE_TLS_CAINFO=" + filepath.ToSlash(e.ca)}, extra...)...)
 }
 
 func (e *versionedRemoteEntry) counts(t *testing.T, clones int, want map[string]int) {
@@ -151,6 +167,12 @@ func TestVersionedRemoteBootstrap(t *testing.T) {
 				if _, err := os.Lstat(marker); !os.IsNotExist(err) {
 					t.Fatalf("unverified tool executed: %v", err)
 				}
+				if kind != "empty cache" && kind != "bad local tool" {
+					if _, err := os.Lstat(filepath.Join(entryCache(f), f.toolAsset)); !os.IsNotExist(err) {
+						t.Fatalf("failed bootstrap committed tool: %v", err)
+					}
+				}
+				requireNoPackageStaging(t, entryCache(f))
 				want := map[string]int{}
 				clones := 1
 				if kind == "empty cache" {

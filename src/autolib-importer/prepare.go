@@ -12,7 +12,6 @@ import (
 
 type prepareOptions struct {
 	LocalRoot, RemoteRoot, WorkRoot, CacheRoot, CMakeCommand, OS, Arch, ResultPath string
-	SourceResponse                                                                 string
 	MetadataRoot                                                                   string
 	Packages                                                                       []string
 }
