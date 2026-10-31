@@ -24,8 +24,12 @@ func writePreparedResult(path string, packages []preparedPackage) error {
 		if !packageName.MatchString(p.Name) {
 			return fmt.Errorf("invalid result package name %q", p.Name)
 		}
+		if err := validatePackageVersion(p.Version); err != nil {
+			return err
+		}
 		names = append(names, p.Name)
 		fmt.Fprintf(&body, "set(AUTOLIB_PACKAGE_DIR_%s %s)\n", p.Name, cmakeLiteral(filepath.ToSlash(p.Directory)))
+		fmt.Fprintf(&body, "set(AUTOLIB_PACKAGE_VERSION_%s %s)\n", p.Name, cmakeLiteral(p.Version))
 	}
 	fmt.Fprintf(&body, "set(AUTOLIB_PREPARED_PACKAGES %s)\n", cmakeLiteral(strings.Join(names, ";")))
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {

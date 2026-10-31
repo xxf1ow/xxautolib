@@ -87,8 +87,8 @@ func extractPackage(archivePath, stagingParent string, id packageIdentity) (dire
 			err = errors.Join(err, os.RemoveAll(work))
 		}
 	}()
-	directory = filepath.Join(work, id.Name)
-	if err := os.Mkdir(directory, 0755); err != nil {
+	directory = filepath.Join(work, id.Name, id.Version)
+	if err := os.MkdirAll(directory, 0755); err != nil {
 		return "", err
 	}
 	root, err := os.OpenRoot(directory)
@@ -122,10 +122,14 @@ func extractPackage(archivePath, stagingParent string, id packageIdentity) (dire
 			return "", err
 		}
 		clean := path.Clean(h.Name)
-		if clean != id.Name && !strings.HasPrefix(clean, id.Name+"/") {
-			return "", fmt.Errorf("archive member %q is outside top-level %s", h.Name, id.Name)
+		if clean == id.Name && h.Typeflag == tar.TypeDir {
+			continue
 		}
-		rel := strings.TrimPrefix(strings.TrimPrefix(clean, id.Name), "/")
+		prefix := id.Name + "/" + id.Version
+		if clean != prefix && !strings.HasPrefix(clean, prefix+"/") {
+			return "", fmt.Errorf("archive member %q is outside package root %s", h.Name, prefix)
+		}
+		rel := strings.TrimPrefix(strings.TrimPrefix(clean, prefix), "/")
 		kind := h.Typeflag
 		if kind == tar.TypeRegA {
 			kind = tar.TypeReg

@@ -1,61 +1,58 @@
 # 测试
 
-Go fixture 验证声明、原生构建和安装，不下载真实库。固定 SDK、模块缓存及 C/C++ 工具链为前提；打包、消费和 CI 测试及下文历史验收不证明版本化布局已端到端可用。
+Go fixture 验证声明、原生构建、安装及版本化本地消费，不下载真实库。固定 SDK、模块缓存及 C/C++ 工具链为前提；真实代表集、平台和历史协议的证据分别记录，历史 CI/远端验收不证明版本化远端交付可用。
 
 ## 执行
 
-先按 [开发指南](development.md) 准备环境，再在仓库根目录运行：
+先按[开发指南](development.md)准备环境。本地消费阶段使用下文增量；远端/CI 版本化接线未完成，整体交付阶段再复核并执行完整回归，不作为本阶段通过证据。
+
+测试源码与各工具同目录。CMake 包装入口自动准备私有 SDK 和缓存；fixture 不下载真实依赖。builder 在 `build/tests/` 创建含空格和中文的隔离副本，importer 使用 Go 临时目录，结束时仅清理自身目录。SDK 获取、失败及离线复用、根入口与环境隔离由 [builder 测试](../src/autolib-builder/fixture_test.go)覆盖。定向验证用 `-run TestDefinition`；依赖接线用 `-run TestDirectDependencies`，资源补丁用 `-run TestPatch`，真实模块声明用 `-run TestRealModuleDeclarations`。一般变更按影响选用例；分阶段任务使用下述增量，整体交付阶段再执行完整回归。
+
+版本化构建阶段命令及证据见[构建安装验证](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md#版本化构建与安装验证)。本地消费阶段只运行以下增量，整体交付阶段再运行全集，不重复全库构建或将旧远端/CI 用例计为已通过。
 
 ```text
-cmake -P src/autolib-builder/go-sdk.cmake -- test ./src/autolib-builder ./src/autolib-importer ./src/autolib-ci -timeout=30m -count=1 -v
-cmake -P src/autolib-builder/go-sdk.cmake -- vet ./src/autolib-builder ./src/autolib-importer ./src/autolib-ci
+cmake -P src/autolib-builder/go-sdk.cmake -- test ./src/autolib-builder -run '^TestVersioned(StageFixup|LocalRelease|ReleaseUsesInstalledIdentity)$' -count=1 -v
+cmake -P src/autolib-builder/go-sdk.cmake -- test ./src/autolib-importer -run '^TestVersioned' -count=1 -v
+cmake -P src/autolib-builder/go-sdk.cmake -- vet ./src/autolib-builder ./src/autolib-importer
 ```
 
-测试源码与各工具同目录。CMake 包装入口自动准备私有 SDK 和缓存；fixture 不下载真实依赖。builder 在 `build/tests/` 创建含空格和中文的隔离副本，importer 使用 Go 临时目录，结束时仅清理自身目录。SDK 获取、失败及离线复用、根入口与环境隔离由 [builder 测试](../src/autolib-builder/fixture_test.go)覆盖。定向验证用 `-run TestDefinition`；依赖接线用 `-run TestDirectDependencies`，资源补丁用 `-run TestPatch`，真实模块声明用 `-run TestRealModuleDeclarations`。修改公共入口或跨文件接线时运行全集；同批定向验证后在批末运行一次全集。
-
-版本化阶段命令为 `cmake -P src/autolib-builder/go-sdk.cmake -- test ./src/autolib-builder -run '^TestVersion' -count=1 -v`，覆盖选择、闭包、路径、身份及原生安装共存。Linux x86_64 的 Eigen 双版本安装、17 顶层测试和平台缺口见[阶段证据](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md#版本化构建与安装验证)；不表示消费、打包或 CI 全集通过。
+[本地消费阶段证据](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md#版本化本地消费验证)记录实际计数及平台缺口。`TestInstalledValidationDriver`、`TestRepresentativeAdapters`、`TestAdapterExistingTargets` 和 `TestAdapterDependencyOrder` 是 driver 或 FLANN adapter 变化时的定向回归；它们不属于上述 `^TestVersioned` 选择。
 
 仅修改文档时使用 doc-standards、agent-notes 技能校验链接、归属和 `scripts/doc-budgets.manifest.json` 预算；校验器不是构建依赖。仓库没有自动 Git hook 或覆盖率门槛；CI 的接线与实机验收由独立的 [CI 系统设计](agent-notes/implemented/architecture/2026-10-20-ci-system.md)拥有。
 
 ## 本地二进制闭环
 
-先通过[普通根入口](development.md#准备与配置)选择 queue、flann 完成 configure/build，自动准备三库、消费描述及宿主工具。先直接消费原安装根，Windows x64/v143 在本仓库目录执行：
+先通过[普通根入口](development.md#准备与配置)选择代表集完成 configure/build，生成版本化安装、精确依赖描述及宿主工具；本节使用[实机验收](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md#版本化本地消费验证)中的独立生产根，不覆盖旧结果。
+
+[安装消费 driver](../tests/autolib/run-installed.cmake)将入口和测试源码放入独立消费者，正常调用公共 `autolib_import`，由 importer 从只读安装源准备入口缓存，不打包或直接 include 生产 adapter。通过 configure/build/CTest 并记录导入属性、精确目录、链接输入和动态加载位置。SOURCE_ROOT 仅供 driver 复制入口及 smoke，生成的消费者不包含生产源码。
+
+从安装复制验证代表集：
 
 ```text
-cmake -DSOURCE_ROOT=D:/Work/xxautolib -DINSTALL_ROOT=D:/Work/xxautolib/3rdparty -DVALIDATION_ROOT=D:/Work/xxautolib/build/validation/direct-installed "-DGENERATOR=Visual Studio 17 2022" -DGENERATOR_PLATFORM=x64 "-DGENERATOR_TOOLSET=v143,host=x64" -P tests/autolib/run-installed.cmake
+cmake -DSOURCE_ROOT=/home/lxx/xxautolib -DINSTALL_ROOT=/home/lxx/xxautolib/build/versioned-stage2-install -DVALIDATION_ROOT=/home/lxx/xxautolib/build/validation/versioned-stage2/installed "-DGENERATOR=Unix Makefiles" "-DROOT_PACKAGES=flann;queue" -P tests/autolib/run-installed.cmake
 ```
 
-[直接消费 driver](../tests/autolib/run-installed.cmake)只配置、构建、运行消费者，不打包、不搬库、不复制工具，显式空远端。Windows 真实 API 验证通过；原生 Linux 直接消费尚无实测记录，现有授权目录未被覆盖，证据与缺口见[直接消费设计](agent-notes/implemented/architecture/2026-10-25-direct-install-consumption.md#验证结果)。Linux 使用本机绝对根和 Unix Makefiles、不传 VS 参数，并检查 importer 执行位、并行依赖时序及真实链接运行。
-
-再验证打包双搬迁（完整命令）：
+再用[本地归档 driver](../tests/autolib/run-local.cmake)打包并消费；默认 relocate 模式将完整消费者及入口缓存搬迁、隐藏归档来源，并在两源均空时重新 configure/build/CTest：
 
 ```text
-cmake -DSOURCE_ROOT=D:/Work/xxautolib -DINSTALL_ROOT=D:/Work/xxautolib/3rdparty -DRELEASE_DIR=D:/Work/xxautolib/build/validation/direct-distribution/release -DVALIDATION_ROOT=D:/Work/xxautolib/build/validation/direct-distribution -DEVIDENCE_DIRECTORY=D:/Work/xxautolib/build/validation/direct-distribution -DBUILDER_FILE=D:/Work/xxautolib/build/tools/autolib-builder.exe -DIMPORTER_FILE=D:/Work/xxautolib/3rdparty/autolib-importer-windows-x86_64.exe -DTARGET_OS=windows -DTARGET_ARCH=x86_64 "-DGENERATOR=Visual Studio 17 2022" -DGENERATOR_PLATFORM=x64 "-DGENERATOR_TOOLSET=v143,host=x64" "-DROOT_PACKAGES=flann;queue" -P tests/autolib/run-local.cmake
+cmake -DSOURCE_ROOT=/home/lxx/xxautolib -DINSTALL_ROOT=/home/lxx/xxautolib/build/versioned-stage2-install -DRELEASE_DIR=/home/lxx/xxautolib/build/validation/versioned-stage2/archive/release -DVALIDATION_ROOT=/home/lxx/xxautolib/build/validation/versioned-stage2/archive -DBUILDER_FILE=/home/lxx/xxautolib/build/versioned-stage2-producer/tools/autolib-builder -DIMPORTER_FILE=/home/lxx/xxautolib/build/versioned-stage2-install/autolib-importer-linux-x86_64 -DTARGET_OS=linux -DTARGET_ARCH=x86_64 "-DGENERATOR=Unix Makefiles" "-DMODULES=queue;lz4;flann" "-DROOT_PACKAGES=flann;queue" -P tests/autolib/run-local.cmake
 ```
 
-Linux aarch64 使用本机绝对根及 `autolib-importer-linux-aarch64`，参数为 `-DTARGET_OS=linux -DTARGET_ARCH=aarch64 "-DGENERATOR=Unix Makefiles"`，不传 VS 平台或工具集。INSTALL_ROOT 必须对应真实生产前缀，不能先搬动未修正的安装输入。driver 不构建源码，在 VALIDATION_ROOT 新建运行目录记录打包、安装摘要、导入属性、链接输入及 CTest。Windows 本轮双搬迁两次 CTest 各 1/1，实际 FLANN 动态库来自搬迁包，生产安装及消费包字节不变；安装树的类型、权限、链接及修改时间另由 `TestStageInstallationUnchanged` 检查。
+`MODULES` 是打包和 smoke 集合，`ROOT_PACKAGES` 是首次导入请求，默认等于 MODULES；flann、queue 的闭包为 `lz4;flann;queue`，生产描述固定 `lz4@1.10.0`。两者接受精确引用。Eigen 3.4.0 和 5.0.1 分别在独立消费者验证，设置两项均为对应精确引用，不在同次 configure 混用。`RELEASE_READY=ON` 使用 RELEASE_DIR 已有版本化资产，`VALIDATION_MODE=single` 仅消费一次；driver 不编译三方源码。VALIDATION_ROOT 每次新建运行子目录，RELEASE_DIR 必须在该根内；原安装和现成归档不变。
 
-MODULES表示生产和链接集合，ROOT_PACKAGES只控制首次请求、默认等于MODULES；flann、queue的闭包为 `lz4;flann;queue`。RELEASE_READY=ON使用已有固定名资产。三平台历史闭环见[CI验证](#ci-验证)。
-
-importer覆盖包头、优先级、依赖图、通用包、安全解包及CRC失败清理。[入口测试](../src/autolib-importer/entry_test.go)覆盖接口、作用域、多个消费者、平台及失败保护；UNC仅词法覆盖。受控PATH阻断运行时和下载器，验证本地消费零网络。真实消费验证FLANN两种API及LZ4，无需补链。本地回归不代替三宿主发行验证。
+[原生闭环 fixture](../src/autolib-importer/versioned_local_loop_test.go)使用真实 builder、头版本与链接版本双断言及动态加载检查，覆盖复制、归档、隐藏生产树后缓存搬迁；错头版本负样本必须运行失败。真实 Linux 验收另核对相对软链接、原安装的内容/类型/权限/mtime/链接不变，删除测试缓存 latest 目标后重发现及无关缓存不变。只删除解析确认的测试自有版本目录，保留生产结果和日志。本轮新协议未验证 Windows、Linux aarch64、最低 CMake 3.20；历史三平台闭环见[CI 验证](#ci-验证)，不能替代这些缺口。
 
 ## Release 下载验证
 
-双来源定向命令：`cmake -P src/autolib-builder/go-sdk.cmake -- test ./src/autolib-importer -run 'TestCMake(Gitee|GitHub|ImporterArchive|ReleaseSourceProtocol)' -count=1 -v`。[入口测试](../src/autolib-importer/remote_entry_test.go)使用真实归档及本机TLS；[传递依赖消费测试](../src/autolib-importer/gitee_entry_test.go)实际配置、链接、运行，核对分页共享、本地零请求及失败后新配置。共享向量、拒绝条件与信任限制见[双来源验证](agent-notes/implemented/architecture/2026-10-27-ci-discovery-and-release-sources.md#验证)。CMake接受原生重定向，importer拒绝降级；Windows需要正常用户TLS凭据。
+版本化远端消费须等待[Git 元数据阶段](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md#实施阶段)。现有[远端入口测试](../src/autolib-importer/remote_entry_test.go)、[传递依赖测试](../src/autolib-importer/gitee_entry_test.go)及[下载 driver](../tests/autolib/run-github.cmake)属于旧协议，不计入当前绿灯，也不用于引导新消费者。
 
-真实 Gitee 消费已通过用户手动验收，依据及未细分的平台、版本范围见[双来源验收记录](agent-notes/implemented/architecture/2026-10-27-ci-discovery-and-release-sources.md#验证)。本机受控 TLS 证据为 Windows x86_64、CMake 4.2.3，不代替 Linux 双架构或最低 CMake 3.20 的专项证据。裸资产、只读 API 探测或同步成功均不证明完整消费，不得替换现有本地工具冒充空根引导。
-
-需要复验时使用[下载入口](../tests/autolib/run-github.cmake)：`cmake -DSOURCE_ROOT=<仓库绝对路径> -DVALIDATION_ROOT=<仓库绝对路径>/build/validation/remote -DREMOTE_ROOT=<GitHub-tag-URL或Gitee-download根> -P tests/autolib/run-github.cmake`，生成器参数沿用本地验证入口。从空根下载工具及库包，构建、运行并重新配置；不编译第三方源码或发布。用户手动验收未注明使用此 driver，不将其记为该命令的执行证据。
-
-代表集此前使用裸 importer 的三平台供给和真实 GitHub 消费已通过验收；Windows 由下载 driver 验证，Linux 由用户确认通过。供给摘要、公共目标及验收依据集中记录在[消费设计](agent-notes/proposed/architecture/2026-10-25-target-import-and-release-consumption.md#已验收范围)。该历史验收不证明压缩工具新格式或 Gitee 可用。
+历史 GitHub 三平台供给、裸 importer 消费及 Windows 下载 driver 依据见[消费验收](agent-notes/proposed/architecture/2026-10-25-target-import-and-release-consumption.md#已验收范围)；真实 Gitee 用户验收、受控 TLS、分页及失败检查见[双来源记录](agent-notes/implemented/architecture/2026-10-27-ci-discovery-and-release-sources.md#验证)。它们不证明压缩工具新格式、版本化交付、Linux 双架构专项或最低 CMake 通过。裸资产、API 探测或同步成功不证明完整消费，不能替换现有工具冒充空根引导。
 
 ## CI 验证
 
-CI 测试覆盖同名替换、每轮重建、动态依赖层及失败汇总。`TestCIDiscoveryFiltering` 通过真实 builder 验证自动发现、闭包过滤、通用 publisher 和空工作。`TestCIDynamicRelease` 真实编译、打包并消费 Windows 三层依赖及 queue 通用包，核对上传字节与汇总；无资格资产拒绝上传，全过滤不访问远端。最终复用既有工程验证有效闭包的双搬迁。
+版本化身份、独立发布和三平台新协议验收仍未完成。既有 [CI 测试](../src/autolib-ci/main_test.go)覆盖发现过滤、依赖层、通用 publisher、同名替换、实际消费及失败汇总；本地 fixture 和 workflow 片段执行不模拟完整 Actions，也不替代远端及 Linux 双架构验收。
 
-`TestCIWorkflowContract` 执行分支检查、Windows 层循环及 Make 准备片段，不模拟完整 Actions。Windows 不验证 Linux FIFO；无法用权限位阻断读取时跳过不可读目录及 adapter 用例。本地 fixture 不代替远端或 Linux 双架构验收。
-
-queue、lz4、flann 的三平台供给、逐槽消费、双搬迁及凭据写入已有真实证据；ABI、-j/FIFO 和历史运行见[CI验证记录](agent-notes/implemented/architecture/2026-10-20-ci-system.md#真实运行)。[每轮重建与空 label 发布](agent-notes/implemented/simplification/2026-10-24-ci-rebuild-without-production-cache.md)的本地回归不替代新策略的三平台远端验收及 GitHub 页面核对；下载消费另按上节验收。
+queue、lz4、flann 的历史三平台供给、逐槽消费、双搬迁及凭据写入，连同 ABI、FIFO、平台跳过项和运行依据，由[CI 验证记录](agent-notes/implemented/architecture/2026-10-20-ci-system.md#真实运行)和[每轮重建与空 label 发布](agent-notes/implemented/simplification/2026-10-24-ci-rebuild-without-production-cache.md)拥有；本地回归不替代新策略的真实远端验收，下载消费另按上节。
 
 ## 独立 Gitee 同步验证
 

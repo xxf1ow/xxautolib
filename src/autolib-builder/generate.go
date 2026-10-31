@@ -57,7 +57,7 @@ func generate(context buildContext, names []string) error {
 			return err
 		}
 	}
-	for _, tool := range []string{"autolib-builder", "autolib-importer"} {
+	for _, tool := range []string{"autolib-builder", "autolib-importer", "internal/packagemetadata"} {
 		directory := filepath.Join(context.SourceRoot, "src", tool)
 		files, err := os.ReadDir(directory)
 		if err != nil {
@@ -65,7 +65,7 @@ func generate(context buildContext, names []string) error {
 		}
 		for _, file := range files {
 			name := file.Name()
-			if !file.IsDir() && ((strings.HasSuffix(name, ".go") && !strings.HasSuffix(name, "_test.go")) || (tool == "autolib-builder" && strings.HasSuffix(name, ".cmake"))) {
+			if !file.IsDir() && ((strings.HasSuffix(name, ".go") && !strings.HasSuffix(name, "_test.go")) || strings.HasSuffix(name, ".cmake")) {
 				inputs = append(inputs, slashJoin(directory, name))
 			}
 		}

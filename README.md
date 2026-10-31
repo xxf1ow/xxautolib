@@ -1,20 +1,20 @@
 # xxautolib
 
-把第三方 C/C++ 库接入 CMake 工程：声明需要的库，自动获取预编译包、准备依赖并完成链接。也可使用统一的构建配方从源码编译、安装和发布这些库。
+把本地安装或归档中的第三方 C/C++ 库接入 CMake 工程：声明包名和可选精确版本，自动准备依赖并完成链接。
 
 ```cmake
+set(AUTOLIB_LOCAL_ROOT "/absolute/path/to/installed-or-archives")
+set(AUTOLIB_REMOTE_ROOT "")
 include("${PROJECT_SOURCE_DIR}/3rdparty/autolib.cmake")
 add_executable(app src/main.cpp)
 autolib_import(TARGET app PRIVATE queue flann)
 ```
 
-只请求 queue、flann，就能使用队列、FLANN C/C++ 和它依赖的 LZ4；不需要再列一遍链接目标。首次配置按需下载，后续优先复用本地包。消费预编译包不需要安装 Go、Python，也不需要重新编译第三方库。
+只请求 queue、flann，就能使用队列、FLANN C/C++ 和它记录的精确 LZ4 依赖；不需要再列链接目标。首次配置从本地来源复制或解包到入口缓存，后续复用缓存。消费现成包不需要 Go、Python 或重新编译第三方库。
 
 [快速开始](#快速开始) · [完整示例](example/CMakeLists.txt) · [开发](docs/development.md) · [测试](docs/testing.md) · [架构](docs/architecture.md) · [参与贡献](CONTRIBUTING.md) · [发行下载](https://github.com/xxf1ow/xxautolib/releases/tag/autolib-release)
 
 ## 使用前后对比
-
-以一个同时使用队列、FLANN 和 LZ4 的程序为例：
 
 | 接入工作 | 自行集成第三方库 | 使用 xxautolib |
 | --- | --- | --- |
@@ -27,17 +27,17 @@ autolib_import(TARGET app PRIVATE queue flann)
 
 ## 快速开始
 
-以下以原生 Linux（x86_64 或 aarch64）为例，需要 CMake 3.21+、Make、兼容发行包的 C/C++ 编译器和 OpenMP 运行库。先获取本仓库源码，在仓库根目录执行命令；首次使用需要能访问所选发行源。
+以下以原生 Linux 为例，需要 CMake 3.21+、Make、兼容所用包的 C/C++ 编译器和 OpenMP 运行库。先按[自定义编译](#自定义编译)准备 queue、flann 安装根，再在仓库根执行命令，将占位路径替换为该安装根的绝对路径：
 
 ```sh
 mkdir -p example/3rdparty
 cp src/autolib.cmake example/3rdparty/
-cmake -S example -B build/example -DCMAKE_BUILD_TYPE=Release
+cmake -S example -B build/example -DCMAKE_BUILD_TYPE=Release "-DAUTOLIB_LOCAL_ROOT=<安装根绝对路径>" -DAUTOLIB_REMOTE_ROOT=
 cmake --build build/example --parallel
 ./build/example/autolib_example
 ```
 
-单文件入口自动准备宿主 importer，再根据包内声明获取依赖、校验和解包，无需手动安装下载工具、逐个下载依赖或配置上游链接目标。
+单文件入口从来源准备宿主 importer，再根据包内声明准备依赖，不修改安装源，也不要求下游持有生产源码。
 
 成功时输出：
 
@@ -47,7 +47,7 @@ lz4: OK
 flann: OK
 ```
 
-[示例源码](example/src/main.cpp)实际执行队列入出队、LZ4 压缩解压和 FLANN 最近邻查询，失败时返回非零退出码。准备好的包保留在 `example/3rdparty/<包名>/`，后续配置直接复用。
+[示例源码](example/src/main.cpp)实际执行队列入出队、LZ4 压缩解压和 FLANN 最近邻查询，失败时返回非零退出码。准备好的包保留在 `example/3rdparty/<包名>/<版本>/`，后续配置直接复用。
 
 ## 接入自己的 CMake 工程
 
@@ -55,24 +55,19 @@ flann: OK
 
 快捷导入只适用于已在本仓库接入构建配方（`module.toml`）和消费适配（`autolib-import.cmake`），并已生成本地包或发布到所选发行源的库。不能填写任意第三方库名；缺包时不会回退到源码编译。新增库见[贡献新包](CONTRIBUTING.md#贡献新包)。
 
-本地目录默认 `${PROJECT_SOURCE_DIR}/3rdparty`，远端默认使用专用 [Gitee Release 镜像](https://gitee.com/xxf1ow/autolib-release/releases)。可在 include 前设置变量或通过 `-D` 覆盖；首次 include 后来源固定。改用 GitHub 时：
+`autolib.cmake` 所在目录是固定缓存；`AUTOLIB_LOCAL_ROOT` 默认空，非空来源必须与缓存为不同真实目录。include 前设置来源，首次 include 后固定。请求可写 `eigen@3.4.0`；裸名读取 `package.toml` 的 latest，不排序版本。同次 configure 不允许同包不同版本，独立工程可分别选择不同版本。
 
-```cmake
-set(AUTOLIB_REMOTE_ROOT "https://github.com/xxf1ow/xxautolib/releases/tag/autolib-release")
-include("${PROJECT_SOURCE_DIR}/3rdparty/autolib.cmake")
-```
-
-查找顺序为本地已解包目录、本地归档、所选远端。本地工具及依赖齐全时不联网、不检查更新；只有候选不存在时才继续，损坏或身份错误立即失败，不回退系统同名库或其他发行源。公共 Release 消费不需要 token。
+查找顺序为入口缓存、本地已解压安装、本地归档；只有不存在才继续，损坏或身份错误立即失败，不回退系统库或源码构建。已有缓存和 latest 不自动更新，精确请求不改 latest。版本化远端获取尚未接通，本地用法显式关闭远端。
 
 ### 离线使用
 
-将宿主 importer 和所需 `.tar.zst` 包按发行文件名放入本地根，或复制已经准备好的完整本地根，再设 `AUTOLIB_REMOTE_ROOT` 为空。Linux 手动提供的 importer 需要可执行权限；归档不必手动解包，也不需要清单或额外摘要文件。默认本地根下的示例可这样配置：
+将宿主 importer 和版本化库归档及包级 `package.toml` 放入来源根，或使用完整安装根，再显式设置本地来源并关闭远端。Linux 裸 importer 需要可执行权限；也支持单程序 `.tar.xz`。完整入口缓存可在两源均空时消费：
 
 ```sh
-cmake -S example -B build/example -DCMAKE_BUILD_TYPE=Release -DAUTOLIB_REMOTE_ROOT=
+cmake -S example -B build/example -DCMAKE_BUILD_TYPE=Release -DAUTOLIB_LOCAL_ROOT= -DAUTOLIB_REMOTE_ROOT=
 ```
 
-缺包时离线配置直接失败。修改 `AUTOLIB_LOCAL_ROOT` 可复用其他本地根；更新归档不会覆盖已解包目录，刷新前先保护本地修改，再按[缓存更新说明](docs/development.md#本地打包与消费)处理对应包。
+缺输入时直接失败。更新来源不会覆盖缓存；刷新前保护修改，再按[缓存更新说明](docs/development.md#本地打包与消费)处理对应版本。删除缓存 latest 目标目录后，裸名请求才重新发现来源选择，不更新无关缓存。
 
 ## 自定义编译
 
@@ -87,17 +82,17 @@ cmake --build build --parallel
 
 通用 CMake 参数通过 `-D` 或 toolchain 设置；库特定选项修改对应 `src/dependencies/<name>/<version>/module.toml`，模块显式配置优先于父级参数。变更版本或选项后，按[重建说明](docs/development.md#准备与配置)处理受影响的源码、构建状态和安装树；已有安装标记可能跳过构建。
 
-版本化构建输出宿主 importer，但消费、打包与 CI 尚未适配新布局。自定义安装根和重建操作见[开发指南](docs/development.md#准备与配置)。
+版本化安装输出宿主 importer，可直接作为只读本地来源；需要归档时另行打包。自定义安装根、打包和重建操作见[开发指南](docs/development.md#本地打包与消费)。
 
 ## 二进制发布
 
-独立 CI 在三平台原生构建、打包并验证真实消费，将固定文件名的产物发布到 GitHub Release，再同步到专用 Gitee 镜像。平台无关的头文件包只发布一份，机器码包和 importer 按平台区分。本地编译和打包不依赖 CI。
+版本化本地打包不依赖 CI。专用 Git 元数据仓库、Release 消费和独立发布按[后续阶段](docs/roadmap.md)实施；既有 Release 和历史三平台验证不证明新协议已可发布或下载。
 
 ## 支持范围
 
 支持 Windows x86_64、Linux x86_64、Linux aarch64；不提供 macOS 发行物或通用交叉编译环境。源码构建与预编译发布是不同能力，包的实际供给范围以 Release 资产为准。queue、lz4、flann 的完整消费示例见上文；OpenCV、Boost、PCL 等复杂模块通过相同构建体系管理来源与依赖，不要求全部库都作为二进制发行物。各库迁入及验收状态见[路线图](docs/roadmap.md#模块迁移候选)。
 
-Windows 包使用 VS 2022、v143、Release、动态 CRT（`/MD`），运行时需提供实际依赖的 DLL 搜索路径；Linux 需满足对应 glibc、C++ ABI 和 OpenMP 要求。系统运行库不由 importer 安装。每包只维护当前槽位，没有多版本求解、工具链变体或整套发行快照，本地包也不会自动追随远端更新。
+编译器、CRT、glibc、C++ ABI 及 OpenMP 必须兼容，使用者负责本地产物的兼容性；importer 不安装系统运行库或判定 ABI。Windows需提供实际DLL搜索路径。版本化本地闭环的平台及最低 CMake 缺口见[测试指南](docs/testing.md)。没有版本范围求解、工具链变体或整套发行快照。
 
 只使用信任的发行源、importer 和包内 CMake 文件。下载及归档校验用于发现内容不匹配或意外损坏，不认证发布者，也不提供恶意代码沙箱。
 

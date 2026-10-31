@@ -14,10 +14,11 @@ import (
 	"strings"
 
 	"github.com/klauspost/compress/zstd"
+	"xxautolib/src/internal/packagemetadata"
 )
 
 type stageOptions struct {
-	SourceRoot, InstallRoot, StageRoot, Name, OS, Arch, CMakeCommand string
+	SourceRoot, InstallRoot, StageRoot, Name, Version, OS, Arch, CMakeCommand string
 }
 
 func validatePackageName(value string) error {
@@ -116,6 +117,9 @@ func stagePackage(o stageOptions) (staged string, err error) {
 	if err = validatePackageName(o.Name); err != nil {
 		return "", err
 	}
+	if err = validatePackageVersion(o.Version); err != nil {
+		return "", err
+	}
 	if err = validatePackagePlatform(o.OS, o.Arch); err != nil {
 		return "", err
 	}
@@ -141,16 +145,16 @@ func stagePackage(o stageOptions) (staged string, err error) {
 	if pathWithin(installRoot, stageRoot) || pathWithin(stageRoot, installRoot) {
 		return "", fmt.Errorf("stage %s overlaps installation %s", stageRoot, installRoot)
 	}
-	system := map[string]string{"windows": "Windows", "linux": "Linux"}[o.OS]
-	module, err := loadDefinition(filepath.Join(sourceRoot, "src/dependencies", o.Name, "module.toml"), system, o.Arch)
-	if err != nil {
+	input := filepath.Join(installRoot, o.Name, o.Version)
+	if err := exactEntry(installRoot, o.Name, true); err != nil {
 		return "", err
 	}
-	adapter, err := os.ReadFile(filepath.Join(filepath.Dir(module.Path), "autolib-import.cmake"))
-	if err != nil {
+	if err := validateArtifactVersionPath(input); err != nil {
 		return "", err
 	}
-	input := filepath.Join(installRoot, o.Name)
+	if err := exactEntry(filepath.Dir(input), o.Version, true); err != nil {
+		return "", err
+	}
 	info, err := os.Lstat(input)
 	if err != nil {
 		return "", err
@@ -162,22 +166,19 @@ func stagePackage(o stageOptions) (staged string, err error) {
 	if err != nil {
 		return "", err
 	}
-	packageOS, packageArch := packagePlatform(module, o.OS, o.Arch)
-	dependencies := slices.Clone(module.Depends)
-	slices.Sort(dependencies)
-	dependencies = slices.Compact(dependencies)
-	if metadata.Name != o.Name || metadata.OS != packageOS || metadata.Arch != packageArch || !slices.Equal(metadata.Dependencies, dependencies) {
-		return "", fmt.Errorf("%s: installed consumption identity or dependencies do not match module declaration", input)
+	if metadata.Name != o.Name || metadata.Version != o.Version || (metadata.OS != "any" || metadata.Arch != "any") && (metadata.OS != o.OS || metadata.Arch != o.Arch) {
+		return "", fmt.Errorf("%s: installed consumption identity does not match requested name/version/platform", input)
 	}
-	if module.PlatformIndependent {
-		if err = validateUniversalPackage(module, o.SourceRoot, installRoot, adapter); err != nil {
-			return "", err
-		}
-	}
-	if err := os.MkdirAll(stageRoot, 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(stageRoot, o.Name), 0755); err != nil {
 		return "", err
 	}
-	staged = filepath.Join(stageRoot, o.Name)
+	if err := exactEntry(stageRoot, o.Name, true); err != nil {
+		return "", err
+	}
+	staged = filepath.Join(stageRoot, o.Name, o.Version)
+	if err := validateArtifactVersionPath(staged); err != nil {
+		return "", err
+	}
 	if err := os.Mkdir(staged, 0755); err != nil {
 		return "", err
 	}
@@ -190,11 +191,18 @@ func stagePackage(o stageOptions) (staged string, err error) {
 	if err = copyPackageTree(input, staged); err != nil {
 		return "", err
 	}
-	allowed := append([]string{o.Name}, module.Depends...)
+	allowed := []string{o.Name + "/" + o.Version}
+	for _, dependency := range metadata.Dependencies {
+		ref, err := parseModuleRef(dependency)
+		if err != nil {
+			return "", err
+		}
+		allowed = append(allowed, ref.Name+"/"+ref.Version)
+	}
 	if err = checkProducerReferences(staged, installRoot, allowed); err != nil {
 		return "", err
 	}
-	cmd := exec.Command(o.CMakeCommand, "-DPACKAGE_DIR="+filepath.ToSlash(staged), "-DPRODUCER_PREFIX="+filepath.ToSlash(installRoot), "-P", filepath.Join(sourceRoot, "src/autolib-builder/fixup-metadata.cmake"))
+	cmd := exec.Command(o.CMakeCommand, "-DPACKAGE_DIR="+filepath.ToSlash(staged), "-DPRODUCER_PREFIX="+filepath.ToSlash(installRoot), "-DDESTINATION_ROOT="+filepath.ToSlash(stageRoot), "-P", filepath.Join(sourceRoot, "src/autolib-importer/fixup-metadata.cmake"))
 	if output, runErr := cmd.CombinedOutput(); runErr != nil {
 		return "", fmt.Errorf("fixup %s: %w\n%s", staged, runErr, output)
 	}
@@ -305,26 +313,20 @@ func checkProducerReferences(root, prefix string, allowed []string) error {
 		if err != nil {
 			return err
 		}
-		text := strings.ReplaceAll(string(data), `\`, "/")
-		prefix := filepath.ToSlash(prefix)
-		for rest := text; ; {
-			i := strings.Index(rest, prefix)
-			if i < 0 {
-				return nil
-			}
-			rest = rest[i+len(prefix):]
-			if !strings.HasPrefix(rest, "/") {
-				return fmt.Errorf("%s: unhandled producer path at %s%s", path, prefix, rest)
-			}
-			component := strings.FieldsFunc(rest[1:], func(r rune) bool { return strings.ContainsRune("/\"' \t\r\n;)", r) })
-			if len(component) == 0 || !slices.Contains(allowed, component[0]) {
-				return fmt.Errorf("%s: producer reference must name this package or a declared sibling", path)
-			}
+		if err := packagemetadata.CheckProducerReferences(string(data), prefix, allowed); err != nil {
+			return fmt.Errorf("%s: %w", path, err)
 		}
+		return nil
 	})
 }
 
-func writePackageArchive(packageDir, destination string) (err error) {
+func writePackageArchive(packageDir, destination string, ref moduleRef) (err error) {
+	if err := validatePackageName(ref.Name); err != nil {
+		return err
+	}
+	if err := validatePackageVersion(ref.Version); err != nil {
+		return err
+	}
 	packageDir, err = filepath.Abs(packageDir)
 	if err != nil {
 		return err
@@ -368,11 +370,11 @@ func writePackageArchive(packageDir, destination string) (err error) {
 		if err != nil {
 			return err
 		}
-		rel, err := filepath.Rel(filepath.Dir(packageDir), path)
+		rel, err := filepath.Rel(packageDir, path)
 		if err != nil {
 			return err
 		}
-		header.Name = filepath.ToSlash(rel)
+		header.Name = filepath.ToSlash(filepath.Join(ref.Name, ref.Version, rel))
 		if info.IsDir() {
 			header.Name += "/"
 		}

@@ -8,6 +8,9 @@ function(xxautolib_generate_modules)
     # GLOB 检测源码增删；文件内容变化统一由生成器的输入清单登记。
     file(GLOB go_sources CONFIGURE_DEPENDS "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/*.go")
     file(GLOB importer_sources CONFIGURE_DEPENDS "${root}/src/autolib-importer/*.go")
+    file(GLOB metadata_sources CONFIGURE_DEPENDS "${root}/src/internal/packagemetadata/*.go")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+        "${root}/src/autolib-importer/fixup-metadata.cmake")
     file(GLOB package_files CONFIGURE_DEPENDS "${root}/src/dependencies/*/package.toml")
     file(GLOB module_recipes CONFIGURE_DEPENDS "${root}/src/dependencies/*/*/module.toml")
     file(GLOB module_adapters CONFIGURE_DEPENDS "${root}/src/dependencies/*/*/autolib-import.cmake")

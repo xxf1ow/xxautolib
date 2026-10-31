@@ -122,6 +122,16 @@ func newEntryFixture(t *testing.T) *fixture {
 			putFile(t, filepath.Join(f.root, "src/autolib-importer", filepath.Base(path)), readFile(t, path))
 		}
 	}
+	putFile(t, filepath.Join(f.root, "src/autolib-importer/fixup-metadata.cmake"), readFile(t, "../autolib-importer/fixup-metadata.cmake"))
+	metadataSources, err := filepath.Glob("../internal/packagemetadata/*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range metadataSources {
+		if !strings.HasSuffix(path, "_test.go") {
+			putFile(t, filepath.Join(f.root, "src/internal/packagemetadata", filepath.Base(path)), readFile(t, path))
+		}
+	}
 	seedManagedGo(f)
 	return f
 }
@@ -181,11 +191,29 @@ func TestEntryImporterInputs(t *testing.T) {
 	f.copyModule("demo")
 	f.mustEntry("-DBUILD_LIST=demo")
 	tool := installedImporter(filepath.Join(f.root, "3rdparty"))
-	for _, path := range []string{"go.mod", "go.sum", "src/autolib-importer/main.go"} {
+	for _, path := range []string{"go.mod", "go.sum", "src/autolib-importer/main.go", "src/autolib-importer/fixup-metadata.cmake", "src/internal/packagemetadata/references.go"} {
 		if !strings.Contains(readFile(t, filepath.Join(f.context.BuildRoot, "generated/inputs.cmake")), filepath.ToSlash(filepath.Join(f.root, path))) {
 			t.Fatalf("untracked importer input: %s", path)
 		}
 	}
+	t.Run("canonical embedded script", func(t *testing.T) {
+		before := readFile(t, tool)
+		input := filepath.Join(f.root, "src/autolib-importer/fixup-metadata.cmake")
+		putFile(t, input, readFile(t, input)+"\nmessage(STATUS \"embedded fixture marker\")\n")
+		f.build()
+		if after := readFile(t, tool); after == before {
+			t.Fatal("canonical script change did not rebuild installed importer")
+		}
+	})
+	t.Run("shared metadata source", func(t *testing.T) {
+		input := filepath.Join(f.root, "src/internal/packagemetadata/references.go")
+		putFile(t, input, readFile(t, input)+"\nfunc init() { println(\"shared metadata input marker\") }\n")
+		f.build()
+		_, stderr, _ := f.command(tool)
+		if !strings.Contains(stderr, "shared metadata input marker") {
+			t.Fatalf("shared metadata source change ignored: %s", stderr)
+		}
+	})
 	input := filepath.Join(f.root, "src/autolib-importer/fixture_input.go")
 	for _, marker := range []string{"added importer", "changed importer", ""} {
 		if marker == "" {

@@ -55,3 +55,28 @@ func TestCMakeReleaseSourceProtocol(t *testing.T) {
 		})
 	}
 }
+
+func TestCMakeLocalSourceDefaults(t *testing.T) {
+	cmake, err := exec.LookPath("cmake")
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	cache := filepath.Join(root, "中文 cache")
+	entry := putTestFile(t, filepath.Join(cache, "autolib.cmake"), readTestFile(t, "../autolib.cmake"))
+	for _, remote := range []string{"", "https://example.invalid/reserved"} {
+		script := putTestFile(t, filepath.Join(root, "check.cmake"), `cmake_minimum_required(VERSION 3.20)
+set(AUTOLIB_REMOTE_ROOT [==[`+remote+`]==])
+include([==[`+filepath.ToSlash(entry)+`]==])
+get_property(cache GLOBAL PROPERTY _AUTOLIB_CACHE_ROOT)
+get_property(local GLOBAL PROPERTY _AUTOLIB_LOCAL_ROOT)
+get_property(remote GLOBAL PROPERTY _AUTOLIB_REMOTE_ROOT)
+if(NOT local STREQUAL "" OR NOT cache STREQUAL [==[`+filepath.ToSlash(cache)+`]==] OR NOT remote STREQUAL [==[`+remote+`]==])
+message(FATAL_ERROR "entry source defaults or actual cache directory differ")
+endif()
+`)
+		if output, err := exec.Command(cmake, "-P", script).CombinedOutput(); err != nil {
+			t.Fatalf("include with reserved remote %q: %v\n%s", remote, err, output)
+		}
+	}
+}

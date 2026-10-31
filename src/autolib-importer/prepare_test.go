@@ -30,7 +30,7 @@ func TestPrepareReuse(t *testing.T) {
 		t.Fatal(err)
 	}
 	putTestFile(t, filepath.Join(got[0].Directory, "data"), "local authority")
-	if err := os.Rename(filepath.Join(o.LocalRoot, "demo-linux-aarch64.tar.zst"), filepath.Join(o.LocalRoot, "archive-away")); err != nil {
+	if err := os.Rename(filepath.Join(o.LocalRoot, "demo-1.0-linux-aarch64.tar.zst"), filepath.Join(o.LocalRoot, "archive-away")); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := prepare(o); err != nil {
@@ -39,7 +39,7 @@ func TestPrepareReuse(t *testing.T) {
 	if readTestFile(t, filepath.Join(got[0].Directory, "data")) != "local authority" {
 		t.Fatal("overwrote directory")
 	}
-	putTestFile(t, filepath.Join(got[0].Directory, "autolib-import.cmake"), identityHeader(packageIdentity{"wrong", o.OS, o.Arch}))
+	putTestFile(t, filepath.Join(got[0].Directory, "autolib-import.cmake"), identityHeader(packageIdentity{"wrong", "1.0", o.OS, o.Arch}))
 	if _, err := prepare(o); err == nil {
 		t.Fatal("accepted wrong directory")
 	}
@@ -54,9 +54,7 @@ func TestPrepareFailures(t *testing.T) {
 	if _, err := prepare(o); err == nil {
 		t.Fatal("accepted missing package")
 	}
-	if readTestFile(t, o.ResultPath) != "previous result" {
-		t.Fatal("failed prepare wrote result")
-	}
+	requireNoResult(t, o)
 	o.RemoteRoot = "https://example.invalid/release"
 	if _, err := prepare(o); err == nil {
 		t.Fatal("accepted unsupported remote source for missing package")
@@ -72,11 +70,11 @@ func TestPreparedResult(t *testing.T) {
 	root := t.TempDir()
 	want := filepath.ToSlash(filepath.Join(root, "中文 空格;${not_a_variable} ]=] ]==]"))
 	result := filepath.Join(root, "result.cmake")
-	if err := writePreparedResult(result, []preparedPackage{{Name: "demo", Directory: want}}); err != nil {
+	if err := writePreparedResult(result, []preparedPackage{{Name: "demo", Version: "1.0+exact", Directory: want}}); err != nil {
 		t.Fatal(err)
 	}
 	out := filepath.Join(root, "observed")
-	script := putTestFile(t, filepath.Join(root, "check.cmake"), "include(\""+filepath.ToSlash(result)+"\")\nfile(WRITE \""+filepath.ToSlash(out)+"\" \"${AUTOLIB_PACKAGE_DIR_demo}\")\nif(NOT AUTOLIB_PREPARED_PACKAGES STREQUAL \"demo\")\nmessage(FATAL_ERROR \"wrong packages\")\nendif()\n")
+	script := putTestFile(t, filepath.Join(root, "check.cmake"), "include(\""+filepath.ToSlash(result)+"\")\nfile(WRITE \""+filepath.ToSlash(out)+"\" \"${AUTOLIB_PACKAGE_DIR_demo}\")\nif(NOT AUTOLIB_PREPARED_PACKAGES STREQUAL \"demo\" OR NOT AUTOLIB_PACKAGE_VERSION_demo STREQUAL \"1.0+exact\")\nmessage(FATAL_ERROR \"wrong package identity\")\nendif()\n")
 	if output, err := exec.Command("cmake", "-P", script).CombinedOutput(); err != nil {
 		t.Fatalf("%v\n%s", err, output)
 	}
