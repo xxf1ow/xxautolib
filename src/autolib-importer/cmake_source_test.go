@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -41,6 +42,9 @@ func TestVersionedMetadataSourceParity(t *testing.T) {
 			goValid, cmakeValid := goErr == nil, cmakeErr == nil
 			if goValid != cmakeValid || goValid != tc.Valid {
 				t.Fatalf("source parity failed: %s: Go=%v CMake=%v\n%s", tc.Name, goErr, cmakeErr, out)
+			}
+			if !tc.Valid && (!strings.Contains(string(out), "AutoLib") || strings.Contains(string(out), "Unknown CMake command")) {
+				t.Fatalf("invalid source did not reach AutoLib validation: %s: %v\n%s", tc.Name, cmakeErr, out)
 			}
 			if tc.Valid && (got.RepositoryURL != tc.RepositoryURL || got.DownloadRoot != tc.DownloadRoot || readTestFile(t, result) != tc.RepositoryURL+"\n"+tc.DownloadRoot) {
 				t.Fatalf("source output differs: Go=%+v CMake=%s", got, readTestFile(t, result))

@@ -71,7 +71,7 @@ func metadataPackageAsset(root string, source metadataSource, id packageIdentity
 		if selected.Name != "" {
 			return releaseAsset{}, packageIdentity{}, fmt.Errorf("%s: ambiguous package digests for %s and %s", directory, selected.Name, name)
 		}
-		selected = releaseAsset{Name: name, URL: source.DownloadRoot + "/" + url.PathEscape(name), SHA256: digest, Accept: "application/octet-stream"}
+		selected = releaseAsset{Name: name, URL: source.DownloadRoot + "/" + url.PathEscape(name), SHA256: digest}
 		actual = candidate
 	}
 	if selected.Name == "" {

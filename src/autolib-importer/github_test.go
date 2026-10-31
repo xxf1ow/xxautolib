@@ -37,7 +37,7 @@ func githubTestClient(t *testing.T, handler http.Handler, diagnostic ...*log.Log
 }
 
 func TestReleaseDownload(t *testing.T) {
-	for _, kind := range []string{"direct", "redirect", "bad certificate", "downgrade", "deleted", "replaced", "mismatch", "truncated"} {
+	for _, kind := range []string{"direct", "redirect", "bad certificate", "downgrade", "404", "mismatch", "truncated"} {
 		t.Run(kind, func(t *testing.T) {
 			var diagnostic *log.Logger
 			if kind == "bad certificate" {
@@ -59,7 +59,7 @@ func TestReleaseDownload(t *testing.T) {
 					case "downgrade":
 						http.Redirect(w, r, insecure.URL, 302)
 						return
-					case "deleted", "replaced":
+					case "404":
 						w.WriteHeader(404)
 						return
 					case "mismatch":
@@ -81,7 +81,7 @@ func TestReleaseDownload(t *testing.T) {
 				client.Transport = transport
 				defer transport.CloseIdleConnections()
 			}
-			a := releaseAsset{Name: "demo", URL: testReleaseURL + "/demo", Accept: "application/octet-stream", SHA256: fmt.Sprintf("%x", sha256.Sum256([]byte("payload")))}
+			a := releaseAsset{Name: "demo", URL: testReleaseURL + "/demo", SHA256: fmt.Sprintf("%x", sha256.Sum256([]byte("payload")))}
 			file := filepath.Join(t.TempDir(), "download")
 			err := downloadReleaseAsset(context.Background(), client, a, file)
 			if kind == "bad certificate" {

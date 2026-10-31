@@ -123,7 +123,7 @@ func TestPrepareSourcePriority(t *testing.T) {
 }
 
 func TestPrepareRemoteFailureCleanup(t *testing.T) {
-	for _, kind := range []string{"digest", "corrupt", "deleted", "replaced", "write failure", "snapshot"} {
+	for _, kind := range []string{"digest", "corrupt", "404", "write failure", "snapshot"} {
 		t.Run(kind, func(t *testing.T) {
 			f := newRemotePrepareFixture(t)
 			o := f.options
@@ -136,7 +136,7 @@ func TestPrepareRemoteFailureCleanup(t *testing.T) {
 			case "corrupt":
 				f.assets[f.flann] = "not an archive"
 				f.digest(t, "flann", "1.0", f.flann)
-			case "deleted", "replaced":
+			case "404":
 				f.status[f.flann] = 404
 			case "write failure":
 				o.Packages = []string{"queue"}

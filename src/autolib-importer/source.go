@@ -17,7 +17,7 @@ import (
 )
 
 type releaseAsset struct {
-	Name, URL, SHA256, Accept string
+	Name, URL, SHA256 string
 }
 
 func validateReleaseHTTPS(address string) error {
@@ -28,7 +28,7 @@ func validateReleaseHTTPS(address string) error {
 	return nil
 }
 
-func releaseGET(ctx context.Context, configured *http.Client, address, accept string) (*http.Response, error) {
+func releaseGET(ctx context.Context, configured *http.Client, address string) (*http.Response, error) {
 	if err := validateReleaseHTTPS(address); err != nil {
 		return nil, err
 	}
@@ -52,7 +52,7 @@ func releaseGET(ctx context.Context, configured *http.Client, address, accept st
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Accept", accept)
+	req.Header.Set("Accept", "application/octet-stream")
 	req.Header.Set("User-Agent", "xxautolib-importer")
 	response, err := client.Do(req)
 	if err != nil {
@@ -77,7 +77,7 @@ func downloadReleaseAsset(ctx context.Context, client *http.Client, asset releas
 	} else if !os.IsNotExist(err) {
 		return err
 	}
-	response, err := releaseGET(ctx, client, asset.URL, asset.Accept)
+	response, err := releaseGET(ctx, client, asset.URL)
 	if err != nil {
 		return err
 	}

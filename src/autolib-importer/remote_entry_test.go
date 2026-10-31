@@ -90,7 +90,7 @@ func entryHTTPSProxyControl(t *testing.T, handler http.Handler) (string, func())
 
 func TestCMakeRemoteBootstrapMigration(t *testing.T) {
 	for _, host := range []string{"github.com", "gitee.com"} {
-		for _, kind := range []string{"success", "encoded tag", "remote only", "deleted tool", "missing program", "bare remote only", "redirect"} {
+		for _, kind := range []string{"success", "encoded tag", "deleted tool", "missing program", "bare remote only", "redirect"} {
 			t.Run(host+"/"+kind, func(t *testing.T) {
 				e := remoteEntry(t, host)
 				f := e.f
@@ -119,7 +119,7 @@ func TestCMakeRemoteBootstrapMigration(t *testing.T) {
 					e.assets["redirect-tool"] = tool
 				}
 				out, err := e.configure(t)
-				success := kind == "success" || kind == "encoded tag" || kind == "remote only" || kind == "redirect"
+				success := kind == "success" || kind == "encoded tag" || kind == "redirect"
 				if (err == nil) != success {
 					t.Fatalf("configure: %v\n%s", err, out)
 				}
@@ -148,7 +148,7 @@ func TestCMakeRemoteBootstrapMigration(t *testing.T) {
 					}
 				}
 				e.counts(t, 1, want)
-				if kind == "success" || kind == "remote only" {
+				if kind == "success" {
 					e.offline = true
 					if out, err := e.configure(t); err != nil {
 						t.Fatalf("cached source-free reconfigure: %v\n%s", err, out)

@@ -10,34 +10,6 @@ import (
 	"testing"
 )
 
-func TestVersionedMetadataSource(t *testing.T) {
-	var cases struct {
-		Sources []struct {
-			Name, Input   string
-			Valid         bool
-			RepositoryURL string `json:"repository_url"`
-			DownloadRoot  string `json:"download_root"`
-		} `json:"metadata_sources"`
-	}
-	if err := json.Unmarshal([]byte(readTestFile(t, "../../tests/autolib/release-source-cases.json")), &cases); err != nil {
-		t.Fatal(err)
-	}
-	if len(cases.Sources) == 0 {
-		t.Fatal("missing metadata source cases")
-	}
-	for _, tc := range cases.Sources {
-		t.Run(tc.Name, func(t *testing.T) {
-			got, err := parseMetadataSource(tc.Input)
-			if (err == nil) != tc.Valid {
-				t.Fatalf("source %+v: %v", got, err)
-			}
-			if tc.Valid && (got.RepositoryURL != tc.RepositoryURL || got.DownloadRoot != tc.DownloadRoot) {
-				t.Fatalf("source %+v, want repository %q and download root %q", got, tc.RepositoryURL, tc.DownloadRoot)
-			}
-		})
-	}
-}
-
 func TestVersionedMetadataAsset(t *testing.T) {
 	var cases struct {
 		Assets []struct {
@@ -86,7 +58,7 @@ func TestVersionedMetadataAsset(t *testing.T) {
 				if tc.Universal {
 					wantID.OS, wantID.Arch = "any", "any"
 				}
-				if err != nil || asset.Name != tc.AssetName || asset.SHA256 != tc.SHA256 || asset.URL != "https://gitee.com/owner/repo/releases/download/v1/"+tc.AssetName || asset.Accept != "application/octet-stream" || id != wantID {
+				if err != nil || asset.Name != tc.AssetName || asset.SHA256 != tc.SHA256 || asset.URL != "https://gitee.com/owner/repo/releases/download/v1/"+tc.AssetName || id != wantID {
 					t.Fatalf("asset %+v identity %+v: %v", asset, id, err)
 				}
 			default:

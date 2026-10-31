@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -140,27 +139,6 @@ func TestVersionedMetadataRepository(t *testing.T) {
 			}
 			if _, err := os.Lstat(marker); !os.IsNotExist(err) {
 				t.Fatalf("repository CMake ran: %v", err)
-			}
-		})
-	}
-	var sources struct {
-		Sources []struct {
-			Name, Input string
-			Valid       bool
-			Repository  string `json:"repository_url"`
-			Download    string `json:"download_root"`
-		} `json:"metadata_sources"`
-	}
-	if err := json.Unmarshal([]byte(readTestFile(t, "../../tests/autolib/release-source-cases.json")), &sources); err != nil {
-		t.Fatal(err)
-	}
-	for _, tc := range sources.Sources {
-		t.Run("source/"+tc.Name, func(t *testing.T) {
-			root := t.TempDir()
-			source := snapshotDriver(t, root, fmt.Sprintf("_autolib_metadata_source([==[%s]==] repository download)\nif(NOT repository STREQUAL [==[%s]==] OR NOT download STREQUAL [==[%s]==])\nmessage(FATAL_ERROR incorrect_source)\nendif()\n", tc.Input, tc.Repository, tc.Download))
-			out, err := snapshotConfigure(t, source, filepath.Join(root, "build"), root, filepath.Join(root, "git.trace"))
-			if (err == nil) != tc.Valid || (!tc.Valid && (!strings.Contains(out, "AutoLib") || strings.Contains(out, "Unknown CMake command"))) {
-				t.Fatalf("source valid=%v: %v\n%s", tc.Valid, err, out)
 			}
 		})
 	}
