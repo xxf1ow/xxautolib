@@ -11,10 +11,12 @@ import (
 	"testing"
 )
 
-// The installed header and linked implementation expose independent version markers.
-// Selecting dep@2 for probe@1 must fail at runtime, even if configure succeeds.
-func TestVersionedLocalLoop(t *testing.T) {
-	root := t.TempDir()
+type nativeLoopFixture struct {
+	producer, install, release, generator, arch, toolName, builderName string
+}
+
+func newNativeLoopFixture(t *testing.T, root string) nativeLoopFixture {
+	t.Helper()
 	producer := filepath.Join(root, "producer 中文")
 	for _, file := range []string{"CMakeLists.txt", "go.mod", "go.sum"} {
 		putTestFile(t, filepath.Join(producer, file), readTestFile(t, filepath.Join("../..", file)))
@@ -98,6 +100,16 @@ target_link_libraries(autolib::probe INTERFACE fixture::probe autolib::dep)
 	loopCommand(t, filepath.Join(producer, "build/tools", builderName), "package", "--source-root="+producer, "--install-root="+install,
 		"--output-root="+release, "--os="+runtime.GOOS, "--arch="+arch, "--host-os="+runtime.GOOS, "--host-arch="+arch,
 		"--importer-file="+filepath.Join(install, toolName), "--cmake-command=cmake", "--module=probe@1", "--module=dep@1", "--module=dep@2")
+	return nativeLoopFixture{producer, install, release, generator, arch, toolName, builderName}
+}
+
+// The installed header and linked implementation expose independent version markers.
+// Selecting dep@2 for probe@1 must fail at runtime, even if configure succeeds.
+func TestVersionedLocalLoop(t *testing.T) {
+	root := t.TempDir()
+	f := newNativeLoopFixture(t, root)
+	producer, install, release := f.producer, f.install, f.release
+	generator, arch, toolName, builderName := f.generator, f.arch, f.toolName, f.builderName
 	putTestFile(t, filepath.Join(producer, "tests/autolib/CMakeLists.txt"), strings.Replace(loopConsumerCMake, "main.cpp", "smoke.cpp", 1))
 	putTestFile(t, filepath.Join(producer, "tests/autolib/smoke.cpp"), loopConsumerSource)
 	before := sourceSnapshot(t, producer)

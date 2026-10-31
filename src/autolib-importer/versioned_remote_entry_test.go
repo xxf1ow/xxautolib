@@ -21,6 +21,7 @@ type versionedRemoteEntry struct {
 	requests              map[string]int
 	offline               bool
 	apiRequests           int
+	stopHTTP              func()
 }
 
 func remoteEntry(t *testing.T, host string) *versionedRemoteEntry {
@@ -31,7 +32,7 @@ func remoteEntry(t *testing.T, host string) *versionedRemoteEntry {
 	redirect := "url.file://" + filepath.ToSlash(e.repo) + ".insteadOf=https://" + host + "/owner/repo.git"
 	t.Setenv("GIT_CONFIG_PARAMETERS", "'"+strings.ReplaceAll(redirect, "'", "'\\''")+"'")
 	t.Setenv("GIT_TRACE", e.trace)
-	e.ca = entryHTTPSProxy(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	e.ca, e.stopHTTP = entryHTTPSProxyControl(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		e.mu.Lock()
 		defer e.mu.Unlock()
 		key := r.Host + r.URL.Path

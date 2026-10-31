@@ -58,7 +58,7 @@ cmake -P src/autolib-builder/go-sdk.cmake -- build -mod=readonly -trimpath -o bu
 
 直接 CLI 的必填路径、平台及可重复 package 参数见[工具入口](../src/autolib-importer/main.go)；正常 CMake 使用者不需要直接调用。完整入口缓存允许本地和远端都关闭；缺输入直接报错，不回退系统库、源码编译或旧格式。
 
-版本化远端消费尚未接通，本地用法必须显式设 `AUTOLIB_REMOTE_ROOT` 为空；既有远端默认值和历史发行格式不代表新协议可用。后续元数据获取及 CI/发布由[统一交付设计](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md)拥有，历史供给证据见[测试指南](testing.md#release-下载验证)。
+远端设置为 `AUTOLIB_REMOTE_ROOT=https://<github.com|gitee.com>/<owner>/<repo>/releases/download/<encoded-tag>`；入口按需克隆同仓库元数据，再下载精确归档。合法输入、内部交接和失败规则见[统一交付设计](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md#git-元数据与-release-布局)。完整缓存和完整本地来源不要求 Git 或网络。公开仓库尚未初始化为该协议，本地用法须显式关闭远端；既有默认地址和历史发行物不证明新协议可用。受控验证与真实托管缺口见[测试指南](testing.md#release-下载验证)。
 
 已有目录核对五行包头和导入文件，adapter 检查其所需文件，不逐文件散列；内容校验不认证来源，工具及包内 CMake 必须可信。缓存包和 latest 不自动追随来源，精确请求不改 latest；删除缓存 latest 指向的版本目录后，裸名请求重新发现来源选择，不更新无关缓存。刷新前保护修改，只处理入口缓存的 `<包名>/<版本>/`，不改来源、不删共享依赖；损坏包不是缺包，必须明确处理而非自动重选。FLANN 的包依赖仅 lz4，OpenMP、C++ ABI 和系统运行库由消费环境满足。
 
@@ -77,6 +77,8 @@ cmake -P src/autolib-builder/go-sdk.cmake -- build -mod=readonly -trimpath -o bu
 ## 远端构建与源码传输授权
 
 109 机器（`lxx@192.168.0.109`）是局域网内安全可信设备。用户永久授权将本仓库任务相关源码传输至该机器的 `/home/lxx/xxautolib`。本轮第三方库迁移只在该目录执行整批编译安装验证，失败后的修复与增量续跑按用户确认执行；本机不执行任何编译，包括 Go 工具编译。传输前检查并保留已有数据，不传本仓库 `.git/`、凭据或 Windows 构建产物，不清空目标目录。该授权不包含 Git 推送、Release 上传或触发 CI；本轮迁移全部完成后，由用户手动推送并触发 CI 验收。
+
+版本化交付任务同样获准在上述目录传输任务源码、编译轻量夹具、执行既定定向测试及写入自有运行日志。用户获知工具对具体测试源码传输的拒绝后明确批准：「同意。所有类似源码传输一律同意，不要再问」。同类任务源码向该目录传输不重复询问，工具权限审批及传输前逐文件摘要核对仍须执行，不覆盖未知差异；授权不包含其他目标、项目 `.git/`、凭据、SDK/缓存/产物传输或 push、发布、CI。最低 CMake 版本按用户决定不安排任何形式测试，不下载或传输旧工具；其余定向验证只用 109 现有环境。
 
 ## 日常修改
 

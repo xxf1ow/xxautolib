@@ -25,6 +25,11 @@ import (
 // The subprocesses keep their real Release URLs and certificate checks. Only this
 // test's HTTPS proxy terminates their connections with a test-owned certificate.
 func entryHTTPSProxy(t *testing.T, handler http.Handler) string {
+	ca, _ := entryHTTPSProxyControl(t, handler)
+	return ca
+}
+
+func entryHTTPSProxyControl(t *testing.T, handler http.Handler) (string, func()) {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -80,7 +85,7 @@ func entryHTTPSProxy(t *testing.T, handler http.Handler) string {
 		t.Setenv(name, "")
 	}
 	t.Setenv("SSL_CERT_FILE", ca)
-	return ca
+	return ca, proxy.Close
 }
 
 func TestCMakeRemoteBootstrapMigration(t *testing.T) {
@@ -164,38 +169,78 @@ func TestCMakeRemoteBootstrapMigration(t *testing.T) {
 }
 
 func TestGitHubValidationDriver(t *testing.T) {
-	root := t.TempDir()
-	putTestFile(t, filepath.Join(root, "tests/autolib/CMakeLists.txt"), `cmake_minimum_required(VERSION 3.20)
+	for _, host := range []string{"github.com", "gitee.com"} {
+		t.Run(host, func(t *testing.T) {
+			root := t.TempDir()
+			entry := "# fixture entry bytes\n"
+			putTestFile(t, filepath.Join(root, "src/autolib.cmake"), entry)
+			putTestFile(t, filepath.Join(root, "tests/autolib/smoke.cpp"), "// fixture smoke\n")
+			putTestFile(t, filepath.Join(root, "tests/autolib/CMakeLists.txt"), `cmake_minimum_required(VERSION 3.20)
 project(driver_fixture NONE)
 enable_testing()
-if(NOT ROOT_PACKAGES STREQUAL "flann;queue" OR NOT AUTOLIB_REMOTE_ROOT STREQUAL "https://github.com/owner/repo/releases/download/v1")
+if(NOT ROOT_PACKAGES STREQUAL "flann;queue" OR NOT AUTOLIB_REMOTE_ROOT MATCHES "^https://(github|gitee).com/owner/repo/releases/download/v1$")
     message(FATAL_ERROR "driver lost source or root packages: ${ROOT_PACKAGES}")
 endif()
-file(MAKE_DIRECTORY "${RELEASE_ROOT}")
-file(WRITE "${CMAKE_BINARY_DIR}/prepared-root.txt" "${RELEASE_ROOT}")
-add_test(NAME smoke COMMAND "${CMAKE_COMMAND}" -E true)
+if(NOT AUTOLIB_ENTRY STREQUAL "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/autolib.cmake")
+    message(FATAL_ERROR "driver must copy entry to independent consumer: ${AUTOLIB_ENTRY}")
+endif()
+include("${AUTOLIB_ENTRY}")
+set(runtime "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/flann/1.9.2/lib")
+if(WIN32)
+    set(runtime "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/flann/1.9.2/bin")
+endif()
+file(MAKE_DIRECTORY "${runtime}")
+file(WRITE "${CMAKE_BINARY_DIR}/prepared-state.cmake" "set(AUTOLIB_CACHE_ROOT [==[${CMAKE_CURRENT_SOURCE_DIR}/3rdparty]==])\nset(AUTOLIB_PACKAGE_DIR_flann [==[${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/flann/1.9.2]==])\nset(AUTOLIB_FLANN_RUNTIME_DIR [==[${runtime}]==])\n")
+file(WRITE "${CMAKE_BINARY_DIR}/check.cmake" "set(expected [==[${runtime}]==])\nif(WIN32)\nset(paths \"\$ENV{PATH}\")\nelse()\nset(paths \"\$ENV{LD_LIBRARY_PATH}\")\nendif()\nstring(FIND \"\${paths}\" \"\${expected}\" position)\nif(NOT position EQUAL 0)\nmessage(FATAL_ERROR \"wrong runtime path: \${paths}\")\nendif()\n")
+add_test(NAME smoke COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_BINARY_DIR}/check.cmake")
 `)
-	cmake, err := exec.LookPath("cmake")
-	if err != nil {
-		t.Fatal(err)
+			cmake, err := exec.LookPath("cmake")
+			if err != nil {
+				t.Fatal(err)
+			}
+			driver, err := filepath.Abs("../../tests/autolib/run-github.cmake")
+			if err != nil {
+				t.Fatal(err)
+			}
+			generator := "Ninja"
+			if runtime.GOOS == "linux" {
+				generator = "Unix Makefiles"
+			}
+			args := []string{"-DSOURCE_ROOT=" + filepath.ToSlash(root), "-DVALIDATION_ROOT=" + filepath.ToSlash(filepath.Join(root, "build/validation")), "-DREMOTE_ROOT=https://" + host + "/owner/repo/releases/download/v1", "-DGENERATOR=" + generator, "-P", driver}
+			if out, err := exec.Command(cmake, args...).CombinedOutput(); err != nil {
+				t.Fatalf("driver: %v\n%s", err, out)
+			}
+			runs, err := filepath.Glob(filepath.Join(root, "build/validation/run-*"))
+			if err != nil || len(runs) != 1 {
+				t.Fatalf("runs %v, %v", runs, err)
+			}
+			if !strings.Contains(readTestFile(t, filepath.Join(runs[0], "test.log")), "100% tests passed") {
+				t.Fatal("driver did not run CTest")
+			}
+			if got := readTestFile(t, filepath.Join(runs[0], "consumer/3rdparty/autolib.cmake")); got != entry {
+				t.Fatal("driver changed copied entry bytes")
+			}
+			if _, err := os.Stat(filepath.Join(root, "src/flann")); !os.IsNotExist(err) {
+				t.Fatalf("driver wrote source-adjacent cache: %v", err)
+			}
+		})
 	}
-	driver, err := filepath.Abs("../../tests/autolib/run-github.cmake")
-	if err != nil {
-		t.Fatal(err)
-	}
-	generator := "Ninja"
-	if runtime.GOOS == "linux" {
-		generator = "Unix Makefiles"
-	}
-	args := []string{"-DSOURCE_ROOT=" + filepath.ToSlash(root), "-DVALIDATION_ROOT=" + filepath.ToSlash(filepath.Join(root, "build/validation")), "-DREMOTE_ROOT=" + testReleaseURL, "-DGENERATOR=" + generator, "-P", driver}
-	if out, err := exec.Command(cmake, args...).CombinedOutput(); err != nil {
-		t.Fatalf("driver: %v\n%s", err, out)
-	}
-	runs, err := filepath.Glob(filepath.Join(root, "build/validation/run-*"))
-	if err != nil || len(runs) != 1 {
-		t.Fatalf("runs %v, %v", runs, err)
-	}
-	if !strings.Contains(readTestFile(t, filepath.Join(runs[0], "test.log")), "100% tests passed") {
-		t.Fatal("driver did not run CTest")
-	}
+	t.Run("public entry failure", func(t *testing.T) {
+		root := t.TempDir()
+		putTestFile(t, filepath.Join(root, "src/autolib.cmake"), readTestFile(t, "../autolib.cmake"))
+		putTestFile(t, filepath.Join(root, "tests/autolib/smoke.cpp"), "")
+		putTestFile(t, filepath.Join(root, "tests/autolib/CMakeLists.txt"), `cmake_minimum_required(VERSION 3.20)
+project(driver_failure NONE)
+set(AUTOLIB_LOCAL_ROOT "")
+include("${AUTOLIB_ENTRY}")
+add_library(consumer INTERFACE)
+autolib_import(TARGET consumer INTERFACE flann)
+`)
+		driver, _ := filepath.Abs("../../tests/autolib/run-github.cmake")
+		out, err := exec.Command("cmake", "-DSOURCE_ROOT="+root, "-DVALIDATION_ROOT="+filepath.Join(root, "build/validation"), "-DREMOTE_ROOT=https://github.com/owner/repo/releases/tag/v1", "-P", driver).CombinedOutput()
+		if err == nil || !strings.Contains(string(out), "configure failed") || !strings.Contains(string(out), "Release download root") {
+			t.Fatalf("driver did not propagate public entry failure: %v\n%s", err, out)
+		}
+		t.Logf("public entry rejected invalid download root:\n%s", out)
+	})
 }

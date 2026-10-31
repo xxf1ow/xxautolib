@@ -25,8 +25,14 @@ function(run_logged label)
     endif()
 endfunction()
 
-set(configure "${CMAKE_COMMAND}" -S "${SOURCE_ROOT}/tests/autolib" -B "${run}/build"
-    "-DAUTOLIB_ENTRY=${SOURCE_ROOT}/src/autolib.cmake" "-DRELEASE_ROOT=${run}/local"
+set(consumer "${run}/consumer")
+file(MAKE_DIRECTORY "${consumer}/3rdparty")
+foreach(file IN ITEMS CMakeLists.txt smoke.cpp)
+    configure_file("${SOURCE_ROOT}/tests/autolib/${file}" "${consumer}/${file}" COPYONLY)
+endforeach()
+configure_file("${SOURCE_ROOT}/src/autolib.cmake" "${consumer}/3rdparty/autolib.cmake" COPYONLY)
+set(configure "${CMAKE_COMMAND}" -S "${consumer}" -B "${run}/build"
+    "-DAUTOLIB_ENTRY=${consumer}/3rdparty/autolib.cmake" "-DRELEASE_ROOT=${run}/local"
     "-DAUTOLIB_REMOTE_ROOT=${REMOTE_ROOT}"
     -DCMAKE_BUILD_TYPE=Release)
 if(GENERATOR)
@@ -40,11 +46,11 @@ if(GENERATOR_TOOLSET)
 endif()
 run_logged(configure ${configure} "-DROOT_PACKAGES=flann\;queue")
 run_logged(build "${CMAKE_COMMAND}" --build "${run}/build" --config Release)
-file(READ "${run}/build/prepared-root.txt" prepared_root)
+include("${run}/build/prepared-state.cmake")
 if(CMAKE_HOST_WIN32)
-    set(ENV{PATH} "${prepared_root}/flann/bin;$ENV{PATH}")
+    set(ENV{PATH} "${AUTOLIB_FLANN_RUNTIME_DIR};$ENV{PATH}")
 else()
-    set(ENV{LD_LIBRARY_PATH} "${prepared_root}/flann/lib:$ENV{LD_LIBRARY_PATH}")
+    set(ENV{LD_LIBRARY_PATH} "${AUTOLIB_FLANN_RUNTIME_DIR}:$ENV{LD_LIBRARY_PATH}")
 endif()
 get_filename_component(cmake_bin "${CMAKE_COMMAND}" DIRECTORY)
 run_logged(test "${cmake_bin}/ctest" --test-dir "${run}/build" -C Release --output-on-failure)

@@ -10,7 +10,7 @@ Status: proposed
 
 ## 方案
 
-采用精确版本包、独立 latest 指针、统一安装结果和专用 Git 元数据仓库。实际归档放在同仓库的固定 Release 中，按完整文件名定位；消费端只克隆元数据并下载归档，不编译源码。[架构](../../../architecture.md)是开发入口，本文拥有版本、缓存、元数据和发布约束；版本化构建安装及本地消费、打包的实现证据见下文，Git 元数据远端消费与 CI/独立发布仍待实施，整体设计保持 proposed。
+采用精确版本包、独立 latest 指针、统一安装结果和专用 Git 元数据仓库。实际归档放在同仓库的固定 Release 中，按完整文件名定位；消费端只克隆元数据并下载归档，不编译源码。[架构](../../../architecture.md)是开发入口，本文拥有版本、缓存、元数据和发布约束；版本化构建安装、本地消费和 Git 元数据远端消费的实现证据见下文。前两阶段已通过用户验收，远端消费阶段待用户验收，CI/独立发布尚未实施，整体设计保持 proposed。
 
 ### 版本与依赖
 
@@ -106,6 +106,8 @@ CI 编译结束后自动触发独立发布流程。跨 job/workflow 的运输封
 
 importer 先处理本地来源，尚需远端但没有快照时向 CMake 返回明确的“需要元数据快照”结果，而不是自行 clone 或把网络缺失当作包损坏。CMake 获取并检查快照后，将同一路径交给 importer 继续准备。该交接是内部工具接口，不新增用户必须配置的路径或命令。
 
+内部 `prepare` 以退出码 `2` 表示需要快照，CMake 经 `--metadata-root` 传入已检查路径后继续；其余失败不得作为获取请求重试。该路径不对用户公开，也不是 importer 的 Git 获取开关；消费 CLI 不接受 `--source-response`。
+
 首次缺少 importer 时，CMake 不依赖尚未取得的工具：先准备同一份元数据快照，读取宿主工具摘要，下载校验后使用 CMake 原生能力解包到入口缓存，再运行 importer。后续包和依赖使用已准备快照，不再次获取仓库。消费端不执行元数据仓库中的构建代码。
 
 每次需要远端的新 configure 都重新浅克隆默认分支，不让 FetchContent 的跨配置 stamp 代替新快照。同次 configure 只获取和检查一次，并让快照存活至本次配置结束。尚未准备快照时由 CMake 获取；已经准备的快照意外丢失或损坏时本次配置报错，显式重新 configure 再取，不增加同配置的自动恢复流程。
@@ -133,9 +135,11 @@ GitHub、Gitee 都使用专用公开产物仓库，不在源码仓库中混放�
 
 latest 在源码、安装结果和远端元数据中使用相同的包级 `package.toml` 格式，区别只在来源。每个 `.sha256` 文件仅保存对应归档的 SHA256；去掉该后缀就是完整资产文件名。库包使用版本化 tar.zst，工具使用现有宿主命名的单程序 tar.xz。不再用 JSON 重复存储包名、版本、OS、架构、附件 ID 或 URL，也不在 Release 正文聚合摘要。
 
+已落地身份文件为 `{"type":"xxautolib-artifacts","schema":1,"upstream":"https://github.com/xxf1ow/xxautolib"}`，消费入口核对这三个字段的类型及精确值。包级选择只有 TOML `latest` 字符串；独立摘要为 64 位小写十六进制 SHA256 加换行，分别位于 `tools/<工具归档名>.sha256` 与 `<name>/<version>/<完整库归档名>.sha256`，Windows 工具保留 `.exe.tar.xz` 命名。未登记摘要视为无该资产，摘要非法或已登记资产下载 404 直接失败，不换版本或来源。
+
 发布和消费根据精确包版本、目标平台及既有平台无关规则定位归档文件名，包内身份是第二层校验。文件名必须安全、可确定且在 Release 中无歧义，不通过包含匹配或任意子串选择资产。固定 Release 不按每个版本新建 tag；版本由归档名与 Git 元数据目录表达。
 
-远端 base URL 保留 Release 下载根的前半部分，据此推导仓库 `.git` 地址与 `/releases/download/<tag>/<filename>`。消费不调用 GitHub contents、Release 或附件 API，不使用 Gitee Raw、发行版正文、静态站点或 Git 仓库中的源码发现摘要；也不自动跨来源回退。GitHub 和 Gitee 的区别限于发布端的建库、Release 和上传 API 以及写入凭据。
+两托管的远端 base URL 统一为 `https://<github.com|gitee.com>/<owner>/<repo>/releases/download/<encoded-tag>`，据此推导仓库 `.git` 地址与精确资产 URL。拒绝凭据、query/fragment、额外路径及 `/releases/tag/`，不增加兼容转换；仅实际需要远端时解析，未使用的远端配置不阻止完整本地路径。消费不调用 GitHub contents、Release 或附件 API，不使用 Gitee Raw、发行版正文、静态站点或 Git 仓库中的源码发现摘要；也不自动跨来源回退。GitHub 和 Gitee 的区别限于发布端的建库、Release 和上传 API 以及写入凭据。
 
 ### 专用仓库初始化与检查
 
@@ -257,6 +261,27 @@ Linux 的 `libflann.so` 和 `libflann_cpp.so` 各经 `.so.1.9` 指向 `.so.1.9.2
 真实消费曾复现 FLANN adapter 的无版本 sibling 路径错误；adapter 依赖公共入口已校验并按顺序加载的精确 lz4 结果和公共 target，不自行 include 依赖描述。固定上游来源在 109 遇到 TLS 中断，经授权在本机预取精确 commit、核对干净逐文件字节，再仅传上游 bundle 到新/空目标后增量续跑；没有改配方、来源协议或上游代码。
 
 Windows 文件系统/Visual Studio、Linux aarch64 和最低 CMake 3.20 未验证；Linux 原生运行不算作这些平台证据。未重编 PCL、Boost、OpenCV 或全库，未运行旧远端/CI 全集，未执行 Git 元数据获取、发布、push 或远端 CI。上述结果只覆盖本地消费阶段，整体设计仍 proposed，阶段成果交由用户验收。
+
+### 版本化远端消费验证
+
+Linux x86_64、GNU 9.4.0、CMake 3.31.12、Go 1.27.3 上，第三阶段定向命令均退出 0：
+
+```text
+cmake -P src/autolib-builder/go-sdk.cmake -- test ./src/autolib-importer -run '^(TestVersionedRemoteLoop|TestGitHubValidationDriver)$' -count=1 -v
+cmake -P src/autolib-builder/go-sdk.cmake -- test ./src/autolib-importer -run '^TestVersioned(Metadata|Snapshot|Remote|NoConsumerAPI)' -count=1 -v
+cmake -P src/autolib-builder/go-sdk.cmake -- test ./src/autolib-importer -run '^(TestVersionedLocalLoop|TestVersionedRejectSourceResponse|TestCMakeRemoteBootstrapMigration|TestCMakeGiteeSnapshotReuse|TestGitHubValidationDriver)$' -count=1 -v
+cmake -P src/autolib-builder/go-sdk.cmake -- vet ./src/autolib-importer
+```
+
+三组分别通过 2 个顶层测试/7 个节点、12 个顶层测试/168 个节点、5 个顶层测试/27 个节点；组间包含重叠用例，不合计为独立测试数量。元数据与快照组覆盖来源解析一致性、独立摘要/身份检查、gitlink 与非白名单内容拒绝、不执行仓库代码、单份浅克隆及配置内复用、快照丢失失败和下一配置重新获取。远端组覆盖四步选择、精确依赖、损坏候选立即失败、TLS/下载/工具引导及零 API/Raw 请求；CLI 删除另由显式回归覆盖，消费源码的旧 API/正文发现缺失以定向静态检索及审查确认，不以读取源码文本的自动测试代替行为。
+
+[远端原生闭环](../../../../src/autolib-importer/versioned_remote_loop_test.go)复用本地轻量库和版本断言，通过普通根入口及真实 builder 生成 probe@1、dep@1/2 和 importer tar.xz；元数据保存与 builder 相同的实际归档摘要。生产树在消费前隐藏，两托管各从空入口缓存获取工具和 `dep;probe` 精确闭包，dep 的远端 latest 为 2 也不改变 probe@1 对 dep@1 的要求。首次及完整缓存复用均真实链接运行，输出 `header_dep=1 linked_dep=1`；导入头、链接文件和 dladdr 的实际加载位置属于当前缓存的 dep/1、probe/1，而非生产前缀。
+
+每托管首次只有 1 次 clone/ls-tree 和 3 次 HTTPS 下载（工具、dep@1、probe@1）；复用完整缓存时 HTTP/Git 增量均为 0。后续新 configure 请求 dep@2 时获取新快照，另一次请求有效摘要但包内名称错误的归档时也获取新快照，公共入口在 adapter marker 写入前拒绝并清理暂存，未登记正式包。最终每托管为 clone/ls-tree 各 3 次、5 次下载、API/Raw 0 次。错误头版本的运行拒绝由本地原生闭环既有双版本断言拥有，不新增相同故障实验。
+
+完整入口缓存复制到新的含空格消费者后，关闭 HTTPS 服务并使测试 Git 来源不可达，两源均空重新 configure/build/CTest 各 1/1；HTTP/Git 增量仍为 0。生产源码、安装和归档、Git 元数据源、已准备 dep@1 及无关缓存的字节/类型/权限/mtime 保持不变，Linux 相对软链接随归档和复制保留。[下载 driver](../../../../tests/autolib/run-github.cmake)从源码根只复制入口与 smoke 至独立消费者，读取实际 `prepared-state.cmake` 运行库目录，由公共入口准备缓存；两托管的 driver 参数、精确运行路径及公共入口失败传播均通过实际脚本执行断言。
+
+以上是受控本地 Git/HTTPS 与 Linux 原生结果，不是 GitHub/Gitee 真实托管通过。Windows 文件系统/Visual Studio、Linux aarch64、真实两托管及第四阶段 CI/发布均未验证；最低 CMake 3.20 未实测，按用户决定不安排任何形式的该项测试、不取得旧工具，仅以 109 现有 CMake 3.31.12 验收，历史未测事实保留。整体设计仍 proposed，第三阶段交由用户验收，第四阶段设计须依据实际发现再确认。
 
 ## 风险
 
