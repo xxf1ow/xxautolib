@@ -12,6 +12,10 @@
 #ifdef AUTOLIB_TEST_LZ4
 #include <cstring>
 #endif
+#ifdef AUTOLIB_TEST_EIGEN
+#include <Eigen/Core>
+#include <string>
+#endif
 #include <filesystem>
 #include <iostream>
 #include <system_error>
@@ -24,6 +28,20 @@
 
 int main()
 {
+#ifdef AUTOLIB_TEST_EIGEN
+#ifdef EIGEN_PATCH_VERSION
+    const auto eigen_version = std::to_string(EIGEN_MAJOR_VERSION) + "." + std::to_string(EIGEN_MINOR_VERSION) + "." + std::to_string(EIGEN_PATCH_VERSION);
+#else
+    const auto eigen_version = std::to_string(EIGEN_WORLD_VERSION) + "." + std::to_string(EIGEN_MAJOR_VERSION) + "." + std::to_string(EIGEN_MINOR_VERSION);
+#endif
+    std::cout << "eigen_version=" << eigen_version << '\n';
+    if (eigen_version != AUTOLIB_EXPECT_EIGEN_VERSION)
+        return 9;
+    Eigen::Matrix2i matrix;
+    matrix << 1, 2, 3, 4;
+    if ((matrix * matrix).eval()(1, 1) != 22)
+        return 10;
+#endif
 #ifdef AUTOLIB_TEST_QUEUE
     moodycamel::ReaderWriterQueue<int> queue;
     int value = 0;

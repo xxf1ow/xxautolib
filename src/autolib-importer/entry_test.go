@@ -499,9 +499,6 @@ func representativeFixture(t *testing.T, packages string) *entryFixture {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if name == "flann" {
-			adapter = []byte(strings.ReplaceAll(string(adapter), "${CMAKE_CURRENT_LIST_DIR}/../lz4/autolib-import.cmake", "${AUTOLIB_PACKAGE_DIR_lz4}/autolib-import.cmake"))
-		}
 		id := packageIdentity{Name: name, Version: "1.0", OS: f.options.OS, Arch: f.options.Arch}
 		members := []archiveMember{{Name: name + "/1.0/autolib-import.cmake", Body: strings.Replace(identityHeader(id), `set(AUTOLIB_DEPENDENCIES "")`, `set(AUTOLIB_DEPENDENCIES "`+map[string]string{"flann": "lz4@1.0"}[name]+`")`, 1) + string(adapter)}, {Name: name + "/1.0/include/", Kind: '5'}}
 		if name == "queue" {
@@ -538,6 +535,9 @@ foreach(name IN ITEMS queue lz4 flann)
         message(FATAL_ERROR "missing unique lowercase public target: ${name}")
     endif()
 endforeach()
+if(NOT AUTOLIB_PACKAGE_VERSION_lz4 STREQUAL "1.0" OR NOT AUTOLIB_PACKAGE_DIR_lz4 STREQUAL "${CMAKE_CURRENT_SOURCE_DIR}/lz4/1.0")
+    message(FATAL_ERROR "FLANN did not use the prepared exact lz4 result")
+endif()
 get_target_property(links autolib::flann INTERFACE_LINK_LIBRARIES)
 foreach(required IN ITEMS flann::flann_cpp flann::flann autolib::lz4)
     if(NOT required IN_LIST links)
