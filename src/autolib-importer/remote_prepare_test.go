@@ -1,91 +1,41 @@
 package main
 
 import (
-	"context"
 	"crypto/sha256"
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
-	"sync"
 	"testing"
 )
 
-type remoteAssetFixture struct {
-	id             int
-	name           string
-	data, download []byte
-	status         int
-}
-
 type remotePrepareFixture struct {
-	options  prepareOptions
-	assets   []remoteAssetFixture
-	mu       sync.Mutex
-	requests []string
+	*versionedRemoteFixture
+	options           prepareOptions
+	flann, lz4, queue string
 }
 
-func newRemotePrepareFixture(t *testing.T) *remotePrepareFixture {
+func newRemotePrepareFixture(t *testing.T, hosts ...string) *remotePrepareFixture {
 	t.Helper()
-	f := &remotePrepareFixture{options: localGraphFixture(t)}
-	f.options.RemoteRoot = testReleaseURL
-	f.options.SourceResponse = filepath.Join(f.options.WorkRoot, "api.json")
-	source := t.TempDir()
-	for i, node := range [][4]string{{"flann", "linux", "aarch64", "lz4"}, {"lz4", "linux", "aarch64", ""}, {"queue", "any", "any", ""}} {
-		path := graphArchive(t, source, packageIdentity{node[0], "1.0", node[1], node[2]}, node[3])
-		f.assets = append(f.assets, remoteAssetFixture{id: i + 1, name: filepath.Base(path), data: []byte(readTestFile(t, path))})
-	}
-	client := githubTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		f.mu.Lock()
-		f.requests = append(f.requests, r.URL.String())
-		f.mu.Unlock()
-		switch r.URL.Path {
-		case "/repos/owner/repo/releases/tags/v1":
-			fmt.Fprint(w, `{"id":42,"tag_name":"v1","draft":false,"assets_url":"https://api.github.com/repos/owner/repo/releases/42/assets"}`)
-		case "/repos/owner/repo/releases/42/assets":
-			assets := []map[string]any{}
-			for _, a := range f.assets {
-				assets = append(assets, map[string]any{"id": a.id, "name": a.name, "state": "uploaded", "digest": fmt.Sprintf("sha256:%x", sha256.Sum256(a.data))})
-			}
-			json.NewEncoder(w).Encode(assets)
-		default:
-			for _, a := range f.assets {
-				if r.URL.Path != fmt.Sprintf("/repos/owner/repo/releases/assets/%d", a.id) {
-					continue
-				}
-				if a.status != 0 {
-					w.WriteHeader(a.status)
-					return
-				}
-				body := a.data
-				if a.download != nil {
-					body = a.download
-				}
-				w.Write(body)
-				return
-			}
-			w.WriteHeader(404)
-		}
-	}))
-	previous := http.DefaultTransport
-	http.DefaultTransport = client.Transport
-	t.Cleanup(func() { http.DefaultTransport = previous })
+	remote := versionedRemote(t, hosts...)
+	o, _ := versionedFixture(t, "flann", "queue")
+	o.RemoteRoot = "https://" + remote.host + "/owner/repo/releases/download/v1"
+	o.MetadataRoot = remote.root
+	f := &remotePrepareFixture{versionedRemoteFixture: remote, options: o}
+	f.flann = f.add(t, "flann", "1.0", "lz4@1.0")
+	f.lz4 = f.add(t, "lz4", "1.0", "")
+	archive := testArchive(t, []archiveMember{{Name: "queue/1.0/autolib-import.cmake", Body: identityHeader(packageIdentity{"queue", "1.0", "any", "any"})}, {Name: "queue/1.0/data", Body: "archive"}})
+	f.queue = "queue-1.0-any-any.tar.zst"
+	f.assets[f.queue] = readTestFile(t, archive)
+	f.digest(t, "queue", "1.0", f.queue)
+	versionedLatest(t, f.root, "queue", "1.0")
 	return f
 }
 
-func (f *remotePrepareFixture) count(part string) int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	n := 0
-	for _, request := range f.requests {
-		if strings.Contains(request, part) {
-			n++
-		}
-	}
-	return n
+func (f *remotePrepareFixture) digest(t *testing.T, name, version, asset string) string {
+	t.Helper()
+	return putTestFile(t, filepath.Join(f.root, name, version, asset+".sha256"), fmt.Sprintf("%x\n", sha256.Sum256([]byte(f.assets[asset]))))
 }
 
 func TestPrepareRemote(t *testing.T) {
@@ -94,46 +44,48 @@ func TestPrepareRemote(t *testing.T) {
 			f := newRemotePrepareFixture(t)
 			o := f.options
 			o.Packages = []string{"flann", "queue", "flann"}
+			want := map[string]int{f.flann: 1, f.lz4: 1, f.queue: 1}
 			if kind == "existing root" {
-				putTestFile(t, filepath.Join(graphSlot(o, "flann"), "autolib-import.cmake"), strings.Replace(identityHeader(packageIdentity{"flann", "1.0", o.OS, o.Arch}), `set(AUTOLIB_DEPENDENCIES "")`, `set(AUTOLIB_DEPENDENCIES "lz4")`, 1))
-				putTestFile(t, filepath.Join(graphSlot(o, "flann"), "data"), "user content")
+				versionedInstalled(t, o.CacheRoot, "flann", "1.0", "lz4@1.0", "user content")
+				versionedLatest(t, o.CacheRoot, "flann", "1.0")
+				delete(want, f.flann)
 			}
 			if kind == "cycle" {
-				path := graphArchive(t, t.TempDir(), packageIdentity{"lz4", "1.0", o.OS, o.Arch}, "flann")
-				f.assets[1].data = []byte(readTestFile(t, path))
+				f.add(t, "lz4", "1.0", "flann@1.0")
 			}
 			got, err := prepare(o)
 			if kind == "cycle" {
-				if err == nil || !strings.Contains(err.Error(), "cycle") || f.count("/assets/3") != 0 {
+				if err == nil || !strings.Contains(err.Error(), "cycle") {
 					t.Fatalf("cycle did not stop traversal: %v", err)
 				}
+				f.requireRequests(t, map[string]int{f.flann: 1, f.lz4: 1})
+				requireNoResult(t, o)
+				requireNoPackageStaging(t, o.CacheRoot)
 				return
 			}
 			if err != nil {
 				t.Fatal(err)
 			}
-			names := []string{}
+			var names []string
 			for _, p := range got {
 				names = append(names, p.Name)
-			}
-			if !slices.Equal(names, []string{"lz4", "flann", "queue"}) || f.count("/releases/tags/") != 1 || f.count("?per_page=") != 1 || f.count("/assets/2") != 1 || f.count("/assets/3") != 1 {
-				t.Fatalf("closure %v, requests %v", names, f.requests)
-			}
-			wantFlann := 1
-			if kind == "existing root" {
-				wantFlann = 0
-				if readTestFile(t, filepath.Join(graphSlot(o, "flann"), "data")) != "user content" {
-					t.Fatal("changed local input")
+				if p.Version != "1.0" {
+					t.Fatal(p)
 				}
 			}
-			if f.count("/assets/1") != wantFlann {
-				t.Fatal("downloaded existing/shared root more than once")
+			if !slices.Equal(names, []string{"lz4", "flann", "queue"}) {
+				t.Fatal(names)
 			}
-			// A later request may add roots, but must reuse the complete API responses.
+			if kind == "existing root" && readTestFile(t, filepath.Join(o.CacheRoot, "flann/1.0/data")) != "user content" {
+				t.Fatal("changed cached input")
+			}
+			f.requireRequests(t, want)
 			o.Packages = []string{"queue"}
-			if _, err := prepare(o); err != nil || f.count("") != wantFlann+4 {
-				t.Fatalf("local reuse made requests: %v, %v", err, f.requests)
+			o.MetadataRoot = filepath.Join(f.root, "unused-missing-snapshot")
+			if _, err := prepare(o); err != nil {
+				t.Fatal(err)
 			}
+			f.requireRequests(t, want)
 		})
 	}
 }
@@ -143,70 +95,71 @@ func TestPrepareSourcePriority(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			f := newRemotePrepareFixture(t)
 			o := f.options
-			o.Packages = []string{"queue"}
+			o.Packages = []string{"queue@1.0"}
 			switch kind {
-			case "directory":
-				putTestFile(t, filepath.Join(graphSlot(o, "queue"), "autolib-import.cmake"), identityHeader(packageIdentity{"queue", "1.0", "any", "any"}))
-				o.RemoteRoot = "https://unavailable.invalid/release"
-				o.SourceResponse = putTestFile(t, filepath.Join(o.WorkRoot, "bad.json"), "invalid")
-			case "archive":
-				graphArchive(t, o.LocalRoot, packageIdentity{"queue", "1.0", "any", "any"}, "")
-			case "bad directory":
-				putTestFile(t, filepath.Join(graphSlot(o, "queue"), "autolib-import.cmake"), "invalid")
-			case "bad archive":
-				putTestFile(t, filepath.Join(o.LocalRoot, "queue-any-any.tar.zst"), "invalid")
+			case "directory", "bad directory":
+				dir := versionedInstalled(t, o.LocalRoot, "queue", "1.0", "", "user content")
+				if kind == "bad directory" {
+					putTestFile(t, filepath.Join(dir, "autolib-import.cmake"), "invalid")
+				}
+			case "archive", "bad archive":
+				archive := versionedArchive(t, o.LocalRoot, "queue", "1.0", "")
+				if kind == "bad archive" {
+					putTestFile(t, archive, "invalid")
+				}
 			}
+			o.RemoteRoot, o.MetadataRoot = "invalid but unused", filepath.Join(f.root, "missing")
+			before := sourceSnapshot(t, o.LocalRoot)
 			_, err := prepare(o)
-			if (err == nil) != (kind == "directory" || kind == "archive") || f.count("") != 0 {
-				t.Fatalf("priority %s: %v, %v", kind, err, f.requests)
+			if (err == nil) != (kind == "directory" || kind == "archive") {
+				t.Fatalf("priority %s: %v", kind, err)
 			}
+			if !slices.Equal(before, sourceSnapshot(t, o.LocalRoot)) {
+				t.Fatal("changed local source")
+			}
+			f.requireRequests(t, map[string]int{})
 		})
 	}
 }
 
 func TestPrepareRemoteFailureCleanup(t *testing.T) {
-	for _, kind := range []string{"digest", "corrupt", "deleted", "replaced", "write failure", "response"} {
+	for _, kind := range []string{"digest", "corrupt", "404", "write failure", "snapshot"} {
 		t.Run(kind, func(t *testing.T) {
 			f := newRemotePrepareFixture(t)
 			o := f.options
 			o.Packages = []string{"queue", "flann", "later"}
 			putTestFile(t, o.ResultPath, "previous result")
+			want := map[string]int{f.queue: 1, f.flann: 1}
 			switch kind {
 			case "digest":
-				f.assets[0].download = []byte("changed")
+				f.assets[f.flann] = "changed"
 			case "corrupt":
-				f.assets[0].data = []byte("not an archive")
-			case "deleted", "replaced":
-				f.assets[0].status = 404
+				f.assets[f.flann] = "not an archive"
+				f.digest(t, "flann", "1.0", f.flann)
+			case "404":
+				f.status[f.flann] = 404
 			case "write failure":
 				o.Packages = []string{"queue"}
-				putTestFile(t, filepath.Join(o.LocalRoot, "queue"), "not a directory")
-			case "response":
-				putTestFile(t, o.SourceResponse, "{invalid")
+				putTestFile(t, filepath.Join(o.CacheRoot, "queue"), "not a directory")
+				want = map[string]int{}
+			case "snapshot":
+				o.MetadataRoot = putTestFile(t, filepath.Join(f.root, "invalid-snapshot"), "not a directory")
+				want = map[string]int{}
 			}
 			if _, err := prepare(o); err == nil {
 				t.Fatal("accepted remote failure")
 			}
-			if readTestFile(t, o.ResultPath) != "previous result" {
-				t.Fatal("committed failed result")
-			}
-			if kind != "write failure" && kind != "response" {
-				if readTestFile(t, filepath.Join(graphSlot(o, "queue"), "data")) != "installed" {
+			requireNoResult(t, o)
+			requireNoPackageStaging(t, o.CacheRoot)
+			if kind != "write failure" && kind != "snapshot" {
+				if readTestFile(t, filepath.Join(o.CacheRoot, "queue/1.0/data")) != "archive" {
 					t.Fatal("lost successful package")
 				}
-				if _, err := os.Stat(graphSlot(o, "flann")); !os.IsNotExist(err) {
-					t.Fatal("committed failed package")
+				if _, err := os.Stat(filepath.Join(o.CacheRoot, "flann/1.0")); !os.IsNotExist(err) {
+					t.Fatal("committed failed package", err)
 				}
 			}
-			if f.count("/assets/2") != 0 || f.count("/releases/tags/") > 1 {
-				t.Fatal("continued traversal or retried enumeration")
-			}
-			filepath.WalkDir(o.WorkRoot, func(path string, d os.DirEntry, err error) error {
-				if err == nil && d != nil && (strings.HasPrefix(d.Name(), ".download-") || strings.HasPrefix(d.Name(), ".extract-")) {
-					t.Error("left partial download", path)
-				}
-				return nil
-			})
+			f.requireRequests(t, want)
 		})
 	}
 }
@@ -216,34 +169,24 @@ func TestPrepareRemoteOnly(t *testing.T) {
 	o := f.options
 	o.LocalRoot = ""
 	o.Packages = []string{"flann"}
-	// A stale directory at the ordinary work path must not become an undeclared cache source.
-	putTestFile(t, filepath.Join(o.WorkRoot, "flann", "autolib-import.cmake"), "invalid")
+	putTestFile(t, filepath.Join(o.WorkRoot, "flann/1.0/autolib-import.cmake"), "invalid undeclared cache")
 	got, err := prepare(o)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(got) != 2 || got[0].Name != "lz4" || got[1].Name != "flann" || filepath.Dir(got[0].Directory) != filepath.Dir(got[1].Directory) {
-		t.Fatal(got)
+	if err != nil || len(got) != 2 || got[0].Name != "lz4" || got[1].Name != "flann" {
+		t.Fatalf("remote closure %+v: %v", got, err)
 	}
 	for _, p := range got {
-		if !strings.HasPrefix(p.Directory, o.WorkRoot+string(filepath.Separator)) || readTestFile(t, filepath.Join(p.Directory, "data")) != "installed" {
+		if !strings.HasPrefix(p.Directory, o.CacheRoot+string(filepath.Separator)) || readTestFile(t, filepath.Join(p.Directory, "data")) != "archive" {
 			t.Fatal(p)
 		}
 	}
-	if f.count("/assets/") != 2 {
-		t.Fatal("used an undeclared local source")
-	}
-	// A standalone prepare can also enumerate once without a response-file argument.
-	o.SourceResponse = ""
+	o.MetadataRoot = ""
 	if _, err := prepare(o); err != nil {
 		t.Fatal(err)
 	}
-	if f.count("/releases/tags/") != 2 {
-		t.Fatal("remote-only reused cross-call API state")
-	}
+	f.requireRequests(t, map[string]int{f.flann: 1, f.lz4: 1})
 }
 
-func TestPrepareRemoteResponseReuse(t *testing.T) {
+func TestPrepareRemoteSnapshotReuse(t *testing.T) {
 	f := newRemotePrepareFixture(t)
 	o := f.options
 	o.Packages = []string{"queue"}
@@ -254,12 +197,5 @@ func TestPrepareRemoteResponseReuse(t *testing.T) {
 	if _, err := prepare(o); err != nil {
 		t.Fatal(err)
 	}
-	if f.count("/releases/tags/") != 1 || f.count("?per_page=") != 1 {
-		t.Fatal("enumerated again", f.requests)
-	}
-	// A response from a different source is not an empty cache miss.
-	client := &githubSourceClient{Source: githubSource{"other", "repo", "v1"}}
-	if _, err := client.snapshot(context.Background(), o.SourceResponse); err == nil {
-		t.Fatal("accepted mismatched source")
-	}
+	f.requireRequests(t, map[string]int{f.queue: 1, f.flann: 1, f.lz4: 1})
 }

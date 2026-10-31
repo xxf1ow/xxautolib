@@ -2,7 +2,7 @@
 
 本仓库按能力分批接入模块，先完成本地构建安装，再建立下游导入、二进制交付和 CI。本文维护阶段目标与迁移范围；各阶段的理由和约束由链接的 Agent Note 拥有，具体实现开始前再确认该批设计。
 
-后续开发遵循[架构基准](architecture.md)。版本化构建安装已通过用户验收；本地消费、归档与离线缓存闭环已有 Linux x86_64 代表集和阶段增量证据，平台缺口及结果见[本地消费验证](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md#版本化本地消费验证)，仍待用户阶段验收。Git 元数据远端消费及 CI/独立发布按[四阶段交付](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md#实施阶段)另行确认；整体设计保持 proposed，sherpa 独立接入。
+后续开发遵循[架构基准](architecture.md)。版本化构建安装、第二阶段本地消费与第三阶段元数据远端消费均已通过用户验收。第三阶段已有 Linux x86_64 受控 Git/HTTPS、空缓存工具引导、精确闭包和离线原生运行证据；平台及真实托管缺口见[远端消费验证](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md#版本化远端消费验证)。第四阶段 CI/独立发布尚未实施，须检查后续设计后再确认计划；整体设计保持 proposed，sherpa 独立接入。
 
 [Go 工具层与离线导入设计](agent-notes/proposed/architecture/2026-10-21-go-tooling-and-offline-import.md)的 Go 重建与本地交付阶段已通过用户验收；[分阶段消费设计](agent-notes/proposed/architecture/2026-10-25-target-import-and-release-consumption.md#已验收范围)记录本地接口和三平台 GitHub 下载验收。具体平台、搬迁链接及协议证据由对应设计拥有，Gitee 消费验收见下节。
 

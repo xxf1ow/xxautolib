@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -23,7 +24,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	for _, field := range []struct {
 		key   string
 		value *string
-	}{{"local-root", &o.LocalRoot}, {"remote-root", &o.RemoteRoot}, {"source-response", &o.SourceResponse}, {"work-root", &o.WorkRoot}, {"cache-root", &o.CacheRoot}, {"cmake-command", &o.CMakeCommand}, {"os", &o.OS}, {"arch", &o.Arch}, {"result", &o.ResultPath}} {
+	}{{"local-root", &o.LocalRoot}, {"remote-root", &o.RemoteRoot}, {"metadata-root", &o.MetadataRoot}, {"work-root", &o.WorkRoot}, {"cache-root", &o.CacheRoot}, {"cmake-command", &o.CMakeCommand}, {"os", &o.OS}, {"arch", &o.Arch}, {"result", &o.ResultPath}} {
 		flags.StringVar(field.value, field.key, "", field.key)
 	}
 	var packages packageFlags
@@ -36,7 +37,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	var emptyOption string
 	flags.Visit(func(f *flag.Flag) {
-		if (f.Name == "local-root" || f.Name == "remote-root" || f.Name == "source-response") && f.Value.String() == "" {
+		if (f.Name == "local-root" || f.Name == "remote-root" || f.Name == "metadata-root") && f.Value.String() == "" {
 			emptyOption = f.Name
 		}
 	})
@@ -45,6 +46,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	o.Packages = packages
 	if _, err := prepare(o); err != nil {
+		if errors.Is(err, errMetadataRequired) {
+			fmt.Fprintln(stderr, err)
+			return 2
+		}
 		return fail(err)
 	}
 	return 0

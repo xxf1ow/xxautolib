@@ -1,6 +1,6 @@
 # 架构
 
-本文记录版本化构建、安装、本地消费与打包的组件关系。完整约束、取舍和远端交付方案由[版本化包与统一产物交付设计](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md)拥有；[开发指南](development.md)和[测试指南](testing.md)说明命令及验证范围。
+本文记录版本化构建、安装、消费与打包的组件关系。完整约束、取舍和发布方案由[版本化包与统一产物交付设计](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md)拥有；[开发指南](development.md)和[测试指南](testing.md)说明命令及验证范围。
 
 ## 包与版本
 
@@ -16,7 +16,7 @@
 
 根 [CMakeLists.txt](../CMakeLists.txt) 和[构建入口](../src/autolib-builder/index.cmake)准备固定 Go SDK、builder 和宿主 importer，再由 CMake/ExternalProject 执行构建。模块声明、资源、补丁、依赖接线和安装机制归 builder；它也拥有安装副本的路径修正及归档机制，不认识托管平台或发布凭据。
 
-`autolib-importer` 负责本地包选择、精确依赖遍历、复制或解包、校验和缓存准备，内置路径修正规则。单文件 [autolib.cmake](../src/autolib.cmake) 负责宿主 importer 引导、结果身份与闭包校验及包就绪后的 target 加载。adapter 使用已准备的依赖公共目标，不自行推断 sibling 版本目录、重新选择依赖或下载编译。
+`autolib-importer` 负责包选择、精确依赖遍历、HTTPS 下载、复制或解包、校验和缓存准备，内置路径修正规则。单文件 [autolib.cmake](../src/autolib.cmake) 负责宿主 importer 引导、按需 FetchContent Git 快照及仓库检查、结果身份与闭包校验及包就绪后的 target 加载。adapter 使用已准备的依赖公共目标，不自行推断 sibling 版本目录、重新选择依赖或下载编译。
 
 `autolib-ci` 和 workflow 的既有职责是构建计划、依赖层、publisher、消费验证及汇总，以及平台环境、触发、权限与串行。版本化身份及独立发布接线由[后续设计](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md#实施阶段)约束。
 
@@ -36,9 +36,10 @@
 ① 入口目录已解压缓存
   → ② 本地来源已解压安装结果
   → ③ 本地来源归档
+  → ④ 所选远端 Release 归档
 ```
 
-只有候选不存在才继续；损坏、身份不符或校验失败直接报错。无版本请求按各来源的 latest 查找，没有 latest 就是该来源未命中。包内精确依赖逐个使用同一查找顺序；本地缺输入直接报错。
+只有候选不存在才继续；损坏、身份不符或校验失败直接报错。无版本请求按各来源的 latest 查找，没有 latest 或所指产物缺失就是该来源未命中；远端选定后不回头使用本地同版本。包内精确依赖逐个使用同一查找顺序，不重选 latest。
 
 ②使用 `cp -a` 语义保留 Linux 包内相对软链接和权限，复制到缓存暂存区后修正生产路径，不修改原安装树；③安全解包并校验。所有来源准备成功后都在入口目录留下完整已解压包，完整闭包就绪后才加载 adapter 和公共 `autolib::<包名>` 目标。同次 configure 复用准备结果。
 
@@ -46,11 +47,11 @@
 
 缓存 latest 仅在其指向的完整包仍存在时有效；删除目标版本目录后，该选择失效，重新按来源发现并在成功后保存新选择，不猜测其他缓存版本。包损坏仍报错，缺少依赖则只补齐已记录的精确依赖。
 
-## 远端交付设计
+## 远端元数据与下载
 
-版本化的远端包获取、专用 Git 元数据快照及 CI/独立发布尚未接通。本地完整缓存和只读来源不依赖它们；缺少本地输入时不回退旧消费协议。仓库中的既有远端及 CI 代码与历史验证不能作为新协议的可用性证据。
+需要远端时，CMake 浅克隆所选专用仓库默认分支，检查身份及整棵 Git 树，不执行仓库代码；importer 只读取已检查快照的 latest 和独立摘要，按精确 URL 下载并校验归档。空缓存工具引导与包依赖共用一份快照；同次 configure 只获取检查一次，下次实际需要新包时重新获取，完整缓存复用零远端操作。已准备快照丢失或损坏时失败，显式重新 configure，不自动重克隆或使用旧快照兜底。
 
-[统一产物交付设计](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md#cmake-与-importer-的远端交接)拥有后续获取职责、仓库检查、摘要、latest 与发布失败约束；[路线图](roadmap.md)拥有阶段交接。远端操作仍须明确授权。
+[统一产物交付设计](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md#cmake-与-importer-的远端交接)拥有内部交接、仓库格式和失败约束。消费不访问 Release/contents API、Raw 或正文摘要索引；CI/独立发布及真实托管验收仍按[路线图](roadmap.md)推进，远端写入须明确授权。
 
 ## 文档职责
 

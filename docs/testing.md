@@ -1,22 +1,22 @@
 # 测试
 
-Go fixture 验证声明、原生构建、安装及版本化本地消费，不下载真实库。固定 SDK、模块缓存及 C/C++ 工具链为前提；真实代表集、平台和历史协议的证据分别记录，历史 CI/远端验收不证明版本化远端交付可用。
+Go fixture 验证声明、原生构建、安装及版本化本地和受控远端消费，不下载真实库。固定 SDK、模块缓存及 C/C++ 工具链为前提；真实代表集、平台和历史协议的证据分别记录，受控 Git/HTTPS 不替代真实托管验收。
 
 ## 执行
 
-先按[开发指南](development.md)准备环境。本地消费阶段使用下文增量；远端/CI 版本化接线未完成，整体交付阶段再复核并执行完整回归，不作为本阶段通过证据。
+先按[开发指南](development.md)准备环境。第三阶段使用下文远端增量及受影响回归；CI/发布版本化接线未完成，整体交付阶段再复核并执行完整回归，不作为本阶段通过证据。
 
 测试源码与各工具同目录。CMake 包装入口自动准备私有 SDK 和缓存；fixture 不下载真实依赖。builder 在 `build/tests/` 创建含空格和中文的隔离副本，importer 使用 Go 临时目录，结束时仅清理自身目录。SDK 获取、失败及离线复用、根入口与环境隔离由 [builder 测试](../src/autolib-builder/fixture_test.go)覆盖。定向验证用 `-run TestDefinition`；依赖接线用 `-run TestDirectDependencies`，资源补丁用 `-run TestPatch`，真实模块声明用 `-run TestRealModuleDeclarations`。一般变更按影响选用例；分阶段任务使用下述增量，整体交付阶段再执行完整回归。
 
-版本化构建阶段命令及证据见[构建安装验证](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md#版本化构建与安装验证)。本地消费阶段只运行以下增量，整体交付阶段再运行全集，不重复全库构建或将旧远端/CI 用例计为已通过。
+版本化构建和本地消费证据由[统一交付设计](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md#版本化构建与安装验证)记录。远端阶段在 109 现有环境执行以下增量，不重复全库构建或将旧远端/CI 用例计为新协议通过：
 
 ```text
-cmake -P src/autolib-builder/go-sdk.cmake -- test ./src/autolib-builder -run '^TestVersioned(StageFixup|LocalRelease|ReleaseUsesInstalledIdentity)$' -count=1 -v
-cmake -P src/autolib-builder/go-sdk.cmake -- test ./src/autolib-importer -run '^TestVersioned' -count=1 -v
-cmake -P src/autolib-builder/go-sdk.cmake -- vet ./src/autolib-builder ./src/autolib-importer
+cmake -P src/autolib-builder/go-sdk.cmake -- test ./src/autolib-importer -run '^(TestVersionedRemoteLoop|TestGitHubValidationDriver)$' -count=1 -v
+cmake -P src/autolib-builder/go-sdk.cmake -- test ./src/autolib-importer -run '^TestVersioned(Metadata|Snapshot|Remote|NoConsumerAPI)' -count=1 -v
+cmake -P src/autolib-builder/go-sdk.cmake -- vet ./src/autolib-importer
 ```
 
-[本地消费阶段证据](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md#版本化本地消费验证)记录实际计数及平台缺口。`TestInstalledValidationDriver`、`TestRepresentativeAdapters`、`TestAdapterExistingTargets` 和 `TestAdapterDependencyOrder` 是 driver 或 FLANN adapter 变化时的定向回归；它们不属于上述 `^TestVersioned` 选择。
+远端阶段受影响回归使用 `-run '^(TestVersionedLocalLoop|TestVersionedRejectSourceResponse|TestCMakeRemoteBootstrapMigration|TestCMakeGiteeSnapshotReuse|TestGitHubValidationDriver)$' -count=1 -v`；该选择检查共用原生 fixture、TLS proxy、driver 和内部 CLI 删除。元数据选择及错误路径、工具引导和配置内复用由上述阶段增量覆盖。未受影响的本地代表集、adapter 与安装 driver 沿用[本地消费证据](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md#版本化本地消费验证)，不重复计算为本轮测试。
 
 仅修改文档时使用 doc-standards、agent-notes 技能校验链接、归属和 `scripts/doc-budgets.manifest.json` 预算；校验器不是构建依赖。仓库没有自动 Git hook 或覆盖率门槛；CI 的接线与实机验收由独立的 [CI 系统设计](agent-notes/implemented/architecture/2026-10-20-ci-system.md)拥有。
 
@@ -44,7 +44,9 @@ cmake -DSOURCE_ROOT=/home/lxx/xxautolib -DINSTALL_ROOT=/home/lxx/xxautolib/build
 
 ## Release 下载验证
 
-版本化远端消费须等待[Git 元数据阶段](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md#实施阶段)。现有[远端入口测试](../src/autolib-importer/remote_entry_test.go)、[传递依赖测试](../src/autolib-importer/gitee_entry_test.go)及[下载 driver](../tests/autolib/run-github.cmake)属于旧协议，不计入当前绿灯，也不用于引导新消费者。
+[远端原生闭环](../src/autolib-importer/versioned_remote_loop_test.go)通过普通根入口和真实 builder 生成轻量 probe/dep 与 importer 归档；两种托管共用专用 Git 元数据协议和受控 HTTPS。空缓存获取工具与精确闭包后真实链接运行，校验当前缓存加载位置及头/机器码版本；有效摘要但错误包内身份在 adapter 执行前失败。完整缓存复制到新消费者、关闭测试 Git/HTTPS 后，两源均空仍通过 configure/build/CTest，原来源、精确依赖和无关缓存不变；缓存复用零远端操作，需要新包的新 configure 获取新快照。实际计数及缺口见[远端消费验证](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md#版本化远端消费验证)。
+
+[下载 driver](../tests/autolib/run-github.cmake)保留脚本名和参数，可使用 GitHub/Gitee 下载根，将入口及 smoke 复制到独立消费者，由公共入口准备版本缓存；它读取 `prepared-state.cmake` 的实际版本目录与运行库路径，不自行搬库。`TestGitHubValidationDriver` 通过执行断言入口复制、版本路径及公共入口失败传播。真实两托管和 Windows/Visual Studio、Linux aarch64 尚未验证；最低 CMake 按用户决定不安排任何形式测试，仅以 109 现有 CMake 3.31.12 验收，不宣称最低版本通过。
 
 历史 GitHub 三平台供给、裸 importer 消费及 Windows 下载 driver 依据见[消费验收](agent-notes/proposed/architecture/2026-10-25-target-import-and-release-consumption.md#已验收范围)；真实 Gitee 用户验收、受控 TLS、分页及失败检查见[双来源记录](agent-notes/implemented/architecture/2026-10-27-ci-discovery-and-release-sources.md#验证)。它们不证明压缩工具新格式、版本化交付、Linux 双架构专项或最低 CMake 通过。裸资产、API 探测或同步成功不证明完整消费，不能替换现有工具冒充空根引导。
 
