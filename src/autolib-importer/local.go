@@ -200,6 +200,17 @@ func copyInstalledPackage(source, destination string) error {
 	return nil
 }
 
+func parsePackageDigest(path string, data []byte) (string, error) {
+	digest := strings.TrimSuffix(string(data), "\n")
+	if len(digest) != 64 || strings.ToLower(digest) != digest {
+		return "", fmt.Errorf("%s: expected one lowercase SHA256", path)
+	}
+	if _, err := hex.DecodeString(digest); err != nil {
+		return "", fmt.Errorf("%s: invalid SHA256", path)
+	}
+	return digest, nil
+}
+
 func verifyLocalDigest(archive string) error {
 	path := archive + ".sha256"
 	if err := exactPackageEntry(filepath.Dir(path), filepath.Base(path), false); err != nil {
@@ -212,12 +223,9 @@ func verifyLocalDigest(archive string) error {
 	if err != nil {
 		return err
 	}
-	digest := strings.TrimSuffix(string(data), "\n")
-	if len(digest) != 64 || strings.ToLower(digest) != digest {
-		return fmt.Errorf("%s: expected one lowercase SHA256", path)
-	}
-	if _, err := hex.DecodeString(digest); err != nil {
-		return fmt.Errorf("%s: invalid SHA256", path)
+	digest, err := parsePackageDigest(path, data)
+	if err != nil {
+		return err
 	}
 	input, err := os.Open(archive)
 	if err != nil {

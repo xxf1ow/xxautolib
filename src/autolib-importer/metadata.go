@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/hex"
 	"fmt"
 	"net/url"
 	"os"
@@ -65,12 +64,9 @@ func metadataPackageAsset(root string, source metadataSource, id packageIdentity
 		if err != nil {
 			return releaseAsset{}, packageIdentity{}, err
 		}
-		digest := strings.TrimSuffix(string(content), "\n")
-		if len(digest) != 64 || strings.ToLower(digest) != digest {
-			return releaseAsset{}, packageIdentity{}, fmt.Errorf("%s: expected one lowercase SHA256", path)
-		}
-		if _, err := hex.DecodeString(digest); err != nil {
-			return releaseAsset{}, packageIdentity{}, fmt.Errorf("%s: invalid SHA256", path)
+		digest, err := parsePackageDigest(path, content)
+		if err != nil {
+			return releaseAsset{}, packageIdentity{}, err
 		}
 		if selected.Name != "" {
 			return releaseAsset{}, packageIdentity{}, fmt.Errorf("%s: ambiguous package digests for %s and %s", directory, selected.Name, name)
