@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -270,4 +271,66 @@ endif()
 			e.counts(t, clones, want)
 		})
 	}
+}
+
+func TestVersionedRemoteExactThenBare(t *testing.T) {
+	e := remoteEntry(t, "github.com")
+	f := e.f
+	cache := entryCache(f)
+	copyEntryTool(t, f, cache)
+	asset := e.pkg(t, "probe", "2", "")
+	directory := filepath.Join(cache, "probe/2")
+	checks := `if(NOT AUTOLIB_PACKAGE_VERSION_probe STREQUAL "2" OR NOT AUTOLIB_PACKAGE_DIR_probe STREQUAL [==[` + filepath.ToSlash(directory) + `]==])
+message(FATAL_ERROR "unexpected probe identity or directory")
+endif()
+message(STATUS "selected_probe=${AUTOLIB_PACKAGE_VERSION_probe} directory=${AUTOLIB_PACKAGE_DIR_probe}")
+`
+	e.consumer(t, "probe@2", checks)
+	if out, err := e.configure(t); err != nil {
+		t.Fatalf("exact configure: %v\n%s", err, out)
+	} else {
+		t.Logf("exact configure:\n%s", out)
+	}
+	if _, err := os.Lstat(filepath.Join(cache, "probe/package.toml")); !os.IsNotExist(err) {
+		t.Fatalf("exact request created a selection record: %v", err)
+	}
+	before := sourceSnapshot(t, directory)
+	e.counts(t, 1, map[string]int{asset: 1})
+	t.Log("exact: clone=1 ls-tree=1 package_downloads=1 selection_record=absent")
+
+	e.consumer(t, "probe", checks)
+	if out, err := e.configure(t); err != nil {
+		t.Fatalf("bare configure with exact cache: %v\n%s", err, out)
+	} else {
+		t.Logf("bare configure:\n%s", out)
+	}
+	if !slices.Equal(before, sourceSnapshot(t, directory)) {
+		t.Fatal("bare request changed the existing version cache")
+	}
+	if got := readTestFile(t, filepath.Join(cache, "probe/package.toml")); got != "latest = \"2\"\n" {
+		t.Fatalf("selection record = %q, want concrete version 2", got)
+	}
+	e.counts(t, 2, map[string]int{asset: 1})
+	t.Log("bare: clone=2 ls-tree=2 package_downloads=1 selection_record=2 version_cache=unchanged")
+
+	e.pkg(t, "probe", "3", "")
+	if out, err := e.configure(t); err != nil {
+		t.Fatalf("bare configure after remote latest changed: %v\n%s", err, out)
+	} else {
+		t.Logf("pinned configure:\n%s", out)
+	}
+	if !slices.Equal(before, sourceSnapshot(t, directory)) {
+		t.Fatal("remote latest change modified the selected version cache")
+	}
+	if got := readTestFile(t, filepath.Join(cache, "probe/package.toml")); got != "latest = \"2\"\n" {
+		t.Fatalf("remote latest changed the cached selection: %q", got)
+	}
+	for _, version := range []string{"3", "latest"} {
+		if _, err := os.Lstat(filepath.Join(cache, "probe", version)); !os.IsNotExist(err) {
+			t.Fatalf("unexpected cache version %s: %v", version, err)
+		}
+	}
+	e.counts(t, 2, map[string]int{asset: 1})
+	requireNoPackageStaging(t, cache)
+	t.Log("pinned: remote_latest=3 selected=2 clone=2 ls-tree=2 package_downloads=1 Git_HTTP_delta=0 version_cache=unchanged")
 }

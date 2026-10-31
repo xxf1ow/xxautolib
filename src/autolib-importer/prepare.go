@@ -169,10 +169,7 @@ func prepare(o prepareOptions) (packages []preparedPackage, err error) {
 		id := packageIdentity{Name: ref.Name, Version: ref.Version, OS: o.OS, Arch: o.Arch}
 		directory := packageDirectory(cache, id)
 		candidate := directory
-		found := false
-		if !remoteSelected {
-			found, err = packageCandidateExists(cache, id)
-		}
+		found, err := packageCandidateExists(cache, id)
 		if err != nil {
 			return err
 		}
