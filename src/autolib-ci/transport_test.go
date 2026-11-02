@@ -134,6 +134,9 @@ func TestCISelectedPlatformCompletion(t *testing.T) {
 func TestCITransportSafety(t *testing.T) {
 	for _, kind := range []string{"relative-link", "escape-link", "absolute-link", "fifo", "incomplete", "package-root-link"} {
 		t.Run(kind, func(t *testing.T) {
+			if kind == "fifo" && runtime.GOOS != "linux" {
+				t.Skip("FIFO fixture requires Linux mkfifo")
+			}
 			f := transportInputFixture(t)
 			install := filepath.Join(f.options.WorkRoot, "install")
 			path := filepath.Join(install, "queue", "1", "link")
@@ -144,21 +147,13 @@ func TestCITransportSafety(t *testing.T) {
 				if err := os.Rename(original, outside); err != nil {
 					t.Fatal(err)
 				}
-				if err := os.Symlink(outside, original); err != nil {
-					t.Fatal(err)
-				}
+				createCITransportSymlink(t, outside, original)
 			case "relative-link":
-				if err := os.Symlink("header.h", path); err != nil {
-					t.Fatal(err)
-				}
+				createCITransportSymlink(t, "header.h", path)
 			case "escape-link":
-				if err := os.Symlink("../../../outside", path); err != nil {
-					t.Fatal(err)
-				}
+				createCITransportSymlink(t, "../../../outside", path)
 			case "absolute-link":
-				if err := os.Symlink("/etc/passwd", path); err != nil {
-					t.Fatal(err)
-				}
+				createCITransportSymlink(t, filepath.Join(f.options.WorkRoot, "outside"), path)
 			case "fifo":
 				if out, err := exec.Command("mkfifo", path).CombinedOutput(); err != nil {
 					t.Fatalf("mkfifo: %v %s", err, out)
@@ -176,6 +171,16 @@ func TestCITransportSafety(t *testing.T) {
 				t.Fatal("transport changed input type, bytes, permissions, time or link")
 			}
 		})
+	}
+}
+
+func createCITransportSymlink(t *testing.T, target, link string) {
+	t.Helper()
+	if err := os.Symlink(target, link); err != nil {
+		if runtime.GOOS == "windows" && (os.IsPermission(err) || strings.Contains(strings.ToLower(err.Error()), "privilege")) {
+			t.Skipf("host does not permit creating symlink fixtures: %v", err)
+		}
+		t.Fatal(err)
 	}
 }
 

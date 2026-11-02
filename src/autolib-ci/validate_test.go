@@ -36,7 +36,11 @@ add_test(NAME forwarded COMMAND "${CMAKE_COMMAND}" -E true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	output, err := exec.Command(cmake, "-DSOURCE_ROOT="+root, "-DINSTALL_ROOT="+filepath.Join(root, "install"), "-DVALIDATION_ROOT="+filepath.Join(root, "build", "validation"), "-DGENERATOR=Unix Makefiles", "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL", "-DCMAKE_INSTALL_LIBDIR=fixture-lib", "-DCMAKE_POLICY_VERSION_MINIMUM=3.5", "-P", filepath.Join(repository, "tests", "autolib", "run-installed.cmake")).CombinedOutput()
+	generator := "Unix Makefiles"
+	if runtime.GOOS == "windows" {
+		generator = "Visual Studio 17 2022"
+	}
+	output, err := exec.Command(cmake, "-DSOURCE_ROOT="+root, "-DINSTALL_ROOT="+filepath.Join(root, "install"), "-DVALIDATION_ROOT="+filepath.Join(root, "build", "validation"), "-DGENERATOR="+generator, "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL", "-DCMAKE_INSTALL_LIBDIR=fixture-lib", "-DCMAKE_POLICY_VERSION_MINIMUM=3.5", "-P", filepath.Join(repository, "tests", "autolib", "run-installed.cmake")).CombinedOutput()
 	if err != nil {
 		t.Fatalf("driver failed: %v %s", err, output)
 	}
