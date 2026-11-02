@@ -10,30 +10,14 @@ import (
 )
 
 func finalizeFixture() (ciPlan, ciRunIdentity, []ciPlatformResult) {
-	run := ciRunIdentity{Repository: ciGitHubRepository, Ref: "refs/heads/master", SHA: strings.Repeat("a", 40), CheckoutSHA: strings.Repeat("a", 40), RunID: "123", Attempt: "1"}
-	plan := ciPlan{Publisher: "linux-x86_64", RequestedModules: []string{"queue"}, Platforms: []ciPlatformPlan{{ID: "linux-x86_64", Description: moduleDescription{Modules: []describedModule{{Name: "queue", PlatformIndependent: true}}}}, {ID: "windows-x86_64", Description: moduleDescription{Modules: []describedModule{{Name: "queue", PlatformIndependent: true}}}}}}
+	identity := ciRunIdentity{Repository: ciGitHubRepository, Ref: "refs/heads/master", SHA: strings.Repeat("a", 40), CheckoutSHA: strings.Repeat("a", 40), RunID: "123", Attempt: "1"}
+	plan := ciPlan{Publisher: "linux-x86_64", RequestedModules: []string{"queue@1"}}
 	results := []ciPlatformResult{}
-	for _, platform := range plan.Platforms {
-		tool := "autolib-importer-" + platform.ID
-		if strings.HasPrefix(platform.ID, "windows-") {
-			tool += ".exe"
-		}
-		tool += ".tar.xz"
-		results = append(results, ciPlatformResult{Run: run, Platform: platform.ID, Complete: true, Importer: ciImporterResult{Asset: tool, SHA256: strings.Repeat("b", 64), Verified: true, Uploaded: true}, Packages: []ciSlotResult{{Slot: ciSlot{Name: "queue", OS: "any", Arch: "any"}, Asset: "queue-any-any.tar.zst", SHA256: strings.Repeat("c", 64), Built: true, Verified: true, Uploaded: platform.ID == plan.Publisher}}})
+	for _, platform := range []string{"linux-x86_64", "windows-x86_64", "linux-aarch64"} {
+		plan.Platforms = append(plan.Platforms, ciPlatformPlan{ID: platform, Roots: []string{"queue@1"}, Description: moduleDescription{Modules: []describedModule{{Name: "queue", Version: "1", Target: "fixture-queue", PlatformIndependent: true}}}})
+		results = append(results, ciPlatformResult{Run: identity, Platform: platform, Complete: true, Importer: ciImporterResult{File: ciImporterExecutable(platform), Verified: true}, Packages: []ciSlotResult{{Slot: ciSlot{Name: "queue", Version: "1", OS: "any", Arch: "any"}, Built: true, Verified: true}}, Roots: []ciRootResult{{Root: "queue@1", Verified: true}}})
 	}
-	return plan, run, results
-}
-
-func TestCIImporterAssetNames(t *testing.T) {
-	for platform, want := range map[string]string{
-		"windows-x86_64": "autolib-importer-windows-x86_64.exe.tar.xz",
-		"linux-x86_64":   "autolib-importer-linux-x86_64.tar.xz",
-		"linux-aarch64":  "autolib-importer-linux-aarch64.tar.xz",
-	} {
-		if got := ciImporterAsset(platform); got != want {
-			t.Errorf("%s: asset = %q, want %q", platform, got, want)
-		}
-	}
+	return plan, identity, results
 }
 
 func TestCIFinalize(t *testing.T) {
@@ -47,10 +31,6 @@ func TestCIFinalize(t *testing.T) {
 	if err := finalizeCI(plan, run, append(results, results[0])); err == nil {
 		t.Fatal("duplicate results accepted")
 	}
-	results[0].Packages[0].Uploaded = false
-	if err := finalizeCI(plan, run, results); err == nil {
-		t.Fatal("publisher build without upload accepted")
-	}
 	results[0].Packages[0].Built = false
 	if err := finalizeCI(plan, run, results); err == nil {
 		t.Fatal("package without current build accepted")
@@ -58,7 +38,7 @@ func TestCIFinalize(t *testing.T) {
 }
 
 func TestCIResultBinding(t *testing.T) {
-	for _, change := range []string{"run", "attempt", "sha", "platform", "unverified", "incomplete", "error", "duplicate-package", "missing-package", "wrong-slot", "wrong-asset", "bare-importer", "importer", "unexpected-upload"} {
+	for _, change := range []string{"run", "attempt", "sha", "platform", "unverified", "incomplete", "error", "duplicate-package", "missing-package", "wrong-slot", "wrong-version", "archive-importer", "importer", "duplicate-root", "missing-root", "wrong-root"} {
 		t.Run(change, func(t *testing.T) {
 			plan, run, results := finalizeFixture()
 			switch change {
@@ -82,14 +62,18 @@ func TestCIResultBinding(t *testing.T) {
 				results[0].Packages = nil
 			case "wrong-slot":
 				results[0].Packages[0].Slot.OS = "windows"
-			case "wrong-asset":
-				results[0].Packages[0].Asset = "other.tar.zst"
+			case "wrong-version":
+				results[0].Packages[0].Slot.Version = "2"
 			case "importer":
-				results[0].Importer.Uploaded = false
-			case "bare-importer":
-				results[0].Importer.Asset = "autolib-importer-linux-x86_64"
-			case "unexpected-upload":
-				results[1].Packages[0].Uploaded = true
+				results[0].Importer.Verified = false
+			case "archive-importer":
+				results[0].Importer.File = "autolib-importer-linux-x86_64.tar.xz"
+			case "duplicate-root":
+				results[0].Roots = append(results[0].Roots, results[0].Roots[0])
+			case "missing-root":
+				results[0].Roots = nil
+			case "wrong-root":
+				results[0].Roots[0].Root = "queue@2"
 			}
 			if err := finalizeCI(plan, run, results); err == nil {
 				t.Fatalf("accepted %s", change)
@@ -99,7 +83,7 @@ func TestCIResultBinding(t *testing.T) {
 }
 
 func TestCIRunCLI(t *testing.T) {
-	for _, command := range []string{"run", "finalize"} {
+	for _, command := range []string{"run", "transport", "finalize"} {
 		var out, diagnostic bytes.Buffer
 		if code := run([]string{command}, &out, &diagnostic); code == 0 || !strings.Contains(diagnostic.String(), "--plan") {
 			t.Fatalf("missing %s inputs accepted: %d %s", command, code, diagnostic.String())
@@ -107,7 +91,7 @@ func TestCIRunCLI(t *testing.T) {
 	}
 	plan, identity, results := finalizeFixture()
 	root := t.TempDir()
-	for name, value := range map[string]any{"plan.json": plan, "run.json": identity, "results/linux.json": results[0], "results/windows.json": results[1]} {
+	for name, value := range map[string]any{"plan.json": plan, "run.json": identity, "results/linux.json": results[0], "results/windows.json": results[1], "results/arm.json": results[2]} {
 		file := filepath.Join(root, name)
 		os.MkdirAll(filepath.Dir(file), 0755)
 		data, _ := json.Marshal(value)

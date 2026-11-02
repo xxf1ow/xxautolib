@@ -31,8 +31,8 @@ type ciValidationResult struct {
 }
 
 func validateCIRelease(ctx context.Context, o ciValidationOptions) (ciValidationResult, error) {
-	if o.Mode != "single" && o.Mode != "relocate" {
-		return ciValidationResult{}, errors.New("validation mode must be single or relocate")
+	if o.Mode != "installed" {
+		return ciValidationResult{}, errors.New("validation mode must be installed")
 	}
 	if err := validateCIConsumerModules(o.Modules); err != nil {
 		return ciValidationResult{}, err
@@ -54,7 +54,6 @@ func validateCIRelease(ctx context.Context, o ciValidationOptions) (ciValidation
 	args := []string{
 		"-DSOURCE_ROOT=" + roots.source,
 		"-DINSTALL_ROOT=" + roots.install,
-		"-DRELEASE_DIR=" + roots.release,
 		"-DVALIDATION_ROOT=" + roots.build,
 		"-DEVIDENCE_DIRECTORY=" + roots.evidence,
 		"-DIMPORTER_FILE=" + o.ImporterFile,
@@ -69,8 +68,6 @@ func validateCIRelease(ctx context.Context, o ciValidationOptions) (ciValidation
 		"-DMULTI_CONFIG=" + onOff(o.Context.MultiConfig),
 		"-DMODULES=" + strings.Join(o.Modules, ";"),
 		"-DROOT_PACKAGES=" + strings.Join(o.RootPackages, ";"),
-		"-DRELEASE_READY=ON",
-		"-DVALIDATION_MODE=" + o.Mode,
 	}
 	defaultNames := make([]string, 0, len(o.Context.CMakeDefaults))
 	for name := range o.Context.CMakeDefaults {
@@ -80,7 +77,7 @@ func validateCIRelease(ctx context.Context, o ciValidationOptions) (ciValidation
 	for _, name := range defaultNames {
 		args = append(args, "-D"+name+"="+o.Context.CMakeDefaults[name])
 	}
-	args = append(args, "-P", filepath.Join(roots.source, "tests", "autolib", "run-local.cmake"))
+	args = append(args, "-P", filepath.Join(roots.source, "tests", "autolib", "run-installed.cmake"))
 	command := exec.CommandContext(ctx, o.CMakeCommand, args...)
 	output, err := command.CombinedOutput()
 	if err != nil {
@@ -108,7 +105,9 @@ func validateCIConsumerModules(modules []string) error {
 	}
 	seen := map[string]bool{}
 	for _, name := range modules {
-		if !ciModuleName.MatchString(name) || seen[name] {
+		parts := strings.Split(name, "@")
+		valid := len(parts) == 2 && ciModuleName.MatchString(parts[0]) && ciModuleName.MatchString(parts[1])
+		if !valid || seen[name] {
 			return fmt.Errorf("invalid CI consumer module %q", name)
 		}
 		seen[name] = true
@@ -164,6 +163,9 @@ func validateCIValidationPaths(o ciValidationOptions) (ciValidationRoots, error)
 		{"CMake command", o.CMakeCommand}, {"evidence directory", o.EvidenceDirectory},
 	}
 	for _, item := range paths {
+		if item.name == "release root" && o.Mode == "installed" {
+			continue
+		}
 		if strings.TrimSpace(item.value) == "" {
 			return ciValidationRoots{}, fmt.Errorf("%s cannot be empty", item.name)
 		}
@@ -178,6 +180,9 @@ func validateCIValidationPaths(o ciValidationOptions) (ciValidationRoots, error)
 	}
 	resolved := make([]string, len(paths)-1)
 	for i, item := range paths[1:] {
+		if item.name == "release root" && o.Mode == "installed" {
+			continue
+		}
 		absolute, err := filepath.Abs(item.value)
 		if err != nil {
 			return ciValidationRoots{}, err
@@ -238,7 +243,7 @@ func onOff(value bool) string {
 
 func validationRunFromOutput(output []byte) (string, error) {
 	for _, line := range strings.Split(string(output), "\n") {
-		const prefix = "-- Local binary validation: "
+		const prefix = "-- Installed consumer validation: "
 		if strings.HasPrefix(strings.TrimSpace(line), prefix) {
 			return strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), prefix)), nil
 		}
@@ -355,6 +360,9 @@ func verifyLinuxABIEvidence(root, glibcMax, mode string) error {
 var abiVersionPattern = regexp.MustCompile(`(?:^|\s)\(?(GLIBC_[0-9.]+|GLIBCXX_[0-9.]+|CXXABI_[0-9.]+|GCC_[0-9.]+)\)?(?:\s|$)`)
 
 func validationPackagePaths(root, mode string) (string, string, error) {
+	if mode == "installed" {
+		return "build", filepath.Join(root, "consumer", "3rdparty"), nil
+	}
 	if mode == "single" {
 		data, err := os.ReadFile(filepath.Join(root, "first", "prepared-root.txt"))
 		if err != nil {
@@ -371,6 +379,9 @@ func collectLinuxABIVersions(root, mode string) ([]string, error) {
 		return nil, err
 	}
 	consumerFiles := []string{filepath.Join(root, "first", "autolib_smoke")}
+	if mode == "installed" {
+		consumerFiles = []string{filepath.Join(root, "build", "autolib_smoke")}
+	}
 	if phase == "second" {
 		consumerFiles = append(consumerFiles, filepath.Join(root, "second", "autolib_smoke"))
 	}

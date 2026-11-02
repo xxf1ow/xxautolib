@@ -13,8 +13,8 @@ import (
 
 func run(args []string, stdout, stderr io.Writer) int {
 	fail := func(err error) int { fmt.Fprintln(stderr, err); return 1 }
-	if len(args) > 0 && args[0] == "init" {
-		return runCIInit(args[1:], stdout, stderr, productionGitHubClient(os.Getenv("GITHUB_TOKEN")))
+	if len(args) > 0 && args[0] == "transport" {
+		return runCITransport(args[1:], stdout, stderr)
 	}
 	if len(args) > 0 && args[0] == "run" {
 		return runCIRun(args[1:], stdout, stderr)
@@ -23,7 +23,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runCIFinalize(args[1:], stdout, stderr)
 	}
 	if len(args) < 1 || args[0] != "plan" {
-		return fail(fmt.Errorf("usage: autolib-ci <plan|init|run|finalize> [options]"))
+		return fail(fmt.Errorf("usage: autolib-ci <plan|run|transport|finalize> [options]"))
 	}
 	flags := flag.NewFlagSet("plan", flag.ContinueOnError)
 	flags.SetOutput(stderr)

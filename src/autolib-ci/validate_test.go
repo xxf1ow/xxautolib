@@ -1,9 +1,6 @@
 package main
 
 import (
-	"archive/tar"
-	"bytes"
-	"context"
 	"errors"
 	"os"
 	"os/exec"
@@ -11,87 +8,44 @@ import (
 	"runtime"
 	"strings"
 	"testing"
-
-	"github.com/klauspost/compress/zstd"
 )
 
-func TestCIValidationMode(t *testing.T) {
-	// Ignoring Mode would run a second consumer; inferring readiness would invoke packaging.
-	source, err := filepath.Abs(filepath.Join("..", ".."))
+func TestCIInstalledDriverProductionInputs(t *testing.T) {
+	repository, err := filepath.Abs("../..")
 	if err != nil {
 		t.Fatal(err)
 	}
-	base := filepath.Join(source, "build", "ci-test")
+	base := filepath.Join(repository, "build", "ci-test")
 	if err := os.MkdirAll(base, 0755); err != nil {
 		t.Fatal(err)
 	}
-	root, err := os.MkdirTemp(base, "validation-mode-")
+	root, err := os.MkdirTemp(base, "driver-inputs-")
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.RemoveAll(root) })
-	importer := filepath.Join(root, "importer"+executableSuffix())
-	if err := copyCIFile(buildTestImporter(t), importer); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chmod(importer, 0755); err != nil {
-		t.Fatal(err)
-	}
+	writeCIFixture(t, root, "src/autolib.cmake", "# unused entry for driver argument fixture\n")
+	writeCIFixture(t, root, "tests/autolib/CMakeLists.txt", `cmake_minimum_required(VERSION 3.20)
+project(driver_inputs NONE)
+enable_testing()
+file(WRITE "${CMAKE_BINARY_DIR}/inputs.txt" "${CMAKE_MSVC_RUNTIME_LIBRARY}\n${CMAKE_INSTALL_LIBDIR}\n${CMAKE_POLICY_VERSION_MINIMUM}\n")
+file(WRITE "${CMAKE_BINARY_DIR}/prepared-state.cmake" "")
+add_test(NAME forwarded COMMAND "${CMAKE_COMMAND}" -E true)
+`)
 	cmake, err := exec.LookPath("cmake")
 	if err != nil {
 		t.Fatal(err)
 	}
-	environment, err := loadCIEnvironment(filepath.Join(source, ".github", "ci-tools.json"))
+	output, err := exec.Command(cmake, "-DSOURCE_ROOT="+root, "-DINSTALL_ROOT="+filepath.Join(root, "install"), "-DVALIDATION_ROOT="+filepath.Join(root, "build", "validation"), "-DGENERATOR=Unix Makefiles", "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL", "-DCMAKE_INSTALL_LIBDIR=fixture-lib", "-DCMAKE_POLICY_VERSION_MINIMUM=3.5", "-P", filepath.Join(repository, "tests", "autolib", "run-installed.cmake")).CombinedOutput()
+	if err != nil {
+		t.Fatalf("driver failed: %v %s", err, output)
+	}
+	runRoot, err := validationRunFromOutput(output)
 	if err != nil {
 		t.Fatal(err)
 	}
-	osName, arch := testPlatform()
-	production := ciProductionContext{OS: osName, Arch: arch, Configuration: "Release", CMakeDefaults: environment.Production.Common.CMakeDefaults}
-	if osName == "windows" {
-		w := environment.Production.Windows
-		production.Generator, production.Platform, production.Toolset, production.Runtime, production.MultiConfig = w.Generator, w.Platform, w.Toolset, w.Runtime, true
-	} else {
-		production.Generator = environment.Production.Linux.Generator
-	}
-	archive := testPackageArchive(t, "queue", "any", "any", []testArchiveMember{{Name: "queue/include/queue/readerwriterqueue.h", Body: "#pragma once\nnamespace moodycamel { template<class T> class ReaderWriterQueue { T value{}; public: bool enqueue(T v) { value=v; return true; } bool try_dequeue(T& v) { v=value; return true; } }; }\n"}}, "add_library(autolib::queue INTERFACE IMPORTED GLOBAL)\nset_target_properties(autolib::queue PROPERTIES INTERFACE_INCLUDE_DIRECTORIES \"${CMAKE_CURRENT_LIST_DIR}/include\")\n")
-	for _, mode := range []string{"single", "relocate"} {
-		t.Run(mode, func(t *testing.T) {
-			work := filepath.Join(root, mode)
-			release := filepath.Join(work, "release")
-			if err := os.MkdirAll(release, 0755); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(filepath.Join(release, "queue-any-any.tar.zst"), archive, 0644); err != nil {
-				t.Fatal(err)
-			}
-			tool := filepath.Join(release, "autolib-importer-"+osName+"-"+arch+executableSuffix())
-			if err := copyCIFile(importer, tool); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.Chmod(tool, 0755); err != nil {
-				t.Fatal(err)
-			}
-			o := ciValidationOptions{SourceRoot: source, InstallRoot: filepath.Join(work, "install"), BuildRoot: work, ReleaseRoot: release, ImporterFile: importer, CMakeCommand: cmake, EvidenceDirectory: filepath.Join(work, "evidence"), Modules: []string{"queue"}, Context: production, Mode: mode}
-			result, err := validateCIRelease(context.Background(), o)
-			if err != nil || !result.Passed {
-				t.Fatalf("validation failed: %+v %v", result, err)
-			}
-			first := mustReadText(t, filepath.Join(result.EvidenceDirectory, "first-ctest.log"))
-			if !strings.Contains(first, "100% tests passed") {
-				t.Fatalf("first consumer did not run: %s", first)
-			}
-			_, secondErr := os.Stat(filepath.Join(result.EvidenceDirectory, "moved-ctest.log"))
-			if mode == "single" && !os.IsNotExist(secondErr) || mode == "relocate" && secondErr != nil {
-				t.Fatalf("unexpected second consumer: %v", secondErr)
-			}
-			if err := os.Remove(filepath.Join(release, "queue-any-any.tar.zst")); err != nil {
-				t.Fatal(err)
-			}
-			failed, err := validateCIRelease(context.Background(), o)
-			if err == nil || failed.Passed || !strings.Contains(err.Error(), "RELEASE_READY=ON requires") {
-				t.Fatalf("missing asset did not fail directly: %+v %v", failed, err)
-			}
-		})
+	if got := mustReadText(t, filepath.Join(runRoot, "build", "inputs.txt")); got != "MultiThreadedDLL\nfixture-lib\n3.5\n" {
+		t.Fatalf("driver lost production inputs: %q", got)
 	}
 }
 
@@ -100,12 +54,12 @@ func TestCIConsumerSelection(t *testing.T) {
 		modules []string
 		valid   bool
 	}{
-		{[]string{"queue"}, true},
-		{[]string{"lz4"}, true},
-		{[]string{"lz4", "flann"}, true},
-		{[]string{"flann"}, true},
-		{[]string{"queue", "queue"}, false},
-		{[]string{"opencv"}, true},
+		{[]string{"queue@1"}, true},
+		{[]string{"lz4@1"}, true},
+		{[]string{"lz4@1", "flann@1"}, true},
+		{[]string{"flann@1"}, true},
+		{[]string{"queue@1", "queue@1"}, false},
+		{[]string{"opencv@1"}, true},
 		{[]string{"bad/name"}, false},
 	} {
 		err := validateCIConsumerModules(test.modules)
@@ -274,74 +228,19 @@ func TestCIWindowsPackageInputsRequireRelocatedDirectLZ4(t *testing.T) {
 
 func TestCIImporterSmoke(t *testing.T) {
 	root := t.TempDir()
-	goCommand := filepath.Join(os.Getenv("GOROOT"), "bin", "go")
-	if runtime.GOOS == "windows" {
-		goCommand += ".exe"
-	}
-	importer := filepath.Join(root, "autolib-importer")
-	if runtime.GOOS == "windows" {
-		importer += ".exe"
-	}
-	build := exec.Command(goCommand, "build", "-mod=readonly", "-trimpath", "-o", importer, "../autolib-importer")
-	build.Env = append(os.Environ(), "CGO_ENABLED=0", "GOWORK=off", "GOTOOLCHAIN=local")
-	if output, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build importer fixture: %v\n%s", err, output)
-	}
+	importer := buildTestImporter(t)
 	if err := verifyImporterNoCRuntime(importer); err != nil {
 		t.Fatal(err)
 	}
-	targetOS := runtime.GOOS
-	targetArch := map[string]string{"amd64": "x86_64", "arm64": "aarch64"}[runtime.GOARCH]
-	if targetOS != "windows" && targetOS != "linux" || targetArch == "" {
-		t.Skipf("unsupported importer smoke host %s/%s", targetOS, targetArch)
-	}
-	release := filepath.Join(root, "release")
-	if err := os.MkdirAll(release, 0755); err != nil {
-		t.Fatal(err)
-	}
-	asset := "queue-any-any.tar.zst"
-	archive := testQueueArchive(t, "any", "any")
-	if err := os.WriteFile(filepath.Join(release, asset), archive, 0644); err != nil {
-		t.Fatal(err)
-	}
-	result := filepath.Join(root, "result.cmake")
-	command := exec.Command(importer, "prepare", "--local-root="+release, "--work-root="+filepath.Join(root, "work"), "--os="+targetOS, "--arch="+targetArch, "--result="+result, "--package=queue")
-	if output, err := command.CombinedOutput(); err != nil {
-		t.Fatalf("local importer prepare failed: %v\n%s", err, output)
-	}
-	if data, err := os.ReadFile(result); err != nil || !strings.Contains(string(data), "AUTOLIB_PREPARED_PACKAGES [[queue]]") {
-		t.Fatalf("prepare did not produce the queue result: %v\n%s", err, data)
-	}
-	if _, err := os.Stat(filepath.Join(release, "queue", "autolib-import.cmake")); err != nil {
-		t.Fatalf("prepare did not install the local package: %v", err)
-	}
-}
-
-func testQueueArchive(t *testing.T, osName, arch string) []byte {
-	t.Helper()
-	var data bytes.Buffer
-	encoder, err := zstd.NewWriter(&data)
+	cmake, err := exec.LookPath("cmake")
 	if err != nil {
 		t.Fatal(err)
 	}
-	archive := tar.NewWriter(encoder)
-	files := map[string]string{
-		"queue/autolib-import.cmake":              testIdentityHeader("queue", osName, arch),
-		"queue/include/queue/readerwriterqueue.h": "// fixture header\n",
+	osName, arch := testPlatform()
+	command := exec.Command(importer, "prepare", "--local-root="+root, "--cache-root="+filepath.Join(root, "cache"), "--work-root="+filepath.Join(root, "work"), "--cmake-command="+cmake, "--os="+osName, "--arch="+arch, "--result="+filepath.Join(root, "result.cmake"), "--package=ci-smoke")
+	output, err := command.CombinedOutput()
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) || exit.ExitCode() != 1 || !strings.Contains(string(output), "missing package input") {
+		t.Fatalf("host importer did not reject controlled missing input: %v %s", err, output)
 	}
-	for name, body := range files {
-		if err := archive.WriteHeader(&tar.Header{Name: name, Mode: 0644, Size: int64(len(body)), Typeflag: tar.TypeReg}); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := archive.Write([]byte(body)); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := archive.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if err := encoder.Close(); err != nil {
-		t.Fatal(err)
-	}
-	return data.Bytes()
 }

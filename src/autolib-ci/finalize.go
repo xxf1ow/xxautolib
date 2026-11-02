@@ -8,15 +8,16 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
 func ciModuleSlot(module describedModule, platform string) ciSlot {
 	osName, arch, _ := ciTarget(platform)
 	if module.PlatformIndependent {
-		return ciSlot{Name: module.Name, OS: "any", Arch: "any"}
+		return ciSlot{Name: module.Name, Version: module.Version, OS: "any", Arch: "any"}
 	}
-	return ciSlot{Name: module.Name, OS: strings.ToLower(osName), Arch: arch}
+	return ciSlot{Name: module.Name, Version: module.Version, OS: strings.ToLower(osName), Arch: arch}
 }
 
 func ciImporterExecutable(platform string) string {
@@ -27,54 +28,62 @@ func ciImporterExecutable(platform string) string {
 	return name
 }
 
-func ciImporterAsset(platform string) string {
-	return ciImporterExecutable(platform) + ".tar.xz"
-}
-
 func finalizeCI(plan ciPlan, run ciRunIdentity, results []ciPlatformResult) error {
+	if run.Repository != ciGitHubRepository || !commitPattern.MatchString(run.SHA) || run.CheckoutSHA != run.SHA || !ciRunNumber(run.RunID) || !ciRunNumber(run.Attempt) {
+		return errors.New("invalid run identity")
+	}
 	if len(results) != len(plan.Platforms) {
 		return errors.New("platform results are missing or duplicated")
 	}
+	selected := map[string]ciPlatformPlan{}
+	for _, platform := range plan.Platforms {
+		if _, ok := selected[platform.ID]; ok {
+			return errors.New("duplicate planned platform")
+		}
+		if _, _, err := ciTarget(platform.ID); err != nil {
+			return err
+		}
+		selected[platform.ID] = platform
+	}
 	seen := map[string]bool{}
 	for _, result := range results {
-		if seen[result.Platform] || result.Run != run || !result.Complete || result.Error != "" {
-			return fmt.Errorf("platform %s has duplicate, mismatched or incomplete results: %s", result.Platform, result.Error)
+		platform, ok := selected[result.Platform]
+		if !ok || seen[result.Platform] || result.Run != run || !result.Complete || result.Error != "" {
+			return fmt.Errorf("platform %s has unexpected, duplicate, mismatched or incomplete results", result.Platform)
 		}
 		seen[result.Platform] = true
-		var platform *ciPlatformPlan
-		for i := range plan.Platforms {
-			if plan.Platforms[i].ID == result.Platform {
-				platform = &plan.Platforms[i]
-			}
-		}
-		if platform == nil {
-			return fmt.Errorf("unexpected platform result %s", result.Platform)
-		}
-		if !result.Importer.Verified || !result.Importer.Uploaded || result.Importer.Asset != ciImporterAsset(result.Platform) || !sha256Pattern.MatchString(result.Importer.SHA256) {
-			return fmt.Errorf("platform %s importer is not verified and published", result.Platform)
+		if !result.Importer.Verified || result.Importer.File != ciImporterExecutable(result.Platform) {
+			return fmt.Errorf("platform %s importer is not verified", result.Platform)
 		}
 		if len(result.Packages) != len(platform.Description.Modules) {
 			return fmt.Errorf("platform %s package results are incomplete", result.Platform)
 		}
+		modules := map[string]describedModule{}
+		for _, module := range platform.Description.Modules {
+			key := moduleIdentity(module)
+			if _, exists := modules[key]; exists {
+				return fmt.Errorf("duplicate planned package %s", key)
+			}
+			modules[key] = module
+		}
 		packages := map[string]bool{}
 		for _, item := range result.Packages {
-			if packages[item.Slot.Name] {
-				return fmt.Errorf("duplicate package result %s", item.Slot.Name)
+			key := item.Slot.Name + "@" + item.Slot.Version
+			module, ok := modules[key]
+			if !ok || packages[key] || item.Slot != ciModuleSlot(module, result.Platform) || !item.Built || !item.Verified {
+				return fmt.Errorf("invalid exact package result %s on %s", key, result.Platform)
 			}
-			packages[item.Slot.Name] = true
-			var module *describedModule
-			for i := range platform.Description.Modules {
-				if platform.Description.Modules[i].Name == item.Slot.Name {
-					module = &platform.Description.Modules[i]
-				}
+			packages[key] = true
+		}
+		if len(result.Roots) != len(platform.Roots) {
+			return fmt.Errorf("platform %s root results are incomplete", result.Platform)
+		}
+		roots := map[string]bool{}
+		for _, item := range result.Roots {
+			if roots[item.Root] || !slices.Contains(platform.Roots, item.Root) || !item.Verified {
+				return fmt.Errorf("invalid root result %s", item.Root)
 			}
-			if module == nil || item.Slot != ciModuleSlot(*module, result.Platform) || item.Asset != ciPackageAssetName(item.Slot) || !item.Verified || !item.Built || !sha256Pattern.MatchString(item.SHA256) {
-				return fmt.Errorf("invalid package result %s on %s", item.Slot.Name, result.Platform)
-			}
-			publisher := !module.PlatformIndependent || result.Platform == plan.Publisher
-			if publisher && !item.Uploaded || !publisher && item.Uploaded {
-				return fmt.Errorf("package %s has incomplete or unauthorized publication", item.Slot.Name)
-			}
+			roots[item.Root] = true
 		}
 	}
 	return nil
@@ -114,13 +123,13 @@ func runCIFinalize(args []string, stdout, stderr io.Writer) int {
 		results = append(results, result)
 		fmt.Fprintf(stdout, "%s: complete=%t packages=%d error=%s\n", result.Platform, result.Complete, len(result.Packages), result.Error)
 		for _, item := range result.Packages {
-			fmt.Fprintf(stdout, "  %s: built=%t verified=%t uploaded=%t\n", item.Asset, item.Built, item.Verified, item.Uploaded)
+			fmt.Fprintf(stdout, "  %s@%s: built=%t verified=%t\n", item.Slot.Name, item.Slot.Version, item.Built, item.Verified)
 		}
 	}
 	if err := finalizeCI(plan, identity, results); err != nil {
 		return fail(err)
 	}
-	fmt.Fprintln(stdout, "CI selected work verified and published")
+	fmt.Fprintln(stdout, "CI selected work verified")
 	return 0
 }
 

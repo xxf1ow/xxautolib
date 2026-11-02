@@ -56,24 +56,26 @@ type ciRunOptions struct {
 
 type ciSlotResult struct {
 	Slot     ciSlot `json:"slot"`
-	Asset    string `json:"asset"`
-	SHA256   string `json:"sha256"`
 	Built    bool   `json:"built"`
 	Verified bool   `json:"verified"`
-	Uploaded bool   `json:"uploaded"`
 }
 
 type ciImporterResult struct {
-	Asset    string `json:"asset"`
-	SHA256   string `json:"sha256"`
+	File     string `json:"file"`
 	Verified bool   `json:"verified"`
-	Uploaded bool   `json:"uploaded"`
+}
+
+type ciRootResult struct {
+	Root              string `json:"root"`
+	Verified          bool   `json:"verified"`
+	EvidenceDirectory string `json:"evidence_directory,omitempty"`
 }
 
 type ciPlatformResult struct {
 	Run      ciRunIdentity    `json:"run"`
 	Platform string           `json:"platform"`
 	Packages []ciSlotResult   `json:"packages"`
+	Roots    []ciRootResult   `json:"roots"`
 	Importer ciImporterResult `json:"importer"`
 	Complete bool             `json:"complete"`
 	Error    string           `json:"error"`
