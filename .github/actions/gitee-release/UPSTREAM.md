@@ -21,3 +21,11 @@
 `sync_rules.py` 拥有来源筛选与正文索引纯规则，`sync_api.py` 拥有响应确认、下载校验和每线程连接，`sync.py` 拥有配置、单附件池、成功索引合并和退出码。它们仅属于独立同步，不作为 builder 或 importer 依赖。
 
 `action.yml` 使用 `packages/repository/tag` 输入，映射为 `SYNC_PACKAGES/GITEE_REPOSITORY/GITEE_RELEASE_TAG`，只运行预先准备好的 Python 入口，不安装依赖；调用步骤通过环境提供 `GITHUB_TOKEN/GITEE_TOKEN`。Linux 运行使用进程 CPU affinity，Windows 仅作受控测试。工作流、变量、信任与失败重跑见[开发指南](../../../docs/development.md#独立-gitee-同步)。上游 README 保留原文，描述原始接口，不作为适配入口用法。
+
+## Gitee 版本化发布适配
+
+`gitee_api.py` 独立拥有普通请求的 Header 认证、JSON 写入、每线程连接和单层有界读取重试。未确认写入抛出 `unknown`，不自动重放。附件上传只借用 `gitee_release.py` 无装饰器的 `upload_asset_details`，保留其 multipart 字段、boundary 和文件句柄管理；参考本体不变。`metadata_repository.py` 拥有单份 Git 工作副本及确认 push 后的元数据结果，`publication_rules.py` 校验发布清单并选择 latest，不扫描配方或追加资产。
+
+普通请求和服务端初始化顺序参考 [Cent 固定提交的 gitee.ts](https://github.com/glink25/Cent/blob/03ae57ad3a1d98c9db08fc71224704150765b96f/apps/cent/src/tidal/gitee.ts)，许可为 CC BY-NC-SA 4.0；只借鉴流程，不复制其源码、Contents 存储或恢复机制。此适配使用 Python requests 和单份 Git 提交，明确 404 才创建 `private=true`、`auto_init=true` 的库，随后重新查询实际默认分支、单数 `permission.push` 和认证用户名。Cent 不是附件上传依据；MIT 上游附件实现与 Cent 参考许可边界独立。
+
+受控测试核对普通 HTTP、实际 multipart 字节、本地 Git 裸库初始化及元数据 commit/push、未选文件保留和失败不伪成功；不请求真实 Gitee，不证明真实托管或匿名下游消费通过。完整发布约束由[Gitee 版本化交付设计](../../../docs/agent-notes/proposed/architecture/2026-11-02-gitee-delivery-reimplementation.md)拥有。
