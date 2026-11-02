@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 )
 
@@ -57,13 +59,13 @@ func init() {
 		fmt.Fprint(os.Stdout, `{"system_name":"Linux"} {}`)
 		os.Exit(0)
 	case "wrong-platform":
-		fmt.Fprint(os.Stdout, `{"system_name":"Windows","architecture":"x86_64","modules":[],"go_module_files":[],"builder_files":[]}`)
+		fmt.Fprint(os.Stdout, `{"system_name":"Windows","architecture":"x86_64","roots":[],"modules":[],"go_module_files":[],"builder_files":[]}`)
 		os.Exit(0)
 	case "missing-dependency":
-		fmt.Fprint(os.Stdout, `{"system_name":"Linux","architecture":"x86_64","modules":[{"name":"flann","depends":["lz4"],"platform_independent":false,"system_dependencies":{},"configuration":{},"input_files":[],"adapter_file":""}],"go_module_files":[],"builder_files":[]}`)
+		fmt.Fprint(os.Stdout, `{"system_name":"Linux","architecture":"x86_64","roots":["flann@1.0"],"modules":[{"name":"flann","version":"1.0","target":"fixture-flann","depends":["lz4@1.0"],"platform_independent":false,"system_dependencies":{},"configuration":{},"input_files":[],"adapter_file":""}],"go_module_files":[],"builder_files":[]}`)
 		os.Exit(0)
 	case "extra-module":
-		fmt.Fprint(os.Stdout, `{"system_name":"Linux","architecture":"x86_64","modules":[{"name":"lz4","depends":[],"platform_independent":false,"system_dependencies":{},"configuration":{},"input_files":[],"adapter_file":""},{"name":"queue","depends":[],"platform_independent":true,"system_dependencies":{},"configuration":{},"input_files":[],"adapter_file":""}],"go_module_files":[],"builder_files":[]}`)
+		fmt.Fprint(os.Stdout, `{"system_name":"Linux","architecture":"x86_64","roots":["lz4@1.0"],"modules":[{"name":"lz4","version":"1.0","target":"fixture-lz4","depends":[],"platform_independent":false,"system_dependencies":{},"configuration":{},"input_files":[],"adapter_file":""},{"name":"queue","version":"1.0","target":"fixture-queue","depends":[],"platform_independent":true,"system_dependencies":{},"configuration":{},"input_files":[],"adapter_file":""}],"go_module_files":[],"builder_files":[]}`)
 		os.Exit(0)
 	case "valid":
 		var systemName, architecture string
@@ -76,20 +78,23 @@ func init() {
 				architecture = os.Args[i+1]
 			case "--module":
 				requested = append(requested, os.Args[i+1])
+			case "--discover":
+				requested = []string{"flann", "lz4", "queue"}
 			}
 		}
 		byName := map[string]describedModule{}
 		var add func(string)
 		add = func(name string) {
+			name = strings.TrimSuffix(name, "@1.0")
 			if _, ok := byName[name]; ok {
 				return
 			}
 			depends := []string{}
 			if name == "flann" {
 				add("lz4")
-				depends = []string{"lz4"}
+				depends = []string{"lz4@1.0"}
 			}
-			byName[name] = describedModule{Name: name, Depends: depends, PlatformIndependent: name == "queue", SystemDependencies: map[string][]string{"apt": {}, "choco": {}}, Configuration: []byte(`{}`), InputFiles: []string{}, AdapterFile: "src/dependencies/" + name + "/autolib-import.cmake"}
+			byName[name] = describedModule{Name: name, Version: "1.0", Target: "fixture-" + name, Depends: depends, PlatformIndependent: name == "queue", SystemDependencies: map[string][]string{"apt": {}, "choco": {}}, Configuration: []byte(`{}`), InputFiles: []string{}, AdapterFile: "src/dependencies/" + name + "/autolib-import.cmake"}
 		}
 		for _, name := range requested {
 			add(name)
@@ -100,7 +105,14 @@ func init() {
 				modules = append(modules, module)
 			}
 		}
-		data, _ := json.Marshal(moduleDescription{SystemName: systemName, Architecture: architecture, Modules: modules, GoModuleFiles: []string{"go.mod", "go.sum"}, BuilderFiles: []string{"CMakeLists.txt"}})
+		roots := []string{}
+		for _, request := range requested {
+			root := strings.TrimSuffix(request, "@1.0") + "@1.0"
+			if !slices.Contains(roots, root) {
+				roots = append(roots, root)
+			}
+		}
+		data, _ := json.Marshal(moduleDescription{SystemName: systemName, Architecture: architecture, Roots: roots, Modules: modules, GoModuleFiles: []string{"go.mod", "go.sum"}, BuilderFiles: []string{"CMakeLists.txt"}})
 		fmt.Fprintln(os.Stdout, string(data))
 		os.Exit(0)
 	default:

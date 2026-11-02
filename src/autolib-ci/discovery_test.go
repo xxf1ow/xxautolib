@@ -36,10 +36,16 @@ func discoveryRoot(t *testing.T) string {
 
 func discoveryModule(t *testing.T, root, name string, adapter bool, depends string) {
 	t.Helper()
-	declaration := "name='" + name + "'\ntype='cmake'\n" + depends + "\n[source]\nGIT_REPOSITORY='fixture'\nGIT_TAG='fixed'\n"
-	writeCIFixture(t, root, "src/dependencies/"+name+"/module.toml", declaration)
+	discoveryVersion(t, root, name, "1.0", adapter, depends)
+}
+
+func discoveryVersion(t *testing.T, root, name, version string, adapter bool, depends string) {
+	t.Helper()
+	declaration := "name='" + name + "'\nversion='" + version + "'\ntype='cmake'\n" + depends + "\n[source]\nGIT_REPOSITORY='fixture'\nGIT_TAG='fixed'\n"
+	writeCIFixture(t, root, "src/dependencies/"+name+"/package.toml", "latest='"+version+"'\n")
+	writeCIFixture(t, root, "src/dependencies/"+name+"/"+version+"/module.toml", declaration)
 	if adapter {
-		writeCIFixture(t, root, "src/dependencies/"+name+"/autolib-import.cmake", "message(FATAL_ERROR \"planning must not execute adapters\")\n")
+		writeCIFixture(t, root, "src/dependencies/"+name+"/"+version+"/autolib-import.cmake", "message(FATAL_ERROR \"planning must not execute adapters\")\n")
 	}
 }
 
@@ -61,7 +67,7 @@ func TestCIDiscoveryFiltering(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !reflect.DeepEqual(plan.RequestedModules, []string{"fresh", "independent"}) || len(plan.Platforms) != 1 || !reflect.DeepEqual(plan.Platforms[0].Layers, [][]string{{"fresh", "independent"}}) {
+		if !reflect.DeepEqual(plan.RequestedModules, []string{"fresh@1.0", "independent@1.0"}) || len(plan.Platforms) != 1 || !reflect.DeepEqual(plan.Platforms[0].Layers, [][]string{{"fresh@1.0", "independent@1.0"}}) {
 			t.Fatalf("workflow default did not plan all adapter-backed modules: %+v", plan)
 		}
 	})
@@ -88,7 +94,7 @@ func TestCIDiscoveryFiltering(t *testing.T) {
 					t.Skip("host permissions do not make mode 000 directory unreadable")
 				}
 			}
-			if _, err := planCI(context.Background(), ciPlanOptions{SourceRoot: root, BuilderFile: "missing-builder"}); err == nil {
+			if _, err := planCI(context.Background(), ciPlanOptions{SourceRoot: root, BuilderFile: builder}); err == nil {
 				t.Fatal("unreadable discovery source accepted as no work")
 			}
 		})
@@ -98,7 +104,7 @@ func TestCIDiscoveryFiltering(t *testing.T) {
 		if err := os.MkdirAll(filepath.Join(root, "src/dependencies"), 0755); err != nil {
 			t.Fatal(err)
 		}
-		plan, err := planCI(context.Background(), ciPlanOptions{SourceRoot: root, BuilderFile: "missing-builder"})
+		plan, err := planCI(context.Background(), ciPlanOptions{SourceRoot: root, BuilderFile: builder})
 		if err != nil || len(plan.Platforms) != 0 || len(plan.RequestedModules) != 0 {
 			t.Fatalf("empty module directory: %+v %v", plan, err)
 		}
@@ -106,7 +112,7 @@ func TestCIDiscoveryFiltering(t *testing.T) {
 	t.Run("publisher follows effective universal module", func(t *testing.T) {
 		root := discoveryRoot(t)
 		discoveryModule(t, root, "universal", true, "")
-		file := filepath.Join(root, "src/dependencies/universal/module.toml")
+		file := filepath.Join(root, "src/dependencies/universal/1.0/module.toml")
 		data, err := os.ReadFile(file)
 		if err != nil {
 			t.Fatal(err)
@@ -119,12 +125,12 @@ func TestCIDiscoveryFiltering(t *testing.T) {
 			t.Fatalf("publisher depends on package name: %+v %v", plan, err)
 		}
 	})
-	t.Run("no candidates need no builder invocation", func(t *testing.T) {
+	t.Run("no eligible roots produce no work", func(t *testing.T) {
 		root := discoveryRoot(t)
 		discoveryModule(t, root, "local", false, "")
-		plan, err := planCI(context.Background(), ciPlanOptions{SourceRoot: root, BuilderFile: "missing-builder"})
+		plan, err := planCI(context.Background(), ciPlanOptions{SourceRoot: root, BuilderFile: builder})
 		if err != nil || len(plan.Platforms) != 0 || len(plan.RequestedModules) != 0 {
-			t.Fatalf("empty discovery invoked builder: %+v %v", plan, err)
+			t.Fatalf("ineligible discovery retained work: %+v %v", plan, err)
 		}
 	})
 	for _, selection := range []string{"", "fresh,local,blocked,independent", "local", "blocked"} {
@@ -150,9 +156,9 @@ func TestCIDiscoveryFiltering(t *testing.T) {
 				}
 				return
 			}
-			want := [][]string{{"shared"}, {"fresh", "independent"}}
+			want := [][]string{{"shared@1.0"}, {"fresh@1.0", "independent@1.0"}}
 			if selection == "" {
-				want = [][]string{{"orphan", "shared"}, {"fresh", "independent"}}
+				want = [][]string{{"orphan@1.0", "shared@1.0"}, {"fresh@1.0", "independent@1.0"}}
 			}
 			if len(plan.Platforms) != 1 || !reflect.DeepEqual(plan.Platforms[0].Layers, want) {
 				t.Fatalf("effective closure: %+v", plan)
@@ -170,14 +176,14 @@ func TestCIDiscoveryFiltering(t *testing.T) {
 			case "empty item":
 				selection = "fresh,"
 			case "broken declaration":
-				writeCIFixture(t, root, "src/dependencies/fresh/module.toml", "broken=[")
+				writeCIFixture(t, root, "src/dependencies/fresh/1.0/module.toml", "broken=[")
 			case "broken local declaration":
-				if err := os.Remove(filepath.Join(root, "src/dependencies/fresh/autolib-import.cmake")); err != nil {
+				if err := os.Remove(filepath.Join(root, "src/dependencies/fresh/1.0/autolib-import.cmake")); err != nil {
 					t.Fatal(err)
 				}
-				writeCIFixture(t, root, "src/dependencies/fresh/module.toml", "broken=[")
+				writeCIFixture(t, root, "src/dependencies/fresh/1.0/module.toml", "broken=[")
 			case "unreadable adapter":
-				file := filepath.Join(root, "src/dependencies/fresh/autolib-import.cmake")
+				file := filepath.Join(root, "src/dependencies/fresh/1.0/autolib-import.cmake")
 				if err := os.Chmod(file, 0); err != nil {
 					t.Fatal(err)
 				}
@@ -187,7 +193,7 @@ func TestCIDiscoveryFiltering(t *testing.T) {
 					t.Skip("host permissions do not make mode 000 unreadable")
 				}
 			case "directory adapter":
-				file := filepath.Join(root, "src/dependencies/fresh/autolib-import.cmake")
+				file := filepath.Join(root, "src/dependencies/fresh/1.0/autolib-import.cmake")
 				if err := os.Remove(file); err != nil {
 					t.Fatal(err)
 				}

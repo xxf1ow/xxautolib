@@ -5,6 +5,7 @@ import "encoding/json"
 type moduleDescription struct {
 	SystemName    string            `json:"system_name"`
 	Architecture  string            `json:"architecture"`
+	Roots         []string          `json:"roots"`
 	Modules       []describedModule `json:"modules"`
 	GoModuleFiles []string          `json:"go_module_files"`
 	BuilderFiles  []string          `json:"builder_files"`
@@ -12,6 +13,8 @@ type moduleDescription struct {
 
 type describedModule struct {
 	Name                string              `json:"name"`
+	Version             string              `json:"version"`
+	Target              string              `json:"target"`
 	Depends             []string            `json:"depends"`
 	PlatformIndependent bool                `json:"platform_independent"`
 	SystemDependencies  map[string][]string `json:"system_dependencies"`
@@ -27,6 +30,7 @@ type ciPlanOptions struct {
 
 type ciPlatformPlan struct {
 	ID                 string              `json:"id"`
+	Roots              []string            `json:"roots"`
 	Description        moduleDescription   `json:"description"`
 	Layers             [][]string          `json:"layers"`
 	SystemDependencies map[string][]string `json:"system_dependencies"`

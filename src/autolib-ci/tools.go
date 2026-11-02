@@ -17,12 +17,15 @@ func readModuleDescription(ctx context.Context, builderFile, sourceRoot, systemN
 	if strings.TrimSpace(builderFile) == "" {
 		return moduleDescription{}, fmt.Errorf("builder file cannot be empty")
 	}
-	if strings.TrimSpace(sourceRoot) == "" || len(modules) == 0 {
-		return moduleDescription{}, fmt.Errorf("source root and requested modules are required")
+	if strings.TrimSpace(sourceRoot) == "" {
+		return moduleDescription{}, fmt.Errorf("source root is required")
 	}
 	args := []string{"describe", "--source-root", sourceRoot, "--system-name", systemName, "--architecture", architecture}
 	for _, module := range modules {
 		args = append(args, "--module", module)
+	}
+	if len(modules) == 0 {
+		args = append(args, "--discover")
 	}
 	cmd := exec.CommandContext(ctx, builderFile, args...)
 	var stdout, stderr bytes.Buffer
@@ -53,20 +56,21 @@ func validateModuleDescription(description moduleDescription, systemName, archit
 	if description.SystemName != systemName || description.Architecture != architecture {
 		return fmt.Errorf("builder described %s/%s, requested %s/%s", description.SystemName, description.Architecture, systemName, architecture)
 	}
-	if description.Modules == nil || description.GoModuleFiles == nil || description.BuilderFiles == nil {
+	if description.Roots == nil || description.Modules == nil || description.GoModuleFiles == nil || description.BuilderFiles == nil {
 		return fmt.Errorf("builder describe output is missing required arrays")
 	}
 	byName := make(map[string]describedModule, len(description.Modules))
 	for _, module := range description.Modules {
 		var configuration map[string]json.RawMessage
 		configurationErr := json.Unmarshal(module.Configuration, &configuration)
-		if module.Name == "" || module.Depends == nil || module.SystemDependencies == nil || len(module.Configuration) == 0 || configurationErr != nil || configuration == nil || module.InputFiles == nil {
+		if module.Name == "" || module.Version == "" || module.Target == "" || module.Depends == nil || module.SystemDependencies == nil || len(module.Configuration) == 0 || configurationErr != nil || configuration == nil || module.InputFiles == nil {
 			return fmt.Errorf("builder describe output has incomplete module description %q", module.Name)
 		}
-		if _, exists := byName[module.Name]; exists {
-			return fmt.Errorf("builder describe output repeats module %q", module.Name)
+		identity := moduleIdentity(module)
+		if _, exists := byName[identity]; exists {
+			return fmt.Errorf("builder describe output repeats module %q", identity)
 		}
-		byName[module.Name] = module
+		byName[identity] = module
 	}
 	for _, module := range description.Modules {
 		for _, dependency := range module.Depends {
@@ -75,9 +79,23 @@ func validateModuleDescription(description moduleDescription, systemName, archit
 			}
 		}
 	}
-	for _, name := range requested {
-		if _, ok := byName[name]; !ok {
-			return fmt.Errorf("builder describe output is missing requested module %q", name)
+	rootSet := map[string]bool{}
+	for _, root := range description.Roots {
+		if _, ok := byName[root]; !ok || rootSet[root] {
+			return fmt.Errorf("builder describe output has invalid root %q", root)
+		}
+		rootSet[root] = true
+	}
+	for _, request := range requested {
+		found := false
+		for _, root := range description.Roots {
+			if request == root || request == byName[root].Name {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("builder describe output is missing requested module %q", request)
 		}
 	}
 	reachable := map[string]bool{}
@@ -91,7 +109,7 @@ func validateModuleDescription(description moduleDescription, systemName, archit
 			visit(dependency)
 		}
 	}
-	for _, name := range requested {
+	for _, name := range description.Roots {
 		visit(name)
 	}
 	if len(reachable) != len(byName) {
@@ -105,9 +123,6 @@ func validateModuleDescription(description moduleDescription, systemName, archit
 	for _, module := range description.Modules {
 		if err := validateDescriptionPaths(module.InputFiles); err != nil {
 			return err
-		}
-		if module.AdapterFile != "" && slices.Contains(module.InputFiles, module.AdapterFile) {
-			return fmt.Errorf("module %s adapter file must not be included in input_files", module.Name)
 		}
 		if module.AdapterFile != "" {
 			if err := validateDescriptionPaths([]string{module.AdapterFile}); err != nil {

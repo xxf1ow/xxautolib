@@ -14,6 +14,7 @@ import (
 type moduleDescription struct {
 	SystemName    string            `json:"system_name"`
 	Architecture  string            `json:"architecture"`
+	Roots         []string          `json:"roots"`
 	Modules       []describedModule `json:"modules"`
 	GoModuleFiles []string          `json:"go_module_files"`
 	BuilderFiles  []string          `json:"builder_files"`
@@ -22,6 +23,7 @@ type moduleDescription struct {
 type describedModule struct {
 	Name                string              `json:"name"`
 	Version             string              `json:"version"`
+	Target              string              `json:"target"`
 	Depends             []string            `json:"depends"`
 	PlatformIndependent bool                `json:"platform_independent"`
 	SystemDependencies  map[string][]string `json:"system_dependencies"`
@@ -31,7 +33,11 @@ type describedModule struct {
 }
 
 func describeModules(sourceRoot, systemName, architecture string, names []string) (moduleDescription, error) {
-	result := moduleDescription{SystemName: systemName, Architecture: normalizeArchitecture(architecture), Modules: []describedModule{}, GoModuleFiles: []string{"go.mod", "go.sum"}, BuilderFiles: []string{}}
+	return describeSelection(sourceRoot, systemName, architecture, names, false)
+}
+
+func describeSelection(sourceRoot, systemName, architecture string, requests []string, discover bool) (moduleDescription, error) {
+	result := moduleDescription{SystemName: systemName, Architecture: normalizeArchitecture(architecture), Roots: []string{}, Modules: []describedModule{}, GoModuleFiles: []string{"go.mod", "go.sum"}, BuilderFiles: []string{}}
 	if strings.TrimSpace(sourceRoot) == "" {
 		return result, fmt.Errorf("describe: source root is required")
 	}
@@ -41,7 +47,10 @@ func describeModules(sourceRoot, systemName, architecture string, names []string
 	if result.Architecture != "x86_64" && result.Architecture != "aarch64" {
 		return result, fmt.Errorf("describe: unsupported architecture %q", architecture)
 	}
-	if len(names) == 0 {
+	if discover && len(requests) != 0 {
+		return result, fmt.Errorf("describe: --discover and --module are mutually exclusive")
+	}
+	if !discover && len(requests) == 0 {
 		return result, fmt.Errorf("describe: at least one module is required")
 	}
 	root, err := filepath.Abs(sourceRoot)
@@ -52,9 +61,35 @@ func describeModules(sourceRoot, systemName, architecture string, names []string
 	if err != nil {
 		return result, fmt.Errorf("source root: %w", err)
 	}
-	definitions, err := loadModuleClosure(root, names, systemName, result.Architecture)
-	if err != nil {
-		return result, err
+	if discover {
+		refs, err := discoverModuleRefs(root)
+		if err != nil {
+			return result, err
+		}
+		for _, ref := range refs {
+			result.Roots = append(result.Roots, ref.String())
+		}
+	} else {
+		for _, request := range requests {
+			ref, err := parseModuleRef(request)
+			if err != nil {
+				return result, err
+			}
+			ref, err = resolveModuleRef(root, ref)
+			if err != nil {
+				return result, err
+			}
+			if !slices.Contains(result.Roots, ref.String()) {
+				result.Roots = append(result.Roots, ref.String())
+			}
+		}
+	}
+	definitions := []*moduleDefinition{}
+	if len(result.Roots) != 0 {
+		definitions, err = loadModuleClosure(root, result.Roots, systemName, result.Architecture)
+		if err != nil {
+			return result, err
+		}
 	}
 	for _, definition := range definitions {
 		module, err := describeModule(root, definition)
@@ -88,7 +123,7 @@ func describeModules(sourceRoot, systemName, architecture string, names []string
 }
 
 func describeModule(root string, definition *moduleDefinition) (describedModule, error) {
-	result := describedModule{Name: definition.Name, Version: definition.Version, Depends: slices.Clone(definition.Depends), PlatformIndependent: definition.PlatformIndependent, SystemDependencies: map[string][]string{}, InputFiles: []string{}}
+	result := describedModule{Name: definition.Name, Version: definition.Version, Target: moduleTarget(moduleRef{definition.Name, definition.Version}), Depends: slices.Clone(definition.Depends), PlatformIndependent: definition.PlatformIndependent, SystemDependencies: map[string][]string{}, InputFiles: []string{}}
 	if result.Depends == nil {
 		result.Depends = []string{}
 	}
@@ -257,6 +292,7 @@ func runDescribe(args []string, stdout, stderr io.Writer) int {
 	flags.StringVar(&architecture, "architecture", "", "target architecture")
 	var modules repeatedFlag
 	flags.Var(&modules, "module", "module name (repeatable)")
+	discover := flags.Bool("discover", false, "discover all recipe versions")
 	if err := flags.Parse(args); err != nil {
 		return 1
 	}
@@ -270,10 +306,10 @@ func runDescribe(args []string, stdout, stderr io.Writer) int {
 			return fail(fmt.Errorf("describe: --%s is required and cannot be empty", key))
 		}
 	}
-	if len(modules) == 0 {
+	if !*discover && len(modules) == 0 {
 		return fail(fmt.Errorf("describe: at least one --module is required"))
 	}
-	description, err := describeModules(sourceRoot, systemName, architecture, modules)
+	description, err := describeSelection(sourceRoot, systemName, architecture, modules, *discover)
 	if err != nil {
 		return fail(err)
 	}

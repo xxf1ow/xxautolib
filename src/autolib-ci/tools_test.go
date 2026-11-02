@@ -56,6 +56,10 @@ func TestIndependentTargets(t *testing.T) {
 	if len(realPlan.Platforms) != 1 || realPlan.Platforms[0].ID != platforms || !containsModule(realPlan.Platforms[0].Description.Modules, "lz4") {
 		t.Fatalf("real builder describe result was not retained in CI plan: %+v", realPlan)
 	}
+	module := realPlan.Platforms[0].Description.Modules[0]
+	if module.Version != "1.10.0" || module.Target != "_al_pkg_6c7a34_312e31302e30" || len(realPlan.Platforms[0].Roots) != 1 || realPlan.Platforms[0].Roots[0] != "lz4@1.10.0" {
+		t.Fatalf("real builder identity and target: %+v", realPlan.Platforms[0])
+	}
 
 	// The fake describe executable succeeds without reading module.toml, proving
 	// CI planning consumes the builder boundary instead of parsing declarations.

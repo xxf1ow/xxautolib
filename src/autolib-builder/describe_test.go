@@ -181,3 +181,107 @@ func describeRootInputs(t *testing.T, root string) {
 		putFile(t, filepath.Join(root, filepath.FromSlash(name)), content)
 	}
 }
+
+func TestDescribeCISelection(t *testing.T) {
+	root := t.TempDir()
+	describeRootInputs(t, root)
+	definitionVersionFile(t, root, "eigen", "5.0.1", "copy", testSource+"[[copy]]\nfiles=['Eigen']\ndestination='include'\n")
+	definitionVersionFile(t, root, "eigen", "3.4.0", "copy", testSource+"[[copy]]\nfiles=['Eigen']\ndestination='include'\n")
+	definitionFile(t, root, "old", "cmake", "depends=['eigen@3.4.0']\n"+testSource)
+	definitionFile(t, root, "new", "cmake", "depends=['eigen@5.0.1']\n"+testSource)
+	definitionFile(t, root, "conflict", "cmake", "depends=['old','new']\n"+testSource)
+	// Discovery includes every recipe, so keep the intentionally invalid root explicit.
+	for _, tc := range []struct {
+		name      string
+		modules   []string
+		discover  bool
+		want      []string
+		wantError bool
+	}{
+		{"latest", []string{"eigen"}, false, []string{"eigen@3.4.0"}, false},
+		{"unknown exact", []string{"eigen@9.9.9"}, false, nil, true},
+		{"independent closures", []string{"old", "new", "eigen@3.4.0"}, false, []string{"old@1.0", "new@1.0", "eigen@3.4.0"}, false},
+		{"same root conflict", []string{"conflict"}, false, nil, true},
+		{"mutually exclusive", []string{"eigen"}, true, nil, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			args := []string{"describe", "--source-root", root, "--system-name", "Linux", "--architecture", "x86_64"}
+			if tc.discover {
+				args = append(args, "--discover")
+			}
+			for _, module := range tc.modules {
+				args = append(args, "--module", module)
+			}
+			var stdout, stderr bytes.Buffer
+			code := run(args, &stdout, &stderr)
+			if tc.wantError {
+				if code == 0 || stdout.Len() != 0 {
+					t.Fatalf("accepted selection: %s", stdout.String())
+				}
+				if tc.name == "same root conflict" && !strings.Contains(stderr.String(), "conflicting dependency versions") {
+					t.Fatalf("wrong conflict failure: %s", stderr.String())
+				}
+				if tc.name == "mutually exclusive" && !strings.Contains(stderr.String(), "mutually exclusive") {
+					t.Fatalf("wrong selection failure: %s", stderr.String())
+				}
+				return
+			}
+			if code != 0 {
+				t.Fatalf("describe: %s", stderr.String())
+			}
+			var got struct {
+				Roots   []string `json:"roots"`
+				Modules []struct {
+					Name, Version, Target string
+					Depends               []string
+				} `json:"modules"`
+			}
+			if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(got.Roots, tc.want) {
+				t.Fatalf("roots: got %v want %v", got.Roots, tc.want)
+			}
+			seen := map[string]bool{}
+			for _, module := range got.Modules {
+				ref := module.Name + "@" + module.Version
+				if seen[ref] || module.Target == "" {
+					t.Fatalf("duplicate or missing target: %+v", module)
+				}
+				seen[ref] = true
+				if ref == "eigen@3.4.0" && module.Target != "_al_pkg_656967656e_332e342e30" {
+					t.Fatalf("build target: %s", module.Target)
+				}
+				if module.Name == "old" && !reflect.DeepEqual(module.Depends, []string{"eigen@3.4.0"}) {
+					t.Fatalf("old dependencies: %v", module.Depends)
+				}
+				if module.Name == "new" && !reflect.DeepEqual(module.Depends, []string{"eigen@5.0.1"}) {
+					t.Fatalf("new dependencies: %v", module.Depends)
+				}
+			}
+			if tc.name == "independent closures" && (!seen["eigen@3.4.0"] || !seen["eigen@5.0.1"] || len(seen) != 4) {
+				t.Fatalf("merged closure: %v", seen)
+			}
+		})
+	}
+	t.Run("discover all eigen versions", func(t *testing.T) {
+		root := t.TempDir()
+		describeRootInputs(t, root)
+		for _, version := range []string{"3.4.0", "5.0.1"} {
+			definitionVersionFile(t, root, "eigen", version, "cmake", testSource)
+		}
+		var stdout, stderr bytes.Buffer
+		if code := run([]string{"describe", "--source-root", root, "--system-name", "Linux", "--architecture", "x86_64", "--discover"}, &stdout, &stderr); code != 0 {
+			t.Fatalf("discover: %s", stderr.String())
+		}
+		var got struct {
+			Roots []string `json:"roots"`
+		}
+		if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(got.Roots, []string{"eigen@3.4.0", "eigen@5.0.1"}) {
+			t.Fatalf("discovered roots: %v", got.Roots)
+		}
+	})
+}

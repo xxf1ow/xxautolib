@@ -22,14 +22,14 @@ func TestCIPlanInputs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := plan.RequestedModules, []string{"flann", "lz4", "queue"}; !reflect.DeepEqual(got, want) {
+	if got, want := plan.RequestedModules, []string{"flann@1.0", "lz4@1.0", "queue@1.0"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("requested modules: want %v, got %v", want, got)
 	}
 	if len(plan.Platforms) != 3 || plan.Publisher != "linux-x86_64" {
 		t.Fatalf("unexpected plan defaults: %+v", plan)
 	}
 	for _, platform := range plan.Platforms {
-		if !reflect.DeepEqual(platform.Layers, [][]string{{"lz4", "queue"}, {"flann"}}) {
+		if !reflect.DeepEqual(platform.Layers, [][]string{{"lz4@1.0", "queue@1.0"}, {"flann@1.0"}}) {
 			t.Fatalf("%s layers: %v", platform.ID, platform.Layers)
 		}
 		if platform.Description.SystemName == "" || platform.Description.Architecture == "" {
@@ -42,10 +42,10 @@ func TestCIPlanInputs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if subset.Publisher != "" || len(subset.Platforms) != 1 || !reflect.DeepEqual(subset.Platforms[0].Layers, [][]string{{"lz4"}, {"flann"}}) {
+	if subset.Publisher != "" || len(subset.Platforms) != 1 || !reflect.DeepEqual(subset.Platforms[0].Layers, [][]string{{"lz4@1.0"}, {"flann@1.0"}}) {
 		t.Fatalf("unexpected selected plan: %+v", subset)
 	}
-	if !reflect.DeepEqual(subset.RequestedModules, []string{"flann"}) {
+	if !reflect.DeepEqual(subset.RequestedModules, []string{"flann@1.0"}) {
 		t.Fatalf("requested modules were not deduplicated: %v", subset.RequestedModules)
 	}
 	for _, value := range []string{"", " \t "} {
@@ -145,7 +145,7 @@ func TestCICLI(t *testing.T) {
 	if err := json.Unmarshal(data, &plan); err != nil {
 		t.Fatal(err)
 	}
-	if plan.Publisher != "" || !reflect.DeepEqual(plan.RequestedModules, []string{"flann"}) || len(plan.Platforms) != 2 {
+	if plan.Publisher != "" || !reflect.DeepEqual(plan.RequestedModules, []string{"flann@1.0"}) || len(plan.Platforms) != 2 {
 		t.Fatalf("unexpected CLI plan: %+v", plan)
 	}
 	if !strings.HasSuffix(string(data), "\n") || stdout.String() != output+"\n" {
@@ -164,7 +164,7 @@ func TestCICLI(t *testing.T) {
 	if err := json.Unmarshal(data, &plan); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(plan.RequestedModules, []string{"flann", "lz4", "queue"}) || len(plan.Platforms) != 3 {
+	if !reflect.DeepEqual(plan.RequestedModules, []string{"flann@1.0", "lz4@1.0", "queue@1.0"}) || len(plan.Platforms) != 3 {
 		t.Fatalf("blank CLI modules did not select all: %+v", plan)
 	}
 	validOutput = string(data)
@@ -192,4 +192,73 @@ func fakePlanRoot(t *testing.T) string {
 		writeCIFixture(t, root, "src/dependencies/"+name+"/autolib-import.cmake", "# fixture\n")
 	}
 	return root
+}
+
+func TestCIVersionedPlan(t *testing.T) {
+	builder := discoveryBuilder(t)
+	root := discoveryRoot(t)
+	discoveryVersion(t, root, "eigen", "3.4.0", true, "platform_independent=true\n")
+	discoveryVersion(t, root, "eigen", "5.0.1", true, "platform_independent=true\n")
+	discoveryModule(t, root, "shared", true, "")
+	discoveryModule(t, root, "left", true, "depends=['shared','eigen@3.4.0']\n")
+	discoveryModule(t, root, "right", true, "depends=['shared','eigen@5.0.1']\n")
+	discoveryModule(t, root, "local", false, "")
+	discoveryModule(t, root, "middle", true, "depends=['local']\n")
+	discoveryModule(t, root, "blocked", true, "depends=['middle']\n")
+	for _, tc := range []struct {
+		name, modules string
+		wantRoots     []string
+		wantLayers    [][]string
+	}{
+		{"independent closures", "left,right,blocked,local", []string{"left@1.0", "right@1.0"}, [][]string{{"eigen@3.4.0", "eigen@5.0.1", "shared@1.0"}, {"left@1.0", "right@1.0"}}},
+		{"all filtered", "blocked,local", []string{}, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			plan, err := planCI(context.Background(), ciPlanOptions{SourceRoot: root, BuilderFile: builder, Platforms: stringPointer("linux-aarch64"), Modules: &tc.modules})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(plan.RequestedModules, tc.wantRoots) {
+				t.Fatalf("requested roots: %v want %v", plan.RequestedModules, tc.wantRoots)
+			}
+			if tc.wantLayers == nil {
+				if len(plan.Platforms) != 0 || plan.Publisher != "" {
+					t.Fatalf("filtered plan: %+v", plan)
+				}
+				return
+			}
+			if len(plan.Platforms) != 1 || plan.Publisher != "linux-aarch64" || !reflect.DeepEqual(plan.Platforms[0].Layers, tc.wantLayers) {
+				t.Fatalf("versioned plan: %+v", plan)
+			}
+			data, err := json.Marshal(plan.Platforms[0])
+			if err != nil {
+				t.Fatal(err)
+			}
+			var platform struct {
+				Roots []string `json:"roots"`
+			}
+			if err := json.Unmarshal(data, &platform); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(platform.Roots, tc.wantRoots) {
+				t.Fatalf("effective platform roots: %v", platform.Roots)
+			}
+		})
+	}
+	t.Run("three allowed platforms", func(t *testing.T) {
+		plan, err := planCI(context.Background(), ciPlanOptions{SourceRoot: root, BuilderFile: builder, Modules: stringPointer("eigen@3.4.0")})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids := []string{}
+		for _, platform := range plan.Platforms {
+			ids = append(ids, platform.ID)
+		}
+		if !reflect.DeepEqual(ids, []string{"windows-x86_64", "linux-x86_64", "linux-aarch64"}) {
+			t.Fatalf("platforms: %v", ids)
+		}
+		if _, err := planCI(context.Background(), ciPlanOptions{SourceRoot: root, BuilderFile: builder, Platforms: stringPointer("windows-aarch64")}); err == nil {
+			t.Fatal("unsupported platform accepted")
+		}
+	})
 }
