@@ -144,6 +144,21 @@ func TestVersionedMetadataRepository(t *testing.T) {
 	}
 }
 
+func TestVersionedMetadataDeliveryRestrictions(t *testing.T) {
+	identity := `{"type":"xxautolib-artifacts","schema":1,"upstream":"https://github.com/xxf1ow/xxautolib"}`
+	for _, path := range []string{"tools/autolib-importer-linux-x86_64.tar.xz.sha256", "autolib-importer/package.toml", "autolib-importer/1/autolib-importer-1-linux-x86_64.tar.zst.sha256"} {
+		t.Run(path, func(t *testing.T) {
+			root := t.TempDir()
+			repo := snapshotRepository(t, metadataRepositoryCase{Files: map[string]string{".autolib-repository.json": identity, path: "latest = \"1\"\n"}})
+			source := snapshotDriver(t, root, snapshotRequest)
+			out, err := snapshotConfigure(t, source, filepath.Join(root, "build"), repo, filepath.Join(root, "git.trace"))
+			if err == nil || !strings.Contains(out, "AutoLib") {
+				t.Fatalf("non-library importer metadata accepted: %v\n%s", err, out)
+			}
+		})
+	}
+}
+
 func snapshotTraceCount(t *testing.T, trace, command string) int {
 	t.Helper()
 	count := 0

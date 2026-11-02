@@ -141,8 +141,8 @@ func TestVersionedRemoteBootstrap(t *testing.T) {
 					tool = readTestFile(t, testArchive(t, []archiveMember{{Name: f.toolAsset, Body: readTestFile(t, f.tool)}, {Name: "extra", Body: "invalid"}}))
 				}
 				toolAsset := f.toolAsset + ".tar.xz"
-				e.asset(t, "tools/"+toolAsset, tool)
-				digest := filepath.Join(e.repo, "tools", toolAsset+".sha256")
+				e.asset(t, "autolib-importer/"+toolAsset, tool)
+				digest := filepath.Join(e.repo, "autolib-importer", toolAsset+".sha256")
 				if kind == "bad digest" {
 					putTestFile(t, digest, strings.Repeat("0", 64)+"\n")
 				}
@@ -201,7 +201,7 @@ func TestVersionedRemoteResume(t *testing.T) {
 			f := e.f
 			pkg := e.pkg(t, "demo", "1.0", "")
 			toolAsset := f.toolAsset + ".tar.xz"
-			e.asset(t, "tools/"+toolAsset, readTestFile(t, f.importerArchive(f.toolAsset, readTestFile(t, f.tool))))
+			e.asset(t, "autolib-importer/"+toolAsset, readTestFile(t, f.importerArchive(f.toolAsset, readTestFile(t, f.tool))))
 			tail := ""
 			want := map[string]int{pkg: 1}
 			clones := 1

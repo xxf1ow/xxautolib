@@ -15,9 +15,9 @@ func TestVersionedRemoteLoop(t *testing.T) {
 	native := newNativeLoopFixture(t, t.TempDir())
 	assets := map[string]string{}
 	digests := map[string]string{}
-	for _, ref := range []string{"probe/1", "dep/1", "dep/2", "tools"} {
+	for _, ref := range []string{"probe/1", "dep/1", "dep/2", "autolib-importer"} {
 		name := native.toolName + ".tar.xz"
-		if ref != "tools" {
+		if ref != "autolib-importer" {
 			name = strings.ReplaceAll(ref, "/", "-") + "-" + runtime.GOOS + "-" + native.arch + ".tar.zst"
 		}
 		path := ref + "/" + name

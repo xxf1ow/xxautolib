@@ -1,25 +1,34 @@
-name: Gitee Release synchronization
-description: Synchronize a fixed GitHub Release using a body digest index
+name: Gitee artifact publication
+description: Publish selected local archives and metadata to Gitee
 inputs:
-  packages:
-    description: Comma-separated package names; blank checks all assets
-    required: false
+  host:
+    description: Publication host (gitee only)
+    required: true
+  mode:
+    description: artifacts or latest
+    required: true
+  input:
+    description: Local publication.json for artifacts mode
+    default: ''
+  latest:
+    description: Explicit JSON latest mapping for latest-only mode
     default: ''
   repository:
     description: Target Gitee owner/repository
-    required: false
-    default: xxf1ow/autolib-release
+    required: true
   tag:
-    description: Shared GitHub and Gitee Release tag
-    required: false
-    default: autolib-release
+    description: Target Gitee Release tag
+    required: true
 runs:
   using: composite
   steps:
-    - name: Synchronize Release
+    - name: Publish local input
       shell: bash
       env:
-        SYNC_PACKAGES: ${{ inputs.packages }}
+        PUBLISH_HOST: ${{ inputs.host }}
+        PUBLISH_MODE: ${{ inputs.mode }}
+        PUBLISH_INPUT: ${{ inputs.input }}
+        PUBLISH_LATEST: ${{ inputs.latest }}
         GITEE_REPOSITORY: ${{ inputs.repository }}
         GITEE_RELEASE_TAG: ${{ inputs.tag }}
-      run: python "${{ github.action_path }}/sync.py"
+      run: python "${{ github.action_path }}/publish.py"

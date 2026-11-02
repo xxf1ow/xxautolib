@@ -10,7 +10,7 @@ func TestVersionedNoConsumerAPI(t *testing.T) {
 		t.Run(host, func(t *testing.T) {
 			e := remoteEntry(t, host)
 			tool := e.f.toolAsset + ".tar.xz"
-			e.asset(t, "tools/"+tool, readTestFile(t, e.f.importerArchive(e.f.toolAsset, readTestFile(t, e.f.tool))))
+			e.asset(t, "autolib-importer/"+tool, readTestFile(t, e.f.importerArchive(e.f.toolAsset, readTestFile(t, e.f.tool))))
 			pkg := e.pkg(t, "demo", "1.0", "")
 			e.consumer(t, "demo@1.0", "if(NOT TARGET autolib::demo)\nmessage(FATAL_ERROR missing_demo)\nendif()\n")
 			if out, err := e.configure(t); err != nil {

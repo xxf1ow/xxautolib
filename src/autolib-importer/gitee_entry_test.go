@@ -19,7 +19,7 @@ func TestCMakeGiteeSnapshotReuse(t *testing.T) {
 			e := remoteEntry(t, "gitee.com")
 			f := e.f
 			toolAsset := f.toolAsset + ".tar.xz"
-			e.asset(t, "tools/"+toolAsset, readTestFile(t, f.importerArchive(f.toolAsset, readTestFile(t, f.tool))))
+			e.asset(t, "autolib-importer/"+toolAsset, readTestFile(t, f.importerArchive(f.toolAsset, readTestFile(t, f.tool))))
 			want := map[string]int{toolAsset: 1}
 			for _, name := range []string{"demo", "dep", "extra"} {
 				dependencies := ""

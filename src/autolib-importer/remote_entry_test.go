@@ -103,7 +103,7 @@ func TestCMakeRemoteBootstrapMigration(t *testing.T) {
 				if kind == "bare remote only" {
 					e.assets[f.toolAsset] = readTestFile(t, f.tool)
 				} else {
-					e.asset(t, "tools/"+toolAsset, tool)
+					e.asset(t, "autolib-importer/"+toolAsset, tool)
 				}
 				if kind == "deleted tool" {
 					e.status[toolAsset] = 404

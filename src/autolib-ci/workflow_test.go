@@ -42,7 +42,7 @@ func workflowField(t *testing.T, block, key string) string {
 	return ""
 }
 
-func TestCIWorkflowContract(t *testing.T) {
+func TestCITransportWorkflow(t *testing.T) {
 	root := filepath.Join("..", "..")
 	data, err := os.ReadFile(filepath.Join(root, ".github/workflows/build-platform.yml"))
 	if err != nil {
@@ -64,10 +64,10 @@ func TestCIWorkflowContract(t *testing.T) {
 		}
 	}
 	jobs := workflowSection(t, document, "jobs:")
-	if strings.Count(jobs, "\n  ")-strings.Count(jobs, "\n   ") != 4 {
-		t.Fatal("expected only plan, initialize, linux, windows, finalize jobs")
+	if strings.Count(jobs, "\n  ")-strings.Count(jobs, "\n   ") != 3 {
+		t.Fatal("expected only plan, linux, windows, finalize jobs")
 	}
-	for _, id := range []string{"plan", "initialize", "linux", "windows", "finalize"} {
+	for _, id := range []string{"plan", "linux", "windows", "finalize"} {
 		job := workflowSection(t, document, "  "+id+":")
 		minutes := "15"
 		if id == "linux" || id == "windows" {
@@ -79,8 +79,7 @@ func TestCIWorkflowContract(t *testing.T) {
 		if !strings.Contains(job, "ref: ${{ github.sha }}") || !strings.Contains(job, "persist-credentials: false") {
 			t.Fatalf("%s checkout is not event-bound", id)
 		}
-		write := id == "initialize" || id == "linux" || id == "windows"
-		if strings.Contains(job, "contents: write") != write {
+		if strings.Contains(job, "contents: write") || strings.Contains(job, "GITHUB_TOKEN:") {
 			t.Fatalf("unexpected write permissions on %s", id)
 		}
 	}
@@ -186,7 +185,7 @@ func TestCIWorkflowContract(t *testing.T) {
 	}
 	finalize := workflowSection(t, document, "  finalize:")
 	condition := workflowField(t, finalize, "if")
-	if workflowField(t, finalize, "needs") != "[plan, initialize, linux, windows]" {
+	if workflowField(t, finalize, "needs") != "[plan, linux, windows]" {
 		t.Fatal("finalize does not wait for all jobs")
 	}
 	// The shipped condition uses only conjunction and the plan result comparison.
@@ -217,6 +216,17 @@ func TestCIWorkflowContract(t *testing.T) {
 	}
 	if strings.Contains(finalize, "GITHUB_TOKEN:") {
 		t.Fatal("read-only summary received a publication token")
+	}
+	for _, id := range []string{"linux", "windows"} {
+		job := workflowSection(t, document, "  "+id+":")
+		transport := workflowSection(t, job, "      - name: Transport verified installation")
+		if !strings.Contains(transport, " transport --source-root ") || !strings.Contains(transport, "transport.tar") {
+			t.Fatalf("%s does not transport its verified installation", id)
+		}
+		upload := workflowSection(t, job, "      - name: Retain installation transport")
+		if !strings.Contains(upload, "ci-install-${{ github.run_id }}-${{ github.run_attempt }}-") || !strings.Contains(upload, "if-no-files-found: error") {
+			t.Fatalf("%s transport is not retained under exact run/attempt", id)
+		}
 	}
 	for _, platform := range []string{"linux", "windows"} {
 		file := filepath.Join(root, ".github/scripts/prepare-"+platform+map[string]string{"linux": ".sh", "windows": ".ps1"}[platform])

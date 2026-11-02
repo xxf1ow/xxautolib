@@ -1,0 +1,129 @@
+name: Publish artifacts to Gitee
+
+on:
+  workflow_run:
+    workflows: [Representative releases]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      host:
+        description: Publication host
+        type: choice
+        options: [gitee]
+        default: gitee
+      mode:
+        description: Publish original build artifacts or update latest only
+        type: choice
+        options: [artifacts, latest]
+        default: artifacts
+      source_run_id:
+        description: Original successful build run ID (artifacts mode)
+        type: string
+      source_attempt:
+        description: Exact original run attempt (artifacts mode)
+        type: string
+      packages:
+        description: Exact name@version or autolib-importer, comma-separated; blank selects all
+        type: string
+      latest:
+        description: Explicit latest JSON object; required in latest mode
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: artifact-publication-gitee-${{ vars.GITEE_REPOSITORY || 'xxf1ow/autolib-release' }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.repository.full_name == github.repository) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    env:
+      PUBLISH_HOST: ${{ github.event_name == 'workflow_run' && 'gitee' || inputs.host }}
+      PUBLISH_MODE: ${{ github.event_name == 'workflow_run' && 'artifacts' || inputs.mode }}
+    steps:
+      - name: Validate publication request
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != refs/heads/?* || "$PUBLISH_HOST" != gitee || ( "$PUBLISH_MODE" != artifacts && "$PUBLISH_MODE" != latest ) ]]; then
+            echo "Publication requires a branch ref, host gitee and mode artifacts or latest." >&2
+            exit 1
+          fi
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Select original build
+        id: selection
+        if: ${{ env.PUBLISH_MODE == 'artifacts' }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+          SOURCE_ATTEMPT: ${{ inputs.source_attempt }}
+          PACKAGES: ${{ inputs.packages }}
+          LATEST: ${{ inputs.latest }}
+        run: |
+          set -euo pipefail
+          mkdir -p build/publication-control build/tools
+          python .github/scripts/prepare-publication.py select --output build/publication-control/selection.json
+          jq -r '"sha=" + .source_run.sha, "run_id=" + .source_run.run_id, "artifact_ids=" + ([.artifacts[].id|tostring]|join(",")), "has_platforms=" + ((.plan.platforms|length > 0)|tostring)' build/publication-control/selection.json >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v8
+        if: ${{ env.PUBLISH_MODE == 'artifacts' }}
+        with:
+          artifact-ids: ${{ steps.selection.outputs.artifact_ids }}
+          run-id: ${{ steps.selection.outputs.run_id }}
+          github-token: ${{ github.token }}
+          path: build/publication-input
+          merge-multiple: false
+      - name: Checkout original build source
+        if: ${{ env.PUBLISH_MODE == 'artifacts' }}
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.selection.outputs.sha }}
+          path: build/source
+          persist-credentials: false
+      - name: Build original builder
+        if: ${{ env.PUBLISH_MODE == 'artifacts' && steps.selection.outputs.has_platforms == 'true' }}
+        working-directory: build/source
+        run: |
+          set -euo pipefail
+          cmake -P src/autolib-builder/go-sdk.cmake -- build -mod=readonly -trimpath -o "$GITHUB_WORKSPACE/build/tools/source-builder" ./src/autolib-builder
+      - name: Prepare publication
+        id: publication
+        if: ${{ env.PUBLISH_MODE == 'artifacts' }}
+        run: |
+          set -euo pipefail
+          manifest=$(python .github/scripts/prepare-publication.py prepare --selection build/publication-control/selection.json --input-root build/publication-input --source-root build/source --builder-file "$GITHUB_WORKSPACE/build/tools/source-builder" --output-root build/source/build/publication)
+          has_writes=$(jq -r '(.assets|length > 0) or (.explicit_latest|length > 0)' "$manifest")
+          echo "input=$manifest" >> "$GITHUB_OUTPUT"
+          echo "has_writes=$has_writes" >> "$GITHUB_OUTPUT"
+      - name: Install publication dependencies
+        if: ${{ env.PUBLISH_MODE == 'latest' || steps.publication.outputs.has_writes == 'true' }}
+        run: |
+          set -euo pipefail
+          python -m venv build/tools/gitee-sync-venv
+          build/tools/gitee-sync-venv/bin/python -m pip install -r .github/actions/gitee-release/requirements.txt -c .github/actions/gitee-release/constraints.txt
+          echo "$GITHUB_WORKSPACE/build/tools/gitee-sync-venv/bin" >> "$GITHUB_PATH"
+      - name: Publish selected artifacts or latest
+        if: ${{ env.PUBLISH_MODE == 'latest' || steps.publication.outputs.has_writes == 'true' }}
+        uses: ./.github/actions/gitee-release
+        with:
+          host: ${{ env.PUBLISH_HOST }}
+          mode: ${{ env.PUBLISH_MODE }}
+          input: ${{ steps.publication.outputs.input }}
+          latest: ${{ env.PUBLISH_MODE == 'latest' && inputs.latest || '' }}
+          repository: ${{ vars.GITEE_REPOSITORY || 'xxf1ow/autolib-release' }}
+          tag: ${{ vars.GITEE_RELEASE_TAG || 'autolib-release' }}
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
