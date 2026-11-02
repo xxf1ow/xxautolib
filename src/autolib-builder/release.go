@@ -18,8 +18,8 @@ import (
 )
 
 type packageOptions struct {
-	SourceRoot, InstallRoot, OutputRoot, OS, Arch, HostOS, HostArch, ImporterFile, CMakeCommand string
-	Modules                                                                                     []string
+	SourceRoot, InstallRoot, ProducerPrefix, OutputRoot, OS, Arch, HostOS, HostArch, ImporterFile, CMakeCommand string
+	Modules                                                                                                     []string
 }
 
 func packageRelease(o packageOptions) error {
@@ -29,8 +29,8 @@ func packageRelease(o packageOptions) error {
 	if err := validatePackagePlatform(o.HostOS, o.HostArch); err != nil {
 		return err
 	}
-	if o.SourceRoot == "" || o.InstallRoot == "" || o.OutputRoot == "" || o.ImporterFile == "" || o.CMakeCommand == "" || len(o.Modules) == 0 {
-		return fmt.Errorf("package requires all paths and at least one module")
+	if o.SourceRoot == "" || o.InstallRoot == "" || o.OutputRoot == "" || o.ImporterFile == "" || o.CMakeCommand == "" {
+		return fmt.Errorf("package requires source, install, output, importer and CMake paths")
 	}
 	source, err := resolvePackagePath(o.SourceRoot)
 	if err != nil {
@@ -110,7 +110,7 @@ func packageRelease(o packageOptions) error {
 	assets := []string{toolArchive}
 	archiveRefs := map[string]moduleRef{}
 	for _, ref := range refs {
-		directory, err := stagePackage(stageOptions{SourceRoot: source, InstallRoot: install, StageRoot: filepath.Join(work, "staging"), Name: ref.Name, Version: ref.Version, OS: o.OS, Arch: o.Arch, CMakeCommand: o.CMakeCommand})
+		directory, err := stagePackage(stageOptions{SourceRoot: source, InstallRoot: install, ProducerPrefix: o.ProducerPrefix, StageRoot: filepath.Join(work, "staging"), Name: ref.Name, Version: ref.Version, OS: o.OS, Arch: o.Arch, CMakeCommand: o.CMakeCommand})
 		if err != nil {
 			return err
 		}
@@ -314,7 +314,7 @@ func runPackage(args []string, stderr io.Writer) int {
 	for _, field := range []struct {
 		key   string
 		value *string
-	}{{"source-root", &o.SourceRoot}, {"install-root", &o.InstallRoot}, {"output-root", &o.OutputRoot}, {"os", &o.OS}, {"arch", &o.Arch}, {"host-os", &o.HostOS}, {"host-arch", &o.HostArch}, {"importer-file", &o.ImporterFile}, {"cmake-command", &o.CMakeCommand}} {
+	}{{"source-root", &o.SourceRoot}, {"install-root", &o.InstallRoot}, {"producer-prefix", &o.ProducerPrefix}, {"output-root", &o.OutputRoot}, {"os", &o.OS}, {"arch", &o.Arch}, {"host-os", &o.HostOS}, {"host-arch", &o.HostArch}, {"importer-file", &o.ImporterFile}, {"cmake-command", &o.CMakeCommand}} {
 		flags.StringVar(field.value, field.key, "", field.key)
 	}
 	var modules repeatedFlag

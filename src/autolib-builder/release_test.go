@@ -98,7 +98,7 @@ func releaseSnapshot(t *testing.T, root string) map[string]string {
 		} else if info.Mode().IsRegular() {
 			var data []byte
 			data, err = os.ReadFile(path)
-			content = string(data)
+			content = fmt.Sprintf("%x", sha256.Sum256(data))
 		}
 		if err != nil {
 			return err

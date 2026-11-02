@@ -14,11 +14,15 @@ if(NOT IS_DIRECTORY "${PACKAGE_DIR}")
 endif()
 
 file(TO_CMAKE_PATH "${PACKAGE_DIR}" _package_dir)
-file(TO_CMAKE_PATH "${PRODUCER_PREFIX}" _producer_cmake)
-file(TO_NATIVE_PATH "${PRODUCER_PREFIX}" _producer_native)
+# The producer may be Windows even when this script runs on Linux.
+string(REPLACE "\\" "/" _producer_cmake "${PRODUCER_PREFIX}")
+set(_producer_native "${PRODUCER_PREFIX}")
+if(_producer_cmake MATCHES "^[A-Za-z]:/")
+    string(REPLACE "/" "\\" _producer_native "${_producer_cmake}")
+endif()
 file(TO_CMAKE_PATH "${DESTINATION_ROOT}" _staging_parent)
 
-set(_producer_spellings "${_producer_cmake}" "${_producer_native}")
+set(_producer_spellings "${PRODUCER_PREFIX}" "${_producer_cmake}" "${_producer_native}")
 list(REMOVE_DUPLICATES _producer_spellings)
 file(GLOB_RECURSE _metadata_files LIST_DIRECTORIES FALSE
     "${_package_dir}/*.cmake"

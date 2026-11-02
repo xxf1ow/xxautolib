@@ -3,14 +3,13 @@ package packagemetadata
 import (
 	"fmt"
 	"path"
-	"path/filepath"
 	"strings"
 )
 
 // CheckProducerReferences restricts producer paths to this package version and its exact direct dependencies.
 func CheckProducerReferences(text, prefix string, allowed []string) error {
 	text = strings.ReplaceAll(text, `\`, "/")
-	prefix = filepath.ToSlash(prefix)
+	prefix = strings.ReplaceAll(prefix, `\`, "/")
 	for rest := text; ; {
 		i := strings.Index(rest, prefix)
 		if i < 0 {

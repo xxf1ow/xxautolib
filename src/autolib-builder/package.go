@@ -18,7 +18,7 @@ import (
 )
 
 type stageOptions struct {
-	SourceRoot, InstallRoot, StageRoot, Name, Version, OS, Arch, CMakeCommand string
+	SourceRoot, InstallRoot, ProducerPrefix, StageRoot, Name, Version, OS, Arch, CMakeCommand string
 }
 
 func validatePackageName(value string) error {
@@ -199,10 +199,14 @@ func stagePackage(o stageOptions) (staged string, err error) {
 		}
 		allowed = append(allowed, ref.Name+"/"+ref.Version)
 	}
-	if err = checkProducerReferences(staged, installRoot, allowed); err != nil {
+	producerPrefix := o.ProducerPrefix
+	if producerPrefix == "" {
+		producerPrefix = installRoot
+	}
+	if err = checkProducerReferences(staged, producerPrefix, allowed); err != nil {
 		return "", err
 	}
-	cmd := exec.Command(o.CMakeCommand, "-DPACKAGE_DIR="+filepath.ToSlash(staged), "-DPRODUCER_PREFIX="+filepath.ToSlash(installRoot), "-DDESTINATION_ROOT="+filepath.ToSlash(stageRoot), "-P", filepath.Join(sourceRoot, "src/autolib-importer/fixup-metadata.cmake"))
+	cmd := exec.Command(o.CMakeCommand, "-DPACKAGE_DIR="+filepath.ToSlash(staged), "-DPRODUCER_PREFIX="+producerPrefix, "-DDESTINATION_ROOT="+filepath.ToSlash(stageRoot), "-P", filepath.Join(sourceRoot, "src/autolib-importer/fixup-metadata.cmake"))
 	if output, runErr := cmd.CombinedOutput(); runErr != nil {
 		return "", fmt.Errorf("fixup %s: %w\n%s", staged, runErr, output)
 	}
