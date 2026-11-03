@@ -124,7 +124,7 @@ func (e *versionedRemoteEntry) counts(t *testing.T, clones int, want map[string]
 
 func TestVersionedRemoteBootstrap(t *testing.T) {
 	for _, host := range []string{"github.com", "gitee.com"} {
-		for _, kind := range []string{"empty cache", "bad digest", "missing digest", "invalid digest", "bad archive", "multiple members", "untrusted certificate", "bad local tool"} {
+		for _, kind := range []string{"empty cache", "crlf digest", "padded digest", "embedded whitespace digest", "multiple digests", "bad digest", "missing digest", "invalid digest", "bad archive", "multiple members", "untrusted certificate", "bad local tool"} {
 			t.Run(host+"/"+kind, func(t *testing.T) {
 				e := remoteEntry(t, host)
 				f := e.f
@@ -143,6 +143,18 @@ func TestVersionedRemoteBootstrap(t *testing.T) {
 				toolAsset := f.toolAsset + ".tar.xz"
 				e.asset(t, "autolib-importer/"+toolAsset, tool)
 				digest := filepath.Join(e.repo, "autolib-importer", toolAsset+".sha256")
+				success := slices.Contains([]string{"empty cache", "crlf digest", "padded digest"}, kind)
+				sum := readTestFile(t, digest)
+				switch kind {
+				case "crlf digest":
+					putTestFile(t, digest, strings.TrimSuffix(sum, "\n")+"\r\n")
+				case "padded digest":
+					putTestFile(t, digest, " \t\r\n"+sum+"\r\n\t ")
+				case "embedded whitespace digest":
+					putTestFile(t, digest, sum[:32]+" "+sum[32:])
+				case "multiple digests":
+					putTestFile(t, digest, sum+sum)
+				}
 				if kind == "bad digest" {
 					putTestFile(t, digest, strings.Repeat("0", 64)+"\n")
 				}
@@ -155,6 +167,13 @@ func TestVersionedRemoteBootstrap(t *testing.T) {
 					}
 				}
 				pkg := e.pkg(t, "demo", "1.0", "")
+				packageDigest := filepath.Join(e.repo, "demo", "1.0", pkg+".sha256")
+				if kind == "crlf digest" {
+					putTestFile(t, packageDigest, strings.TrimSuffix(readTestFile(t, packageDigest), "\n")+"\r\n")
+				}
+				if kind == "padded digest" {
+					putTestFile(t, packageDigest, " \t\r\n"+readTestFile(t, packageDigest)+"\r\n\t ")
+				}
 				e.consumer(t, "demo@1.0", "")
 				if kind == "untrusted certificate" {
 					e.ca = putTestFile(t, filepath.Join(f.root, "wrong-ca"), "not a CA")
@@ -163,13 +182,13 @@ func TestVersionedRemoteBootstrap(t *testing.T) {
 					putTestFile(t, filepath.Join(entryCache(f), f.toolAsset), "not executable")
 				}
 				out, err := e.configure(t)
-				if (err == nil) != (kind == "empty cache") {
+				if (err == nil) != success {
 					t.Fatalf("configure: %v\n%s", err, out)
 				}
 				if _, err := os.Lstat(marker); !os.IsNotExist(err) {
 					t.Fatalf("unverified tool executed: %v", err)
 				}
-				if kind != "empty cache" && kind != "bad local tool" {
+				if !success && kind != "bad local tool" {
 					if _, err := os.Lstat(filepath.Join(entryCache(f), f.toolAsset)); !os.IsNotExist(err) {
 						t.Fatalf("failed bootstrap committed tool: %v", err)
 					}
@@ -177,7 +196,7 @@ func TestVersionedRemoteBootstrap(t *testing.T) {
 				requireNoPackageStaging(t, entryCache(f))
 				want := map[string]int{}
 				clones := 1
-				if kind == "empty cache" {
+				if success {
 					if got := readTestFile(t, filepath.Join(entryCache(f), "demo/1.0/data")); got != "archive" {
 						t.Fatalf("wrong remote bytes: %q", got)
 					}
@@ -185,7 +204,7 @@ func TestVersionedRemoteBootstrap(t *testing.T) {
 				}
 				if kind == "bad local tool" {
 					clones = 0
-				} else if kind != "missing digest" && kind != "invalid digest" && kind != "untrusted certificate" {
+				} else if !slices.Contains([]string{"missing digest", "invalid digest", "embedded whitespace digest", "multiple digests", "untrusted certificate"}, kind) {
 					want[toolAsset] = 1
 				}
 				e.counts(t, clones, want)

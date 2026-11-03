@@ -201,7 +201,7 @@ func copyInstalledPackage(source, destination string) error {
 }
 
 func parsePackageDigest(path string, data []byte) (string, error) {
-	digest := strings.TrimSuffix(string(data), "\n")
+	digest := strings.Trim(string(data), " \t\r\n")
 	if len(digest) != 64 || strings.ToLower(digest) != digest {
 		return "", fmt.Errorf("%s: expected one lowercase SHA256", path)
 	}

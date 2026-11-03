@@ -361,7 +361,7 @@ func TestVersionedSourceIsolation(t *testing.T) {
 }
 
 func TestVersionedLocalDigest(t *testing.T) {
-	for _, digest := range []string{"absent", "valid", "mismatch", "uppercase", "malformed", "directory"} {
+	for _, digest := range []string{"absent", "valid", "crlf", "padded", "mismatch", "uppercase", "malformed", "directory"} {
 		t.Run(digest, func(t *testing.T) {
 			o, _ := versionedFixture(t, "demo@1")
 			archive := versionedArchive(t, o.LocalRoot, "demo", "1", "")
@@ -369,6 +369,10 @@ func TestVersionedLocalDigest(t *testing.T) {
 			switch digest {
 			case "valid":
 				putTestFile(t, archive+".sha256", sum)
+			case "crlf":
+				putTestFile(t, archive+".sha256", strings.TrimSuffix(sum, "\n")+"\r\n")
+			case "padded":
+				putTestFile(t, archive+".sha256", " \t\r\n"+sum+"\r\n\t ")
 			case "mismatch":
 				putTestFile(t, archive+".sha256", strings.Repeat("0", 64)+"\n")
 			case "uppercase":
@@ -382,7 +386,7 @@ func TestVersionedLocalDigest(t *testing.T) {
 			}
 			before := sourceSnapshot(t, o.LocalRoot)
 			_, err := prepare(o)
-			if (err == nil) != (digest == "absent" || digest == "valid") {
+			if (err == nil) != (digest == "absent" || digest == "valid" || digest == "crlf" || digest == "padded") {
 				t.Fatal(err)
 			}
 			if !slices.Equal(before, sourceSnapshot(t, o.LocalRoot)) {

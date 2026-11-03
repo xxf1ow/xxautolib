@@ -90,13 +90,13 @@ func entryDirectoryCleanup(t *testing.T, root string) {
 }
 
 func TestVersionedCMakeLocalBootstrap(t *testing.T) {
-	for _, kind := range []string{"cache priority", "bare priority", "archive", "valid digest", "missing", "corrupt", "truncated", "multiple", "absolute", "traversal", "symlink", "missing program", "bad digest", "malformed digest"} {
+	for _, kind := range []string{"cache priority", "bare priority", "archive", "valid digest", "crlf digest", "padded digest", "embedded whitespace digest", "multiple digests", "missing", "corrupt", "truncated", "multiple", "absolute", "traversal", "symlink", "missing program", "bad digest", "malformed digest"} {
 		t.Run(kind, func(t *testing.T) {
 			f := versionedEntryFixture(t, true)
 			versionedEntryConsumer(f, "set(AUTOLIB_LOCAL_ROOT \"${FIXTURE_RELEASE}\")\n", "demo", "")
 			bare := filepath.Join(f.release, f.toolAsset)
 			body := readTestFile(t, f.importerArchive(f.toolAsset, readTestFile(t, bare)))
-			success := slices.Contains([]string{"cache priority", "bare priority", "archive", "valid digest"}, kind)
+			success := slices.Contains([]string{"cache priority", "bare priority", "archive", "valid digest", "crlf digest", "padded digest"}, kind)
 			switch kind {
 			case "cache priority":
 				copyEntryTool(t, f, entryCache(f))
@@ -128,8 +128,18 @@ func TestVersionedCMakeLocalBootstrap(t *testing.T) {
 			if kind != "missing" {
 				putTestFile(t, archive, body)
 			}
-			if kind == "valid digest" || kind == "bad digest" || kind == "malformed digest" {
+			if strings.HasSuffix(kind, "digest") || kind == "multiple digests" {
 				digest := fmt.Sprintf("%x\n", sha256.Sum256([]byte(body)))
+				switch kind {
+				case "crlf digest":
+					digest = strings.TrimSuffix(digest, "\n") + "\r\n"
+				case "padded digest":
+					digest = " \t\r\n" + digest + "\r\n\t "
+				case "embedded whitespace digest":
+					digest = digest[:32] + " " + digest[32:]
+				case "multiple digests":
+					digest += digest
+				}
 				if kind == "bad digest" {
 					digest = strings.Repeat("0", 64) + "\n"
 				}
