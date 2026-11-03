@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import shutil
 import stat
+import sys
 import tempfile
 from typing import Mapping
 
@@ -90,10 +91,12 @@ def publish_release(config: dict) -> dict:
     result = {'selected': len(assets), 'uploaded': 0, 'failed': 0,
               'metadata_committed': False, 'metadata_commit': None}
     api = GiteeAPI(config['gitee_token'], config['repository'])
+    operation = 'repository'
     try:
         repository = open_repository(config, api, Path(config['work_root']))
         outcomes = []
         if assets:
+            operation = 'release'
             release = api.target_release(config['tag'])
             if release is None:
                 release = api.create_release(config['tag'], repository['head'])
@@ -105,16 +108,23 @@ def publish_release(config: dict) -> dict:
                 matches = targets.get(asset['name'], [])
                 if (len(matches) > 1 or matches and
                         (type(matches[0].get('id')) is not int or matches[0]['id'] <= 0)):
-                    outcomes.append({'name': asset['name'], 'status': 'failed'})
+                    outcomes.append({'name': asset['name'], 'status': 'failed',
+                                     'operation': 'select_asset', 'outcome': 'failed'})
                 else:
                     work.append((asset, matches[0]['id'] if matches else None))
             cpu_count = len(os.sched_getaffinity(0)) if hasattr(os, 'sched_getaffinity') else (os.cpu_count() or 1)
             workers = min(max(1, cpu_count * 2), max(1, len(work)))
+            operation = 'assets'
             with ThreadPoolExecutor(max_workers=workers) as pool:
                 futures = [pool.submit(publish_one, api, release['id'], asset, target) for asset, target in work]
                 outcomes.extend(future.result() for future in futures)
+        for item in outcomes:
+            if item['status'] == 'failed':
+                print(json.dumps({'asset': item['name'], 'operation': item['operation'],
+                                  'outcome': item['outcome']}, sort_keys=True), file=sys.stderr)
         successes = {item['name']: item for item in outcomes if item['status'] == 'uploaded'}
         result.update(uploaded=len(successes), failed=len(assets) - len(successes))
+        operation = 'metadata_commit'
         digests = {item['metadata_path']: item['sha256'] for item in successes.values()}
         succeeded = {asset['package']['name'] for asset in assets
                      if asset['kind'] == 'library' and asset['name'] in successes}
@@ -123,7 +133,11 @@ def publish_release(config: dict) -> dict:
         changes = {name: version for name, version in selected.items() if existing.get(name) != version}
         result['metadata_commit'] = commit_metadata(repository, digests, changes)
         result['metadata_committed'] = True
-    except (GiteeAPIError, OSError, RuntimeError, ValueError):
+    except (GiteeAPIError, OSError, RuntimeError, ValueError) as error:
+        diagnostic = ({'operation': error.operation, 'outcome': error.outcome}
+                      if isinstance(error, GiteeAPIError)
+                      else {'operation': operation, 'outcome': 'unconfirmed'})
+        print(json.dumps(diagnostic, sort_keys=True), file=sys.stderr)
         result['failed'] = len(assets) - result['uploaded']
     finally:
         api.close()
@@ -131,7 +145,7 @@ def publish_release(config: dict) -> dict:
 
 
 def main() -> int:
-    """输出不含凭据的汇总；任一资产失败或元数据未确认返回非零。"""
+    """stdout 输出汇总，stderr 输出脱敏失败诊断；任一失败或未确认返回非零。"""
     config = None
     try:
         config = resolve_config(os.environ)

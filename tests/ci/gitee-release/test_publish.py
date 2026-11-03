@@ -116,7 +116,7 @@ class PublishTests(unittest.TestCase):
                 'gitee_token': 'fake-secret', 'assets': assets, 'initial_latest': initial,
                 'explicit_latest': explicit or {}, 'work_root': self.root / ('work-' + str(len(list(self.root.glob('work-*')))))}
 
-    def run_release(self, config, *, created=False, break_push=False):
+    def run_release(self, config, *, created=False, break_push=False, entry=False):
         import metadata_repository
         from test_metadata_repository import RepositoryAPI
         info = RepositoryAPI(created)
@@ -128,7 +128,108 @@ class PublishTests(unittest.TestCase):
             return repo
         with patch('metadata_repository._repository_url', return_value=str(self.bare)), \
                 patch('publish.open_repository', side_effect=open_repo):
+            if entry:
+                with patch('publish.resolve_config', return_value=config):
+                    return self.module.main()
             return self.module.publish_release(config)
+
+    def test_main_reports_received_write_with_lost_response(self):
+        self.remote()
+        asset = self.asset()
+        for method, operation in [('DELETE', 'delete_asset'), ('POST', 'upload_asset')]:
+            with self.subTest(operation=operation):
+                self.server.assets = [{'id': 7, 'name': asset['name']}]
+                self.server.events.clear()
+                before = git(self.bare, 'rev-parse', 'HEAD')
+                output, errors = io.StringIO(), io.StringIO()
+                def received_then_lost(request_method, url, **options):
+                    response = self.server.request(request_method, url, **options)
+                    if request_method == method:
+                        response.close()
+                        raise requests.Timeout('fake-secret: response lost after acceptance')
+                    return response
+                with patch('requests.sessions.Session.request', side_effect=received_then_lost), \
+                        contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+                    self.assertEqual(self.run_release(self.config([asset], {'queue': '1'}), entry=True), 1)
+                result = json.loads(output.getvalue())
+                self.assertEqual(set(result), {'selected', 'uploaded', 'failed', 'metadata_committed', 'metadata_commit'})
+                self.assertEqual((result['uploaded'], result['failed']), (0, 1))
+                self.assertEqual(git(self.bare, 'rev-parse', 'HEAD'), before)
+                if method == 'DELETE':
+                    self.assertEqual(self.server.assets, [])
+                else:
+                    self.assertEqual(self.server.bodies[asset['name']], b'archive\0bytes')
+                self.assertEqual([m for m, _ in self.server.events if m in {'DELETE', 'POST'}],
+                                 ['DELETE'] if method == 'DELETE' else ['DELETE', 'POST'])
+                self.assertNotIn('fake-secret', output.getvalue() + errors.getvalue())
+                self.assertTrue(errors.getvalue(), 'main lost the uncertain asset operation')
+                self.assertIn({'asset': asset['name'], 'operation': operation, 'outcome': 'unknown'},
+                              [json.loads(line) for line in errors.getvalue().splitlines()])
+                repaired = self.run_release(self.config([asset], {'queue': '1'}))
+                self.assertEqual((repaired['uploaded'], repaired['failed']), (1, 0))
+                self.assertTrue(repaired['metadata_committed'])
+
+    def test_main_reports_local_asset_failure(self):
+        self.remote()
+        asset = self.asset()
+        Path(asset['path']).write_bytes(b'changed')
+        output, errors = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+            self.assertEqual(self.run_release(self.config([asset], {'queue': '1'}), entry=True), 1)
+        self.assertEqual(json.loads(output.getvalue())['uploaded'], 0)
+        self.assertFalse(any(method in {'DELETE', 'POST'} for method, _ in self.server.events))
+        self.assertTrue(errors.getvalue(), 'main lost the local asset failure')
+        self.assertEqual(json.loads(errors.getvalue()),
+                         {'asset': asset['name'], 'operation': 'local_asset', 'outcome': 'failed'})
+
+    def test_main_reports_unknown_repository_creation(self):
+        config = self.config([], {}, {'queue': '1'})
+        config['work_root'].mkdir()
+        output, errors = io.StringIO(), io.StringIO()
+        with patch('publish.resolve_config', return_value=config), \
+                patch('publish.open_repository', side_effect=self.module.GiteeAPIError('create_repository', outcome='unknown')), \
+                contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+            self.assertEqual(self.module.main(), 1)
+        self.assertFalse(json.loads(output.getvalue())['metadata_committed'])
+        self.assertTrue(errors.getvalue(), 'main lost the uncertain repository creation')
+        self.assertEqual(json.loads(errors.getvalue()), {'operation': 'create_repository', 'outcome': 'unknown'})
+        self.assertEqual(self.server.events, [])
+
+    def test_main_reports_received_release_creation_with_lost_response(self):
+        self.remote()
+        self.server.missing_release = True
+        asset = self.asset()
+        def received_then_lost(method, url, **options):
+            response = self.server.request(method, url, **options)
+            if method == 'POST' and url.endswith('/releases'):
+                response.close()
+                raise requests.Timeout('fake-secret: release response lost')
+            return response
+        output, errors = io.StringIO(), io.StringIO()
+        with patch('requests.sessions.Session.request', side_effect=received_then_lost), \
+                contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+            self.assertEqual(self.run_release(self.config([asset], {'queue': '1'}), entry=True), 1)
+        self.assertFalse(self.server.missing_release)
+        self.assertFalse(json.loads(output.getvalue())['metadata_committed'])
+        self.assertNotIn('fake-secret', output.getvalue() + errors.getvalue())
+        self.assertTrue(errors.getvalue(), 'main lost the uncertain release creation')
+        self.assertEqual(json.loads(errors.getvalue()), {'operation': 'create_release', 'outcome': 'unknown'})
+
+    def test_main_reports_unconfirmed_metadata_push(self):
+        self.remote()
+        before = git(self.bare, 'rev-parse', 'HEAD')
+        asset = self.asset()
+        output, errors = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+            self.assertEqual(self.run_release(self.config([asset], {'queue': '1'}), break_push=True, entry=True), 1)
+        result = json.loads(output.getvalue())
+        self.assertEqual(result['uploaded'], 1)
+        self.assertFalse(result['metadata_committed'])
+        self.assertEqual(git(self.bare, 'rev-parse', 'HEAD'), before)
+        self.assertEqual(self.server.bodies[asset['name']], b'archive\0bytes')
+        self.assertNotIn('fake-secret', output.getvalue() + errors.getvalue())
+        self.assertTrue(errors.getvalue(), 'main lost the unconfirmed metadata push')
+        self.assertEqual(json.loads(errors.getvalue()), {'operation': 'metadata_commit', 'outcome': 'unconfirmed'})
 
     def test_replace_same_name_and_failures(self):
         asset = self.asset()
