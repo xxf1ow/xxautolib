@@ -20,6 +20,8 @@ Status: implemented
 
 ### 范围
 
+[自定位消费入口与工具专用 CI](../../proposed/architecture/2026-11-03-entry-delivery-and-tool-only-ci.md)提出安装并运输单文件入口、只在发布副本注入实际 Gitee 地址、空输入构建工具及严格 `all` 全量选择，并支持 fork 端到端构建发布。它部分替代本文的构建空列表、无包平台处理、固定上游源码身份和发布二次包筛选，要求完整交付原构建结果，并增加不写 Git 元数据的入口附件；本文其余发布、权限和验证规则继续适用。该提案尚未实现。
+
 只发布到 Gitee，只支持 Windows x86_64、Linux x86_64、Linux aarch64 三个原生组合。沿用现有 `GITEE_REPOSITORY`、`GITEE_RELEASE_TAG` 和 secret `GITEE_TOKEN`，不增加同义配置。GitHub Actions 仍提供构建运行及 artifacts，不向 GitHub Release 发布二进制；已有 GitHub 消费协议和适配不扩大也不移除。基线中的旧源码 Release 上传和 GitHub Release 到 Gitee 的中转入口不再参与新交付链，避免保留第二条可被误触发的生产发布路径。
 
 允许调整 CI 精确版本身份、独立根闭包验证、安装结果运输、发布端暂存打包和 Gitee 元数据管理，消除其中的重复解析和跨层推断。消费侧仅作使新交付协议成套成立的必要适配，包括允许根 LICENSE、统一工具摘要路径；不顺带重写消费模块或构建引擎，不重组全部配方，不新增版本范围、多版本同工程隔离、交叉编译、ABI 变体、发布事务或通用恢复服务。
