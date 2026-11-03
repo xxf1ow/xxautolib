@@ -425,7 +425,7 @@ int main() {
 		t.Fatal(err)
 	}
 	work := filepath.Join(root, "build", "ci", "123-1", platform)
-	f := installedFixture{plan: plan, identity: identity, options: ciRunOptions{SourceRoot: root, PlanFile: filepath.Join(root, "plan.json"), RunIdentityFile: filepath.Join(root, "run.json"), Platform: platform, WorkRoot: work, BuilderFile: builder, ImporterFile: filepath.Join(work, "install", ciImporterExecutable(platform)), CMakeCommand: cmakeCommand, MakeProgram: makeProgram, Budget: 2}}
+	f := installedFixture{plan: plan, identity: identity, options: ciRunOptions{SourceRoot: root, PlanFile: filepath.Join(root, "plan.json"), RunIdentityFile: filepath.Join(root, "run.json"), Platform: platform, WorkRoot: work, ImporterFile: filepath.Join(work, "install", ciImporterExecutable(platform)), CMakeCommand: cmakeCommand, MakeProgram: makeProgram, Budget: 2}}
 	if err := writeCIJSON(f.options.PlanFile, plan); err != nil {
 		t.Fatal(err)
 	}

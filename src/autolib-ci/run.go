@@ -25,7 +25,7 @@ func runCILayer(ctx context.Context, o ciRunOptions) (failure error) {
 			return errors.New("CI layer must be prepare, layer<N> or verify")
 		}
 	}
-	for name, value := range map[string]string{"builder file": o.BuilderFile, "importer file": o.ImporterFile, "CMake command": o.CMakeCommand} {
+	for name, value := range map[string]string{"importer file": o.ImporterFile, "CMake command": o.CMakeCommand} {
 		if strings.TrimSpace(value) == "" {
 			return fmt.Errorf("CI run %s is required", name)
 		}
@@ -165,7 +165,7 @@ func runCILayer(ctx context.Context, o ciRunOptions) (failure error) {
 			if err := visit(root); err != nil {
 				return err
 			}
-			evidence, err := validateCIRelease(ctx, ciValidationOptions{SourceRoot: source, InstallRoot: install, BuildRoot: work, ImporterFile: o.ImporterFile, CMakeCommand: o.CMakeCommand, EvidenceDirectory: filepath.Join(work, "evidence", root), Modules: closure, RootPackages: []string{root}, Context: production, Mode: "installed"})
+			evidence, err := validateCIRelease(ctx, ciValidationOptions{SourceRoot: source, InstallRoot: install, BuildRoot: work, ImporterFile: o.ImporterFile, CMakeCommand: o.CMakeCommand, EvidenceDirectory: filepath.Join(work, "evidence", root), Modules: closure, RootPackages: []string{root}, Context: production})
 			if err != nil {
 				return err
 			}
@@ -315,7 +315,7 @@ func runCIRun(args []string, stdout, stderr io.Writer) int {
 	for _, item := range []struct {
 		key   string
 		value *string
-	}{{"source-root", &o.SourceRoot}, {"plan", &o.PlanFile}, {"run-identity", &o.RunIdentityFile}, {"platform", &o.Platform}, {"layer", &o.Layer}, {"work-root", &o.WorkRoot}, {"builder-file", &o.BuilderFile}, {"importer-file", &o.ImporterFile}, {"cmake-command", &o.CMakeCommand}, {"make-program", &o.MakeProgram}} {
+	}{{"source-root", &o.SourceRoot}, {"plan", &o.PlanFile}, {"run-identity", &o.RunIdentityFile}, {"platform", &o.Platform}, {"layer", &o.Layer}, {"work-root", &o.WorkRoot}, {"importer-file", &o.ImporterFile}, {"cmake-command", &o.CMakeCommand}, {"make-program", &o.MakeProgram}} {
 		flags.StringVar(item.value, item.key, "", item.key)
 	}
 	flags.IntVar(&o.Budget, "budget", 0, "Linux Make worker budget")

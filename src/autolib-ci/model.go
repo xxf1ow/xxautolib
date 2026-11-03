@@ -50,7 +50,7 @@ type ciProductionContext struct {
 
 type ciRunOptions struct {
 	SourceRoot, PlanFile, RunIdentityFile, Platform, Layer, WorkRoot string
-	BuilderFile, ImporterFile, CMakeCommand, MakeProgram             string
+	ImporterFile, CMakeCommand, MakeProgram                          string
 	Budget                                                           int
 }
 

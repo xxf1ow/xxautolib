@@ -1,10 +1,25 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestCIRunDoesNotRequireUnusedBuilder(t *testing.T) {
+	f := transportInputFixture(t)
+	work := filepath.Join(f.options.SourceRoot, "build", "ci", "123-1", "windows-x86_64")
+	var stdout, stderr bytes.Buffer
+	code := runCIRun([]string{"--source-root", f.options.SourceRoot, "--plan", f.options.PlanFile,
+		"--run-identity", f.options.RunIdentityFile, "--platform", "windows-x86_64",
+		"--layer", "prepare", "--work-root", work,
+		"--importer-file", "unused", "--cmake-command", "unused"}, &stdout, &stderr)
+	if code != 1 || !strings.Contains(stderr.String(), "selected") || strings.Contains(stderr.String(), "builder") {
+		t.Fatalf("run did not reach the platform selection check without an extra builder: code=%d stderr=%s", code, &stderr)
+	}
+}
 
 func TestCIRunIdentity(t *testing.T) {
 	root := t.TempDir()
@@ -47,7 +62,6 @@ func TestCIRunRejectsUnselectedPlatform(t *testing.T) {
 	f := transportInputFixture(t)
 	f.options.Platform = "windows-x86_64"
 	f.options.Layer = "prepare"
-	f.options.BuilderFile = "unused"
 	f.options.ImporterFile = "unused"
 	f.options.CMakeCommand = "unused"
 	if err := runCILayer(context.Background(), f.options); err == nil {

@@ -234,13 +234,11 @@ func TestCITransportWorkflow(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, target := range []string{"autolib-builder", "autolib-ci"} {
-			if strings.Count(string(data), "./src/"+target) != 1 {
-				t.Fatalf("%s must build %s exactly once", file, target)
-			}
+		if strings.Count(string(data), "./src/autolib-ci") != 1 {
+			t.Fatalf("%s must build autolib-ci exactly once", file)
 		}
-		if strings.Contains(string(data), "./src/autolib-importer") {
-			t.Fatalf("%s independently builds the importer instead of using production configure", file)
+		if strings.Contains(string(data), "./src/autolib-importer") || strings.Contains(string(data), "./src/autolib-builder") {
+			t.Fatalf("%s independently builds production tools instead of using production configure", file)
 		}
 	}
 	t.Run("Windows executes every nonempty dependency layer", func(t *testing.T) {
