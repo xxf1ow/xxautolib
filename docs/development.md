@@ -1,6 +1,6 @@
 # 开发
 
-先准备 Git、CMake（3.20+）和 C/C++ 编译器，通过根入口构建安装。Go SDK 和固定模块自动准备；FLANN、OpenCV 还需可被找到的 pkg-config，FLANN 使用 OpenMP，FFmpeg 按机器开发环境探测。builder 和 Go 测试不需要 Python 或 uv；独立 Gitee 同步使用 Python，个人技能校验器自行准备其环境。
+先准备 Git、CMake（3.20+）和 C/C++ 编译器，通过根入口构建安装。Go SDK 和固定模块自动准备；FLANN、OpenCV 需要 pkg-config，FLANN 使用 OpenMP，FFmpeg 按机器环境探测。builder 和 Go 测试不需要 Python 或 uv；Gitee 发布使用 Python，技能校验器自行准备环境。
 
 ## 准备与配置
 
@@ -20,13 +20,13 @@ cmake -S . -B build -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release
 ```
 
-引擎为 CMake 子项目提供 policy 下限 `3.5`、PIC `ON`、C++ 标准 `17` 的兜底值，通过原生 `CMAKE_ARGS` 传入，不向父级 cache 写默认值；不依赖 preset、IDE 设置或环境变量。根 configure 的 `-D` 或 toolchain 中已定义的值可覆盖兜底值，模块显式 cache 优先于父级值；修改公共值后重新 configure/build。已有 cache 条目保留为父级输入，不自动删除。policy 下限不降低上游较高声明，旧声明被提高后的兼容性仍须实际验证。CMake Tools 可沿用 Kit/Variant，选择已有编译器和配置。
+引擎为 CMake 子项目提供 policy 下限 `3.5`、PIC `ON`、C++ 标准 `17` 的兜底值，通过原生 `CMAKE_ARGS` 传入，不向父级 cache 写默认值；不依赖 preset、IDE 设置或环境变量。根 configure 的 `-D` 或 toolchain 中已定义的值可覆盖兜底值，模块显式 cache 优先于父级值；修改公共值后重新 configure/build。已有 cache 条目保留为父级输入，不自动删除。policy 下限不降低上游较高声明，旧声明被提高后的兼容性仍须实际验证。IDE 可沿用已有编译器和配置。
 
 默认发现全部配方版本，安装到 `3rdparty/<包名>/<版本>/`。`BUILD_LIST` 用逗号分隔 `包名@版本`；裸名只读包级 `package.toml` 的 `latest`，不排序或改写版本。依赖闭包自动补齐，librealsense 不提供 adapter。裸名 eigen 选 3.4.0，显式可选 5.0.1；PCL 固定依赖 `eigen@3.4.0`。根 BUILD_LIST 不传入 OpenCV。configure 输出工具链、安装目录与模块摘要，build 执行获取和安装。
 
 公共入口仅为 Go 子进程设置项目 SDK、缓存、`GOENV=off`、`GOWORK=off`、`GOTOOLCHAIN=local` 和 `CGO_ENABLED=0`，不修改全局环境或用户 Go 配置。只读模块模式分别编译宿主 builder 和 importer，宿主不随 C++ 目标架构改变；go.mod 固定依赖、go.sum 校验内容。每份工作副本统一用 build，不跨平台混用产物。子项目固定 Release，沿用父生成器、平台、完整工具集和 instance；父显式 CRT 原值传递，未指定时 MSVC Release 使用 `/MD`，静态库不自动改为 `/MT`。
 
-已有 SDK 和模块缓存可离线复用；需要显式禁用 Go 模块联网时，仅在当前进程设置 `GOPROXY=off`、`GOSUMDB=off`。SDK 下载失败、摘要不符、解包失败、版本不符及模块缺失分别诊断，失败不执行残留 builder；损坏缓存按报错只处理对应路径，不删除校验文件或清空整个目录。该流程是生产端工具准备，与下游二进制导入分离。
+已有 SDK 和模块缓存可离线复用；需要显式禁用 Go 模块联网时，仅在当前进程设置 `GOPROXY=off`、`GOSUMDB=off`。SDK 下载失败、摘要不符、解包失败、版本不符及模块缺失分别诊断，失败不执行残留 builder；损坏缓存按报错只处理对应路径，不删除校验文件或清空整个目录。
 
 补丁无法正向或反向检查时，构建明确失败，需人工重新准备该模块的干净源码；不会自动还原或清空源码。不要把修改补丁等同于自动替换已应用的旧补丁。
 
@@ -44,11 +44,7 @@ Git 主来源复用 `git/<包名>/<版本>/`，资源复用 `git/_resources/<包
 
 实际安装前，消费文件被置为未完成；安装失败后不能仅靠残留 sentinel 补齐。保护需要的数据，再按上节移走受影响安装目录和原生构建状态，重新完成真实安装；不删除其他包。已完成安装的精确依赖被冻结，reuse 不能把它重标为源码 latest。adapter 正文更新通过普通根重新 configure/build 的复用目标刷新，不手改已安装描述。
 
-需要分发时再使用 `builder package`。CI 开发另构建独立工具，Windows 示例（Linux 去掉 `.exe`）：
-
-```text
-cmake -P src/autolib-builder/go-sdk.cmake -- build -mod=readonly -trimpath -o build/tools/autolib-ci.exe ./src/autolib-ci
-```
+需要分发时再使用 `builder package`；CI 工具准备见[CI 验证](testing.md#ci-验证)。
 
 `builder package` 必须显式提供源码、安装、输出根，目标和宿主身份、工具路径及重复模块选择；完整参数见[打包入口](../src/autolib-builder/release.go)。模块可写 `包名@版本`，裸名只读取安装根 latest；包内身份和依赖来自已安装描述，不重新解析源码 latest。输出必须在本副本 build 内且不与安装树重叠；只打包显式模块，不自动补依赖。版本化库 tar.zst、宿主工具 tar.xz、各自摘要和包级 latest 一同交付。真实示例由[本地闭环测试](testing.md#本地二进制闭环)执行。
 
@@ -56,7 +52,7 @@ cmake -P src/autolib-builder/go-sdk.cmake -- build -mod=readonly -trimpath -o bu
 
 `AUTOLIB_LOCAL_ROOT` 默认空；非空时解析真实绝对路径并拒绝与入口缓存相同，包括链接别名。本地根、缓存和工作路径不得含分号。工具依次使用入口裸程序、来源裸程序或来源单程序 tar.xz，最终只写入口缓存。库依次使用入口 `<name>/<version>/`、来源同布局安装、来源 `<name>-<version>-<os>-<arch>.tar.zst`；通用包使用 any-any。只有不存在才继续，坏候选立即失败。复制在缓存暂存区修正路径，来源工具、归档和安装树均只读；Linux 保留包内相对软链接及权限，拒绝绝对或越界链接，Windows 未承诺同等链接语义。同缓存根写入由调用方串行。
 
-直接 CLI 的必填路径、平台及可重复 package 参数见[工具入口](../src/autolib-importer/main.go)；正常 CMake 使用者不需要直接调用。完整入口缓存允许本地和远端都关闭；缺输入直接报错，不回退系统库、源码编译或旧格式。
+完整缓存允许关闭两来源；缺输入报错，不回退系统库、源码编译或旧格式。直接调用见[CLI参数](../src/autolib-importer/main.go)。
 
 远端设置为 `AUTOLIB_REMOTE_ROOT=https://<github.com|gitee.com>/<owner>/<repo>/releases/download/<encoded-tag>`；入口按需克隆同仓库元数据，再下载精确归档。合法输入、内部交接和失败规则见[统一交付设计](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md#git-元数据与-release-布局)。完整缓存和完整本地来源不要求 Git 或网络。公开仓库尚未初始化为该协议，本地用法须显式关闭远端；既有默认地址和历史发行物不证明新协议可用。受控验证与真实托管缺口见[测试指南](testing.md#release-下载验证)。
 
@@ -64,21 +60,21 @@ cmake -P src/autolib-builder/go-sdk.cmake -- build -mod=readonly -trimpath -o bu
 
 ## CI 开发与运行
 
-版本化身份与独立发布尚未接通；本节仅描述既有CI，不能作为新交付协议的运行指南。
+[手动流水线](../.github/workflows/build-platform.yml)接受同仓库普通分支、拒绝 tag，检出事件提交；平台默认 all，模块留空发现全部合资格配方版本，也可选择 `eigen@3.4.0,eigen@5.0.1,queue,lz4,flann`。缺自身或传递依赖 adapter 的根静默过滤，全过滤成功且零发布。各平台构建精确闭包并逐根验证，上传含原计划、结果、安装与候选的运输 artifact；最终汇总不写 Release。环境见[CI 设计](agent-notes/implemented/architecture/2026-10-20-ci-system.md)，证据及缺口见[测试指南](testing.md#ci-验证)。
 
-[手动流水线](../.github/workflows/build-platform.yml)接受同仓库任意分支、拒绝tag，检出事件提交；平台单选默认all，模块列表留空自动发现声明及 adapter，显式列表可选子集。自身或传递依赖缺 adapter 的根包静默过滤；全被过滤时成功且零发布。各平台顺序执行有效闭包的全部依赖层，逐槽验证后同名替换，不备份或回滚。汇总失败保留成功槽，重跑仍重新构建；不提供 force 输入，不设置资产 label。本地消费目录由用户按上节刷新。验证范围见[测试指南](testing.md#ci-验证)，后续远端操作仍须授权。命令见[入口](../src/autolib-ci/main.go)，环境和发布策略见 [CI 设计](agent-notes/implemented/architecture/2026-10-20-ci-system.md)。
+### 独立 Gitee 发布
 
-### 独立 Gitee 同步
+[发布 workflow](../.github/workflows/publish-artifacts.yml)仅写 Gitee，沿用 secret `GITEE_TOKEN` 及 variables `GITEE_REPOSITORY`、`GITEE_RELEASE_TAG`。自动入口等待整个构建成功，使用精确 run/attempt；手动 artifacts 模式指定 `source_run_id/source_attempt`，`packages` 留空为全部，否则填精确 `name@version` 或 `autolib-importer`。可附 JSON `latest`；latest 模式仅需非空映射，不读取构建资产。发布准备核对输入后使用原提交 builder 打包，不重新编译三方库。
 
-[同步 workflow](../.github/workflows/sync-gitee.yml)需要 secret `GITEE_TOKEN`；repository variables `GITEE_REPOSITORY`、`GITEE_RELEASE_TAG` 默认分别为 `xxf1ow/autolib-release`、`autolib-release`，两端使用同 tag。自动入口检查全部现存来源附件，包括历史遗漏；手动 `packages` 留空选全部，或填 `lz4,queue` 精确选择各包全部平台，importer 须显式选择 `autolib-importer`。任一包未匹配会在创建 Release 等写入前失败。
-
-手动执行前必须信任所选分支提交：同步代码可读取和外传令牌，脱敏不是沙箱。人工修改 Gitee 正文或附件须避开同步，区块外描述也可能被覆盖。部分失败后重跑独立同步，无需重建；成功索引可跳过，未确认项可能重传，同名重复须人工处理。该入口尚需[真实验收](testing.md#独立-gitee-同步验证)，与只读消费独立；适配入口见 [Action 说明](../.github/actions/gitee-release/UPSTREAM.md#同步适配)。
+执行前必须信任控制代码与原构建提交；代码可以外传令牌，脱敏不是沙箱。同名替换先删后传，无备份回滚；部分失败登记成功项但任务失败，push 未确认也失败。显式重跑复用原输入并重新上传，不按同名或大小跳过。适配接口见[Action 说明](../.github/actions/gitee-release/UPSTREAM.md#gitee-版本化发布适配)。真实触发须另获目标及删除替换授权，并先核对默认分支自动入口；旧入口可能响应且未隔离时停止，不以提前合并取得自动证据。新库保持私有，用户公开后按[验收交接](testing.md#真实交付与手动验收)验证。
 
 ## 远端构建与源码传输授权
 
-109 机器（`lxx@192.168.0.109`）是局域网内安全可信设备。用户永久授权将本仓库任务相关源码传输至该机器的 `/home/lxx/xxautolib`。本轮第三方库迁移只在该目录执行整批编译安装验证，失败后的修复与增量续跑按用户确认执行；本机不执行任何编译，包括 Go 工具编译。传输前检查并保留已有数据，不传本仓库 `.git/`、凭据或 Windows 构建产物，不清空目标目录。该授权不包含 Git 推送、Release 上传或触发 CI；本轮迁移全部完成后，由用户手动推送并触发 CI 验收。
+用户永久授权向可信局域网设备 `lxx@192.168.0.109` 的 `/home/lxx/xxautolib` 传输任务源码，同类传输不重复询问；仍须工具审批、逐文件摘要核对并保留已有数据，不覆盖未知差异或清空目标目录，不传项目 `.git/`、凭据、SDK、缓存或宿主产物。第三方库迁移的编译安装、修复及增量续跑按用户确认执行；版本化交付可编译轻量夹具、执行定向测试并写自有日志。本机禁止编译，包括 Go。此授权不含其他目标、push、发布或触发 CI；push 由用户执行，CI 另按授权验收。
 
-版本化交付任务同样获准在上述目录传输任务源码、编译轻量夹具、执行既定定向测试及写入自有运行日志。用户获知工具对具体测试源码传输的拒绝后明确批准：「同意。所有类似源码传输一律同意，不要再问」。同类任务源码向该目录传输不重复询问，工具权限审批及传输前逐文件摘要核对仍须执行，不覆盖未知差异；授权不包含其他目标、项目 `.git/`、凭据、SDK/缓存/产物传输或 push、发布、CI。最低 CMake 版本按用户决定不安排任何形式测试，不下载或传输旧工具；其余定向验证只用 109 现有环境。
+定向验证只用 109 现有环境；最低 CMake 按用户决定不安排任何形式测试，不下载或传输旧工具。
+
+109 使用既有 Make 4.4.1：`/home/lxx/xxautolib/build/task3-make-V1Bt5n/install/bin/make`，仅为测试进程前置 PATH；清理 build 须保留该目录。
 
 ## 日常修改
 

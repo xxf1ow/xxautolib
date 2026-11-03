@@ -293,7 +293,7 @@ func TestLocalReleasePreservesInputs(t *testing.T) {
 			t.Fatal("installation modified")
 		}
 	})
-	for _, tc := range []string{"outside build", "overlap", "empty modules", "missing importer"} {
+	for _, tc := range []string{"outside build", "overlap", "missing importer"} {
 		t.Run(tc, func(t *testing.T) {
 			o := releaseFixture(t)
 			switch tc {
@@ -302,8 +302,6 @@ func TestLocalReleasePreservesInputs(t *testing.T) {
 			case "overlap":
 				o.InstallRoot = filepath.Join(o.SourceRoot, "build")
 				o.OutputRoot = filepath.Join(o.InstallRoot, "release")
-			case "empty modules":
-				o.Modules = nil
 			case "missing importer":
 				o.ImporterFile = filepath.Join(o.SourceRoot, "missing")
 			}

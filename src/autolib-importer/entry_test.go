@@ -468,7 +468,7 @@ func TestLocalConsumerNoToolchainRuntime(t *testing.T) {
 	if err := os.Remove(filepath.Join(f.source, f.toolAsset)); err != nil {
 		t.Fatal(err)
 	}
-	if out, err := f.configure(); err == nil || !strings.Contains(strings.Join(strings.Fields(out), " "), "importer missing") {
+	if out, err := f.configure("-DAUTOLIB_REMOTE_ROOT="); err == nil || !strings.Contains(strings.Join(strings.Fields(out), " "), "importer missing") {
 		t.Fatalf("missing tool was not rejected: %v\n%s", err, out)
 	}
 	if _, err := os.Stat(log); !os.IsNotExist(err) {

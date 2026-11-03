@@ -339,8 +339,9 @@ func TestCITransportWorkflow(t *testing.T) {
 			t.Fatal("missing first Go build")
 		}
 		checkout := filepath.ToSlash(t.TempDir())
-		config := filepath.ToSlash(filepath.Join(t.TempDir(), "gitconfig"))
-		environment := append(withoutEnvironment(os.Environ(), "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", "GIT_TEST_ASSUME_DIFFERENT_OWNER"), "GIT_CONFIG_GLOBAL="+config, "GIT_CONFIG_NOSYSTEM=1")
+		gitHome := filepath.ToSlash(t.TempDir())
+		config := filepath.ToSlash(filepath.Join(gitHome, ".gitconfig"))
+		environment := append(withoutEnvironment(os.Environ(), "HOME", "XDG_CONFIG_HOME", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", "GIT_TEST_ASSUME_DIFFERENT_OWNER"), "HOME="+gitHome, "XDG_CONFIG_HOME="+gitHome+"/.config", "GIT_CONFIG_GLOBAL="+config, "GIT_CONFIG_NOSYSTEM=1")
 		command := exec.Command("git", "init", "--quiet", checkout)
 		command.Env = environment
 		if output, err := command.CombinedOutput(); err != nil {

@@ -169,8 +169,18 @@ func TestCMakeRemoteBootstrapMigration(t *testing.T) {
 }
 
 func TestGitHubValidationDriver(t *testing.T) {
-	for _, host := range []string{"github.com", "gitee.com"} {
-		t.Run(host, func(t *testing.T) {
+	for _, tc := range []struct {
+		name, host, modules, roots, wantModules, wantRoots string
+	}{
+		{"github.com", "github.com", "", "", "queue;lz4;flann", "flann;queue"},
+		{"gitee.com", "gitee.com", "", "", "queue;lz4;flann", "flann;queue"},
+		{"modules only", "gitee.com", "queue;lz4", "", "queue;lz4", "queue;lz4"},
+		{"roots only", "gitee.com", "", "queue", "queue;lz4;flann", "queue"},
+		{"representative roots", "gitee.com", "queue;lz4;flann", "flann;queue", "queue;lz4;flann", "flann;queue"},
+		{"eigen 3.4.0", "gitee.com", "eigen@3.4.0", "eigen@3.4.0", "eigen@3.4.0", "eigen@3.4.0"},
+		{"eigen 5.0.1", "gitee.com", "eigen@5.0.1", "eigen@5.0.1", "eigen@5.0.1", "eigen@5.0.1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
 			entry := "# fixture entry bytes\n"
 			putTestFile(t, filepath.Join(root, "src/autolib.cmake"), entry)
@@ -178,8 +188,8 @@ func TestGitHubValidationDriver(t *testing.T) {
 			putTestFile(t, filepath.Join(root, "tests/autolib/CMakeLists.txt"), `cmake_minimum_required(VERSION 3.20)
 project(driver_fixture NONE)
 enable_testing()
-if(NOT ROOT_PACKAGES STREQUAL "flann;queue" OR NOT AUTOLIB_REMOTE_ROOT MATCHES "^https://(github|gitee).com/owner/repo/releases/download/v1$")
-    message(FATAL_ERROR "driver lost source or root packages: ${ROOT_PACKAGES}")
+if(NOT MODULES STREQUAL EXPECTED_MODULES OR NOT ROOT_PACKAGES STREQUAL EXPECTED_ROOTS OR NOT AUTOLIB_REMOTE_ROOT MATCHES "^https://(github|gitee).com/owner/repo/releases/download/v1$")
+    message(FATAL_ERROR "driver lost source or selection: modules=${MODULES} roots=${ROOT_PACKAGES}")
 endif()
 if(NOT AUTOLIB_ENTRY STREQUAL "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/autolib.cmake")
     message(FATAL_ERROR "driver must copy entry to independent consumer: ${AUTOLIB_ENTRY}")
@@ -206,7 +216,18 @@ add_test(NAME smoke COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_BINARY_DIR}/check.cma
 			if runtime.GOOS == "linux" {
 				generator = "Unix Makefiles"
 			}
-			args := []string{"-DSOURCE_ROOT=" + filepath.ToSlash(root), "-DVALIDATION_ROOT=" + filepath.ToSlash(filepath.Join(root, "build/validation")), "-DREMOTE_ROOT=https://" + host + "/owner/repo/releases/download/v1", "-DGENERATOR=" + generator, "-P", driver}
+			fixture := readTestFile(t, filepath.Join(root, "tests/autolib/CMakeLists.txt"))
+			fixture = strings.ReplaceAll(fixture, "EXPECTED_MODULES", "\""+tc.wantModules+"\"")
+			fixture = strings.ReplaceAll(fixture, "EXPECTED_ROOTS", "\""+tc.wantRoots+"\"")
+			putTestFile(t, filepath.Join(root, "tests/autolib/CMakeLists.txt"), fixture)
+			args := []string{"-DSOURCE_ROOT=" + filepath.ToSlash(root), "-DVALIDATION_ROOT=" + filepath.ToSlash(filepath.Join(root, "build/validation")), "-DREMOTE_ROOT=https://" + tc.host + "/owner/repo/releases/download/v1", "-DGENERATOR=" + generator}
+			if tc.modules != "" {
+				args = append(args, "-DMODULES="+tc.modules)
+			}
+			if tc.roots != "" {
+				args = append(args, "-DROOT_PACKAGES="+tc.roots)
+			}
+			args = append(args, "-P", driver)
 			if out, err := exec.Command(cmake, args...).CombinedOutput(); err != nil {
 				t.Fatalf("driver: %v\n%s", err, out)
 			}

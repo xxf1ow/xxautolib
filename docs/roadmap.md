@@ -2,7 +2,7 @@
 
 本仓库按能力分批接入模块，先完成本地构建安装，再建立下游导入、二进制交付和 CI。本文维护阶段目标与迁移范围；各阶段的理由和约束由链接的 Agent Note 拥有，具体实现开始前再确认该批设计。
 
-后续开发遵循[架构基准](architecture.md)。版本化构建安装、第二阶段本地消费与第三阶段元数据远端消费均已通过用户验收。第三阶段已有 Linux x86_64 受控 Git/HTTPS、空缓存工具引导、精确闭包和离线原生运行证据；平台及真实托管缺口见[远端消费验证](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md#版本化远端消费验证)。第四阶段 CI/独立发布尚未实施，须检查后续设计后再确认计划；整体设计保持 proposed，sherpa 独立接入。
+后续开发遵循[架构基准](architecture.md)。前三阶段已通过用户验收，[远端消费验证](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md#版本化远端消费验证)记录平台及真实托管缺口。[第四阶段设计](agent-notes/proposed/architecture/2026-11-02-gitee-delivery-reimplementation.md)已有实现与受控证据，真实交付与用户验收未完成；按[交接要求](testing.md#真实交付与手动验收)推进，不提前合并。sherpa独立接入。
 
 [Go 工具层与离线导入设计](agent-notes/proposed/architecture/2026-10-21-go-tooling-and-offline-import.md)的 Go 重建与本地交付阶段已通过用户验收；[分阶段消费设计](agent-notes/proposed/architecture/2026-10-25-target-import-and-release-consumption.md#已验收范围)记录本地接口和三平台 GitHub 下载验收。具体平台、搬迁链接及协议证据由对应设计拥有，Gitee 消费验收见下节。
 
@@ -14,13 +14,13 @@
 
 [CI 自动发现与双平台消费](agent-notes/implemented/architecture/2026-10-27-ci-discovery-and-release-sources.md#验证)提供资格静默过滤、实际依赖层及正文摘要校验。真实 Gitee 消费已通过用户手动验收；平台、最低 CMake 及新 CI 策略的证据分别记录，不从该结果推定全部专项通过。
 
-本仓库支持 TOML 定义、Go builder、原生 ExternalProject、固定来源、多资源、补丁、自定义步骤、平台输入及依赖闭包。下表已验证模块均通过 Windows x64、Linux aarch64 本地安装；除 CI 代表集外，Linux x86_64 实机及全部 v142 实机仍待验收。流程由[模块技能](../.agents/skills/add-third-party-module/SKILL.md)维护；当前职责见[架构](architecture.md)，验证入口见[测试](testing.md)。
+下表已验证模块均通过 Windows x64、Linux aarch64 本地安装；除 CI 代表集外，Linux x86_64 实机及全部 v142 实机仍待验收。流程由[模块技能](../.agents/skills/add-third-party-module/SKILL.md)维护；当前职责见[架构](architecture.md)，验证入口见[测试](testing.md)。
 
 “参考已实现”指参考实现中存在对应代码或模块，并有相关决定；不表示本仓库支持，也不表示本轮重新验证了参考实现的全部模块。“参考待实施”指已有方向但尚未落地。迁移不导入历史提交、旧发布数据或所有辅助机制。
 
 ## 后续维护方向
 
-待实施：增加不发布资产的轻量回归 CI，复用现有 Go 测试、vet 及独立同步单元测试；不持有发布凭据、不修改 Release、不重编全部第三方库。完成标志是代码检查自动运行、失败可见且不触发发布；触发条件与平台范围在实施前确认。
+待实施：增加轻量回归CI，复用现有Go测试、vet及独立发布单元测试；不持有发布凭据、不修改Release、不重编全部第三方库。完成标志是代码检查自动运行、失败可见且不触发发布；触发条件与平台范围在实施前确认。
 
 消费 adapter 随后续三方库接入或相关模块扩展一起补齐，按实际下游需求验证依赖闭包、链接运行与搬迁，不单独启动全库适配。
 

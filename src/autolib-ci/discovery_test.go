@@ -151,7 +151,8 @@ func TestCIDiscoveryFiltering(t *testing.T) {
 				if len(plan.Platforms) != 0 || plan.Publisher != "" {
 					t.Fatalf("filtered work retained: %+v", plan)
 				}
-				if err := finalizeCI(plan, ciRunIdentity{}, nil); err != nil {
+				_, identity, _ := finalizeFixture()
+				if err := finalizeCI(plan, identity, nil); err != nil {
 					t.Fatal(err)
 				}
 				return

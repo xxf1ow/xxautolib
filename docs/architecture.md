@@ -18,7 +18,7 @@
 
 `autolib-importer` 负责包选择、精确依赖遍历、HTTPS 下载、复制或解包、校验和缓存准备，内置路径修正规则。单文件 [autolib.cmake](../src/autolib.cmake) 负责宿主 importer 引导、按需 FetchContent Git 快照及仓库检查、结果身份与闭包校验及包就绪后的 target 加载。adapter 使用已准备的依赖公共目标，不自行推断 sibling 版本目录、重新选择依赖或下载编译。
 
-`autolib-ci` 和 workflow 的既有职责是构建计划、依赖层、publisher、消费验证及汇总，以及平台环境、触发、权限与串行。版本化身份及独立发布接线由[后续设计](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md#实施阶段)约束。
+`autolib-ci` 通过 builder 取得精确根及闭包，按依赖层构建、逐根消费验证并运输安装结果；两个 Eigen 版本各有独立消费者。workflow 提供平台环境、触发、权限与同目标串行，不在构建矩阵内发布 Release。
 
 ## 构建与交付
 
@@ -27,6 +27,8 @@
 公开二进制沿用既有 CI 的单一平台 ABI 基准和发布前验证；本地产物结构一致不代表任意工具链二进制兼容。本地自定义配置及混用远端依赖时，由使用者保持兼容；包身份和摘要校验不替代 ABI 判断，不增加 ABI 变体。
 
 本地打包读取安装中的精确身份和依赖，在副本修正生产路径并生成版本化 tar.zst、单程序 importer tar.xz 及 SHA256；不读取源码 latest 重选安装版本。只打包显式模块，调用者提供完整分发集合。原安装保持不变。
+
+独立发布核对成功构建的精确 run/attempt、原计划平台、安装验证和包级候选，调用原提交 builder 从运输副本打包。Gitee Action 只接收明确资产清单；上传 worker 返回结果，一个协调器更新成功摘要及 latest 并确认 Git push。普通发布只初始化缺失指针，显式映射可以随资产或独立更新。新库私有，用户公开后才匿名消费；附件替换不提供事务回滚。交接及失败约束由[Gitee 交付设计](agent-notes/proposed/architecture/2026-11-02-gitee-delivery-reimplementation.md)拥有。
 
 ## 消费与缓存
 
