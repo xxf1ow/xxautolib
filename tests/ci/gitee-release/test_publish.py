@@ -5,6 +5,7 @@ import hashlib
 import importlib
 import io
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -86,6 +87,22 @@ class PublishTests(unittest.TestCase):
         self.transport = patch('requests.sessions.Session.request', side_effect=self.server.request)
         self.transport.start()
         self.addCleanup(self.transport.stop)
+
+    def test_main_reports_input_rule_on_stderr_without_credentials(self):
+        environment = {'PUBLISH_HOST': 'gitee', 'PUBLISH_MODE': 'latest', 'PUBLISH_LATEST': '[]',
+                       'GITEE_REPOSITORY': 'fixture/mirror', 'GITEE_RELEASE_TAG': 'fixed',
+                       'GITEE_TOKEN': 'fake-secret'}
+        for latest, rule in [('[]', 'latest must be an object'),
+                             ('fake-secret', 'valid UTF-8 JSON')]:
+            with self.subTest(latest=latest):
+                stdout, stderr = io.StringIO(), io.StringIO()
+                with patch.dict(os.environ, dict(environment, PUBLISH_LATEST=latest), clear=True), \
+                        contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                    self.assertEqual(self.module.main(), 1)
+                self.assertEqual(stdout.getvalue(), '')
+                self.assertIn(rule, stderr.getvalue())
+                self.assertNotIn('fake-secret', stderr.getvalue())
+        self.assertEqual(self.server.events, [])
 
     def asset(self, name='queue', version='1', body=b'archive\0bytes'):
         filename = f'{name}-{version}-any-any.tar.zst'

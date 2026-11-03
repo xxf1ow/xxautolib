@@ -148,12 +148,20 @@ def main() -> int:
     """stdout 输出汇总，stderr 输出脱敏失败诊断；任一失败或未确认返回非零。"""
     config = None
     try:
-        config = resolve_config(os.environ)
+        try:
+            config = resolve_config(os.environ)
+        except (json.JSONDecodeError, UnicodeError):
+            print('publication input must contain valid UTF-8 JSON', file=sys.stderr)
+            return 1
+        except ValueError as error:
+            # resolve_config 的规则错误均为固定文本，不含输入值或凭据。
+            print(f'publication input: {error}', file=sys.stderr)
+            return 1
         result = publish_release(config)
         print(json.dumps(result, sort_keys=True))
         return int(bool(result['failed']) or not result['metadata_committed'])
     except (OSError, ValueError, RuntimeError):
-        print('publication failed: invalid input or unconfirmed operation')
+        print('publication failed: input could not be read or operation was not confirmed', file=sys.stderr)
         return 1
     finally:
         if config is not None:
