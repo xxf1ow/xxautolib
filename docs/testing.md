@@ -62,11 +62,11 @@ build/tools/gitee-sync-venv/Scripts/python.exe -m pip install -r .github/actions
 build/tools/gitee-sync-venv/Scripts/python.exe -m unittest discover -s tests/ci/gitee-release -p test_publish.py -v
 ```
 
-按修改所有者替换 `-p` 文件名，不重复整套发布测试。HTTP 替身不访问真实 Gitee；Git 测试只用本地临时裸库。Windows 无 Bash 跳过相关分支检查，真实 builder 用例只在 109 执行。已有通过数量与真实缺口由[交付证据](agent-notes/proposed/architecture/2026-11-02-gitee-delivery-reimplementation.md#已有受控证据)拥有。
+按修改所有者替换 `-p` 文件名，不重复整套发布测试。HTTP 替身不访问真实 Gitee；Git 测试只用本地临时裸库。Windows 无 Bash 跳过相关分支检查，真实 builder 用例只在 109 执行。已有通过数量与真实缺口由[交付证据](agent-notes/implemented/architecture/2026-11-02-gitee-delivery-reimplementation.md#已有受控证据)拥有。
 
 ## 真实交付与手动验收
 
-真实发布、故障重跑及三平台匿名消费尚未执行。默认分支旧自动入口未隔离，目前不得触发；用户先审阅证据并授权具体目标与替换范围，负责 push 和公开新库。可观察的手动验收方案与未完成项见[交付设计](agent-notes/proposed/architecture/2026-11-02-gitee-delivery-reimplementation.md#实现证据与未完成验收)，不能以受控结果或提前合并代替。
+Gitee 版本化交付已通过用户手动验收。真实三平台构建记录、摘要空白修复及用户复验结论见[交付证据](agent-notes/implemented/architecture/2026-11-02-gitee-delivery-reimplementation.md#真实构建与用户验收)。修复后二次发布、三平台匿名消费及真实故障注入没有逐项归档日志，不将受控测试等同于这些专项通过。后续 CI、Gitee 写入与故障注入仍按具体授权执行；push 和新库公开由用户负责。
 
 ## 安装产物集成验证
 

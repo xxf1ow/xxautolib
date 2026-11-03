@@ -2,7 +2,7 @@
 
 本仓库按能力分批接入模块，先完成本地构建安装，再建立下游导入、二进制交付和 CI。本文维护阶段目标与迁移范围；各阶段的理由和约束由链接的 Agent Note 拥有，具体实现开始前再确认该批设计。
 
-后续开发遵循[架构基准](architecture.md)。前三阶段已通过用户验收，[远端消费验证](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md#版本化远端消费验证)记录平台及真实托管缺口。[第四阶段设计](agent-notes/proposed/architecture/2026-11-02-gitee-delivery-reimplementation.md)已有实现与受控证据，真实交付与用户验收未完成；按[交接要求](testing.md#真实交付与手动验收)推进，不提前合并。sherpa独立接入。
+后续开发遵循[架构基准](architecture.md)。版本化构建安装、本地消费、Git 元数据远端消费及[Gitee 交付](agent-notes/implemented/architecture/2026-11-02-gitee-delivery-reimplementation.md)四个阶段均已通过用户验收；实际证据与未记录专项见[验收范围](testing.md#真实交付与手动验收)，不推定全部第三方库已全量编译通过。sherpa 独立接入。
 
 [Go 工具层与离线导入设计](agent-notes/proposed/architecture/2026-10-21-go-tooling-and-offline-import.md)的 Go 重建与本地交付阶段已通过用户验收；[分阶段消费设计](agent-notes/proposed/architecture/2026-10-25-target-import-and-release-consumption.md#已验收范围)记录本地接口和三平台 GitHub 下载验收。具体平台、搬迁链接及协议证据由对应设计拥有，Gitee 消费验收见下节。
 
@@ -10,7 +10,7 @@
 
 ## 状态与依据
 
-[importer 压缩分发与功能分支手动发布](agent-notes/proposed/architecture/2026-10-27-importer-distribution-and-branch-release.md)提供正式工具去符号、CI 单程序 tar.xz 和 CMake 原生引导。压缩格式的跨平台、最低 CMake 及真实 CI 验收仍待完成；[Gitee 独立同步](agent-notes/proposed/architecture/2026-10-27-gitee-release-sync-workflow.md)已有本地实现，真实 runner 验收仍独立进行。
+[importer 压缩分发](agent-notes/proposed/architecture/2026-10-27-importer-distribution-and-branch-release.md)提供工具去符号、单程序 tar.xz 和 CMake 原生引导依据；[Gitee 同步参考](agent-notes/proposed/architecture/2026-10-27-gitee-release-sync-workflow.md)保留附件接入理由。当前交付只使用独立 Gitee 发布，不经 GitHub Release 中转；验证范围由[交付记录](agent-notes/implemented/architecture/2026-11-02-gitee-delivery-reimplementation.md#验证证据)拥有。最低 CMake 按用户决定不安排测试。
 
 [CI 自动发现与双平台消费](agent-notes/implemented/architecture/2026-10-27-ci-discovery-and-release-sources.md#验证)提供资格静默过滤、实际依赖层及正文摘要校验。真实 Gitee 消费已通过用户手动验收；平台、最低 CMake 及新 CI 策略的证据分别记录，不从该结果推定全部专项通过。
 

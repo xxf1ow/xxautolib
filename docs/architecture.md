@@ -28,7 +28,7 @@
 
 本地打包读取安装中的精确身份和依赖，在副本修正生产路径并生成版本化 tar.zst、单程序 importer tar.xz 及 SHA256；不读取源码 latest 重选安装版本。只打包显式模块，调用者提供完整分发集合。原安装保持不变。
 
-独立发布核对成功构建的精确 run/attempt、原计划平台、安装验证和包级候选，调用原提交 builder 从运输副本打包。Gitee Action 只接收明确资产清单；上传 worker 返回结果，一个协调器更新成功摘要及 latest 并确认 Git push。普通发布只初始化缺失指针，显式映射可以随资产或独立更新。新库私有，用户公开后才匿名消费；附件替换不提供事务回滚。交接及失败约束由[Gitee 交付设计](agent-notes/proposed/architecture/2026-11-02-gitee-delivery-reimplementation.md)拥有。
+独立发布核对成功构建的精确 run/attempt、原计划平台、安装验证和包级候选，调用原提交 builder 从运输副本打包。Gitee Action 只接收明确资产清单；上传 worker 返回结果，一个协调器更新成功摘要及 latest 并确认 Git push。普通发布只初始化缺失指针，显式映射可以随资产或独立更新。新库私有，用户公开后才匿名消费；附件替换不提供事务回滚。交接及失败约束由[Gitee 交付设计](agent-notes/implemented/architecture/2026-11-02-gitee-delivery-reimplementation.md)拥有。
 
 ## 消费与缓存
 

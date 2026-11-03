@@ -54,7 +54,7 @@ Git 主来源复用 `git/<包名>/<版本>/`，资源复用 `git/_resources/<包
 
 完整缓存允许关闭两来源；缺输入报错，不回退系统库、源码编译或旧格式。直接调用见[CLI参数](../src/autolib-importer/main.go)。
 
-远端设置为 `AUTOLIB_REMOTE_ROOT=https://<github.com|gitee.com>/<owner>/<repo>/releases/download/<encoded-tag>`；入口按需克隆同仓库元数据，再下载精确归档。合法输入、内部交接和失败规则见[统一交付设计](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md#git-元数据与-release-布局)。完整缓存和完整本地来源不要求 Git 或网络。公开仓库尚未初始化为该协议，本地用法须显式关闭远端；既有默认地址和历史发行物不证明新协议可用。受控验证与真实托管缺口见[测试指南](testing.md#release-下载验证)。
+远端设置为 `AUTOLIB_REMOTE_ROOT=https://<github.com|gitee.com>/<owner>/<repo>/releases/download/<encoded-tag>`；入口按需克隆同仓库元数据，再下载精确归档。合法输入、内部交接和失败规则见[统一交付设计](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md#git-元数据与-release-布局)。完整缓存和完整本地来源不要求 Git 或网络。本地专用用法须显式关闭远端；远端须提供合法专用元数据和匹配资产，历史发行物不代表协议可用。实际验收范围见[测试指南](testing.md#真实交付与手动验收)。
 
 已有目录核对五行包头和导入文件，adapter 检查其所需文件，不逐文件散列；内容校验不认证来源，工具及包内 CMake 必须可信。缓存包和 latest 不自动追随来源，精确请求不改 latest；删除缓存 latest 指向的版本目录后，裸名请求重新发现来源选择，不更新无关缓存。刷新前保护修改，只处理入口缓存的 `<包名>/<版本>/`，不改来源、不删共享依赖；损坏包不是缺包，必须明确处理而非自动重选。FLANN 的包依赖仅 lz4，OpenMP、C++ ABI 和系统运行库由消费环境满足。
 
@@ -66,7 +66,7 @@ Git 主来源复用 `git/<包名>/<版本>/`，资源复用 `git/_resources/<包
 
 [发布 workflow](../.github/workflows/publish-artifacts.yml)仅写 Gitee，沿用 secret `GITEE_TOKEN` 及 variables `GITEE_REPOSITORY`、`GITEE_RELEASE_TAG`。自动入口等待整个构建成功，使用精确 run/attempt；手动 artifacts 模式指定 `source_run_id/source_attempt`，`packages` 留空为全部，否则填精确 `name@version` 或 `autolib-importer`。可附 JSON `latest`；latest 模式仅需非空映射，不读取构建资产。发布准备核对输入后使用原提交 builder 打包，不重新编译三方库。
 
-执行前必须信任控制代码与原构建提交；代码可以外传令牌，脱敏不是沙箱。同名替换先删后传，无备份回滚；部分失败登记成功项但任务失败，push 未确认也失败。显式重跑复用原输入并重新上传，不按同名或大小跳过。适配接口见[Action 说明](../.github/actions/gitee-release/UPSTREAM.md#gitee-版本化发布适配)。真实触发须另获目标及删除替换授权，并先核对默认分支自动入口；旧入口可能响应且未隔离时停止，不以提前合并取得自动证据。新库保持私有，用户公开后按[验收交接](testing.md#真实交付与手动验收)验证。
+执行前必须信任控制代码与原构建提交；代码可以外传令牌，脱敏不是沙箱。同名替换先删后传，无备份回滚；部分失败登记成功项但任务失败，push 未确认也失败。显式重跑复用原输入并重新上传，不按同名或大小跳过。适配接口见[Action 说明](../.github/actions/gitee-release/UPSTREAM.md#gitee-版本化发布适配)。真实触发须取得目标及删除替换授权，并核对默认分支实际响应的自动入口，不能假定 workflow_run 使用任务分支控制代码。新库保持私有，用户公开后按[验收交接](testing.md#真实交付与手动验收)验证。
 
 ## 远端构建与源码传输授权
 

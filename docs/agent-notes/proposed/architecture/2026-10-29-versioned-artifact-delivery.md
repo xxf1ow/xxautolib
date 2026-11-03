@@ -10,7 +10,7 @@ Status: proposed
 
 ## 方案
 
-采用精确版本包、独立 latest 指针、统一安装结果和专用 Git 元数据仓库。实际归档放在同仓库的固定 Release 中，按完整文件名定位；消费端只克隆元数据并下载归档，不编译源码。[架构](../../../architecture.md)是开发入口，本文拥有版本、缓存、元数据和发布约束；版本化构建安装、本地消费和 Git 元数据远端消费的实现证据见下文。前三阶段均已通过用户验收，CI/独立发布尚未实施，整体设计保持 proposed。
+采用精确版本包、独立 latest 指针、统一安装结果和专用 Git 元数据仓库。实际归档放在同仓库的固定 Release 中，按完整文件名定位；消费端只克隆元数据并下载归档，不编译源码。[架构](../../../architecture.md)是开发入口，本文保留版本、缓存、Git 元数据及前三阶段已验收的契约和证据。第四阶段由已验收的[Gitee 交付重做](../../implemented/architecture/2026-11-02-gitee-delivery-reimplementation.md)独立拥有；本文的第四阶段方案仅供参考，不要求兼容或并存两套实现。
 
 ### 版本与依赖
 
@@ -121,8 +121,9 @@ GitHub、Gitee 都使用专用公开产物仓库，不在源码仓库中混放�
 ```text
 产物仓库/
 ├─ README.md
+├─ LICENSE
 ├─ .autolib-repository.json
-├─ tools/
+├─ autolib-importer/
 │  └─ autolib-importer-….tar.xz.sha256
 └─ eigen/
    ├─ package.toml
@@ -135,7 +136,7 @@ GitHub、Gitee 都使用专用公开产物仓库，不在源码仓库中混放�
 
 latest 在源码、安装结果和远端元数据中使用相同的包级 `package.toml` 格式，区别只在来源。每个 `.sha256` 文件仅保存对应归档的 SHA256；去掉该后缀就是完整资产文件名。库包使用版本化 tar.zst，工具使用现有宿主命名的单程序 tar.xz。不再用 JSON 重复存储包名、版本、OS、架构、附件 ID 或 URL，也不在 Release 正文聚合摘要。
 
-已落地身份文件为 `{"type":"xxautolib-artifacts","schema":1,"upstream":"https://github.com/xxf1ow/xxautolib"}`，消费入口核对这三个字段的类型及精确值。包级选择只有 TOML `latest` 字符串；独立摘要为 64 位小写十六进制 SHA256 加换行，分别位于 `tools/<工具归档名>.sha256` 与 `<name>/<version>/<完整库归档名>.sha256`，Windows 工具保留 `.exe.tar.xz` 命名。未登记摘要视为无该资产，摘要非法或已登记资产下载 404 直接失败，不换版本或来源。
+已落地身份文件为 `{"type":"xxautolib-artifacts","schema":1,"upstream":"https://github.com/xxf1ow/xxautolib"}`，消费入口核对这三个字段的类型及精确值。包级选择只有 TOML `latest` 字符串；独立摘要为 64 位小写十六进制 SHA256 加 LF，分别位于 `autolib-importer/<工具归档名>.sha256` 与 `<name>/<version>/<完整库归档名>.sha256`，Windows 工具保留 `.exe.tar.xz` 命名。消费端统一忽略摘要首尾的空格、Tab、CR、LF，再严格校验，不删除内部字符；工具目录不接受包级 latest，也不回退 tools 路径。未登记摘要视为无该资产，摘要非法或已登记资产下载 404 直接失败，不换版本或来源。LICENSE 是合法根文件；初始化及发布端规则由[Gitee 交付记录](../../implemented/architecture/2026-11-02-gitee-delivery-reimplementation.md)拥有。
 
 发布和消费根据精确包版本、目标平台及既有平台无关规则定位归档文件名，包内身份是第二层校验。文件名必须安全、可确定且在 Release 中无歧义，不通过包含匹配或任意子串选择资产。固定 Release 不按每个版本新建 tag；版本由归档名与 Git 元数据目录表达。
 
