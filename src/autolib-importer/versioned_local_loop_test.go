@@ -108,8 +108,9 @@ target_link_libraries(autolib::probe INTERFACE fixture::probe autolib::dep)
 func TestVersionedLocalLoop(t *testing.T) {
 	root := t.TempDir()
 	f := newNativeLoopFixture(t, root)
-	// The fixture supplies the source entry beside its installed tool and packages.
-	putTestFile(t, filepath.Join(f.install, "autolib.cmake"), readTestFile(t, "../autolib.cmake"))
+	if readTestFile(t, filepath.Join(f.install, "autolib.cmake")) != readTestFile(t, "../autolib.cmake") {
+		t.Fatal("ordinary root did not install the source entry unchanged")
+	}
 	consumer := filepath.Join(root, "independent consumer")
 	putTestFile(t, filepath.Join(consumer, "main.cpp"), loopConsumerSource)
 	putTestFile(t, filepath.Join(consumer, "CMakeLists.txt"), loopConsumerCMake)

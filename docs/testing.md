@@ -18,7 +18,7 @@ Go fixture 验证声明、原生构建、安装及版本化本地和受控远端
 
 [安装消费 driver](../tests/autolib/run-installed.cmake)只将 smoke 源码放入独立消费者，直接 include `INSTALL_ROOT/autolib.cmake`，由公共 `autolib_import` 消费同根精确闭包。安装根必须已有入口、宿主工具及包。driver 执行 configure/build/CTest，并记录导入属性、精确目录、链接输入和动态加载位置；SOURCE_ROOT 仅用于取得 smoke，不复制生产入口或安装包。
 
-[原生闭环 fixture](../src/autolib-importer/versioned_local_loop_test.go)使用真实 builder 构建轻量 probe/dep，独立消费者直接 include 安装入口。头版本与机器码版本须同时为 1，运行时加载路径、导入属性和链接输入须位于同一安装根；重复消费不修改安装内容。错头版本负样本必须运行失败。fixture 显式把源码入口放入测试安装根。运行此闭环使用：
+[原生闭环 fixture](../src/autolib-importer/versioned_local_loop_test.go)通过普通根真实安装入口和轻量 probe/dep，独立消费者直接 include 安装入口。头版本与机器码版本须同时为 1，运行加载路径、导入属性和链接输入须位于同一安装根；重复消费不改安装。错头版本负样本必须运行失败。运行此闭环使用：
 
 ```text
 cmake -P src/autolib-builder/go-sdk.cmake -- test -mod=readonly ./src/autolib-importer -run 'TestVersionedLocalLoop$' -count=1 -v
@@ -28,7 +28,9 @@ cmake -P src/autolib-builder/go-sdk.cmake -- test -mod=readonly ./src/autolib-im
 
 ## Release 下载验证
 
-[远端原生闭环](../src/autolib-importer/versioned_remote_loop_test.go)通过普通根入口和真实 builder 生成轻量 probe/dep 与 importer 归档；两种托管共用专用 Git 元数据协议和受控 HTTPS。空缓存获取工具与精确闭包后真实链接运行，校验当前缓存加载位置及头/机器码版本；有效摘要但错误包内身份在 adapter 执行前失败。完整缓存复制到新消费者、关闭测试 Git/HTTPS 后，保留发布入口内置地址仍通过 configure/build/CTest，原来源、精确依赖和无关缓存不变；缓存复用零远端操作，需要新包的新 configure 获取新快照。实际计数及缺口见[远端消费验证](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md#版本化远端消费验证)。
+[远端原生闭环](../src/autolib-importer/versioned_remote_loop_test.go)复用真实轻量库。Gitee 子例从生产 `prepare_publication` 返回清单取得实际入口和资产，验证非上游仓库与编码 tag 的工具及库 URL；GitHub 保留消费协议。空缓存引导后真实链接运行，完整缓存和损坏已有候选均零远端操作；错误身份及损坏候选在 adapter 前拒绝。关闭受控 Git/HTTPS、迁移完整缓存后仍链接运行，原输入及无关缓存不变。证据及缺口由[自定位入口记录](agent-notes/implemented/architecture/2026-11-03-entry-delivery-and-tool-only-ci.md#验证)拥有。
+
+109 使用[已有 Python 环境](development.md#远端构建与源码传输授权)，按下节发布测试方式选择 `-p test_entry_delivery.py`。该[桥接测试](../tests/ci/gitee-release/test_entry_delivery.py)从仓库根调度 RemoteLoop，不重复单跑同一 Go 用例；原目录存在未知源码差异时，只在逐摘要核对的新隔离源码根运行测试快照，不覆盖未知文件。
 
 [下载 driver](../tests/autolib/run-github.cmake)用 `ENTRY_URL` 下载发布入口到独立消费者的 `3rdparty/`，再 include 并消费，不读取源码入口或用户来源变量。`ENTRY_URL` 支持 CMake 下载的 HTTP(S) 和 `file://`；`MODULES`、`ROOT_PACKAGES` 分别选择 smoke 和导入根。driver 保留发布入口字节，执行构建、CTest 和缓存 reconfigure。受控 Git/HTTPS fixture 不替代真实托管验收。
 

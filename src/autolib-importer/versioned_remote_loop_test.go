@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,8 +13,65 @@ import (
 	"testing"
 )
 
+func nativePublication(t *testing.T, native nativeLoopFixture) (string, map[string]string, map[string]string) {
+	t.Helper()
+	python := os.Getenv("AUTOLIB_ENTRY_DELIVERY_PYTHON")
+	if python == "" {
+		python = "python3"
+	}
+	fixture := os.Getenv("AUTOLIB_ENTRY_DELIVERY_FIXTURE")
+	if fixture == "" {
+		fixture = "../../tests/ci/gitee-release/test_entry_delivery.py"
+	}
+	out := loopCommand(t, python, fixture, "prepare-native", "--source", native.producer,
+		"--installed", native.install, "--builder", filepath.Join(native.producer, "build/tools", native.builderName),
+		"--system", runtime.GOOS, "--arch", native.arch)
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	manifest := strings.TrimSpace(lines[len(lines)-1])
+	if !filepath.IsAbs(manifest) {
+		t.Fatalf("production preparation did not return an absolute manifest: %q", manifest)
+	}
+	var publication struct {
+		Assets []struct {
+			Kind, Name, Path, SHA256 string
+			Size                     int64
+			Package                  struct{ Name, Version string }
+		}
+	}
+	if err := json.Unmarshal([]byte(readTestFile(t, manifest)), &publication); err != nil {
+		t.Fatal(err)
+	}
+	assets, digests := map[string]string{}, map[string]string{}
+	entry := ""
+	for _, asset := range publication.Assets {
+		body := readTestFile(t, filepath.Join(filepath.Dir(manifest), filepath.FromSlash(asset.Path)))
+		digest := fmt.Sprintf("%x", sha256.Sum256([]byte(body)))
+		if int64(len(body)) != asset.Size || digest != asset.SHA256 {
+			t.Fatalf("production asset bytes do not match manifest: %s", asset.Name)
+		}
+		if asset.Kind == "entry" {
+			if entry != "" || asset.Name != "autolib.cmake" || asset.Path != "autolib.cmake" {
+				t.Fatal("publication must contain one fixed entry")
+			}
+			entry = body
+			continue
+		}
+		path := "autolib-importer/" + asset.Name
+		if asset.Kind == "library" {
+			path = asset.Package.Name + "/" + asset.Package.Version + "/" + asset.Name
+		}
+		assets[path], digests[path] = body, digest+"\n"
+	}
+	if entry == "" || len(assets) != 4 {
+		t.Fatal("production preparation omitted entry, tool or native packages")
+	}
+	t.Logf("production publication manifest: %s", manifest)
+	return entry, assets, digests
+}
+
 func TestVersionedRemoteLoop(t *testing.T) {
 	native := newNativeLoopFixture(t, t.TempDir())
+	publishedEntry, publishedAssets, publishedDigests := nativePublication(t, native)
 	assets := map[string]string{}
 	digests := map[string]string{}
 	for _, ref := range []string{"probe/1", "dep/1", "dep/2", "autolib-importer"} {
@@ -31,10 +90,17 @@ func TestVersionedRemoteLoop(t *testing.T) {
 	}
 	for _, host := range []string{"github.com", "gitee.com"} {
 		t.Run(host, func(t *testing.T) {
-			e := remoteEntry(t, host)
-			for path, body := range assets {
+			var e *versionedRemoteEntry
+			currentAssets, currentDigests := assets, digests
+			if host == "gitee.com" {
+				e = remoteEntryTarget(t, host, "fixture/mirror", "%E4%B8%AD%E6%96%87%2Frelease")
+				currentAssets, currentDigests = publishedAssets, publishedDigests
+			} else {
+				e = remoteEntry(t, host)
+			}
+			for path, body := range currentAssets {
 				e.asset(t, path, body)
-				if got := readTestFile(t, filepath.Join(e.repo, filepath.FromSlash(path)+".sha256")); got != digests[path] {
+				if got := readTestFile(t, filepath.Join(e.repo, filepath.FromSlash(path)+".sha256")); got != currentDigests[path] {
 					t.Fatalf("metadata does not preserve builder digest for %s: %q", path, got)
 				}
 			}
@@ -49,8 +115,12 @@ func TestVersionedRemoteLoop(t *testing.T) {
 			metadataBefore := sourceSnapshot(t, e.repo)
 			consumer := e.f.source
 			cache := filepath.Join(consumer, "3rdparty")
-			putTestFile(t, filepath.Join(cache, "autolib.cmake"), readTestFile(t, "../autolib.cmake"))
-			injectEntryRemote(t, filepath.Join(cache, "autolib.cmake"), "https://"+host+"/owner/repo/releases/download/v1")
+			if host == "gitee.com" {
+				putTestFile(t, filepath.Join(cache, "autolib.cmake"), publishedEntry)
+			} else {
+				putTestFile(t, filepath.Join(cache, "autolib.cmake"), readTestFile(t, "../autolib.cmake"))
+				injectEntryRemote(t, filepath.Join(cache, "autolib.cmake"), "https://"+host+"/owner/repo/releases/download/v1")
+			}
 			unrelated := putTestFile(t, filepath.Join(cache, "unrelated/7/marker"), "unrelated cache bytes\n")
 			if runtime.GOOS != "windows" {
 				if err := os.Chmod(unrelated, 0440); err != nil {
@@ -90,6 +160,19 @@ func TestVersionedRemoteLoop(t *testing.T) {
 			depBefore := sourceSnapshot(t, filepath.Join(cache, "dep/1"))
 			consume("cached", consumer)
 			e.counts(t, 1, want)
+			adapter := filepath.Join(cache, "probe/1/autolib-import.cmake")
+			original := readTestFile(t, adapter)
+			putTestFile(t, adapter, "invalid cached candidate\nfile(WRITE [==["+filepath.ToSlash(marker)+"]==] executed)\n")
+			out, err := exec.Command("cmake", "-S", consumer, "-B", filepath.Join(e.f.root, "corrupt-cache"), "-G", native.generator, "-DTLS_CA="+e.ca).CombinedOutput()
+			if err == nil || !strings.Contains(string(out), "probe/1/autolib-import.cmake") {
+				t.Fatalf("corrupt cached candidate was not rejected: %v\n%s", err, out)
+			}
+			if _, err := os.Stat(marker); !os.IsNotExist(err) {
+				t.Fatalf("corrupt cached candidate executed adapter: %v", err)
+			}
+			e.counts(t, 1, want)
+			putTestFile(t, adapter, original)
+			t.Logf("corrupt existing candidate rejected before adapter; HTTP/Git delta=0:\n%s", out)
 			// A new configure that needs a different exact package must fetch its own snapshot.
 			newSource := filepath.Join(e.f.root, "new request")
 			entry := filepath.ToSlash(filepath.Join(cache, "autolib.cmake"))
@@ -108,7 +191,7 @@ autolib_import(TARGET consumer INTERFACE %s)
 			want["dep-2-"+runtime.GOOS+"-"+native.arch+".tar.zst"] = 1
 			e.counts(t, 2, want)
 			writeRequest(newSource, "broken@1")
-			out, err := exec.Command("cmake", "-S", newSource, "-B", filepath.Join(e.f.root, "bad-identity"), "-G", native.generator, "-DCMAKE_TLS_CAINFO="+e.ca).CombinedOutput()
+			out, err = exec.Command("cmake", "-S", newSource, "-B", filepath.Join(e.f.root, "bad-identity"), "-G", native.generator, "-DCMAKE_TLS_CAINFO="+e.ca).CombinedOutput()
 			if err == nil || !strings.Contains(string(out), "directory must end") || !strings.Contains(string(out), "other/1") {
 				t.Fatalf("valid digest with wrong package identity was not rejected: %v\n%s", err, out)
 			}
@@ -146,6 +229,9 @@ autolib_import(TARGET consumer INTERFACE %s)
 				t.Fatal("offline consumption changed unavailable metadata source")
 			}
 			t.Logf("HTTP assets=%v; Git clone=3 ls-tree=3; API/Raw requests=%d; cached and offline configure deltas HTTP=0 Git=0", want, e.apiRequests)
+			if host == "gitee.com" {
+				t.Logf("production publication entry: fixture/mirror tag=中文/release; observed URLs=%v", e.requests)
+			}
 		})
 	}
 	if !reflect.DeepEqual(producerBefore, sourceSnapshot(t, hiddenProducer)) {

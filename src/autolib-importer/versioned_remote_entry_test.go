@@ -14,38 +14,43 @@ import (
 )
 
 type versionedRemoteEntry struct {
-	f                     *entryFixture
-	repo, trace, ca, host string
-	mu                    sync.Mutex
-	assets                map[string]string
-	status                map[string]int
-	redirects             map[string]string
-	requests              map[string]int
-	offline               bool
-	apiRequests           int
-	stopHTTP              func()
+	f                                   *entryFixture
+	repo, trace, ca, host, downloadPath string
+	mu                                  sync.Mutex
+	assets                              map[string]string
+	status                              map[string]int
+	redirects                           map[string]string
+	requests                            map[string]int
+	offline                             bool
+	apiRequests                         int
+	stopHTTP                            func()
 }
 
 func remoteEntry(t *testing.T, host string) *versionedRemoteEntry {
+	return remoteEntryTarget(t, host, "owner/repo", "v1")
+}
+
+func remoteEntryTarget(t *testing.T, host, repository, encodedTag string) *versionedRemoteEntry {
 	t.Helper()
 	f := versionedEntryFixture(t, false)
 	if err := os.Remove(filepath.Join(entryCache(f), f.toolAsset)); err != nil {
 		t.Fatal(err)
 	}
 	e := &versionedRemoteEntry{f: f, host: host, trace: filepath.Join(f.root, "git.trace"), assets: map[string]string{}, status: map[string]int{}, redirects: map[string]string{}, requests: map[string]int{}}
+	e.downloadPath = "/" + repository + "/releases/download/" + encodedTag + "/"
 	e.repo = snapshotRepository(t, metadataRepositoryCase{Files: map[string]string{".autolib-repository.json": `{"type":"xxautolib-artifacts","schema":1,"upstream":"https://github.com/xxf1ow/xxautolib"}`}})
-	redirect := "url.file://" + filepath.ToSlash(e.repo) + ".insteadOf=https://" + host + "/owner/repo.git"
+	redirect := "url.file://" + filepath.ToSlash(e.repo) + ".insteadOf=https://" + host + "/" + repository + ".git"
 	t.Setenv("GIT_CONFIG_PARAMETERS", "'"+strings.ReplaceAll(redirect, "'", "'\\''")+"'")
 	t.Setenv("GIT_TRACE", e.trace)
 	e.ca, e.stopHTTP = entryHTTPSProxyControl(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		e.mu.Lock()
 		defer e.mu.Unlock()
-		key := r.Host + r.URL.Path
+		key := r.Host + r.URL.EscapedPath()
 		e.requests[key]++
 		if r.Header.Get("Authorization") != "" {
 			t.Error("consumer sent credentials")
 		}
-		if r.Host != host || !strings.HasPrefix(r.URL.Path, "/owner/repo/releases/download/v1/") || strings.Contains(r.URL.Path, "/api/") || strings.Contains(r.URL.Path, "/contents/") {
+		if r.Host != host || !strings.HasPrefix(r.URL.EscapedPath(), e.downloadPath) || strings.Contains(r.URL.Path, "/api/") || strings.Contains(r.URL.Path, "/contents/") {
 			e.apiRequests++
 			t.Errorf("forbidden request: %s%s", r.Host, r.URL)
 			w.WriteHeader(500)
@@ -119,7 +124,7 @@ func (e *versionedRemoteEntry) counts(t *testing.T, clones int, want map[string]
 		t.Errorf("requests %v want %v", e.requests, want)
 	}
 	for asset, n := range want {
-		if e.requests[e.host+"/owner/repo/releases/download/v1/"+asset] != n {
+		if e.requests[e.host+e.downloadPath+asset] != n {
 			t.Errorf("requests %v want %v", e.requests, want)
 		}
 	}
