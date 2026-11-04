@@ -162,9 +162,18 @@ func TestVersionedRemoteLoop(t *testing.T) {
 			e.counts(t, 1, want)
 			adapter := filepath.Join(cache, "probe/1/autolib-import.cmake")
 			original := readTestFile(t, adapter)
-			putTestFile(t, adapter, "invalid cached candidate\nfile(WRITE [==["+filepath.ToSlash(marker)+"]==] executed)\n")
+			putTestFile(t, adapter, "# invalid cached candidate\nfile(WRITE [==["+filepath.ToSlash(marker)+"]==] executed)\n")
+			control := putTestFile(t, filepath.Join(e.f.root, "corrupt-adapter-control.cmake"), "include([==["+filepath.ToSlash(adapter)+"]==])\n")
+			loopCommand(t, "cmake", "-P", control)
+			if readTestFile(t, marker) != "executed" {
+				t.Fatal("corrupt adapter include control did not write its marker")
+			}
+			if err := os.Remove(marker); err != nil {
+				t.Fatal(err)
+			}
+			t.Log("corrupt adapter include control wrote marker")
 			out, err := exec.Command("cmake", "-S", consumer, "-B", filepath.Join(e.f.root, "corrupt-cache"), "-G", native.generator, "-DTLS_CA="+e.ca).CombinedOutput()
-			if err == nil || !strings.Contains(string(out), "probe/1/autolib-import.cmake") {
+			if err == nil || !strings.Contains(string(out), "probe/1/autolib-import.cmake") || !strings.Contains(string(out), "expected fixed name/version/os/arch/dependencies header:") || !strings.Contains(string(out), "AUTOLIB_PACKAGE_NAME line") {
 				t.Fatalf("corrupt cached candidate was not rejected: %v\n%s", err, out)
 			}
 			if _, err := os.Stat(marker); !os.IsNotExist(err) {
