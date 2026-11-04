@@ -155,7 +155,7 @@ func TestCIEntryTransport(t *testing.T) {
 			if members != nil {
 				var manifest map[string]any
 				json.Unmarshal(members["transport.json"], &manifest)
-				if manifest["entry"] != "install/autolib.cmake" || !bytes.Equal(members["install/autolib.cmake"], []byte(entry)) {
+				if manifest["entry"] != "autolib.cmake" || !bytes.Equal(members["autolib.cmake"], []byte(entry)) {
 					t.Fatalf("entry bytes/path missing: %s", members["transport.json"])
 				}
 			}

@@ -3,6 +3,7 @@ package main
 import (
 	"archive/tar"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -23,18 +24,26 @@ type ciTransportPackage struct {
 }
 
 type ciTransport struct {
-	Run            ciRunIdentity        `json:"run"`
-	Platform       string               `json:"platform"`
-	ProducerPrefix string               `json:"producer_prefix"`
-	Packages       []ciTransportPackage `json:"packages"`
-	Importer       string               `json:"importer"`
-	Entry          string               `json:"entry"`
+	Run      ciRunIdentity        `json:"run"`
+	Platform string               `json:"platform"`
+	Packages []ciTransportPackage `json:"packages"`
+	Entry    string               `json:"entry"`
+	Assets   []ciTransportAsset   `json:"assets"`
+}
+
+type ciTransportAsset struct {
+	Kind     string  `json:"kind"`
+	Name     string  `json:"name"`
+	Path     string  `json:"path"`
+	Size     int64   `json:"size"`
+	SHA256   string  `json:"sha256"`
+	Package  *ciSlot `json:"package,omitempty"`
+	Platform string  `json:"platform,omitempty"`
 }
 
 type ciTransportMember struct {
 	path, name string
 	info       os.FileInfo
-	link       string
 }
 
 func writeCITransport(ctx context.Context, o ciRunOptions, output string) error {
@@ -66,62 +75,30 @@ func writeCITransport(ctx context.Context, o ciRunOptions, output string) error 
 	if entry != result.Entry {
 		return errors.New("transport entry does not match verified result")
 	}
-	manifest := ciTransport{Run: run, Platform: o.Platform, ProducerPrefix: install, Packages: []ciTransportPackage{}, Importer: "install/" + ciImporterExecutable(o.Platform), Entry: "install/autolib.cmake"}
+	manifest := ciTransport{Run: run, Platform: o.Platform, Packages: []ciTransportPackage{}, Entry: "autolib.cmake", Assets: []ciTransportAsset{}}
 	var members []ciTransportMember
-	add := func(path, name, boundary string) error {
-		return filepath.WalkDir(path, func(current string, entry os.DirEntry, walkErr error) error {
-			if walkErr != nil {
-				return walkErr
-			}
-			if err := ctx.Err(); err != nil {
-				return err
-			}
-			relative, err := filepath.Rel(path, current)
-			if err != nil {
-				return err
-			}
-			memberName := name
-			if relative != "." {
-				memberName += "/" + filepath.ToSlash(relative)
-			}
-			info, err := os.Lstat(current)
-			if err != nil {
-				return err
-			}
-			member := ciTransportMember{path: current, name: memberName, info: info}
-			switch {
-			case info.Mode().IsRegular(), info.IsDir():
-			case info.Mode()&os.ModeSymlink != 0:
-				link, err := os.Readlink(current)
-				if err != nil {
-					return err
-				}
-				if filepath.IsAbs(link) || strings.Contains(link, `\`) {
-					return fmt.Errorf("transport link %s must be relative", current)
-				}
-				target := filepath.Clean(filepath.Join(filepath.Dir(current), link))
-				if err := requirePathWithin(boundary, target, "transport link"); err != nil {
-					return err
-				}
-				resolved, err := filepath.EvalSymlinks(current)
-				if err != nil {
-					return fmt.Errorf("resolve transport link %s: %w", current, err)
-				}
-				if err := requirePathWithin(boundary, resolved, "transport link target"); err != nil {
-					return err
-				}
-				member.link = filepath.ToSlash(link)
-			default:
-				return fmt.Errorf("unsupported transport object %s (%s)", current, info.Mode())
-			}
-			members = append(members, member)
-			return nil
-		})
+	add := func(path, name string) error {
+		info, err := os.Lstat(path)
+		if err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("transport member must be a regular file: %s", path)
+		}
+		members = append(members, ciTransportMember{path: path, name: name, info: info})
+		return nil
 	}
+	var modules []string
 	packages := map[string]bool{}
 	for _, module := range platform.Description.Modules {
 		slot := ciModuleSlot(module, o.Platform)
-		manifest.Packages = append(manifest.Packages, ciTransportPackage{Name: slot.Name, Version: slot.Version, OS: slot.OS, Arch: slot.Arch, Dependencies: module.Depends, Publish: !module.PlatformIndependent || plan.Publisher == o.Platform})
+		publish := !module.PlatformIndependent || plan.Publisher == o.Platform
+		manifest.Packages = append(manifest.Packages, ciTransportPackage{Name: slot.Name, Version: slot.Version, OS: slot.OS, Arch: slot.Arch, Dependencies: module.Depends, Publish: publish})
+		if publish {
+			modules = append(modules, moduleIdentity(module))
+			name := fmt.Sprintf("%s-%s-%s-%s.tar.zst", slot.Name, slot.Version, slot.OS, slot.Arch)
+			manifest.Assets = append(manifest.Assets, ciTransportAsset{Kind: "library", Name: name, Path: "assets/" + name, Package: &slot})
+		}
 		packageRoot := filepath.Join(install, module.Name)
 		packageInfo, err := os.Lstat(packageRoot)
 		if err != nil {
@@ -140,7 +117,7 @@ func writeCITransport(ctx context.Context, o ciRunOptions, output string) error 
 				return fmt.Errorf("package candidate must be a regular file: %s", candidate)
 			}
 			// Candidates are the builder's original bytes, shared by every selected version.
-			if err := add(candidate, "install/"+module.Name+"/package.toml", packageRoot); err != nil {
+			if err := add(candidate, "candidates/"+module.Name+"/package.toml"); err != nil {
 				return err
 			}
 			packages[module.Name] = true
@@ -153,9 +130,6 @@ func writeCITransport(ctx context.Context, o ciRunOptions, output string) error 
 		if !info.IsDir() {
 			return fmt.Errorf("package version root must be a directory: %s", versionRoot)
 		}
-		if err := add(versionRoot, "install/"+module.Name+"/"+module.Version, versionRoot); err != nil {
-			return err
-		}
 	}
 	importer := filepath.Join(install, ciImporterExecutable(o.Platform))
 	info, err = os.Lstat(importer)
@@ -165,10 +139,7 @@ func writeCITransport(ctx context.Context, o ciRunOptions, output string) error 
 	if !info.Mode().IsRegular() {
 		return errors.New("transport importer must be a regular file")
 	}
-	if err := add(importer, manifest.Importer, install); err != nil {
-		return err
-	}
-	if err := add(filepath.Join(install, "autolib.cmake"), manifest.Entry, install); err != nil {
+	if err := add(filepath.Join(install, "autolib.cmake"), manifest.Entry); err != nil {
 		return err
 	}
 	if strings.TrimSpace(output) == "" {
@@ -187,6 +158,48 @@ func writeCITransport(ctx context.Context, o ciRunOptions, output string) error 
 	}
 	if requirePathWithin(install, absolute, "transport output") == nil {
 		return errors.New("transport output must not be inside installation")
+	}
+	if o.CMakeCommand == "" {
+		return errors.New("transport --cmake-command is required")
+	}
+	packaged, err := os.MkdirTemp(work, "packaged-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(packaged)
+	osName, arch, _ := strings.Cut(o.Platform, "-")
+	builder := filepath.Join(work, "build", "tools", "autolib-builder")
+	if len(platform.Description.Modules) == 0 {
+		builder = filepath.Join(work, "tools", "autolib-builder")
+	}
+	if osName == "windows" {
+		builder += ".exe"
+	}
+	args := []string{"package", "--source-root", source, "--install-root", install, "--output-root", packaged, "--os", osName, "--arch", arch, "--host-os", osName, "--host-arch", arch, "--importer-file", importer, "--cmake-command", o.CMakeCommand}
+	for _, module := range modules {
+		args = append(args, "--module", module)
+	}
+	if err := ciCommand(ctx, builder, args, source, nil, filepath.Join(work, "logs", "package.log")); err != nil {
+		return err
+	}
+	toolName := ciImporterExecutable(o.Platform) + ".tar.xz"
+	manifest.Assets = append(manifest.Assets, ciTransportAsset{Kind: "importer", Name: toolName, Path: "assets/" + toolName, Platform: o.Platform})
+	for i := range manifest.Assets {
+		asset := &manifest.Assets[i]
+		path := filepath.Join(packaged, asset.Name)
+		if err := add(path, asset.Path); err != nil {
+			return err
+		}
+		input, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		digest := sha256.New()
+		size, copyErr := io.Copy(digest, input)
+		if err := errors.Join(copyErr, input.Close()); err != nil {
+			return err
+		}
+		asset.Size, asset.SHA256 = size, fmt.Sprintf("%x", digest.Sum(nil))
 	}
 	file, err := os.OpenFile(absolute, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
 	if err != nil {
@@ -217,14 +230,11 @@ func writeCITransport(ctx context.Context, o ciRunOptions, output string) error 
 			return err
 		}
 	}
-	if err := archive.WriteHeader(&tar.Header{Name: "install/", Mode: 0755, Typeflag: tar.TypeDir}); err != nil {
-		return err
-	}
 	for _, member := range members {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		header, err := tar.FileInfoHeader(member.info, member.link)
+		header, err := tar.FileInfoHeader(member.info, "")
 		if err != nil {
 			return err
 		}
@@ -261,14 +271,14 @@ func runCITransport(args []string, stdout, stderr io.Writer) int {
 	for _, item := range []struct {
 		key   string
 		value *string
-	}{{"repository", &o.Repository}, {"source-root", &o.SourceRoot}, {"plan", &o.PlanFile}, {"run-identity", &o.RunIdentityFile}, {"platform", &o.Platform}, {"work-root", &o.WorkRoot}, {"output", &output}} {
+	}{{"repository", &o.Repository}, {"source-root", &o.SourceRoot}, {"plan", &o.PlanFile}, {"run-identity", &o.RunIdentityFile}, {"platform", &o.Platform}, {"work-root", &o.WorkRoot}, {"output", &output}, {"cmake-command", &o.CMakeCommand}} {
 		flags.StringVar(item.value, item.key, "", item.key)
 	}
 	if err := flags.Parse(args); err != nil {
 		return 1
 	}
-	if flags.NArg() != 0 || o.PlanFile == "" || output == "" {
-		return fail(errors.New("transport requires --source-root, --plan, --run-identity, --platform, --work-root and --output"))
+	if flags.NArg() != 0 || o.PlanFile == "" || output == "" || o.CMakeCommand == "" {
+		return fail(errors.New("transport requires --source-root, --plan, --run-identity, --platform, --work-root, --cmake-command and --output"))
 	}
 	if err := writeCITransport(context.Background(), o, output); err != nil {
 		return fail(err)

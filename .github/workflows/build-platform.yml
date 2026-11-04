@@ -130,13 +130,15 @@ jobs:
           BUDGET: ${{ steps.environment.outputs.budget }}
         run: >-
           "$WORK_ROOT/autolib-ci" run --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer verify --work-root "$WORK_ROOT" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
-      - name: Transport verified installation
+      - name: Package and transport verified artifacts
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
         run: >-
-          "$WORK_ROOT/autolib-ci" transport --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --work-root "$WORK_ROOT" --output "$WORK_ROOT/transport.tar"
-      - name: Retain installation transport
+          "$WORK_ROOT/autolib-ci" transport --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --work-root "$WORK_ROOT" --cmake-command "$CMAKE_COMMAND" --output "$WORK_ROOT/transport.tar"
+      - name: Retain packaged artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: ci-install-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.platform }}
+          name: ci-package-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.platform }}
           path: build/ci/${{ github.run_id }}-${{ github.run_attempt }}/${{ matrix.platform }}/transport.tar
           if-no-files-found: error
       - name: Retain platform result
@@ -203,13 +205,15 @@ jobs:
           CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
         run: >-
           & "$env:WORK_ROOT/autolib-ci.exe" run --repository $env:GITHUB_REPOSITORY --source-root $env:GITHUB_WORKSPACE --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform windows-x86_64 --layer verify --work-root $env:WORK_ROOT --importer-file "$env:WORK_ROOT/install/autolib-importer-windows-x86_64.exe" --cmake-command $env:CMAKE_COMMAND
-      - name: Transport verified installation
+      - name: Package and transport verified artifacts
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
         run: >-
-          & "$env:WORK_ROOT/autolib-ci.exe" transport --repository $env:GITHUB_REPOSITORY --source-root $env:GITHUB_WORKSPACE --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform windows-x86_64 --work-root $env:WORK_ROOT --output "$env:WORK_ROOT/transport.tar"
-      - name: Retain installation transport
+          & "$env:WORK_ROOT/autolib-ci.exe" transport --repository $env:GITHUB_REPOSITORY --source-root $env:GITHUB_WORKSPACE --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform windows-x86_64 --work-root $env:WORK_ROOT --cmake-command $env:CMAKE_COMMAND --output "$env:WORK_ROOT/transport.tar"
+      - name: Retain packaged artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: ci-install-${{ github.run_id }}-${{ github.run_attempt }}-windows-x86_64
+          name: ci-package-${{ github.run_id }}-${{ github.run_attempt }}-windows-x86_64
           path: ${{ env.WORK_ROOT }}/transport.tar
           if-no-files-found: error
       - name: Retain platform result
