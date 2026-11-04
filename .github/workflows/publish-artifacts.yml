@@ -77,9 +77,9 @@ jobs:
           LATEST: ${{ inputs.latest }}
         run: |
           set -euo pipefail
-          mkdir -p build/publication-control build/tools
+          mkdir -p build/publication-control
           python .github/scripts/prepare-publication.py select --output build/publication-control/selection.json
-          jq -r '"sha=" + .source_run.sha, "run_id=" + .source_run.run_id, "artifact_ids=" + ([.artifacts[].id|tostring]|join(",")), "has_platforms=" + ((.plan.platforms|length > 0)|tostring)' build/publication-control/selection.json >> "$GITHUB_OUTPUT"
+          jq -r '"sha=" + .source_run.sha, "run_id=" + .source_run.run_id, "artifact_ids=" + ([.artifacts[].id|tostring]|join(","))' build/publication-control/selection.json >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@v8
         if: ${{ env.PUBLISH_MODE == 'artifacts' }}
         with:
@@ -95,18 +95,12 @@ jobs:
           ref: ${{ steps.selection.outputs.sha }}
           path: build/source
           persist-credentials: false
-      - name: Build original builder
-        if: ${{ env.PUBLISH_MODE == 'artifacts' && steps.selection.outputs.has_platforms == 'true' }}
-        working-directory: build/source
-        run: |
-          set -euo pipefail
-          cmake -P src/autolib-builder/go-sdk.cmake -- build -mod=readonly -trimpath -o "$GITHUB_WORKSPACE/build/tools/source-builder" ./src/autolib-builder
       - name: Prepare publication
         id: publication
         if: ${{ env.PUBLISH_MODE == 'artifacts' }}
         run: |
           set -euo pipefail
-          manifest=$(python .github/scripts/prepare-publication.py prepare --selection build/publication-control/selection.json --input-root build/publication-input --source-root build/source --builder-file "$GITHUB_WORKSPACE/build/tools/source-builder" --output-root build/source/build/publication --repository "$GITEE_REPOSITORY" --tag "$GITEE_RELEASE_TAG" --source-repository "$GITHUB_REPOSITORY")
+          manifest=$(python .github/scripts/prepare-publication.py prepare --selection build/publication-control/selection.json --input-root build/publication-input --source-root build/source --output-root build/source/build/publication --repository "$GITEE_REPOSITORY" --tag "$GITEE_RELEASE_TAG" --source-repository "$GITHUB_REPOSITORY")
           has_writes=$(jq -r '(.assets|length > 0) or (.explicit_latest|length > 0)' "$manifest")
           echo "input=$manifest" >> "$GITHUB_OUTPUT"
           echo "has_writes=$has_writes" >> "$GITHUB_OUTPUT"

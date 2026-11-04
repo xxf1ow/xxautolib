@@ -64,12 +64,9 @@ class WorkflowTests(unittest.TestCase):
         original = step(self.document, 'name: Checkout original build source')
         self.assertIn('ref: ${{ steps.selection.outputs.sha }}', original)
         self.assertIn('path: build/source', original)
-        builder = step(self.document, 'name: Build original builder')
-        self.assertIn('working-directory: build/source', builder)
-        self.assertIn('src/autolib-builder/go-sdk.cmake', builder)
-        self.assertIn('-mod=readonly', builder)
-        self.assertIn("steps.selection.outputs.has_platforms == 'true'", builder)
-        for title in ('Select original build', 'Checkout original build source', 'Build original builder',
+        for forbidden in ('Build original builder', '--builder-file', 'go-sdk.cmake', 'has_platforms', 'cmake -'):
+            self.assertNotIn(forbidden, self.document)
+        for title in ('Select original build', 'Checkout original build source',
                       'Prepare publication', 'Install publication dependencies'):
             self.assertNotIn('GITEE_TOKEN', step(self.document, 'name: ' + title))
         install = step(self.document, 'name: Install publication dependencies')

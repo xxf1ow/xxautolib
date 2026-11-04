@@ -70,35 +70,41 @@ def zipped(files):
 def make_transport(path, selected_plan, platform, mutate=None, extra=(), identity=RUN):
     packages = []
     os_name, arch = platform.split('-', 1)
-    for item in selected_plan['platforms'][0]['description']['modules']:
+    native_plan = next(p for p in selected_plan['platforms'] if p['id'] == platform)
+    for item in native_plan['description']['modules']:
         universal = item['platform_independent']
         packages.append(dict(name=item['name'], version=item['version'],
                              os='any' if universal else os_name,
                              arch='any' if universal else arch, dependencies=[],
                              publish=not universal or selected_plan['publisher'] == platform))
-    transport = dict(run=identity.copy(), platform=platform, entry='install/autolib.cmake',
-                     producer_prefix=r'C:\producer space\install' if os_name == 'windows' else '/producer space/install',
-                     packages=packages, importer='install/' + tool(platform))
+    assets = [dict(kind='library', name=f"{p['name']}-{p['version']}-{p['os']}-{p['arch']}.tar.zst",
+                   package={k: p[k] for k in ['name', 'version', 'os', 'arch']})
+              for p in packages if p['publish']]
+    assets.append(dict(kind='importer', name=tool(platform) + '.tar.xz', platform=platform))
+    transport = dict(run=identity.copy(), platform=platform, entry='autolib.cmake',
+                     packages=packages, assets=assets)
     result = dict(run=identity.copy(), platform=platform, complete=True, error='',
                   packages=[dict(slot={k: p[k] for k in ['name', 'version', 'os', 'arch']},
                                  built=True, verified=True) for p in packages],
-                  roots=[dict(root=r, verified=True) for r in selected_plan['platforms'][0]['roots']],
+                  roots=[dict(root=r, verified=True) for r in native_plan['roots']],
                   importer=dict(file=tool(platform), verified=True),
                   entry=dict(file='autolib.cmake', sha256=hashlib.sha256(ENTRY).hexdigest(), verified=True))
     files = {'transport.json': json_bytes(transport), 'plan.json': json_bytes(selected_plan),
-             'result.json': json_bytes(result), 'install/' + tool(platform): b'tool',
-             'install/autolib.cmake': ENTRY,
-             'install/eigen/package.toml': b'latest = "3.4.0"\n',
-             'install/queue/package.toml': b'latest = "1.0"\n'}
-    for p in packages:
-        files[f"install/{p['name']}/{p['version']}/payload"] = b'payload'
+             'result.json': json_bytes(result), 'autolib.cmake': ENTRY}
+    for name in {p['name'] for p in packages}:
+        files[f'candidates/{name}/package.toml'] = b'latest = "3.4.0"\n' if name == 'eigen' else b'latest = "1.0"\n'
+    for asset in assets:
+        body = ('fixed archive bytes: ' + asset['name']).encode()
+        asset.update(path='assets/' + asset['name'], size=len(body), sha256=hashlib.sha256(body).hexdigest())
+        files[asset['path']] = body
+    files['transport.json'] = json_bytes(transport)
     if mutate:
         mutate(transport, result, files)
         files['transport.json'], files['result.json'] = json_bytes(transport), json_bytes(result)
     with tarfile.open(path, 'w') as archive:
         for name, data in files.items():
             member = tarfile.TarInfo(name)
-            member.size, member.mode = len(data), 0o755 if name == transport['importer'] else 0o644
+            member.size, member.mode = len(data), 0o644
             archive.addfile(member, io.BytesIO(data))
         for member in extra:
             archive.addfile(member, io.BytesIO(b'x' * member.size))
@@ -119,11 +125,11 @@ class PreparationTests(unittest.TestCase):
         selected_plan = plan(platforms)
         return dict(source_run=RUN.copy(), plan=selected_plan,
                     artifacts=[dict(id=1, name='ci-plan-42-2')] +
-                    [dict(id=n + 2, name='ci-install-42-2-' + p) for n, p in enumerate(platforms)],
+                    [dict(id=n + 2, name='ci-package-42-2-' + p) for n, p in enumerate(platforms)],
                     explicit_latest={})
 
-    def prepare(self, selected, inputs, source, builder, output, **options):
-        return self.api.prepare_publication(selected, inputs, source, builder, output,
+    def prepare(self, selected, inputs, source, output, **options):
+        return self.api.prepare_publication(selected, inputs, source, output,
                                             repository='fixture/mirror', tag='中文/release',
                                             source_repository=options.get('source_repository', REPOSITORY))
 
@@ -135,7 +141,7 @@ class PreparationTests(unittest.TestCase):
         (directory / 'plan.json').write_bytes(json_bytes(selection['plan']))
         (directory / 'run.json').write_bytes(json_bytes(selection['source_run']))
         for platform in [p['id'] for p in selection['plan']['platforms']]:
-            directory = inputs / ('ci-install-42-2-' + platform)
+            directory = inputs / ('ci-package-42-2-' + platform)
             directory.mkdir()
             make_transport(directory / 'transport.tar', selection['plan'], platform, mutate,
                            identity=selection['source_run'])
@@ -150,7 +156,7 @@ class PreparationTests(unittest.TestCase):
         artifacts = [dict(id=n + 1, name=name, expired=False,
                           workflow_run=dict(id=42, repository_id=7, head_repository_id=7,
                                             head_sha=SHA, head_branch='release'))
-                     for n, name in enumerate(['ci-plan-42-2'] + ['ci-install-42-2-' + p for p in platforms])]
+                     for n, name in enumerate(['ci-plan-42-2'] + ['ci-package-42-2-' + p for p in platforms])]
         def request(url, token):
             if '/attempts/2' in url:
                 return json_bytes(run)
@@ -180,7 +186,7 @@ class PreparationTests(unittest.TestCase):
                    lambda r, a: a[-1]['workflow_run'].update(head_sha='b' * 40),
                    lambda r, a: a[-1]['workflow_run'].update(repository_id=8),
                    lambda r, a: a[-1]['workflow_run'].update(head_repository_id=8),
-                   lambda r, a: a[-1].update(name='ci-install-42-1-linux-aarch64'),
+                   lambda r, a: a[-1].update(name='ci-package-42-1-linux-aarch64'),
                    lambda r, a: r.update(event='pull_request'),
                    lambda r, a: r.update(conclusion='failure'),
                    lambda r, a: r.update(head_branch='refs/tags/v1')]
@@ -242,9 +248,8 @@ class PreparationTests(unittest.TestCase):
         make_transport(source, selected, 'linux-x86_64')
         target = self.root / 'new'
         self.api.unpack_transport(source, target)
-        self.assertEqual((target / 'install/queue/1.0/payload').read_bytes(), b'payload')
-        if os.name != 'nt':
-            self.assertTrue((target / 'install' / tool('linux-x86_64')).stat().st_mode & stat.S_IXUSR)
+        self.assertEqual((target / 'assets/queue-1.0-linux-x86_64.tar.zst').read_bytes(),
+                         b'fixed archive bytes: queue-1.0-linux-x86_64.tar.zst')
         (target / 'keep').write_text('keep')
         with self.assertRaises((ValueError, FileExistsError)):
             self.api.unpack_transport(source, target)
@@ -253,7 +258,9 @@ class PreparationTests(unittest.TestCase):
             ('../escape', tarfile.REGTYPE, ''), ('/absolute', tarfile.REGTYPE, ''),
             ('C:/absolute', tarfile.REGTYPE, ''), ('install/link', tarfile.SYMTYPE, '../../escape'),
             ('install/hard', tarfile.LNKTYPE, 'install/queue/1.0/payload'),
-            ('install/fifo', tarfile.FIFOTYPE, '')]):
+            ('install/fifo', tarfile.FIFOTYPE, ''),
+            ('Assets/queue-1.0-linux-x86_64.tar.zst', tarfile.REGTYPE, ''),
+            ('assets/queue-1.0-linux-x86_64.tar.zst', tarfile.REGTYPE, '')]):
             member = tarfile.TarInfo(name)
             member.type, member.linkname = kind, link
             make_transport(source, selected, 'linux-x86_64', extra=[member])
@@ -263,12 +270,61 @@ class PreparationTests(unittest.TestCase):
             link = tarfile.TarInfo('install/queue/1.0/link')
             link.type, link.linkname = tarfile.SYMTYPE, 'payload'
             make_transport(source, selected, 'linux-x86_64', extra=[link])
-            self.api.unpack_transport(source, self.root / 'linked')
-            self.assertEqual((self.root / 'linked/install/queue/1.0/link').read_bytes(), b'payload')
+            with self.assertRaises(ValueError):
+                self.api.unpack_transport(source, self.root / 'linked')
             later = tarfile.TarInfo('install/queue/1.0/link/child')
             make_transport(source, selected, 'linux-x86_64', extra=[link, later])
             with self.assertRaises(ValueError):
                 self.api.unpack_transport(source, self.root / 'through-link')
+
+    def test_packaged_transport_rejects_corruption_and_extra_assets(self):
+        changes = [
+            lambda t, r, f: f.pop(t['assets'][0]['path']),
+            lambda t, r, f: f.update({t['assets'][0]['path']: b'X' * t['assets'][0]['size']}),
+            lambda t, r, f: t['assets'][0].update(size=t['assets'][0]['size'] + 1),
+            lambda t, r, f: t['assets'][0].update(sha256='0' * 64),
+            lambda t, r, f: t['assets'].append(copy.deepcopy(t['assets'][0])),
+            lambda t, r, f: f.update({'assets/extra.tar.zst': b'extra'}),
+            lambda t, r, f: t['assets'][-1].update(platform='windows-x86_64'),
+            lambda t, r, f: t['assets'][0].update(kind='importer'),
+            lambda t, r, f: t['assets'][0]['package'].update(version='wrong'),
+            lambda t, r, f: t.update(platform='windows-x86_64'),
+            lambda t, r, f: t['run'].update(run_id='43'),
+            lambda t, r, f: t['run'].update(attempt='1'),
+            lambda t, r, f: f.update({'candidates/extra/package.toml': b'latest="1"'}),
+            lambda t, r, f: f.update({'install/header.h': b'legacy'}),
+        ]
+        for index, change in enumerate(changes):
+            with self.subTest(index=index):
+                case = self.root / str(index)
+                case.mkdir()
+                previous, self.root = self.root, case
+                selected = self.selection(['linux-x86_64'])
+                inputs = self.inputs(selected, change)
+                self.root = previous
+                with patch.object(self.api.subprocess, 'run', side_effect=self.git_reader([])):
+                    with self.assertRaises((ValueError, FileNotFoundError)):
+                        self.prepare(selected, inputs, case, case / 'build/output')
+
+    def test_legacy_install_transport_requires_new_build(self):
+        env = dict(GITHUB_REPOSITORY=REPOSITORY, SOURCE_RUN_ID='42', SOURCE_ATTEMPT='2')
+        _, artifacts, request = self.source_api(['linux-x86_64'])
+        artifacts[-1]['name'] = 'ci-install-42-2-linux-x86_64'
+        with patch.object(self.api, '_request', side_effect=request), self.assertRaisesRegex(ValueError, 'new build'):
+            self.api.select_source(env)
+        selected = self.selection(['linux-x86_64'])
+        inputs = self.inputs(selected, lambda t, r, f: t.update(producer_prefix='/legacy/install', importer='install/tool'))
+        with patch.object(self.api.subprocess, 'run', side_effect=self.git_reader([])), self.assertRaisesRegex(ValueError, 'new build'):
+            self.prepare(selected, inputs, self.root, self.root / 'build/output')
+
+    def test_packaged_transport_rejects_links(self):
+        for index, kind in enumerate([tarfile.SYMTYPE, tarfile.LNKTYPE]):
+            member = tarfile.TarInfo('assets/linked.tar.zst')
+            member.type, member.linkname = kind, 'queue-1.0-linux-x86_64.tar.zst'
+            path = self.root / 'linked.tar'
+            make_transport(path, plan(['linux-x86_64']), 'linux-x86_64', extra=[member])
+            with self.subTest(kind=kind), self.assertRaises(ValueError):
+                self.api.unpack_transport(path, self.root / str(index))
 
     def test_filtered_and_nonuniversal_plan(self):
         env = dict(GITHUB_REPOSITORY=REPOSITORY, SOURCE_RUN_ID='42', SOURCE_ATTEMPT='2')
@@ -290,12 +346,12 @@ class PreparationTests(unittest.TestCase):
                 if not platforms:
                     inputs = self.inputs(selected)
                     calls = []
-                    with patch.object(self.api.subprocess, 'run', side_effect=self.fake_builder(calls)):
-                        manifest = self.prepare(selected, inputs, self.root, Path('builder'), self.root / 'build/empty')
+                    with patch.object(self.api.subprocess, 'run', side_effect=self.git_reader(calls)):
+                        manifest = self.prepare(selected, inputs, self.root, self.root / 'build/empty')
                     self.assertEqual([a['kind'] for a in json.loads(manifest.read_text())['assets']], ['entry'])
                     self.assertEqual(calls, [])
 
-    def fake_builder(self, calls):
+    def git_reader(self, calls):
         def run(command, **kwargs):
             if command[0] == 'git':
                 if 'show' in command:
@@ -304,29 +360,21 @@ class PreparationTests(unittest.TestCase):
                     return subprocess.CompletedProcess(command, 0, stdout=ENTRY)
                 return subprocess.CompletedProcess(command, 0, stdout=SHA + '\n')
             calls.append(command)
-            args = dict(x[2:].split('=', 1) for x in command[2:] if x.startswith('--') and not x.startswith('--module='))
-            output = Path(args['output-root'])
-            output.mkdir(parents=True, exist_ok=True)
-            refs = [x.split('=', 1)[1] for x in command if x.startswith('--module=')]
-            names = [tool(args['host-os'] + '-' + args['host-arch']) + '.tar.xz']
-            for ref in refs:
-                name, version = ref.split('@')
-                names.append(f'{name}-{version}-any-any.tar.zst' if name == 'eigen' else f'{name}-{version}-{args["os"]}-{args["arch"]}.tar.zst')
-            for name in names:
-                (output / name).write_bytes((name + str(len(calls))).encode())
+            raise AssertionError('preparation must not execute a builder: ' + repr(command))
         return run
 
-    def test_original_candidate_and_repack(self):
+    def test_prepared_archive_bytes_are_stable_without_builder(self):
         selection = self.selection()
         inputs = self.inputs(selection)
+        before = {p: (p.read_bytes(), p.stat().st_mtime_ns) for p in inputs.rglob('*') if p.is_file()}
         source = self.root / 'source'
         source.mkdir()
         latest = source / 'src/dependencies/eigen/package.toml'
         latest.parent.mkdir(parents=True)
         latest.write_text('latest = "5.0.1"')
         calls = []
-        with patch.object(self.api.subprocess, 'run', side_effect=self.fake_builder(calls)):
-            first = self.prepare(selection, inputs, source, Path('builder'), source / 'build/publication')
+        with patch.object(self.api.subprocess, 'run', side_effect=self.git_reader(calls)):
+            first = self.prepare(selection, inputs, source, source / 'build/publication')
             publication = json.loads(first.read_text())
             self.assertEqual(publication['initial_latest'], {'eigen': '3.4.0', 'queue': '1.0'})
             self.assertEqual(len(publication['assets']), 9)
@@ -337,20 +385,31 @@ class PreparationTests(unittest.TestCase):
             self.assertEqual(sum(a['name'] == 'eigen-3.4.0-any-any.tar.zst' for a in publication['assets']), 1)
             for asset in publication['assets']:
                 self.assertEqual(asset['sha256'], hashlib.sha256((first.parent / asset['path']).read_bytes()).hexdigest())
-            prefixes = [next(x for x in c if x.startswith('--producer-prefix=')) for c in calls]
-            self.assertIn('--producer-prefix=C:\\producer space\\install', prefixes)
-            second = self.prepare(selection, inputs, source, Path('builder'), source / 'build/publication')
+            second = self.prepare(selection, inputs, source, source / 'build/publication')
             self.assertNotEqual(first, second)
             again = json.loads(second.read_text())
-            self.assertNotEqual(publication['assets'][0]['sha256'], again['assets'][0]['sha256'])
+            def contents(path, value):
+                return {a['name']: ((path.parent / a['path']).read_bytes(), a['size'], a['sha256']) for a in value['assets']}
+            self.assertEqual(len(contents(first, publication)), len(publication['assets']))
+            self.assertEqual(contents(first, publication), contents(second, again))
+            different = self.api.prepare_publication(selection, inputs, source, source / 'build/other',
+                                                     repository='other/mirror', tag='fixed', source_repository=REPOSITORY)
+            changed = json.loads(different.read_text())
+            for name, value in contents(first, publication).items():
+                if name == 'autolib.cmake':
+                    self.assertNotEqual(value, contents(different, changed)[name])
+                else:
+                    self.assertEqual(value, contents(different, changed)[name])
+        self.assertEqual(calls, [])
+        self.assertEqual({p: (p.read_bytes(), p.stat().st_mtime_ns) for p in before}, before)
 
     def test_invalid_candidates_and_result_fail_before_builder(self):
         for index, mutation in enumerate([
-            lambda t, r, f: f.pop('install/queue/package.toml'),
-            lambda t, r, f: f.update({'install/eigen/package.toml': b'latest = 3'}),
-            lambda t, r, f: f.update({'install/eigen/package.toml': b'latest = "../bad"'}),
-            lambda t, r, f: f.update({'install/eigen/package.toml': b'latest = "_bad"'}),
-            lambda t, r, f: f.update({'install/eigen/package.toml': b'latest = "5.0.1"' if t['platform'] == 'windows-x86_64' else b'latest = "3.4.0"'}),
+            lambda t, r, f: f.pop('candidates/queue/package.toml'),
+            lambda t, r, f: f.update({'candidates/eigen/package.toml': b'latest = 3'}),
+            lambda t, r, f: f.update({'candidates/eigen/package.toml': b'latest = "../bad"'}),
+            lambda t, r, f: f.update({'candidates/eigen/package.toml': b'latest = "_bad"'}),
+            lambda t, r, f: f.update({'candidates/eigen/package.toml': b'latest = "5.0.1"' if t['platform'] == 'windows-x86_64' else b'latest = "3.4.0"'}),
             lambda t, r, f: r['roots'][0].update(verified=False),
             lambda t, r, f: t['run'].update(attempt='1'),
             lambda t, r, f: t['packages'][0].update(dependencies=['wrong@1']),
@@ -363,9 +422,9 @@ class PreparationTests(unittest.TestCase):
             inputs = self.inputs(selected, mutation)
             self.root = old_root
             calls = []
-            with self.subTest(index=index), patch.object(self.api.subprocess, 'run', side_effect=self.fake_builder(calls)):
+            with self.subTest(index=index), patch.object(self.api.subprocess, 'run', side_effect=self.git_reader(calls)):
                 with self.assertRaises((ValueError, FileNotFoundError)):
-                    self.prepare(selected, inputs, case, Path('builder'), case / 'build/output')
+                    self.prepare(selected, inputs, case, case / 'build/output')
                 self.assertEqual(calls, [])
 
     def test_tool_only_three_platforms_publish_all_tools_and_one_entry(self):
@@ -376,24 +435,23 @@ class PreparationTests(unittest.TestCase):
             platform['description']['modules'] = []
         inputs = self.inputs(selected)
         calls = []
-        with patch.object(self.api.subprocess, 'run', side_effect=self.fake_builder(calls)):
-            path = self.prepare(selected, inputs, self.root, Path('builder'), self.root / 'build/tools')
+        with patch.object(self.api.subprocess, 'run', side_effect=self.git_reader(calls)):
+            path = self.prepare(selected, inputs, self.root, self.root / 'build/tools')
         publication = json.loads(path.read_text())
         self.assertEqual(sorted(a['name'] for a in publication['assets']),
                          sorted(['autolib.cmake'] + [tool(p) + '.tar.xz' for p in PLATFORMS]))
         self.assertEqual(publication['initial_latest'], {})
-        self.assertEqual(len(calls), 3)
-        self.assertFalse(any(x.startswith('--module=') for c in calls for x in c))
+        self.assertEqual(calls, [])
 
     def test_every_transport_entry_matches_original_commit_before_builder(self):
-        changes = [lambda t, r, f: f.pop('install/autolib.cmake'),
-                   lambda t, r, f: f.update({'install/autolib.cmake': b'changed'}),
-                   lambda t, r, f: t.update(entry='install/other.cmake'),
+        changes = [lambda t, r, f: f.pop('autolib.cmake'),
+                   lambda t, r, f: f.update({'autolib.cmake': b'changed'}),
+                   lambda t, r, f: t.update(entry='other.cmake'),
                    lambda t, r, f: r['entry'].update(verified=False),
                    lambda t, r, f: r['entry'].update(verified=1),
                    lambda t, r, f: r['entry'].update(sha256='0' * 64),
                    lambda t, r, f: r['entry'].update(file='wrong.cmake'),
-                   lambda t, r, f: (f.update({'install/autolib.cmake': b'self-reported'}),
+                   lambda t, r, f: (f.update({'autolib.cmake': b'self-reported'}),
                                      r['entry'].update(sha256=hashlib.sha256(b'self-reported').hexdigest()))]
         for index, change in enumerate(changes):
             with self.subTest(index=index):
@@ -408,9 +466,9 @@ class PreparationTests(unittest.TestCase):
                 self.root = old_root
                 before = {p: p.read_bytes() for p in inputs.rglob('*') if p.is_file()}
                 calls = []
-                with patch.object(self.api.subprocess, 'run', side_effect=self.fake_builder(calls)):
+                with patch.object(self.api.subprocess, 'run', side_effect=self.git_reader(calls)):
                     with self.assertRaises((ValueError, FileNotFoundError)):
-                        self.prepare(selected, inputs, case, Path('builder'), case / 'build/output')
+                        self.prepare(selected, inputs, case, case / 'build/output')
                 self.assertEqual(calls, [])
                 self.assertEqual({p: p.read_bytes() for p in before}, before)
 
@@ -423,31 +481,31 @@ class PreparationTests(unittest.TestCase):
                 selected = self.selection(['linux-x86_64'])
                 inputs = self.inputs(selected)
                 self.root = old_root
-                special = tarfile.TarInfo('install/autolib.cmake')
+                special = tarfile.TarInfo('autolib.cmake')
                 special.type, special.linkname = kind, 'entry-copy'
                 def mutate(t, r, f):
-                    f.pop('install/autolib.cmake')
+                    f.pop('autolib.cmake')
                     f['install/entry-copy'] = ENTRY
-                make_transport(inputs / 'ci-install-42-2-linux-x86_64/transport.tar',
+                make_transport(inputs / 'ci-package-42-2-linux-x86_64/transport.tar',
                                selected['plan'], 'linux-x86_64', mutate, extra=[special])
                 calls = []
-                with patch.object(self.api.subprocess, 'run', side_effect=self.fake_builder(calls)):
+                with patch.object(self.api.subprocess, 'run', side_effect=self.git_reader(calls)):
                     with self.assertRaises(ValueError):
-                        self.prepare(selected, inputs, case, Path('builder'), case / 'build/output')
+                        self.prepare(selected, inputs, case, case / 'build/output')
                 self.assertEqual(calls, [])
 
     def test_checkout_sha_is_checked_before_builder(self):
         selected = self.selection(['linux-x86_64'])
         inputs = self.inputs(selected)
         calls = []
-        original = self.fake_builder(calls)
+        original = self.git_reader(calls)
         def wrong_checkout(command, **kwargs):
             if command[0] == 'git' and 'rev-parse' in command:
                 return subprocess.CompletedProcess(command, 0, stdout='b' * 40 + '\n')
             return original(command, **kwargs)
         with patch.object(self.api.subprocess, 'run', side_effect=wrong_checkout):
             with self.assertRaises(ValueError):
-                self.prepare(selected, inputs, self.root, Path('builder'), self.root / 'build/output')
+                self.prepare(selected, inputs, self.root, self.root / 'build/output')
         self.assertEqual(calls, [])
 
     def test_preparation_uses_trusted_fork_and_original_git_bytes(self):
@@ -457,10 +515,10 @@ class PreparationTests(unittest.TestCase):
         (self.root / 'src').mkdir()
         (self.root / 'src/autolib.cmake').write_bytes(b'modified working tree')
         calls = []
-        with patch.object(self.api.subprocess, 'run', side_effect=self.fake_builder(calls)):
+        with patch.object(self.api.subprocess, 'run', side_effect=self.git_reader(calls)):
             with self.assertRaises(ValueError):
-                self.prepare(selected, inputs, self.root, Path('builder'), self.root / 'build/wrong')
-            manifest = self.prepare(selected, inputs, self.root, Path('builder'), self.root / 'build/fork',
+                self.prepare(selected, inputs, self.root, self.root / 'build/wrong')
+            manifest = self.prepare(selected, inputs, self.root, self.root / 'build/fork',
                                     source_repository='fork/source')
         entry = next(a for a in json.loads(manifest.read_text())['assets'] if a['kind'] == 'entry')
         self.assertTrue((manifest.parent / entry['path']).read_bytes().startswith(b'# original entry\n'))
@@ -519,7 +577,7 @@ class PreparationTests(unittest.TestCase):
                              requested_modules=['queue@1.0'], publisher='')
         identity = dict(RUN, sha=sha, checkout_sha=sha)
         transport = dict(run=identity, platform='linux-x86_64', producer_prefix=producer_prefix,
-                         entry='install/autolib.cmake',
+                         entry='autolib.cmake',
                          packages=[dict(name='queue', version='1.0', os='linux', arch='x86_64', dependencies=[], publish=True)],
                          importer='install/' + tool('linux-x86_64'))
         result = dict(run=identity, platform='linux-x86_64', complete=True, error='',
@@ -531,7 +589,7 @@ class PreparationTests(unittest.TestCase):
         plan_dir.mkdir(parents=True)
         (plan_dir / 'plan.json').write_bytes(json_bytes(selected_plan))
         (plan_dir / 'run.json').write_bytes(json_bytes(identity))
-        transport_dir = inputs / 'ci-install-42-2-linux-x86_64'
+        transport_dir = inputs / 'ci-package-42-2-linux-x86_64'
         transport_dir.mkdir()
         with tarfile.open(transport_dir / 'transport.tar', 'w') as archive:
             for name, value in [('transport.json', transport), ('plan.json', selected_plan), ('result.json', result)]:
@@ -624,17 +682,17 @@ class PreparationTests(unittest.TestCase):
         (tool_plan / 'plan.json').write_bytes(json_bytes(selected_plan))
         (tool_plan / 'run.json').write_bytes(json_bytes(identity))
         for platform in PLATFORMS:
-            directory = tool_inputs / ('ci-install-42-2-' + platform)
+            directory = tool_inputs / ('ci-package-42-2-' + platform)
             directory.mkdir()
             def entry_from_commit(t, r, f):
-                f['install/autolib.cmake'] = original_entry
+                f['autolib.cmake'] = original_entry
                 r['entry']['sha256'] = hashlib.sha256(original_entry).hexdigest()
-                for name in ['install/eigen/package.toml', 'install/queue/package.toml']:
+                for name in ['candidates/eigen/package.toml', 'candidates/queue/package.toml']:
                     f.pop(name)
             make_transport(directory / 'transport.tar', selected_plan, platform, entry_from_commit, identity=identity)
         chosen = dict(source_run=identity, plan=selected_plan, explicit_latest={},
                       artifacts=[dict(id=1, name='ci-plan-42-2')] +
-                      [dict(id=i + 2, name='ci-install-42-2-' + p) for i, p in enumerate(PLATFORMS)])
+                      [dict(id=i + 2, name='ci-package-42-2-' + p) for i, p in enumerate(PLATFORMS)])
         selection.write_bytes(json_bytes(chosen))
         before = snapshot(tool_inputs)
         manifest = Path(run(os.sys.executable, SCRIPT, 'prepare', '--selection', selection,

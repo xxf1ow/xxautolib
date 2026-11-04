@@ -1,13 +1,12 @@
-"""Validate exact CI inputs and ask their builder to produce Gitee assets."""
+"""Validate exact CI packaged artifacts and prepare their Gitee publication."""
 
 import argparse
 from collections.abc import Mapping
 import hashlib
 import io
 import json
-import ntpath
 import os
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 import re
 import stat
 import subprocess
@@ -163,7 +162,8 @@ def select_source(environment: Mapping[str, str]) -> dict:
 
     def exact(name):
         matches = [a for a in artifacts if a['name'] == name]
-        _require(len(matches) == 1 and matches[0].get('expired') is False, f'{name}: missing, duplicate or expired artifact')
+        _require(len(matches) == 1 and matches[0].get('expired') is False,
+                 f'{name}: missing, duplicate or expired artifact; packaged artifacts require a new build')
         artifact = matches[0]
         origin = artifact['workflow_run']
         _require(origin['id'] == int(run_id) and origin['head_sha'] == identity['sha']
@@ -179,37 +179,33 @@ def select_source(environment: Mapping[str, str]) -> dict:
         _require(sorted(names) == ['plan.json', 'run.json'], 'plan artifact requires only plan.json and run.json')
         plan = json.loads(archive.read('plan.json'))
         _require(json.loads(archive.read('run.json')) == identity, 'plan run identity mismatch')
-    selected = [plan_artifact] + [exact(f'ci-install-{run_id}-{attempt}-{p}') for p in _planned_platforms(plan)]
+    selected = [plan_artifact] + [exact(f'ci-package-{run_id}-{attempt}-{p}') for p in _planned_platforms(plan)]
     _require(len({a['id'] for a in selected}) == len(selected), 'duplicate selected artifact id')
     return dict(source_run=identity, plan=plan, artifacts=selected,
                 explicit_latest=_latest(json.loads(environment.get('LATEST') or '{}')))
 
 
 def unpack_transport(archive: Path, destination: Path) -> dict:
-    """Extract into a new directory using data_filter and explicit object checks.
+    """Extract the file-only transport into a new directory using data_filter.
 
     Existing destinations are never changed. Failure can leave partial data in
-    the newly created directory. Hard links, duplicate members and writes through
-    symbolic links are rejected; legal relative symlinks and execute bits survive.
+    the newly created directory. Links, duplicate or case-conflicting paths and
+    unsupported objects are rejected. Internal archives are not extracted.
     """
     destination.mkdir(parents=False, exist_ok=False)
-    seen, links = set(), set()
+    seen, spellings = set(), {}
     with tarfile.open(archive, 'r:*') as source:
         for member in source:
             name = member.name.rstrip('/')
             parts = name.split('/')
             _require(name and not name.startswith('/') and '\\' not in name and ':' not in name
                      and all(p not in {'', '.', '..'} for p in parts), f'{member.name}: unsafe transport path')
-            _require(name not in seen and not any('/'.join(parts[:n]) in links for n in range(1, len(parts))), f'{name}: duplicate member or write through link')
-            _require(member.isdir() or member.isreg() or member.issym(), f'{name}: unsupported transport object')
-            if member.issym():
-                link = member.linkname
-                _require(link and not PurePosixPath(link).is_absolute() and '\\' not in link and ':' not in link,
-                         f'{name}: transport links must be relative')
-                target = (destination / name).parent.joinpath(link).resolve()
-                _require(target.is_relative_to(destination.resolve()), f'{name}: transport link escapes destination')
-                _require(not any(s.startswith(name + '/') for s in seen), f'{name}: link replaces extracted parent')
-                links.add(name)
+            _require(name not in seen, f'{name}: duplicate transport member')
+            for n in range(1, len(parts) + 1):
+                prefix = '/'.join(parts[:n])
+                _require(spellings.get(prefix.lower(), prefix) == prefix, f'{name}: case-conflicting transport path')
+                spellings[prefix.lower()] = prefix
+            _require(member.isdir() or member.isreg(), f'{name}: transport requires regular files or directories, not links')
             seen.add(name)
             source.extract(member, destination, filter=tarfile.data_filter)
     return _json_file(destination / 'transport.json')
@@ -221,24 +217,16 @@ def _tool(platform):
 
 def _validate_transport(root, transport, selected, platform, source_entry):
     plan, run = selected['plan'], selected['source_run']
+    _require(isinstance(transport, dict) and set(transport) == {'run', 'platform', 'packages', 'entry', 'assets'},
+             'transport requires packaged artifacts; legacy installation transport needs a new build')
     _require(transport['run'] == run and transport['platform'] == platform['id'], 'transport run or platform mismatch')
     _require(_json_file(root / 'plan.json') == plan, 'transport plan mismatch')
-    prefix = transport['producer_prefix']
-    _require(isinstance(prefix, str) and prefix and '\x00' not in prefix, 'missing producer prefix')
-    if platform['id'].startswith('windows'):
-        drive, tail = ntpath.splitdrive(prefix)
-        _require(bool(drive) and tail.startswith(('\\', '/')), 'Windows producer prefix must be absolute')
-    else:
-        _require(prefix.startswith('/'), 'Linux producer prefix must be absolute')
-    importer = 'install/' + _tool(platform['id'])
-    _require(transport['importer'] == importer and stat.S_ISREG((root / importer).lstat().st_mode), 'invalid transported importer')
     result = _json_file(root / 'result.json')
     _require(result['run'] == run and result['platform'] == platform['id'] and result['complete'] is True
              and result['error'] == '', 'incomplete or mismatched platform result')
     _require(result['importer'] == dict(file=_tool(platform['id']), verified=True), 'unverified importer')
-    entry = root / 'install/autolib.cmake'
-    _require(transport.get('entry') == 'install/autolib.cmake'
-             and stat.S_ISDIR((root / 'install').lstat().st_mode)
+    entry = root / 'autolib.cmake'
+    _require(transport.get('entry') == 'autolib.cmake'
              and stat.S_ISREG(entry.lstat().st_mode), 'invalid transported entry')
     _require(isinstance(result.get('entry'), dict) and result['entry'].get('verified') is True
              and result['entry'] == dict(file='autolib.cmake', sha256=hashlib.sha256(source_entry).hexdigest(), verified=True)
@@ -254,26 +242,59 @@ def _validate_transport(root, transport, selected, platform, source_entry):
                              publish=not universal or plan['publisher'] == platform['id']))
     _require(len({(p['name'], p['version']) for p in expected}) == len(expected), 'duplicate planned package')
     normalized = [dict(p, dependencies=p['dependencies'] or []) for p in transport['packages']]
+    _require(all(type(p['publish']) is bool for p in normalized), 'invalid package publish flag')
     _require(sorted(normalized, key=lambda p: (p['name'], p['version'])) == sorted(expected, key=lambda p: (p['name'], p['version'])), 'transport packages differ from plan')
     results = [dict(slot={k: p[k] for k in ['name', 'version', 'os', 'arch']}, built=True, verified=True) for p in expected]
     _require(sorted(result['packages'], key=lambda p: (p['slot']['name'], p['slot']['version'])) == sorted(results, key=lambda p: (p['slot']['name'], p['slot']['version'])), 'unverified exact package result')
     roots = [r['root'] for r in result['roots']]
     _require(len(roots) == len(set(roots)) and sorted(roots) == sorted(platform['roots'])
              and all(r['verified'] is True for r in result['roots']), 'unverified independent root result')
+    descriptions = [dict(kind='library', name=f"{p['name']}-{p['version']}-{p['os']}-{p['arch']}.tar.zst",
+                         package={k: p[k] for k in ['name', 'version', 'os', 'arch']}) for p in expected if p['publish']]
+    descriptions.append(dict(kind='importer', name=_tool(platform['id']) + '.tar.xz', platform=platform['id']))
+    descriptions = [dict(a, path='assets/' + a['name']) for a in descriptions]
+    assets = transport['assets']
+    _require(isinstance(assets, list) and all(isinstance(a, dict) for a in assets)
+             and len(assets) == len(descriptions), 'transport asset count differs from plan')
+    _require(len({a['name'].lower() for a in assets}) == len(assets), 'duplicate transport asset name')
+    _require(sorted(({k: v for k, v in a.items() if k not in {'size', 'sha256'}} for a in assets), key=lambda a: a['name'])
+             == sorted(descriptions, key=lambda a: a['name']), 'transport asset identities differ from plan')
+    for asset in assets:
+        path = root / asset['path']
+        _require(type(asset.get('size')) is int and asset['size'] >= 0
+                 and isinstance(asset.get('sha256'), str) and re.fullmatch(r'[0-9a-f]{64}', asset['sha256']),
+                 f"{asset['name']}: invalid size or SHA256")
+        _require(stat.S_ISREG(path.lstat().st_mode) and path.stat().st_size == asset['size'],
+                 f"{asset['name']}: missing regular archive or size mismatch")
+        with path.open('rb') as file:
+            _require(hashlib.file_digest(file, 'sha256').hexdigest() == asset['sha256'], f"{asset['name']}: SHA256 mismatch")
+    files = {'transport.json', 'plan.json', 'result.json', 'autolib.cmake'}
+    files.update(a['path'] for a in descriptions)
+    files.update('candidates/' + p['name'] + '/package.toml' for p in expected)
+    directories = {parent.as_posix() for name in files for parent in Path(name).parents if parent != Path('.')}
+    actual_files, actual_directories = set(), set()
+    for path in root.rglob('*'):
+        name = path.relative_to(root).as_posix()
+        if path.is_dir():
+            actual_directories.add(name)
+        else:
+            _require(stat.S_ISREG(path.lstat().st_mode), f'{name}: expected a regular transported file')
+            actual_files.add(name)
+    _require(actual_files == files and actual_directories == directories, 'transport members differ from planned packaged delivery')
     return expected
 
 
 def prepare_publication(selection: dict, input_root: Path, source_root: Path,
-                        builder_file: Path, output_root: Path, *, repository: str, tag: str,
+                        output_root: Path, *, repository: str, tag: str,
                         source_repository: str) -> Path:
-    """Repack validated snapshots in a fresh output directory and return its manifest.
+    """Validate packaged bytes in a fresh directory and return their manifest.
 
     input_root contains one directory per selected artifact; plan.json/run.json
     and transport.tar retain their uploaded names. output_root must be inside
     source_root/build and outside input_root. Inputs remain read-only; repeated
-    calls rebuild all selected assets and hash their actual new bytes.
+    calls preserve all archive bytes and hash the actual extracted files.
     source_repository must come from the trusted workflow context. All entry
-    transports must match the original Git commit before any builder invocation;
+    transports must match the original Git commit before publication;
     repository/tag are injected only into the unique uploaded entry copy.
     """
     run = _identity(selection['source_run'], source_repository)
@@ -288,7 +309,7 @@ def prepare_publication(selection: dict, input_root: Path, source_root: Path,
                                   check=True, capture_output=True).stdout
     published_entry = inject_release_root(source_entry, repository, tag)
     plan_name = f"ci-plan-{run['run_id']}-{run['attempt']}"
-    names = [plan_name] + [f"ci-install-{run['run_id']}-{run['attempt']}-{p}" for p in platforms]
+    names = [plan_name] + [f"ci-package-{run['run_id']}-{run['attempt']}-{p}" for p in platforms]
     _require(sorted(a['name'] for a in selection['artifacts']) == sorted(names), 'selection artifacts differ from planned platforms')
     _require(_json_file(input_root / plan_name / 'plan.json') == selection['plan']
              and _json_file(input_root / plan_name / 'run.json') == run, 'downloaded plan identity mismatch')
@@ -296,12 +317,12 @@ def prepare_publication(selection: dict, input_root: Path, source_root: Path,
     work = Path(tempfile.mkdtemp(prefix='publication-', dir=output_root))
     candidates, inputs = {}, []
     for platform in selection['plan']['platforms']:
-        name = f"ci-install-{run['run_id']}-{run['attempt']}-{platform['id']}"
+        name = f"ci-package-{run['run_id']}-{run['attempt']}-{platform['id']}"
         root = work / ('input-' + platform['id'])
         transport = unpack_transport(input_root / name / 'transport.tar', root)
         packages = _validate_transport(root, transport, selection, platform, source_entry)
         for name in {p['name'] for p in packages}:
-            pointer = root / 'install' / name / 'package.toml'
+            pointer = root / 'candidates' / name / 'package.toml'
             _require(stat.S_ISREG(pointer.lstat().st_mode), f'{pointer}: candidate must be a regular file')
             candidate = tomllib.loads(pointer.read_text(encoding='utf-8'))
             _require(set(candidate) == {'latest'}, f'{pointer}: expected only latest')
@@ -309,28 +330,11 @@ def prepare_publication(selection: dict, input_root: Path, source_root: Path,
             _require(name not in candidates or candidates[name] == version, f'{name}: conflicting transported candidates')
             candidates[name] = version
         publishable = [p for p in packages if p['publish']]
-        inputs.append((platform, root, transport, publishable))
+        inputs.append((root, transport, publishable))
     assets, initial = [], {}
-    for platform, root, transport, libraries in inputs:
-        system, arch = platform['id'].split('-', 1)
-        output = work / ('assets-' + platform['id'])
-        command = [str(builder_file), 'package', '--source-root=' + str(source_root),
-                   '--install-root=' + str(root / 'install'), '--producer-prefix=' + transport['producer_prefix'],
-                   '--output-root=' + str(output), '--os=' + system, '--arch=' + arch,
-                   '--host-os=' + system, '--host-arch=' + arch,
-                   '--importer-file=' + str(root / transport['importer']), '--cmake-command=cmake']
-        command.extend('--module=' + p['name'] + '@' + p['version'] for p in libraries)
-        subprocess.run(command, check=True)
-        descriptions = [dict(kind='library', name=f"{p['name']}-{p['version']}-{p['os']}-{p['arch']}.tar.zst",
-                             package={k: p[k] for k in ['name', 'version', 'os', 'arch']}) for p in libraries]
-        descriptions.append(dict(kind='importer', name=_tool(platform['id']) + '.tar.xz', platform=platform['id']))
-        for asset in descriptions:
-            path = output / asset['name']
-            _require(stat.S_ISREG(path.lstat().st_mode) and path.resolve().is_relative_to(work), 'builder asset must be an internal regular file')
-            with path.open('rb') as file:
-                digest = hashlib.file_digest(file, 'sha256').hexdigest()
-            asset.update(path=path.relative_to(work).as_posix(), size=path.stat().st_size, sha256=digest)
-            assets.append(asset)
+    for root, transport, libraries in inputs:
+        for asset in transport['assets']:
+            assets.append(dict(asset, path=(root / asset['path']).relative_to(work).as_posix()))
         initial.update({p['name']: candidates[p['name']] for p in libraries})
     entry = work / 'autolib.cmake'
     entry.write_bytes(published_entry)
@@ -349,7 +353,7 @@ def main():
     select = commands.add_parser('select')
     select.add_argument('--output', type=Path, required=True)
     prepare = commands.add_parser('prepare')
-    for option in ['selection', 'input-root', 'source-root', 'builder-file', 'output-root']:
+    for option in ['selection', 'input-root', 'source-root', 'output-root']:
         prepare.add_argument('--' + option, type=Path, required=True)
     for option in ['repository', 'tag', 'source-repository']:
         prepare.add_argument('--' + option, required=True)
@@ -363,7 +367,7 @@ def main():
             print(args.output)
         else:
             print(prepare_publication(_json_file(args.selection), args.input_root, args.source_root,
-                                      args.builder_file, args.output_root, repository=args.repository,
+                                      args.output_root, repository=args.repository,
                                       tag=args.tag, source_repository=args.source_repository))
     except (ValueError, KeyError, OSError, tarfile.TarError, zipfile.BadZipFile, subprocess.CalledProcessError) as error:
         parser.exit(1, f'publication preparation failed: {error}\n')
