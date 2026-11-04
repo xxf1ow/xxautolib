@@ -180,7 +180,8 @@ class PublishTests(unittest.TestCase):
                                  ['DELETE'] if method == 'DELETE' else ['DELETE', 'POST'])
                 self.assertNotIn('fake-secret', output.getvalue() + errors.getvalue())
                 self.assertTrue(errors.getvalue(), 'main lost the uncertain asset operation')
-                self.assertIn({'asset': asset['name'], 'operation': operation, 'outcome': 'unknown'},
+                self.assertIn({'asset': asset['name'], 'operation': operation, 'outcome': 'unknown',
+                               'http_status': None, 'reason': 'timeout', 'exception_type': 'Timeout'},
                               [json.loads(line) for line in errors.getvalue().splitlines()])
                 repaired = self.run_release(self.config([asset], {'queue': '1'}))
                 self.assertEqual((repaired['uploaded'], repaired['failed']), (1, 0))
@@ -199,6 +200,31 @@ class PublishTests(unittest.TestCase):
         self.assertEqual(json.loads(errors.getvalue()),
                          {'asset': asset['name'], 'operation': 'local_asset', 'outcome': 'failed'})
 
+    def test_main_preserves_http_and_validation_diagnostics_without_response_body(self):
+        self.remote()
+        asset = self.asset()
+        for status, reason in [(503, 'unexpected_http_status'), (201, 'invalid_asset_size')]:
+            with self.subTest(status=status):
+                def reply(method, url, **options):
+                    response = self.server.request(method, url, **options)
+                    if method == 'POST' and url.endswith('/attach_files'):
+                        response.status_code = status
+                        response._content = json.dumps({'message': 'fake-secret'} if status == 503 else
+                            dict(response.json(), size=999, message='fake-secret')).encode()
+                    return response
+                stdout, stderr = io.StringIO(), io.StringIO()
+                with patch('requests.sessions.Session.request', side_effect=reply), \
+                        contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                    self.assertEqual(self.run_release(self.config([asset], {'queue': '1'}), entry=True), 1)
+                self.assertEqual(json.loads(stdout.getvalue())['uploaded'], 0)
+                diagnostic = json.loads(stderr.getvalue())
+                self.assertEqual(diagnostic['asset'], asset['name'])
+                self.assertEqual(diagnostic['operation'], 'upload_asset')
+                self.assertEqual(diagnostic['outcome'], 'unknown')
+                self.assertEqual(diagnostic.get('http_status'), status)
+                self.assertEqual(diagnostic.get('reason'), reason)
+                self.assertNotIn('fake-secret', stdout.getvalue() + stderr.getvalue())
+
     def test_main_reports_unknown_repository_creation(self):
         config = self.config([], {}, {'queue': '1'})
         config['work_root'].mkdir()
@@ -209,7 +235,8 @@ class PublishTests(unittest.TestCase):
             self.assertEqual(self.module.main(), 1)
         self.assertFalse(json.loads(output.getvalue())['metadata_committed'])
         self.assertTrue(errors.getvalue(), 'main lost the uncertain repository creation')
-        self.assertEqual(json.loads(errors.getvalue()), {'operation': 'create_repository', 'outcome': 'unknown'})
+        self.assertEqual(json.loads(errors.getvalue()), {'operation': 'create_repository', 'outcome': 'unknown',
+                         'http_status': None, 'reason': 'unspecified', 'exception_type': None})
         self.assertEqual(self.server.events, [])
 
     def test_main_reports_received_release_creation_with_lost_response(self):
@@ -230,7 +257,8 @@ class PublishTests(unittest.TestCase):
         self.assertFalse(json.loads(output.getvalue())['metadata_committed'])
         self.assertNotIn('fake-secret', output.getvalue() + errors.getvalue())
         self.assertTrue(errors.getvalue(), 'main lost the uncertain release creation')
-        self.assertEqual(json.loads(errors.getvalue()), {'operation': 'create_release', 'outcome': 'unknown'})
+        self.assertEqual(json.loads(errors.getvalue()), {'operation': 'create_release', 'outcome': 'unknown',
+                         'http_status': None, 'reason': 'timeout', 'exception_type': 'Timeout'})
 
     def test_main_reports_unconfirmed_metadata_push(self):
         self.remote()

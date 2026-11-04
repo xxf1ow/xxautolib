@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
+from json import JSONDecodeError
 from pathlib import Path
 import re
 import threading
@@ -21,11 +22,21 @@ RETRY_DELAYS = (2, 4, 8, 16, 32)
 
 
 class GiteeAPIError(RuntimeError):
-    """只携带操作、状态码和 failed/unknown 结果，不携带响应正文或凭据。"""
+    """携带状态码、固定原因及异常类型，不携带响应正文、URL 或原始异常文本。"""
 
-    def __init__(self, operation, status=None, outcome='failed'):
+    def __init__(self, operation, status=None, outcome='failed', *, reason='unspecified', exception_type=None):
         self.operation, self.status, self.outcome = operation, status, outcome
+        self.reason, self.exception_type = reason, exception_type
         super().__init__(operation + ':' + outcome)
+
+    def diagnostic(self) -> dict:
+        """返回可直接写入日志的字段；尚未收到 HTTP 状态时 http_status 为 None。"""
+        return {'operation': self.operation, 'outcome': self.outcome, 'http_status': self.status,
+                'reason': self.reason, 'exception_type': self.exception_type}
+
+
+class _ResponseValidationError(ValueError):
+    """仅携带内部固定校验项，不包含远端返回值。"""
 
 
 def _id(value):
@@ -88,14 +99,29 @@ class GiteeAPI:
                         return read(response)
                     retry = not write and status in {429, 502, 503, 504}
                     outcome = 'unknown' if write and status not in {400, 401, 403, 404, 405, 409, 422, 429} else 'failed'
-                    error = GiteeAPIError(operation, status, outcome)
-            except requests.exceptions.SSLError:
-                error = GiteeAPIError(operation, status, 'unknown' if write else 'failed')
-            except (requests.ConnectionError, requests.Timeout, requests.exceptions.ChunkedEncodingError):
+                    error = GiteeAPIError(operation, status, outcome, reason='unexpected_http_status')
+            except requests.exceptions.SSLError as cause:
+                error = GiteeAPIError(operation, status, 'unknown' if write else 'failed',
+                                      reason='tls_error', exception_type=type(cause).__name__)
+            except (requests.ConnectionError, requests.Timeout, requests.exceptions.ChunkedEncodingError) as cause:
                 retry = not write
-                error = GiteeAPIError(operation, status, 'unknown' if write else 'failed')
-            except (requests.RequestException, ValueError, TypeError, KeyError, OSError):
-                error = GiteeAPIError(operation, status, 'unknown' if write else 'failed')
+                reason = ('timeout' if isinstance(cause, requests.Timeout) else
+                          'connection_error' if isinstance(cause, requests.ConnectionError) else 'incomplete_response')
+                error = GiteeAPIError(operation, status, 'unknown' if write else 'failed',
+                                      reason=reason, exception_type=type(cause).__name__)
+            except (requests.RequestException, ValueError, TypeError, KeyError, OSError) as cause:
+                if isinstance(cause, JSONDecodeError):
+                    reason = 'invalid_json'
+                elif isinstance(cause, _ResponseValidationError):
+                    reason = str(cause)
+                elif isinstance(cause, (ValueError, TypeError, KeyError)):
+                    reason = 'invalid_response'
+                elif isinstance(cause, requests.RequestException):
+                    reason = 'request_error'
+                else:
+                    reason = 'local_io_error'
+                error = GiteeAPIError(operation, status, 'unknown' if write else 'failed',
+                                      reason=reason, exception_type=type(cause).__name__)
             if not retry or attempt == len(RETRY_DELAYS):
                 raise error from None
             delay = RETRY_DELAYS[attempt]
@@ -189,15 +215,23 @@ class GiteeAPI:
     def upload_asset(self, release_id: int, asset: dict, file: Path) -> dict:
         """借用无装饰器 multipart 上传；核对 ID、名称、尺寸和 HTTPS URL 后返回。"""
         def uploaded(data):
-            if (not isinstance(data, dict) or not _id(data.get('id')) or data.get('name') != asset['name']
-                    or type(data.get('size')) is not int or data['size'] != asset['size']):
-                raise ValueError('invalid uploaded asset')
+            if not isinstance(data, dict):
+                raise _ResponseValidationError('invalid_asset_response')
+            if not _id(data.get('id')):
+                raise _ResponseValidationError('invalid_asset_id')
+            if data.get('name') != asset['name']:
+                raise _ResponseValidationError('invalid_asset_name')
+            if type(data.get('size')) is not int or data['size'] != asset['size']:
+                raise _ResponseValidationError('invalid_asset_size')
             url = data.get('browser_download_url')
             if not isinstance(url, str) or any(c.isspace() for c in url):
-                raise ValueError('invalid uploaded asset URL')
-            parsed = urlsplit(url)
+                raise _ResponseValidationError('invalid_asset_url')
+            try:
+                parsed = urlsplit(url)
+            except ValueError:
+                raise _ResponseValidationError('invalid_asset_url') from None
             if parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password:
-                raise ValueError('invalid uploaded asset URL')
+                raise _ResponseValidationError('invalid_asset_url')
             return data
         return self._json('upload_asset', lambda: self.client.upload_asset_details(
             self.repo, release_id, file_name=asset['name'], file_path=str(file)), 201, uploaded, write=True)

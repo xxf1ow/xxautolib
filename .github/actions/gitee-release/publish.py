@@ -76,7 +76,7 @@ def publish_one(api: GiteeAPI, release_id: int, asset: dict, target_id: int | No
             api.upload_asset(release_id, asset, snapshot)
         return {'name': name, 'status': 'uploaded', 'metadata_path': digest_path, 'sha256': digest}
     except GiteeAPIError as error:
-        return {'name': name, 'status': 'failed', 'operation': error.operation, 'outcome': error.outcome}
+        return {'name': name, 'status': 'failed', **error.diagnostic()}
     except (OSError, ValueError):
         return {'name': name, 'status': 'failed', 'operation': 'local_asset', 'outcome': 'failed'}
 
@@ -120,8 +120,9 @@ def publish_release(config: dict) -> dict:
                 outcomes.extend(future.result() for future in futures)
         for item in outcomes:
             if item['status'] == 'failed':
-                print(json.dumps({'asset': item['name'], 'operation': item['operation'],
-                                  'outcome': item['outcome']}, sort_keys=True), file=sys.stderr)
+                diagnostic = {key: item[key] for key in
+                              ('operation', 'outcome', 'http_status', 'reason', 'exception_type') if key in item}
+                print(json.dumps({'asset': item['name'], **diagnostic}, sort_keys=True), file=sys.stderr)
         successes = {item['name']: item for item in outcomes if item['status'] == 'uploaded'}
         result.update(uploaded=len(successes), failed=len(assets) - len(successes))
         operation = 'metadata_commit'
@@ -135,8 +136,7 @@ def publish_release(config: dict) -> dict:
         result['metadata_commit'] = commit_metadata(repository, digests, changes)
         result['metadata_committed'] = True
     except (GiteeAPIError, OSError, RuntimeError, ValueError) as error:
-        diagnostic = ({'operation': error.operation, 'outcome': error.outcome}
-                      if isinstance(error, GiteeAPIError)
+        diagnostic = (error.diagnostic() if isinstance(error, GiteeAPIError)
                       else {'operation': operation, 'outcome': 'unconfirmed'})
         print(json.dumps(diagnostic, sort_keys=True), file=sys.stderr)
         result['failed'] = len(assets) - result['uploaded']

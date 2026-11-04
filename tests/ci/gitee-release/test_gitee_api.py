@@ -111,6 +111,63 @@ class GiteeAPITests(unittest.TestCase):
                 self.assertEqual(failure.exception.outcome, 'unknown')
             self.assertEqual(len(self.sent), 1)
 
+    def test_write_diagnostics_distinguish_http_and_transport_failures(self):
+        cases = [
+            ((503, {'message': 'fake-secret'}), 503, 'unexpected_http_status', None, 'unknown'),
+            ((403, {'message': 'fake-secret'}), 403, 'unexpected_http_status', None, 'failed'),
+            (requests.Timeout('fake-secret'), None, 'timeout', 'Timeout', 'unknown'),
+            (requests.ConnectionError('fake-secret'), None, 'connection_error', 'ConnectionError', 'unknown'),
+            (requests.exceptions.SSLError('fake-secret'), None, 'tls_error', 'SSLError', 'unknown'),
+            (requests.exceptions.ChunkedEncodingError('fake-secret'), None,
+             'incomplete_response', 'ChunkedEncodingError', 'unknown'),
+        ]
+        for reply, status, reason, exception_type, outcome in cases:
+            with self.subTest(reason=reason, status=status):
+                self.sent.clear()
+                with self.transport([reply]), self.assertRaises(self.module.GiteeAPIError) as failure:
+                    self.api.delete_asset(3, 4)
+                diagnostic = failure.exception.diagnostic()
+                self.assertEqual(diagnostic, {'operation': 'delete_asset', 'outcome': outcome,
+                                             'http_status': status, 'reason': reason,
+                                             'exception_type': exception_type})
+                self.assertEqual(len(self.sent), 1)
+                self.assertNotIn('fake-secret', json.dumps(diagnostic) + str(failure.exception))
+
+    def test_upload_diagnostics_identify_invalid_json_and_response_field(self):
+        valid = {'id': 7, 'name': 'asset', 'size': 5,
+                 'browser_download_url': 'https://example.invalid/asset'}
+        cases = [
+            (dict(valid, id=0), 'invalid_asset_id'),
+            (dict(valid, name='fake-secret'), 'invalid_asset_name'),
+            (dict(valid, size=6), 'invalid_asset_size'),
+            (dict(valid, browser_download_url='https://fake-secret@example.invalid/asset'), 'invalid_asset_url'),
+            (['fake-secret'], 'invalid_asset_response'),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            file = Path(directory) / 'asset'
+            file.write_bytes(b'bytes')
+            for data, reason in cases:
+                with self.subTest(reason=reason):
+                    self.sent.clear()
+                    with self.transport([(201, data)]), self.assertRaises(self.module.GiteeAPIError) as failure:
+                        self.api.upload_asset(3, {'name': 'asset', 'size': 5}, file)
+                    diagnostic = failure.exception.diagnostic()
+                    self.assertEqual(diagnostic['http_status'], 201)
+                    self.assertEqual(diagnostic['reason'], reason)
+                    self.assertEqual(diagnostic['outcome'], 'unknown')
+                    self.assertEqual(len(self.sent), 1)
+                    self.assertNotIn('fake-secret', json.dumps(diagnostic) + str(failure.exception))
+            response = self.response(201, None)
+            response._content = b'fake-secret: not JSON'
+            with patch('requests.sessions.Session.request', return_value=response), \
+                    self.assertRaises(self.module.GiteeAPIError) as failure:
+                self.api.upload_asset(3, {'name': 'asset', 'size': 5}, file)
+            diagnostic = failure.exception.diagnostic()
+            self.assertEqual(diagnostic['http_status'], 201)
+            self.assertEqual(diagnostic['reason'], 'invalid_json')
+            self.assertEqual(diagnostic['exception_type'], 'JSONDecodeError')
+            self.assertNotIn('fake-secret', json.dumps(diagnostic) + str(failure.exception))
+
     def test_retry_after_cannot_extend_bounded_wait(self):
         response = self.response(429, {})
         response.headers['Retry-After'] = '3600'

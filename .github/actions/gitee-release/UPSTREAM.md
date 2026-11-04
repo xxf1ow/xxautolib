@@ -22,7 +22,7 @@
 
 发布准备保留实际 checkout SHA 检查，并从原构建 Git 提交读取 `src/autolib.cmake`，全部运输入口与验证记录须与该字节一致。`prepare_publication(..., repository, tag, source_repository)` 的三个关键字参数分别是实际 Gitee 目标、原始 tag 和独立可信源码仓库。入口上传副本仅替换唯一完整空行 `set(_autolib_release_root "")`；注入点缺失、重复或非空均失败。tag 不得含空白或控制字符，合法值按单个 URL 路径段编码；注入和上传使用同一组 workflow 目标变量，源码、安装和运输输入保持不变。
 
-`publish.py` 成功解析输入后在 stdout 输出五字段汇总 JSON，在 stderr 输出失败资产的名称、`operation/outcome` 或阶段诊断。非法输入返回非零，stdout 为空，stderr 说明固定输入规则，不回显输入值。API 写入未确认标为 `unknown`，其他阶段未确认标为 `unconfirmed`；不输出底层异常正文、响应或凭据，也不据此自动重试写入。
+`publish.py` 成功解析输入后在 stdout 输出五字段汇总 JSON，在 stderr 输出失败资产的名称、`operation/outcome` 或阶段诊断。API 失败另带 `http_status`、固定原因 `reason` 和异常类型 `exception_type`；未取得状态码或没有底层异常时，对应字段为 null。原因区分非预期 HTTP 状态、网络异常、JSON 解析及附件身份、大小或地址校验失败。非法输入返回非零，stdout 为空，stderr 说明固定输入规则，不回显输入值。API 写入未确认标为 `unknown`，其他阶段未确认标为 `unconfirmed`；不输出底层异常正文、完整 URL、响应或凭据，也不据此自动重试写入。
 
 `gitee_api.py` 独立拥有普通请求的 Header 认证、JSON 写入、每线程连接和单层有界读取重试。未确认写入抛出 `unknown`，不自动重放。附件上传只借用 `gitee_release.py` 无装饰器的 `upload_asset_details`，保留其 multipart 字段、boundary 和文件句柄管理；参考本体不变。`metadata_repository.py` 拥有单份 Git 工作副本及确认 push 后的元数据结果，`publication_rules.py` 校验发布清单并选择 latest，不扫描配方或追加资产。
 
