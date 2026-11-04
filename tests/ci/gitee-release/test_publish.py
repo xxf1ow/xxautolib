@@ -32,6 +32,13 @@ class Server:
         self.missing_release = False
         self.lock = threading.Lock()
 
+    def add_asset(self, name, body, asset_id=7):
+        asset = {'id': asset_id, 'name': name, 'size': len(body),
+                 'browser_download_url': 'https://gitee.com/fixture/mirror/releases/download/fixed/' + name}
+        self.assets.append(asset)
+        self.bodies[name] = body
+        return asset
+
     def request(self, method, url, **options):
         with self.lock:
             self.events.append((method, url))
@@ -45,6 +52,12 @@ class Server:
                 status, data = 201, {'id': 3, 'tag_name': 'fixed', 'name': 'fixed', 'body': 'fixed'}
             elif method == 'GET' and url.endswith('/attach_files'):
                 data = list(self.assets)
+            elif method == 'GET' and '/releases/download/fixed/' in url:
+                response = requests.Response()
+                response.status_code = 200
+                response._content = self.bodies[url.rsplit('/', 1)[1]]
+                response._content_consumed = True
+                return response
             elif method == 'DELETE':
                 status = self.delete_status
                 if status == 204:
@@ -61,7 +74,7 @@ class Server:
                 assert parts[1].headers[b'Content-Type'] == b'application/octet-stream'
                 status = 503 if name in self.fail else 201
                 data = {'id': 20 + len(self.bodies), 'name': name, 'size': len(parts[1].content),
-                        'browser_download_url': 'https://gitee.com/fixture/mirror/' + name}
+                        'browser_download_url': 'https://gitee.com/fixture/mirror/releases/download/fixed/' + name}
                 if status == 201:
                     self.bodies[name] = parts[1].content
                     self.assets.append(data)
@@ -87,6 +100,9 @@ class PublishTests(unittest.TestCase):
         self.transport = patch('requests.sessions.Session.request', side_effect=self.server.request)
         self.transport.start()
         self.addCleanup(self.transport.stop)
+        clock = patch('time.sleep')
+        self.clock = clock.start()
+        self.addCleanup(clock.stop)
 
     def test_main_reports_input_rule_on_stderr_without_credentials(self):
         environment = {'PUBLISH_HOST': 'gitee', 'PUBLISH_MODE': 'latest', 'PUBLISH_LATEST': '[]',
@@ -150,42 +166,70 @@ class PublishTests(unittest.TestCase):
                     return self.module.main()
             return self.module.publish_release(config)
 
-    def test_main_reports_received_write_with_lost_response(self):
+    def test_main_requeries_after_received_write_with_lost_response(self):
         self.remote()
         asset = self.asset()
-        for method, operation in [('DELETE', 'delete_asset'), ('POST', 'upload_asset')]:
+        for method, operation in [('GET', 'target_assets'), ('GET', 'asset_sha256'),
+                                  ('DELETE', 'delete_asset'), ('POST', 'upload_asset')]:
             with self.subTest(operation=operation):
-                self.server.assets = [{'id': 7, 'name': asset['name']}]
+                self.server.assets.clear()
+                self.server.add_asset(asset['name'], b'old')
                 self.server.events.clear()
-                before = git(self.bare, 'rev-parse', 'HEAD')
+                self.clock.reset_mock()
                 output, errors = io.StringIO(), io.StringIO()
+                lost = False
                 def received_then_lost(request_method, url, **options):
+                    nonlocal lost
                     response = self.server.request(request_method, url, **options)
-                    if request_method == method:
+                    selected = (operation == 'target_assets' and url.endswith('/attach_files') or
+                                operation == 'asset_sha256' and '/releases/download/' in url or
+                                method != 'GET')
+                    if request_method == method and selected and not lost:
+                        lost = True
                         response.close()
                         raise requests.Timeout('fake-secret: response lost after acceptance')
                     return response
                 with patch('requests.sessions.Session.request', side_effect=received_then_lost), \
                         contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
-                    self.assertEqual(self.run_release(self.config([asset], {'queue': '1'}), entry=True), 1)
+                    self.assertEqual(self.run_release(self.config([asset], {'queue': '1'}), entry=True), 0)
                 result = json.loads(output.getvalue())
-                self.assertEqual(set(result), {'selected', 'uploaded', 'failed', 'metadata_committed', 'metadata_commit'})
-                self.assertEqual((result['uploaded'], result['failed']), (0, 1))
-                self.assertEqual(git(self.bare, 'rev-parse', 'HEAD'), before)
-                if method == 'DELETE':
-                    self.assertEqual(self.server.assets, [])
-                else:
-                    self.assertEqual(self.server.bodies[asset['name']], b'archive\0bytes')
+                self.assertEqual((result['uploaded'], result['skipped'], result['failed']),
+                                 (0, 1, 0) if method == 'POST' else (1, 0, 0))
+                self.assertTrue(result['metadata_committed'])
+                self.assertEqual(len(self.server.assets), 1)
+                self.assertEqual(self.server.bodies[asset['name']], b'archive\0bytes')
                 self.assertEqual([m for m, _ in self.server.events if m in {'DELETE', 'POST'}],
-                                 ['DELETE'] if method == 'DELETE' else ['DELETE', 'POST'])
+                                 ['DELETE', 'POST'])
+                self.assertEqual(sum(url.endswith('/attach_files') and m == 'GET'
+                                     for m, url in self.server.events), 2)
+                self.assertEqual([c.args[0] for c in self.clock.call_args_list], [2])
+                self.assertEqual(git(self.bare, 'show', 'HEAD:queue/1/' + asset['name'] + '.sha256'),
+                                 (asset['sha256'] + '\n').encode())
                 self.assertNotIn('fake-secret', output.getvalue() + errors.getvalue())
-                self.assertTrue(errors.getvalue(), 'main lost the uncertain asset operation')
-                self.assertIn({'asset': asset['name'], 'operation': operation, 'outcome': 'unknown',
-                               'http_status': None, 'reason': 'timeout', 'exception_type': 'Timeout'},
-                              [json.loads(line) for line in errors.getvalue().splitlines()])
-                repaired = self.run_release(self.config([asset], {'queue': '1'}))
-                self.assertEqual((repaired['uploaded'], repaired['failed']), (1, 0))
-                self.assertTrue(repaired['metadata_committed'])
+
+    def test_identical_remote_bytes_skip_writes_and_repair_metadata(self):
+        self.remote()
+        asset = self.asset()
+        self.server.add_asset(asset['name'], b'archive\0bytes')
+        result = self.run_release(self.config([asset], {'queue': '1'}))
+        self.assertEqual((result['uploaded'], result.get('skipped', -1), result['failed']), (0, 1, 0))
+        self.assertTrue(result['metadata_committed'])
+        self.assertFalse(any(m in {'DELETE', 'POST'} for m, _ in self.server.events))
+        self.assertEqual(git(self.bare, 'show', 'HEAD:queue/1/' + asset['name'] + '.sha256'),
+                         (asset['sha256'] + '\n').encode())
+        self.assertEqual(git(self.bare, 'show', 'HEAD:queue/package.toml'), b'latest = "1"\n')
+
+    def test_attachment_retry_budget_restarts_at_query_and_caps_delay(self):
+        self.remote()
+        asset = self.asset()
+        self.server.fail.add(asset['name'])
+        result = self.run_release(self.config([asset], {'queue': '1'}))
+        self.assertEqual((result['uploaded'], result['failed']), (0, 1))
+        self.assertEqual([m for m, url in self.server.events if url.endswith('/attach_files')],
+                         ['GET', 'POST'] * 11)
+        self.assertEqual([c.args[0] for c in self.clock.call_args_list],
+                         [2, 4, 8, 16, 32, 32, 32, 32, 32, 32])
+        self.assertNotIn('queue/', git(self.bare, 'ls-tree', '-r', '--name-only', 'HEAD').decode())
 
     def test_main_reports_local_asset_failure(self):
         self.remote()
@@ -205,6 +249,8 @@ class PublishTests(unittest.TestCase):
         asset = self.asset()
         for status, reason in [(503, 'unexpected_http_status'), (201, 'invalid_asset_size')]:
             with self.subTest(status=status):
+                self.server.assets.clear()
+                self.server.fail = {asset['name']} if status == 503 else set()
                 def reply(method, url, **options):
                     response = self.server.request(method, url, **options)
                     if method == 'POST' and url.endswith('/attach_files'):
@@ -217,13 +263,15 @@ class PublishTests(unittest.TestCase):
                         contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
                     self.assertEqual(self.run_release(self.config([asset], {'queue': '1'}), entry=True), 1)
                 self.assertEqual(json.loads(stdout.getvalue())['uploaded'], 0)
-                diagnostic = json.loads(stderr.getvalue())
+                diagnostics = [json.loads(line) for line in stderr.getvalue().splitlines()]
+                diagnostic = diagnostics[-1]
                 self.assertEqual(diagnostic['asset'], asset['name'])
                 self.assertEqual(diagnostic['operation'], 'upload_asset')
                 self.assertEqual(diagnostic['outcome'], 'unknown')
                 self.assertEqual(diagnostic.get('http_status'), status)
                 self.assertEqual(diagnostic.get('reason'), reason)
                 self.assertNotIn('fake-secret', stdout.getvalue() + stderr.getvalue())
+                self.assertEqual(len(diagnostics), 11 if status == 503 else 1)
 
     def test_main_reports_unknown_repository_creation(self):
         config = self.config([], {}, {'queue': '1'})
@@ -283,10 +331,18 @@ class PublishTests(unittest.TestCase):
                                               (7, 204, True, ['DELETE', 'POST'])]:
             with self.subTest(target=target, status=status, fail=fail):
                 self.server.events.clear()
+                self.server.assets.clear()
+                if target is not None:
+                    self.server.add_asset(asset['name'], b'x' * asset['size'], target)
                 self.server.delete_status = status
                 self.server.fail = {asset['name']} if fail else set()
-                result = self.module.publish_one(self.api, 3, asset, target)
-                self.assertEqual([method for method, _ in self.server.events], expected)
+                with contextlib.redirect_stderr(io.StringIO()):
+                    result = self.module.publish_one(self.api, 3, asset)
+                if status == 503:
+                    expected = ['DELETE'] * 11
+                elif fail:
+                    expected = ['DELETE'] + ['POST'] * 11
+                self.assertEqual([method for method, _ in self.server.events if method in {'DELETE', 'POST'}], expected)
                 self.assertEqual(result['status'], 'uploaded' if status == 204 and not fail else 'failed')
                 if result['status'] == 'failed':
                     self.assertNotIn('sha256', result)
@@ -342,13 +398,16 @@ class PublishTests(unittest.TestCase):
         for fail in [False, True]:
             with self.subTest(fail=fail):
                 self.server.fail = {'autolib.cmake'} if fail else set()
+                if fail:
+                    self.server.assets = [a for a in self.server.assets if a['name'] != 'autolib.cmake']
                 library = self.asset('queue', '2' if fail else '1')
                 errors, output = io.StringIO(), io.StringIO()
                 with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
                     code = self.run_release(self.config([entry_asset, library, importer], {'queue': '1'}), entry=True)
                 result = json.loads(output.getvalue())
                 self.assertEqual(code, int(fail))
-                self.assertEqual((result['uploaded'], result['failed']), (2, 1) if fail else (3, 0))
+                self.assertEqual((result['uploaded'], result['skipped'], result['failed']),
+                                 (1, 1, 1) if fail else (3, 0, 0))
                 self.assertTrue(result['metadata_committed'])
                 paths = git(self.bare, 'ls-tree', '-r', '--name-only', 'HEAD').decode().splitlines()
                 self.assertFalse(any('autolib.cmake' in name for name in paths))
@@ -402,7 +461,7 @@ class PublishTests(unittest.TestCase):
         self.assertFalse(thread.is_alive())
         self.assertEqual(errors, [])
         self.assertEqual(state['maximum'], 4)
-        self.assertEqual(state['started'], 5)
+        self.assertEqual(state['started'], 15)
         self.assertEqual(len(sessions), 4)
         self.assertEqual((results[0]['uploaded'], results[0]['failed']), (4, 1))
         self.assertTrue(results[0]['metadata_committed'])
@@ -425,33 +484,35 @@ class PublishTests(unittest.TestCase):
         before = git(self.bare, 'rev-parse', 'HEAD')
         result = self.run_release(self.config([asset], {'queue': '1'}, {'queue': '2'}), break_push=True)
         self.assertFalse(result['metadata_committed'])
-        self.assertEqual(result['uploaded'], 1)
+        self.assertEqual((result['uploaded'], result['skipped']), (0, 1))
         self.assertEqual(git(self.bare, 'rev-parse', 'HEAD'), before)
         self.assertEqual(len(self.server.bodies), 1)
         repaired = self.run_release(self.config([asset], {'queue': '1'}, {'queue': '2'}))
         self.assertTrue(repaired['metadata_committed'])
         self.assertEqual(git(self.bare, 'show', 'HEAD:queue/package.toml'), b'latest = "2"\n')
-        self.assertEqual(sum(method == 'POST' for method, _ in self.server.events), 3)
-        self.assertEqual(sum(method == 'DELETE' for method, _ in self.server.events), 2)
+        self.assertEqual(sum(method == 'POST' for method, _ in self.server.events), 1)
+        self.assertEqual(sum(method == 'DELETE' for method, _ in self.server.events), 0)
         body = self.server.bodies[asset['name']]
         self.assertEqual(body, b'archive\0bytes')
         self.assertEqual(git(self.bare, 'show', 'HEAD:queue/1/queue-1-any-any.tar.zst.sha256'),
                          (hashlib.sha256(body).hexdigest() + '\n').encode())
         self.assertTrue(first['metadata_committed'])
 
-    def test_changed_input_fails_before_delete_and_unknown_upload_is_not_success(self):
+    def test_changed_input_and_failed_query_never_mutate_assets(self):
         asset = self.asset()
         Path(asset['path']).write_bytes(b'changed bytes')
-        result = self.module.publish_one(self.api, 3, asset, 7)
+        result = self.module.publish_one(self.api, 3, asset)
         self.assertEqual(result['status'], 'failed')
         self.assertEqual(self.server.events, [])
         asset = self.asset()
-        with patch('requests.sessions.Session.request', side_effect=requests.Timeout('fake-secret')):
+        with patch('requests.sessions.Session.request', side_effect=requests.Timeout('fake-secret')) as send:
             output = io.StringIO()
             with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
-                result = self.module.publish_one(self.api, 3, asset, None)
+                result = self.module.publish_one(self.api, 3, asset)
         self.assertEqual(result['status'], 'failed')
-        self.assertEqual(result['outcome'], 'unknown')
+        self.assertEqual(result['operation'], 'target_assets')
+        self.assertEqual(send.call_count, 11)
+        self.assertTrue(all(call.args[0] == 'GET' for call in send.call_args_list))
         self.assertNotIn('sha256', result)
         self.assertNotIn('fake-secret', output.getvalue() + json.dumps(result))
 

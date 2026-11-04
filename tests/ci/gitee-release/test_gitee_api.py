@@ -1,6 +1,7 @@
 """Controlled HTTP responses exercise authentication and confirmed writes."""
 
 import importlib
+import hashlib
 import json
 from pathlib import Path
 import sys
@@ -199,6 +200,39 @@ class GiteeAPITests(unittest.TestCase):
         self.assertIn('fixed%2Ftag', self.sent[0][1])
         self.assertEqual(self.sent[1][2]['json']['target_commitish'], 'a' * 40)
         self.assertEqual(self.sent[3][2]['params']['page'], 2)
+
+    def test_attachment_query_has_no_nested_retry(self):
+        with self.transport([(503, {})] * 6), patch('time.sleep') as clock:
+            with self.assertRaises(self.module.GiteeAPIError):
+                self.api.target_assets(3)
+        self.assertEqual(len(self.sent), 1)
+        clock.assert_not_called()
+
+    def test_asset_digest_downloads_bytes_and_drops_auth_on_cdn_redirect(self):
+        first = self.response(302, None)
+        first.headers['Location'] = 'https://cdn.example.invalid/archive'
+        last = self.response(200, None)
+        last._content = b'archive\0bytes'
+        sent = []
+        def send(method, url, **options):
+            sent.append((method, url, options))
+            return first if len(sent) == 1 else last
+        asset = {'browser_download_url': 'https://gitee.com/fixture/mirror/releases/download/fixed/archive'}
+        with patch('requests.sessions.Session.request', side_effect=send):
+            self.assertEqual(self.api.asset_sha256(asset), hashlib.sha256(b'archive\0bytes').hexdigest())
+        self.assertEqual([s[1] for s in sent], [asset['browser_download_url'], 'https://cdn.example.invalid/archive'])
+        self.assertEqual(sent[0][2]['headers']['Authorization'], 'token fake-secret')
+        self.assertNotIn('Authorization', sent[1][2]['headers'])
+        self.assertTrue(last._content_consumed)
+
+    def test_asset_digest_rejects_insecure_redirect_without_sending_credentials(self):
+        first = self.response(302, None)
+        first.headers['Location'] = 'http://gitee.com/insecure'
+        with patch('requests.sessions.Session.request', return_value=first) as send:
+            with self.assertRaises(self.module.GiteeAPIError):
+                self.api.asset_sha256({'browser_download_url':
+                    'https://gitee.com/fixture/mirror/releases/download/fixed/archive'})
+        self.assertEqual(send.call_count, 1)
 
     def test_upload_reuses_real_multipart_and_checks_response(self):
         captured = []

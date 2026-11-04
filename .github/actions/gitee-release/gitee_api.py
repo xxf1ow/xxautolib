@@ -2,12 +2,13 @@
 
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
+import hashlib
 from json import JSONDecodeError
 from pathlib import Path
 import re
 import threading
 import time
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote, urljoin, urlsplit
 
 import requests
 
@@ -33,6 +34,12 @@ class GiteeAPIError(RuntimeError):
         """返回可直接写入日志的字段；尚未收到 HTTP 状态时 http_status 为 None。"""
         return {'operation': self.operation, 'outcome': self.outcome, 'http_status': self.status,
                 'reason': self.reason, 'exception_type': self.exception_type}
+
+    @property
+    def retryable(self) -> bool:
+        """临时网络或服务故障可重试；输入、认证、权限及校验错误不可重试。"""
+        return (self.reason in {'connection_error', 'timeout', 'incomplete_response'}
+                or self.status in {408, 429} or self.status is not None and 500 <= self.status < 600)
 
 
 class _ResponseValidationError(ValueError):
@@ -87,8 +94,8 @@ class GiteeAPI:
         return self._session().request(method, url, timeout=(10, 300),
                                        allow_redirects=False, verify=True, **kwargs)
 
-    def _run(self, operation, send, expected, read, *, write=False, missing=False):
-        for attempt in range(len(RETRY_DELAYS) + 1):
+    def _run(self, operation, send, expected, read, *, write=False, missing=False, retry_delays=RETRY_DELAYS):
+        for attempt in range(len(retry_delays) + 1):
             status, retry, headers = None, False, {}
             try:
                 with send() as response:
@@ -122,9 +129,9 @@ class GiteeAPI:
                     reason = 'local_io_error'
                 error = GiteeAPIError(operation, status, 'unknown' if write else 'failed',
                                       reason=reason, exception_type=type(cause).__name__)
-            if not retry or attempt == len(RETRY_DELAYS):
+            if not retry or attempt == len(retry_delays):
                 raise error from None
-            delay = RETRY_DELAYS[attempt]
+            delay = retry_delays[attempt]
             if status == 429 and 'Retry-After' in headers:
                 try:
                     value = headers['Retry-After']
@@ -190,7 +197,7 @@ class GiteeAPI:
                           201, lambda data: self._release(data, tag), write=True)
 
     def target_assets(self, release_id: int) -> list[dict]:
-        """返回全部分页的具名附件；请求或分页结构错误抛 GiteeAPIError。"""
+        """单次读取全部分页；失败交给附件更新循环，不在 HTTP 层重试。"""
         def assets(data):
             if not isinstance(data, list) or any(not isinstance(a, dict) or not isinstance(a.get('name'), str)
                                                 or not a['name'] for a in data):
@@ -201,14 +208,50 @@ class GiteeAPI:
             current = page
             items = self._json('target_assets', lambda: self._request('GET', 'repos/' + self.repository
                                + '/releases/' + str(release_id) + '/attach_files', params={'page': current, 'per_page': 100}),
-                               200, assets)
+                               200, assets, retry_delays=())
             result.extend(items)
             if len(items) < 100:
                 return result
             page += 1
 
+    def asset_sha256(self, asset: dict) -> str:
+        """流式核对远端实际字节；只向 Gitee 发送凭据，仅跟随 HTTPS 重定向。
+
+        初始 URL 必须属于目标仓库。请求或读取失败抛 GiteeAPIError，不自行重试。
+        """
+        def download():
+            url = asset['browser_download_url']
+            if not isinstance(url, str):
+                raise ValueError('invalid asset URL')
+            initial = urlsplit(url)
+            if initial.hostname != 'gitee.com' or not initial.path.startswith('/' + self.repository + '/releases/download/'):
+                raise ValueError('invalid asset source')
+            for _ in range(6):
+                parsed = urlsplit(url)
+                if (parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password
+                        or any(c.isspace() for c in url)):
+                    raise ValueError('invalid asset URL')
+                headers = {'Authorization': 'token ' + self.token} if parsed.netloc == 'gitee.com' else {}
+                response = self._session().request('GET', url, headers=headers, timeout=(10, 300),
+                                                   allow_redirects=False, verify=True, stream=True)
+                if response.status_code not in {301, 302, 303, 307, 308}:
+                    return response
+                with response:
+                    location = response.headers.get('Location')
+                    if not location:
+                        raise ValueError('missing redirect URL')
+                    url = urljoin(url, location)
+            raise ValueError('too many redirects')
+
+        def digest(response):
+            result = hashlib.sha256()
+            for chunk in response.iter_content(1024 * 1024):
+                result.update(chunk)
+            return result.hexdigest()
+        return self._run('asset_sha256', download, 200, digest, retry_delays=())
+
     def delete_asset(self, release_id: int, asset_id: int) -> None:
-        """只在收到 204 时确认删除；不确定写入失败且不重放。"""
+        """单次删除，只在收到 204 时确认；失败交给附件更新循环。"""
         self._run('delete_asset', lambda: self._request('DELETE', 'repos/' + self.repository + '/releases/'
                   + str(release_id) + '/attach_files/' + str(asset_id)), 204, lambda response: None, write=True)
 
