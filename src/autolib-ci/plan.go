@@ -24,15 +24,16 @@ func planCI(ctx context.Context, o ciPlanOptions) (ciPlan, error) {
 		return ciPlan{}, err
 	}
 	moduleSelection := o.Modules
-	if moduleSelection != nil && strings.TrimSpace(*moduleSelection) == "" {
-		moduleSelection = nil
-	}
+	toolOnly := moduleSelection == nil || *moduleSelection == ""
 	selected := []string{}
-	if moduleSelection != nil {
+	if !toolOnly && *moduleSelection != "all" {
 		for _, value := range strings.Split(*moduleSelection, ",") {
 			request := strings.TrimSpace(value)
 			if request == "" {
 				return ciPlan{}, fmt.Errorf("module contains an empty item")
+			}
+			if strings.EqualFold(request, "all") || strings.Split(request, "@")[0] == "autolib-importer" {
+				return ciPlan{}, fmt.Errorf("invalid module selection %q; use exactly all or a library list", *moduleSelection)
 			}
 			if !slices.Contains(selected, request) {
 				selected = append(selected, request)
@@ -45,23 +46,30 @@ func planCI(ctx context.Context, o ciPlanOptions) (ciPlan, error) {
 		if err != nil {
 			return ciPlan{}, err
 		}
-		description, err := readModuleDescription(ctx, o.BuilderFile, o.SourceRoot, systemName, architecture, selected)
-		if err != nil {
-			return ciPlan{}, fmt.Errorf("platform %s: %w", platform, err)
+		description := moduleDescription{SystemName: systemName, Architecture: architecture, Roots: []string{}, Modules: []describedModule{}, GoModuleFiles: []string{}, BuilderFiles: []string{}}
+		if !toolOnly {
+			description, err = readModuleDescription(ctx, o.BuilderFile, o.SourceRoot, systemName, architecture, selected)
+			if err != nil {
+				return ciPlan{}, fmt.Errorf("platform %s: %w", platform, err)
+			}
 		}
+		requested := slices.Clone(description.Roots)
 		modules, roots, err := effectiveCIModules(o.SourceRoot, description.Modules, description.Roots)
 		if err != nil {
 			return ciPlan{}, fmt.Errorf("platform %s: %w", platform, err)
 		}
 		description.Modules, description.Roots = modules, roots
-		if len(modules) == 0 {
-			continue
+		filtered := []string{}
+		for _, root := range requested {
+			if !slices.Contains(roots, root) {
+				filtered = append(filtered, root)
+			}
 		}
 		layers, err := ciLayers(description.Modules)
 		if err != nil {
 			return ciPlan{}, err
 		}
-		plan.Platforms = append(plan.Platforms, ciPlatformPlan{ID: platform, Roots: roots, Description: description, Layers: layers, SystemDependencies: ciSystemDependencies(description.Modules)})
+		plan.Platforms = append(plan.Platforms, ciPlatformPlan{ID: platform, RequestedRoots: requested, FilteredRoots: filtered, Roots: roots, Description: description, Layers: layers, SystemDependencies: ciSystemDependencies(description.Modules)})
 		for _, root := range roots {
 			if !slices.Contains(plan.RequestedModules, root) {
 				plan.RequestedModules = append(plan.RequestedModules, root)
@@ -202,6 +210,9 @@ func ciTarget(platform string) (string, string, error) {
 }
 
 func ciLayers(modules []describedModule) ([][]string, error) {
+	if len(modules) == 0 {
+		return [][]string{}, nil
+	}
 	byName := make(map[string]describedModule, len(modules))
 	for _, module := range modules {
 		byName[moduleIdentity(module)] = module

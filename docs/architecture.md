@@ -14,15 +14,15 @@
 
 ## 组件职责
 
-根 [CMakeLists.txt](../CMakeLists.txt) 和[构建入口](../src/autolib-builder/index.cmake)准备固定 Go SDK、builder 和宿主 importer，再由 CMake/ExternalProject 执行构建。模块声明、资源、补丁、依赖接线和安装机制归 builder；它也拥有安装副本的路径修正及归档机制，不认识托管平台或发布凭据。
+根 [CMakeLists.txt](../CMakeLists.txt) 和[构建入口](../src/autolib-builder/index.cmake)调用[共享工具准备](../src/autolib-builder/prepare-tools.cmake)，准备固定 Go SDK、builder、宿主 importer 和原样安装入口，再由 CMake/ExternalProject 执行构建。CI 零库模式通过同一工具准备的脚本入口执行，不调用模块生成器。模块声明、资源、补丁、依赖接线和安装机制归 builder；它也拥有安装副本的路径修正及归档机制，不认识托管平台或发布凭据。
 
 `autolib-importer` 负责包选择、精确依赖遍历、HTTPS 下载、复制或解包、校验和缓存准备，内置路径修正规则。单文件 [autolib.cmake](../src/autolib.cmake) 负责宿主 importer 引导、按需 FetchContent Git 快照及仓库检查、结果身份与闭包校验及包就绪后的 target 加载。adapter 使用已准备的依赖公共目标，不自行推断 sibling 版本目录、重新选择依赖或下载编译。
 
-`autolib-ci` 通过 builder 取得精确根及闭包，按依赖层构建、逐根消费验证并运输安装结果；两个 Eigen 版本各有独立消费者。workflow 提供平台环境、触发、权限与同目标串行，不在构建矩阵内发布 Release。
+`autolib-ci` 在选择库时通过 builder 取得精确根及闭包，保留请求、有效及过滤根，按依赖层构建、逐根消费验证并运输安装结果；两个 Eigen 版本各有独立消费者。零库选择仍保留各平台，验证 importer 与入口后运输，不执行库构建或消费。workflow 提供可信源码仓库、平台环境、触发、权限与同目标串行，不在构建矩阵内发布 Release。
 
 ## 构建与交付
 
-普通根入口生成版本化安装结果，包含宿主 importer、包内身份、精确依赖和包级 `package.toml`。本地编译结束即可消费，不要求打包、上传或源码树参与下游运行。实际安装失败以未完成消费描述阻止导入；复用目标仍执行消费准备，但不重新标记已冻结的依赖身份。
+普通根入口生成版本化安装结果，包含原样 `autolib.cmake`、宿主 importer、包内身份、精确依赖和包级 `package.toml`。CI 在安装验证及运输前将入口与当前构建提交的源码逐字节比对，结果记录入口 SHA256，汇总拒绝未验证或不同摘要的入口。本地编译结束即可消费，不要求打包、上传或源码树参与下游运行。实际安装失败以未完成消费描述阻止导入；复用目标仍执行消费准备，但不重新标记已冻结的依赖身份。
 
 公开二进制沿用既有 CI 的单一平台 ABI 基准和发布前验证；本地产物结构一致不代表任意工具链二进制兼容。本地自定义配置及混用远端依赖时，由使用者保持兼容；包身份和摘要校验不替代 ABI 判断，不增加 ABI 变体。
 

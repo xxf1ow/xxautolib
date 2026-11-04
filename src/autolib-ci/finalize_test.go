@@ -15,30 +15,30 @@ func finalizeFixture() (ciPlan, ciRunIdentity, []ciPlatformResult) {
 	results := []ciPlatformResult{}
 	for _, platform := range []string{"linux-x86_64", "windows-x86_64", "linux-aarch64"} {
 		plan.Platforms = append(plan.Platforms, ciPlatformPlan{ID: platform, Roots: []string{"queue@1"}, Description: moduleDescription{Modules: []describedModule{{Name: "queue", Version: "1", Target: "fixture-queue", PlatformIndependent: true}}}})
-		results = append(results, ciPlatformResult{Run: identity, Platform: platform, Complete: true, Importer: ciImporterResult{File: ciImporterExecutable(platform), Verified: true}, Packages: []ciSlotResult{{Slot: ciSlot{Name: "queue", Version: "1", OS: "any", Arch: "any"}, Built: true, Verified: true}}, Roots: []ciRootResult{{Root: "queue@1", Verified: true}}})
+		results = append(results, ciPlatformResult{Run: identity, Platform: platform, Complete: true, Importer: ciImporterResult{File: ciImporterExecutable(platform), Verified: true}, Entry: ciEntryResult{File: "autolib.cmake", SHA256: strings.Repeat("c", 64), Verified: true}, Packages: []ciSlotResult{{Slot: ciSlot{Name: "queue", Version: "1", OS: "any", Arch: "any"}, Built: true, Verified: true}}, Roots: []ciRootResult{{Root: "queue@1", Verified: true}}})
 	}
 	return plan, identity, results
 }
 
 func TestCIFinalize(t *testing.T) {
 	plan, run, results := finalizeFixture()
-	if err := finalizeCI(plan, run, results); err != nil {
+	if err := finalizeCI(plan, ciGitHubRepository, run, results); err != nil {
 		t.Fatal(err)
 	}
-	if err := finalizeCI(plan, run, nil); err == nil {
+	if err := finalizeCI(plan, ciGitHubRepository, run, nil); err == nil {
 		t.Fatal("missing results accepted")
 	}
-	if err := finalizeCI(plan, run, append(results, results[0])); err == nil {
+	if err := finalizeCI(plan, ciGitHubRepository, run, append(results, results[0])); err == nil {
 		t.Fatal("duplicate results accepted")
 	}
 	results[0].Packages[0].Built = false
-	if err := finalizeCI(plan, run, results); err == nil {
+	if err := finalizeCI(plan, ciGitHubRepository, run, results); err == nil {
 		t.Fatal("package without current build accepted")
 	}
 }
 
 func TestCIResultBinding(t *testing.T) {
-	for _, change := range []string{"run", "attempt", "sha", "platform", "unverified", "incomplete", "error", "duplicate-package", "missing-package", "wrong-slot", "wrong-version", "archive-importer", "importer", "duplicate-root", "missing-root", "wrong-root"} {
+	for _, change := range []string{"run", "attempt", "sha", "platform", "unverified", "incomplete", "error", "duplicate-package", "missing-package", "wrong-slot", "wrong-version", "archive-importer", "importer", "duplicate-root", "missing-root", "wrong-root", "entry-unverified", "entry-file", "entry-digest", "entry-platform-digest", "repository"} {
 		t.Run(change, func(t *testing.T) {
 			plan, run, results := finalizeFixture()
 			switch change {
@@ -74,8 +74,18 @@ func TestCIResultBinding(t *testing.T) {
 				results[0].Roots = nil
 			case "wrong-root":
 				results[0].Roots[0].Root = "queue@2"
+			case "entry-unverified":
+				results[0].Entry.Verified = false
+			case "entry-file":
+				results[0].Entry.File = "other.cmake"
+			case "entry-digest":
+				results[0].Entry.SHA256 = "broken"
+			case "entry-platform-digest":
+				results[0].Entry.SHA256 = strings.Repeat("d", 64)
+			case "repository":
+				run.Repository = "self-reported/repository"
 			}
-			if err := finalizeCI(plan, run, results); err == nil {
+			if err := finalizeCI(plan, ciGitHubRepository, run, results); err == nil {
 				t.Fatalf("accepted %s", change)
 			}
 		})
@@ -90,6 +100,8 @@ func TestCIRunCLI(t *testing.T) {
 		}
 	}
 	plan, identity, results := finalizeFixture()
+	plan.Platforms[0].RequestedRoots = []string{"queue@1", "local@1"}
+	plan.Platforms[0].FilteredRoots = []string{"local@1"}
 	root := t.TempDir()
 	for name, value := range map[string]any{"plan.json": plan, "run.json": identity, "results/linux.json": results[0], "results/windows.json": results[1], "results/arm.json": results[2]} {
 		file := filepath.Join(root, name)
@@ -100,7 +112,10 @@ func TestCIRunCLI(t *testing.T) {
 		}
 	}
 	var out, diagnostic bytes.Buffer
-	if code := run([]string{"finalize", "--plan", filepath.Join(root, "plan.json"), "--run-identity", filepath.Join(root, "run.json"), "--results", filepath.Join(root, "results")}, &out, &diagnostic); code != 0 {
+	if code := run([]string{"finalize", "--repository", ciGitHubRepository, "--plan", filepath.Join(root, "plan.json"), "--run-identity", filepath.Join(root, "run.json"), "--results", filepath.Join(root, "results")}, &out, &diagnostic); code != 0 {
 		t.Fatalf("finalize CLI: %s", diagnostic.String())
+	}
+	if !strings.Contains(out.String(), "requested_roots=[queue@1 local@1] roots=[queue@1] filtered_roots=[local@1]") {
+		t.Fatalf("selection summary lost filtering facts: %s", &out)
 	}
 }

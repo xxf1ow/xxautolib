@@ -28,6 +28,7 @@ type ciTransport struct {
 	ProducerPrefix string               `json:"producer_prefix"`
 	Packages       []ciTransportPackage `json:"packages"`
 	Importer       string               `json:"importer"`
+	Entry          string               `json:"entry"`
 }
 
 type ciTransportMember struct {
@@ -37,7 +38,7 @@ type ciTransportMember struct {
 }
 
 func writeCITransport(ctx context.Context, o ciRunOptions, output string) error {
-	plan, run, platform, _, work, err := loadCIWork(ctx, o)
+	plan, run, platform, source, work, err := loadCIWork(ctx, o)
 	if err != nil {
 		return err
 	}
@@ -47,7 +48,7 @@ func writeCITransport(ctx context.Context, o ciRunOptions, output string) error 
 	}
 	selected := plan
 	selected.Platforms = []ciPlatformPlan{*platform}
-	if err := finalizeCI(selected, run, []ciPlatformResult{result}); err != nil {
+	if err := finalizeCI(selected, o.Repository, run, []ciPlatformResult{result}); err != nil {
 		return err
 	}
 	install := filepath.Join(work, "install")
@@ -58,7 +59,14 @@ func writeCITransport(ctx context.Context, o ciRunOptions, output string) error 
 	if !info.IsDir() {
 		return errors.New("transport installation root must be a directory, not a link")
 	}
-	manifest := ciTransport{Run: run, Platform: o.Platform, ProducerPrefix: install, Packages: []ciTransportPackage{}, Importer: "install/" + ciImporterExecutable(o.Platform)}
+	entry, err := verifyCIEntry(source, install)
+	if err != nil {
+		return err
+	}
+	if entry != result.Entry {
+		return errors.New("transport entry does not match verified result")
+	}
+	manifest := ciTransport{Run: run, Platform: o.Platform, ProducerPrefix: install, Packages: []ciTransportPackage{}, Importer: "install/" + ciImporterExecutable(o.Platform), Entry: "install/autolib.cmake"}
 	var members []ciTransportMember
 	add := func(path, name, boundary string) error {
 		return filepath.WalkDir(path, func(current string, entry os.DirEntry, walkErr error) error {
@@ -160,6 +168,9 @@ func writeCITransport(ctx context.Context, o ciRunOptions, output string) error 
 	if err := add(importer, manifest.Importer, install); err != nil {
 		return err
 	}
+	if err := add(filepath.Join(install, "autolib.cmake"), manifest.Entry, install); err != nil {
+		return err
+	}
 	if strings.TrimSpace(output) == "" {
 		return errors.New("transport --output is required")
 	}
@@ -250,7 +261,7 @@ func runCITransport(args []string, stdout, stderr io.Writer) int {
 	for _, item := range []struct {
 		key   string
 		value *string
-	}{{"source-root", &o.SourceRoot}, {"plan", &o.PlanFile}, {"run-identity", &o.RunIdentityFile}, {"platform", &o.Platform}, {"work-root", &o.WorkRoot}, {"output", &output}} {
+	}{{"repository", &o.Repository}, {"source-root", &o.SourceRoot}, {"plan", &o.PlanFile}, {"run-identity", &o.RunIdentityFile}, {"platform", &o.Platform}, {"work-root", &o.WorkRoot}, {"output", &output}} {
 		flags.StringVar(item.value, item.key, "", item.key)
 	}
 	if err := flags.Parse(args); err != nil {

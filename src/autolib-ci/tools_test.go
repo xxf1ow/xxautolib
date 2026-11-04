@@ -94,11 +94,16 @@ func TestRootConfigureDoesNotBuildCIOrWatchCISource(t *testing.T) {
 	buildRoot := filepath.Join(t.TempDir(), "root configure")
 	args := []string{"-S", root, "-B", buildRoot, "-G", "Ninja", "-DCMAKE_C_COMPILER=" + clang, "-DCMAKE_CXX_COMPILER=" + clangxx, "-DBUILD_LIST=queue"}
 	configure := exec.Command(cmake, args...)
+	installRoot := filepath.Join(t.TempDir(), "isolated install")
+	configure.Env = append(withoutEnvironment(os.Environ(), "AUTOLIB_INSTALL_ROOT"), "AUTOLIB_INSTALL_ROOT="+installRoot)
 	configureOutput, err := configure.CombinedOutput()
 	if err != nil {
 		t.Fatalf("root configure command %q failed: %v\n%s", append([]string{cmake}, args...), err, configureOutput)
 	}
 	t.Logf("command: %q\nexit code: 0\n%s", append([]string{cmake}, args...), configureOutput)
+	if installed := mustReadText(t, filepath.Join(installRoot, "autolib.cmake")); installed != mustReadText(t, filepath.Join(root, "src", "autolib.cmake")) {
+		t.Fatal("ordinary root failed to install the unchanged source entry")
+	}
 	toolsRoot := filepath.Join(buildRoot, "tools")
 	if _, err := os.Stat(filepath.Join(toolsRoot, "autolib-builder"+executableSuffix())); err != nil {
 		t.Fatalf("root configure did not build builder: %v", err)

@@ -220,7 +220,7 @@ func TestCITransportWorkflow(t *testing.T) {
 	for _, id := range []string{"linux", "windows"} {
 		job := workflowSection(t, document, "  "+id+":")
 		transport := workflowSection(t, job, "      - name: Transport verified installation")
-		if !strings.Contains(transport, " transport --source-root ") || !strings.Contains(transport, "transport.tar") {
+		if !strings.Contains(transport, " transport --repository ") || !strings.Contains(transport, "transport.tar") {
 			t.Fatalf("%s does not transport its verified installation", id)
 		}
 		upload := workflowSection(t, job, "      - name: Retain installation transport")

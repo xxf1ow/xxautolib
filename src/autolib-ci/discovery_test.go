@@ -51,7 +51,7 @@ func discoveryVersion(t *testing.T, root, name, version string, adapter bool, de
 
 func TestCIDiscoveryFiltering(t *testing.T) {
 	builder := discoveryBuilder(t)
-	t.Run("workflow default discovers adapter-backed modules", func(t *testing.T) {
+	t.Run("workflow default prepares tools only", func(t *testing.T) {
 		data, err := os.ReadFile("../../.github/workflows/build-platform.yml")
 		if err != nil {
 			t.Fatal(err)
@@ -67,8 +67,8 @@ func TestCIDiscoveryFiltering(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !reflect.DeepEqual(plan.RequestedModules, []string{"fresh@1.0", "independent@1.0"}) || len(plan.Platforms) != 1 || !reflect.DeepEqual(plan.Platforms[0].Layers, [][]string{{"fresh@1.0", "independent@1.0"}}) {
-			t.Fatalf("workflow default did not plan all adapter-backed modules: %+v", plan)
+		if len(plan.RequestedModules) != 0 || len(plan.Platforms) != 1 || len(plan.Platforms[0].Layers) != 0 {
+			t.Fatalf("workflow default did not plan tools only: %+v", plan)
 		}
 	})
 	for _, kind := range []string{"missing dependencies directory", "source path is file", "unreadable dependencies directory", "unreadable module directory"} {
@@ -94,18 +94,18 @@ func TestCIDiscoveryFiltering(t *testing.T) {
 					t.Skip("host permissions do not make mode 000 directory unreadable")
 				}
 			}
-			if _, err := planCI(context.Background(), ciPlanOptions{SourceRoot: root, BuilderFile: builder}); err == nil {
+			if _, err := planCI(context.Background(), ciPlanOptions{SourceRoot: root, BuilderFile: builder, Modules: stringPointer("all")}); err == nil {
 				t.Fatal("unreadable discovery source accepted as no work")
 			}
 		})
 	}
-	t.Run("empty dependencies directory is no work", func(t *testing.T) {
+	t.Run("empty dependencies directory retains tool work", func(t *testing.T) {
 		root := discoveryRoot(t)
 		if err := os.MkdirAll(filepath.Join(root, "src/dependencies"), 0755); err != nil {
 			t.Fatal(err)
 		}
-		plan, err := planCI(context.Background(), ciPlanOptions{SourceRoot: root, BuilderFile: builder})
-		if err != nil || len(plan.Platforms) != 0 || len(plan.RequestedModules) != 0 {
+		plan, err := planCI(context.Background(), ciPlanOptions{SourceRoot: root, BuilderFile: builder, Modules: stringPointer("all")})
+		if err != nil || len(plan.Platforms) != 3 || len(plan.RequestedModules) != 0 {
 			t.Fatalf("empty module directory: %+v %v", plan, err)
 		}
 	})
@@ -120,20 +120,20 @@ func TestCIDiscoveryFiltering(t *testing.T) {
 		if err := os.WriteFile(file, append([]byte("platform_independent=true\n"), data...), 0644); err != nil {
 			t.Fatal(err)
 		}
-		plan, err := planCI(context.Background(), ciPlanOptions{SourceRoot: root, BuilderFile: builder})
+		plan, err := planCI(context.Background(), ciPlanOptions{SourceRoot: root, BuilderFile: builder, Modules: stringPointer("all")})
 		if err != nil || plan.Publisher != "linux-x86_64" {
 			t.Fatalf("publisher depends on package name: %+v %v", plan, err)
 		}
 	})
-	t.Run("no eligible roots produce no work", func(t *testing.T) {
+	t.Run("no eligible roots retain tool work", func(t *testing.T) {
 		root := discoveryRoot(t)
 		discoveryModule(t, root, "local", false, "")
-		plan, err := planCI(context.Background(), ciPlanOptions{SourceRoot: root, BuilderFile: builder})
-		if err != nil || len(plan.Platforms) != 0 || len(plan.RequestedModules) != 0 {
+		plan, err := planCI(context.Background(), ciPlanOptions{SourceRoot: root, BuilderFile: builder, Modules: stringPointer("all")})
+		if err != nil || len(plan.Platforms) != 3 || len(plan.RequestedModules) != 0 {
 			t.Fatalf("ineligible discovery retained work: %+v %v", plan, err)
 		}
 	})
-	for _, selection := range []string{"", "fresh,local,blocked,independent", "local", "blocked"} {
+	for _, selection := range []string{"all", "fresh,local,blocked,independent", "local", "blocked"} {
 		t.Run("selection="+selection, func(t *testing.T) {
 			root := discoveryRoot(t)
 			discoveryModule(t, root, "shared", true, "")
@@ -148,17 +148,13 @@ func TestCIDiscoveryFiltering(t *testing.T) {
 				t.Fatal(err)
 			}
 			if selection == "local" || selection == "blocked" {
-				if len(plan.Platforms) != 0 || plan.Publisher != "" {
+				if len(plan.Platforms) != 1 || len(plan.Platforms[0].Layers) != 0 || plan.Publisher != "" {
 					t.Fatalf("filtered work retained: %+v", plan)
-				}
-				_, identity, _ := finalizeFixture()
-				if err := finalizeCI(plan, identity, nil); err != nil {
-					t.Fatal(err)
 				}
 				return
 			}
 			want := [][]string{{"shared@1.0"}, {"fresh@1.0", "independent@1.0"}}
-			if selection == "" {
+			if selection == "all" {
 				want = [][]string{{"orphan@1.0", "shared@1.0"}, {"fresh@1.0", "independent@1.0"}}
 			}
 			if len(plan.Platforms) != 1 || !reflect.DeepEqual(plan.Platforms[0].Layers, want) {

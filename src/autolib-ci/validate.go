@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"debug/elf"
 	"debug/pe"
 	"errors"
@@ -29,6 +31,31 @@ type ciValidationResult struct {
 	EvidenceDirectory string `json:"evidence_directory"`
 }
 
+func verifyCIEntry(source, install string) (ciEntryResult, error) {
+	read := func(file string) ([]byte, error) {
+		info, err := os.Lstat(file)
+		if err != nil {
+			return nil, fmt.Errorf("entry %s: %w", file, err)
+		}
+		if !info.Mode().IsRegular() {
+			return nil, fmt.Errorf("entry must be a regular file: %s", file)
+		}
+		return os.ReadFile(file)
+	}
+	canonical, err := read(filepath.Join(source, "src", "autolib.cmake"))
+	if err != nil {
+		return ciEntryResult{}, err
+	}
+	installed, err := read(filepath.Join(install, "autolib.cmake"))
+	if err != nil {
+		return ciEntryResult{}, err
+	}
+	if !bytes.Equal(canonical, installed) {
+		return ciEntryResult{}, errors.New("installed entry differs from source autolib.cmake")
+	}
+	return ciEntryResult{File: "autolib.cmake", SHA256: fmt.Sprintf("%x", sha256.Sum256(installed)), Verified: true}, nil
+}
+
 func validateCIRelease(ctx context.Context, o ciValidationOptions) (ciValidationResult, error) {
 	if err := validateCIConsumerModules(o.Modules); err != nil {
 		return ciValidationResult{}, err
@@ -52,10 +79,6 @@ func validateCIRelease(ctx context.Context, o ciValidationOptions) (ciValidation
 		"-DINSTALL_ROOT=" + roots.install,
 		"-DVALIDATION_ROOT=" + roots.build,
 		"-DEVIDENCE_DIRECTORY=" + roots.evidence,
-		"-DIMPORTER_FILE=" + o.ImporterFile,
-		"-DCMAKE_COMMAND=" + o.CMakeCommand,
-		"-DTARGET_OS=" + o.Context.OS,
-		"-DTARGET_ARCH=" + o.Context.Arch,
 		"-DGENERATOR=" + o.Context.Generator,
 		"-DGENERATOR_PLATFORM=" + o.Context.Platform,
 		"-DGENERATOR_TOOLSET=" + o.Context.Toolset,

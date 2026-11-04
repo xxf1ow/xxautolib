@@ -58,7 +58,11 @@ Git 主来源复用 `git/<包名>/<版本>/`，资源复用 `git/_resources/<包
 
 ## CI 开发与运行
 
-[手动流水线](../.github/workflows/build-platform.yml)接受同仓库普通分支、拒绝 tag，检出事件提交；平台默认 all，模块留空发现全部合资格配方版本，也可选择 `eigen@3.4.0,eigen@5.0.1,queue,lz4,flann`。缺自身或传递依赖 adapter 的根静默过滤，全过滤成功且零发布。各平台构建精确闭包并逐根验证，上传含原计划、结果、安装与候选的运输 artifact；最终汇总不写 Release。环境见[CI 设计](agent-notes/implemented/architecture/2026-10-20-ci-system.md)，证据及缺口见[测试指南](testing.md#ci-验证)。
+[手动流水线](../.github/workflows/build-platform.yml)接受当前源码仓库的普通分支、拒绝 tag，检出事件提交；workflow 将 `GITHUB_REPOSITORY` 作为可信仓库传给运行、运输和汇总校验，支持 fork。平台默认 all。
+
+模块未提供或空字符串只准备 importer 和入口，原始输入严格等于 `all` 才发现全部合资格配方版本，也可选择 `eigen@3.4.0,eigen@5.0.1,queue,lz4,flann`。纯空白、混合或变形的 `all` 及单独 importer 选择均拒绝。缺自身或传递依赖 adapter 的根按资格过滤；计划与汇总分别展示请求根、有效根和过滤根，过滤不算警告或失败。
+
+零有效库仍保留所选平台，真实验证工具与入口，但不生成库构建层或执行库消费验证；普通根的空 `BUILD_LIST` 仍发现全部配方。各平台运输含原计划、结果、原样入口、宿主 importer、有效库安装与候选，入口摘要与已验证结果绑定；非空库逐根验证精确闭包。最终汇总不写 Release。环境见[CI 设计](agent-notes/implemented/architecture/2026-10-20-ci-system.md)，证据及缺口见[测试指南](testing.md#ci-验证)。
 
 ### 独立 Gitee 发布
 

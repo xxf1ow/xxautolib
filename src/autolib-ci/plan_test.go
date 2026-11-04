@@ -18,7 +18,7 @@ func TestCIPlanInputs(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("AUTOLIB_CI_HELPER_MODE", "valid")
-	plan, err := planCI(context.Background(), ciPlanOptions{SourceRoot: root, BuilderFile: builder})
+	plan, err := planCI(context.Background(), ciPlanOptions{SourceRoot: root, BuilderFile: builder, Modules: stringPointer("all")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,18 +48,18 @@ func TestCIPlanInputs(t *testing.T) {
 	if !reflect.DeepEqual(subset.RequestedModules, []string{"flann@1.0"}) {
 		t.Fatalf("requested modules were not deduplicated: %v", subset.RequestedModules)
 	}
-	for _, value := range []string{"", " \t "} {
+	for _, value := range []string{""} {
 		t.Run("blank modules "+value, func(t *testing.T) {
 			got, err := planCI(context.Background(), ciPlanOptions{SourceRoot: root, BuilderFile: builder, Modules: &value})
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !reflect.DeepEqual(got, plan) {
-				t.Fatalf("blank modules should select discovered candidates: %+v", got)
+			if len(got.Platforms) != 3 || len(got.RequestedModules) != 0 {
+				t.Fatalf("blank modules should select tools only: %+v", got)
 			}
 		})
 	}
-	all, err := planCI(context.Background(), ciPlanOptions{SourceRoot: root, BuilderFile: builder, Platforms: stringPointer("all")})
+	all, err := planCI(context.Background(), ciPlanOptions{SourceRoot: root, BuilderFile: builder, Platforms: stringPointer("all"), Modules: stringPointer("all")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,8 +164,8 @@ func TestCICLI(t *testing.T) {
 	if err := json.Unmarshal(data, &plan); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(plan.RequestedModules, []string{"flann@1.0", "lz4@1.0", "queue@1.0"}) || len(plan.Platforms) != 3 {
-		t.Fatalf("blank CLI modules did not select all: %+v", plan)
+	if len(plan.RequestedModules) != 0 || len(plan.Platforms) != 3 {
+		t.Fatalf("blank CLI modules did not select tools only: %+v", plan)
 	}
 	validOutput = string(data)
 	for _, bad := range [][]string{
@@ -222,7 +222,7 @@ func TestCIVersionedPlan(t *testing.T) {
 				t.Fatalf("requested roots: %v want %v", plan.RequestedModules, tc.wantRoots)
 			}
 			if tc.wantLayers == nil {
-				if len(plan.Platforms) != 0 || plan.Publisher != "" {
+				if len(plan.Platforms) != 1 || len(plan.Platforms[0].Layers) != 0 || plan.Publisher != "" {
 					t.Fatalf("filtered plan: %+v", plan)
 				}
 				return

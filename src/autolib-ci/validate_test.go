@@ -25,6 +25,7 @@ func TestCIInstalledDriverProductionInputs(t *testing.T) {
 	}
 	t.Cleanup(func() { os.RemoveAll(root) })
 	writeCIFixture(t, root, "src/autolib.cmake", "# unused entry for driver argument fixture\n")
+	writeCIFixture(t, root, "install/autolib.cmake", "# installed entry for driver argument fixture\n")
 	writeCIFixture(t, root, "tests/autolib/CMakeLists.txt", `cmake_minimum_required(VERSION 3.20)
 project(driver_inputs NONE)
 enable_testing()
@@ -242,12 +243,8 @@ func TestCIImporterSmoke(t *testing.T) {
 	if err := verifyImporterNoCRuntime(importer); err != nil {
 		t.Fatal(err)
 	}
-	cmake, err := exec.LookPath("cmake")
-	if err != nil {
-		t.Fatal(err)
-	}
 	osName, arch := testPlatform()
-	command := exec.Command(importer, "prepare", "--local-root="+root, "--cache-root="+filepath.Join(root, "cache"), "--work-root="+filepath.Join(root, "work"), "--cmake-command="+cmake, "--os="+osName, "--arch="+arch, "--result="+filepath.Join(root, "result.cmake"), "--package=ci-smoke")
+	command := exec.Command(importer, "prepare", "--cache-root="+root, "--os="+osName, "--arch="+arch, "--result="+filepath.Join(root, "result.cmake"), "--package=ci-smoke")
 	output, err := command.CombinedOutput()
 	var exit *exec.ExitError
 	if !errors.As(err, &exit) || exit.ExitCode() != 1 || !strings.Contains(string(output), "missing package input") {

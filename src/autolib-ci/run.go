@@ -83,6 +83,10 @@ func runCILayer(ctx context.Context, o ciRunOptions) (failure error) {
 		if err := configureCIProduction(ctx, o, production, platform.Roots, install); err != nil {
 			return err
 		}
+		result.Entry, err = verifyCIEntry(source, install)
+		if err != nil {
+			return err
+		}
 		expectedImporter, err := filepath.Abs(o.ImporterFile)
 		if err != nil {
 			return err
@@ -97,7 +101,7 @@ func runCILayer(ctx context.Context, o ciRunOptions) (failure error) {
 		if err := os.Mkdir(smoke, 0755); err != nil {
 			return err
 		}
-		command := exec.CommandContext(ctx, o.ImporterFile, "prepare", "--local-root", smoke, "--cache-root", filepath.Join(smoke, "cache"), "--cmake-command", o.CMakeCommand, "--work-root", filepath.Join(smoke, "work"), "--os", production.OS, "--arch", production.Arch, "--result", filepath.Join(smoke, "result.cmake"), "--package=ci-smoke")
+		command := exec.CommandContext(ctx, o.ImporterFile, "prepare", "--cache-root", smoke, "--os", production.OS, "--arch", production.Arch, "--result", filepath.Join(smoke, "result.cmake"), "--package=ci-smoke")
 		output, err := command.CombinedOutput()
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -132,6 +136,16 @@ func runCILayer(ctx context.Context, o ciRunOptions) (failure error) {
 		return nil
 	}
 	if o.Layer == "verify" {
+		entry, err := verifyCIEntry(source, install)
+		if err != nil {
+			return err
+		}
+		if entry != result.Entry {
+			return errors.New("entry does not match verified prepare result")
+		}
+		if err := verifyImporterNoCRuntime(o.ImporterFile); err != nil {
+			return err
+		}
 		if len(result.Packages) != len(modules) {
 			return errors.New("verify requires all selected package results")
 		}
@@ -260,6 +274,10 @@ func ciCommand(ctx context.Context, executable string, args []string, directory 
 }
 
 func configureCIProduction(ctx context.Context, o ciRunOptions, c ciProductionContext, modules []string, install string) error {
+	if len(modules) == 0 {
+		args := []string{"-DAUTOLIB_SOURCE_ROOT=" + o.SourceRoot, "-DAUTOLIB_INSTALL_ROOT=" + install, "-P", filepath.Join(o.SourceRoot, "src", "autolib-builder", "prepare-tools.cmake")}
+		return ciCommand(ctx, o.CMakeCommand, args, o.SourceRoot, nil, filepath.Join(o.WorkRoot, "logs", "prepare-tools.log"))
+	}
 	build := filepath.Join(o.WorkRoot, "build")
 	args := []string{"-S", o.SourceRoot, "-B", build, "-G", c.Generator, "-DBUILD_LIST=" + strings.Join(modules, ","), "-DCMAKE_BUILD_TYPE=" + c.Configuration}
 	if c.OS == "windows" {
@@ -315,7 +333,7 @@ func runCIRun(args []string, stdout, stderr io.Writer) int {
 	for _, item := range []struct {
 		key   string
 		value *string
-	}{{"source-root", &o.SourceRoot}, {"plan", &o.PlanFile}, {"run-identity", &o.RunIdentityFile}, {"platform", &o.Platform}, {"layer", &o.Layer}, {"work-root", &o.WorkRoot}, {"importer-file", &o.ImporterFile}, {"cmake-command", &o.CMakeCommand}, {"make-program", &o.MakeProgram}} {
+	}{{"repository", &o.Repository}, {"source-root", &o.SourceRoot}, {"plan", &o.PlanFile}, {"run-identity", &o.RunIdentityFile}, {"platform", &o.Platform}, {"layer", &o.Layer}, {"work-root", &o.WorkRoot}, {"importer-file", &o.ImporterFile}, {"cmake-command", &o.CMakeCommand}, {"make-program", &o.MakeProgram}} {
 		flags.StringVar(item.value, item.key, "", item.key)
 	}
 	flags.IntVar(&o.Budget, "budget", 0, "Linux Make worker budget")

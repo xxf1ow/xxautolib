@@ -12,7 +12,7 @@ func TestCIRunDoesNotRequireUnusedBuilder(t *testing.T) {
 	f := transportInputFixture(t)
 	work := filepath.Join(f.options.SourceRoot, "build", "ci", "123-1", "windows-x86_64")
 	var stdout, stderr bytes.Buffer
-	code := runCIRun([]string{"--source-root", f.options.SourceRoot, "--plan", f.options.PlanFile,
+	code := runCIRun([]string{"--repository", ciGitHubRepository, "--source-root", f.options.SourceRoot, "--plan", f.options.PlanFile,
 		"--run-identity", f.options.RunIdentityFile, "--platform", "windows-x86_64",
 		"--layer", "prepare", "--work-root", work,
 		"--importer-file", "unused", "--cmake-command", "unused"}, &stdout, &stderr)
@@ -50,7 +50,7 @@ func TestCIRunIdentity(t *testing.T) {
 			case "attempt":
 				identity.Attempt = "01"
 			}
-			err := validateCIRunIdentity(context.Background(), root, identity)
+			err := validateCIRunIdentity(context.Background(), root, ciGitHubRepository, identity)
 			if (err == nil) != (change == "valid" || change == "topic") {
 				t.Fatalf("%s error=%v", change, err)
 			}

@@ -41,6 +41,9 @@ func TestCIInstalledTransport(t *testing.T) {
 	if len(result.Packages) != 4 {
 		t.Fatalf("want four exact package results, got %+v", result)
 	}
+	if installed := mustReadText(t, filepath.Join(f.options.WorkRoot, "install", "autolib.cmake")); installed != mustReadText(t, filepath.Join(f.options.SourceRoot, "src", "autolib.cmake")) {
+		t.Fatal("ordinary root configure did not install the source entry unchanged")
+	}
 	got := []string{}
 	for _, item := range result.Packages {
 		data, _ := json.Marshal(item.Slot)
@@ -50,12 +53,12 @@ func TestCIInstalledTransport(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("exact package identities: %v", got)
 	}
-	if err := finalizeCI(f.plan, f.identity, []ciPlatformResult{result}); err != nil {
+	if err := finalizeCI(f.plan, ciGitHubRepository, f.identity, []ciPlatformResult{result}); err != nil {
 		t.Fatal(err)
 	}
 	before := transportSnapshot(t, filepath.Join(f.options.WorkRoot, "install"))
 	members := f.transport(t, true)
-	for _, name := range []string{"transport.json", "plan.json", "result.json", "install/eigen/package.toml", "install/queue/package.toml", "install/dep/package.toml", "install/eigen/3/autolib-import.cmake", "install/eigen/5/autolib-import.cmake", "install/" + ciImporterExecutable(f.options.Platform)} {
+	for _, name := range []string{"transport.json", "plan.json", "result.json", "install/autolib.cmake", "install/eigen/package.toml", "install/queue/package.toml", "install/dep/package.toml", "install/eigen/3/autolib-import.cmake", "install/eigen/5/autolib-import.cmake", "install/" + ciImporterExecutable(f.options.Platform)} {
 		if _, ok := members[name]; !ok {
 			t.Errorf("missing transport member %s", name)
 		}
@@ -107,7 +110,7 @@ func TestCISelectedPlatformCompletion(t *testing.T) {
 	plan, identity, results := finalizeFixture()
 	plan.Platforms = plan.Platforms[:1]
 	results = results[:1]
-	if err := finalizeCI(plan, identity, results); err != nil {
+	if err := finalizeCI(plan, ciGitHubRepository, identity, results); err != nil {
 		t.Fatalf("verified selected platform must not require Release upload: %v", err)
 	}
 	all, _, complete := finalizeFixture()
@@ -124,7 +127,7 @@ func TestCISelectedPlatformCompletion(t *testing.T) {
 			case "sha":
 				items[0].Run.SHA = strings.Repeat("b", 40)
 			}
-			if err := finalizeCI(all, identity, items); err == nil {
+			if err := finalizeCI(all, ciGitHubRepository, identity, items); err == nil {
 				t.Fatalf("accepted %s selected-platform completion", change)
 			}
 		})
@@ -211,7 +214,7 @@ func (f installedFixture) transport(t *testing.T, success bool) map[string][]byt
 	t.Helper()
 	output := filepath.Join(f.options.WorkRoot, "transport.tar")
 	var stdout, stderr bytes.Buffer
-	code := run([]string{"transport", "--source-root", f.options.SourceRoot, "--plan", f.options.PlanFile, "--run-identity", f.options.RunIdentityFile, "--platform", f.options.Platform, "--work-root", f.options.WorkRoot, "--output", output}, &stdout, &stderr)
+	code := run([]string{"transport", "--repository", f.options.Repository, "--source-root", f.options.SourceRoot, "--plan", f.options.PlanFile, "--run-identity", f.options.RunIdentityFile, "--platform", f.options.Platform, "--work-root", f.options.WorkRoot, "--output", output}, &stdout, &stderr)
 	if (code == 0) != success {
 		t.Fatalf("transport success=%t code=%d: %s", success, code, stderr.String())
 	}
@@ -244,6 +247,9 @@ func (f installedFixture) transport(t *testing.T, success bool) map[string][]byt
 			t.Fatal(err)
 		}
 		members[header.Name] = body
+		if header.Name == "install/autolib.cmake" && header.Typeflag != tar.TypeReg {
+			t.Fatal("entry is not a regular archive member")
+		}
 		if strings.HasPrefix(header.Name, "install/autolib-importer-") && header.Mode&0111 == 0 {
 			t.Fatal("importer lost executable mode")
 		}
@@ -293,9 +299,13 @@ func transportInputFixture(t *testing.T) installedFixture {
 	identity := transportIdentity(t, root)
 	platform := "linux-" + map[string]string{"amd64": "x86_64", "arm64": "aarch64"}[runtime.GOARCH]
 	work := filepath.Join(root, "build", "ci", "123-1", platform)
-	f := installedFixture{identity: identity, options: ciRunOptions{SourceRoot: root, Platform: platform, WorkRoot: work, PlanFile: filepath.Join(root, "plan.json"), RunIdentityFile: filepath.Join(root, "run.json")}}
+	f := installedFixture{identity: identity, options: ciRunOptions{Repository: ciGitHubRepository, SourceRoot: root, Platform: platform, WorkRoot: work, PlanFile: filepath.Join(root, "plan.json"), RunIdentityFile: filepath.Join(root, "run.json")}}
 	f.plan = ciPlan{Publisher: platform, Platforms: []ciPlatformPlan{{ID: platform, Roots: []string{"queue@1"}, Description: moduleDescription{Roots: []string{"queue@1"}, Modules: []describedModule{{Name: "queue", Version: "1", Target: "fixture-queue", Depends: []string{}, PlatformIndependent: true}}}, Layers: [][]string{{"queue@1"}}}}}
 	result := map[string]any{"run": identity, "platform": platform, "packages": []any{map[string]any{"slot": map[string]string{"name": "queue", "version": "1", "os": "any", "arch": "any"}, "built": true, "verified": true}}, "roots": []any{map[string]any{"root": "queue@1", "verified": true}}, "importer": map[string]any{"file": ciImporterExecutable(platform), "verified": true}, "complete": true, "error": ""}
+	entry := "set(_autolib_release_root \"\")\n# transport fixture\n"
+	writeCIFixture(t, root, "src/autolib.cmake", entry)
+	writeCIFixture(t, work, "install/autolib.cmake", entry)
+	result["entry"] = map[string]any{"file": "autolib.cmake", "sha256": testDigest([]byte(entry)), "verified": true}
 	for file, value := range map[string]any{f.options.PlanFile: f.plan, f.options.RunIdentityFile: identity, filepath.Join(work, "results", platform+".json"): result} {
 		if err := writeCIJSON(file, value); err != nil {
 			t.Fatal(err)
@@ -378,7 +388,6 @@ func installedCIFixture(t *testing.T) installedFixture {
 	writeCIFixture(t, root, "tests/autolib/CMakeLists.txt", `cmake_minimum_required(VERSION 3.20)
 project(installed_fixture CXX)
 enable_testing()
-set(AUTOLIB_LOCAL_ROOT "${RELEASE_ROOT}")
 include("${AUTOLIB_ENTRY}")
 add_executable(autolib_smoke smoke.cpp)
 autolib_import(TARGET autolib_smoke PRIVATE ${ROOT_PACKAGES})
@@ -425,7 +434,7 @@ int main() {
 		t.Fatal(err)
 	}
 	work := filepath.Join(root, "build", "ci", "123-1", platform)
-	f := installedFixture{plan: plan, identity: identity, options: ciRunOptions{SourceRoot: root, PlanFile: filepath.Join(root, "plan.json"), RunIdentityFile: filepath.Join(root, "run.json"), Platform: platform, WorkRoot: work, ImporterFile: filepath.Join(work, "install", ciImporterExecutable(platform)), CMakeCommand: cmakeCommand, MakeProgram: makeProgram, Budget: 2}}
+	f := installedFixture{plan: plan, identity: identity, options: ciRunOptions{Repository: ciGitHubRepository, SourceRoot: root, PlanFile: filepath.Join(root, "plan.json"), RunIdentityFile: filepath.Join(root, "run.json"), Platform: platform, WorkRoot: work, ImporterFile: filepath.Join(work, "install", ciImporterExecutable(platform)), CMakeCommand: cmakeCommand, MakeProgram: makeProgram, Budget: 2}}
 	if err := writeCIJSON(f.options.PlanFile, plan); err != nil {
 		t.Fatal(err)
 	}
