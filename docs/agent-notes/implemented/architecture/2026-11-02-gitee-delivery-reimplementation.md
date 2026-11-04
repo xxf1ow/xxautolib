@@ -14,6 +14,8 @@ Status: implemented
 
 ### 设计归属与参考范围
 
+提案 [CI 成品归档交接与重复发布](../../proposed/architecture/2026-11-04-ci-packaged-artifact-handoff.md)拟部分替代本文的安装树运输及发布端重打包职责；尚未实现，本文其余决定继续适用。
+
 本文拥有第四阶段的交接结构、Gitee 发布、首次 latest 初始化及重构边界，在这些范围内替代[统一交付设计](../../proposed/architecture/2026-10-29-versioned-artifact-delivery.md)的第四阶段方案。前三阶段的公共消费入口、精确依赖、缓存选择、Git 快照与已验收记录继续作为基线约束；本文不重新定义这些能力，也不把被替代实现的分项证据当作新实现验收结果。
 
 相关记录部分适用，不整体归档或拒绝：[CI 系统](2026-10-20-ci-system.md)约束原生平台环境和工具职责，[工具压缩分发](../../proposed/architecture/2026-10-27-importer-distribution-and-branch-release.md)提供单程序 tar.xz 与工具引导依据，[Gitee 同步设计](../../proposed/architecture/2026-10-27-gitee-release-sync-workflow.md)提供参考来源和附件传输依据。源码 Release 中转、正文摘要索引及双端实际发布不参与本交付链。这些记录保留各自仍适用的理由和验证，不构成第二套第四阶段实现要求。
