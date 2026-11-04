@@ -81,7 +81,8 @@ install(FILES "${CMAKE_BINARY_DIR}/ProbeConfig.cmake" DESTINATION lib/cmake/Prob
 add_library(autolib::probe INTERFACE IMPORTED GLOBAL)
 target_link_libraries(autolib::probe INTERFACE fixture::probe autolib::dep)
 `)
-	install := filepath.Join(producer, "installed")
+	arch := map[string]string{"amd64": "x86_64", "arm64": "aarch64"}[runtime.GOARCH]
+	install := filepath.Join(producer, "build", "ci", "42-1", runtime.GOOS+"-"+arch, "install")
 	t.Setenv("AUTOLIB_INSTALL_ROOT", install)
 	generator := "Unix Makefiles"
 	if runtime.GOOS == "windows" {
@@ -89,7 +90,6 @@ target_link_libraries(autolib::probe INTERFACE fixture::probe autolib::dep)
 	}
 	loopCommand(t, "cmake", "-S", producer, "-B", filepath.Join(producer, "build"), "-G", generator, "-DBUILD_LIST=probe@1,dep@2")
 	loopCommand(t, "cmake", "--build", filepath.Join(producer, "build"), "--config", "Release")
-	arch := map[string]string{"amd64": "x86_64", "arm64": "aarch64"}[runtime.GOARCH]
 	toolName := "autolib-importer-" + runtime.GOOS + "-" + arch
 	builderName := "autolib-builder"
 	if runtime.GOOS == "windows" {

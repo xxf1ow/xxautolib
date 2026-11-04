@@ -217,7 +217,10 @@ func TestCIPackageSelection(t *testing.T) {
 		t.Run(selection, func(t *testing.T) {
 			f := transportInputFixture(t)
 			if selection == "non-publisher" {
-				f.plan.Publisher = "linux-aarch64"
+				f.plan.Publisher = "windows-x86_64"
+				if f.options.Platform == f.plan.Publisher {
+					f.plan.Publisher = "linux-x86_64"
+				}
 			}
 			if selection == "ordinary" {
 				f.plan.Platforms[0].Description.Modules[0].PlatformIndependent = false
@@ -411,7 +414,7 @@ func transportInputFixture(t *testing.T) installedFixture {
 	t.Helper()
 	root := t.TempDir()
 	identity := transportIdentity(t, root)
-	platform := "linux-" + map[string]string{"amd64": "x86_64", "arm64": "aarch64"}[runtime.GOARCH]
+	platform := runtime.GOOS + "-" + map[string]string{"amd64": "x86_64", "arm64": "aarch64"}[runtime.GOARCH]
 	work := filepath.Join(root, "build", "ci", "123-1", platform)
 	f := installedFixture{identity: identity, options: ciRunOptions{Repository: ciGitHubRepository, SourceRoot: root, Platform: platform, WorkRoot: work, PlanFile: filepath.Join(root, "plan.json"), RunIdentityFile: filepath.Join(root, "run.json")}}
 	f.plan = ciPlan{Publisher: platform, Platforms: []ciPlatformPlan{{ID: platform, Roots: []string{"queue@1"}, Description: moduleDescription{Roots: []string{"queue@1"}, Modules: []describedModule{{Name: "queue", Version: "1", Target: "fixture-queue", Depends: []string{}, PlatformIndependent: true}}}, Layers: [][]string{{"queue@1"}}}}}

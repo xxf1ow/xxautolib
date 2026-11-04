@@ -44,7 +44,7 @@ Git 主来源复用 `git/<包名>/<版本>/`，资源复用 `git/_resources/<包
 
 实际安装前，消费文件被置为未完成；安装失败后不能仅靠残留 sentinel 补齐。保护需要的数据，再按上节移走受影响安装目录和原生构建状态，重新完成真实安装；不删除其他包。已完成安装的精确依赖被冻结，reuse 不能把它重标为源码 latest。adapter 正文更新通过普通根重新 configure/build 的复用目标刷新，不手改已安装描述。
 
-需要分发时再使用 `builder package`；CI 工具准备见[CI 验证](testing.md#ci-验证)。
+本地需要分发时使用 `builder package`；CI 在验证后显式调用同一命令，不按 CI 环境改变 builder 行为。CI 工具准备见[CI 验证](testing.md#ci-验证)。
 
 `builder package` 必须显式提供源码、安装、输出根，目标和宿主身份、工具路径及重复模块选择；完整参数见[打包入口](../src/autolib-builder/release.go)。模块可写 `包名@版本`，裸名只读取安装根 latest；包内身份和依赖来自已安装描述，不重新解析源码 latest。输出必须在本副本 build 内且不与安装树重叠；只打包显式模块，不自动补依赖。版本化库 tar.zst、宿主工具 tar.xz、各自摘要和包级 latest 一同交付。真实示例由[本地闭环测试](testing.md#本地二进制闭环)执行。
 
@@ -62,13 +62,13 @@ Git 主来源复用 `git/<包名>/<版本>/`，资源复用 `git/_resources/<包
 
 模块未提供或空字符串只准备 importer 和入口，原始输入严格等于 `all` 才发现全部合资格配方版本，也可选择 `eigen@3.4.0,eigen@5.0.1,queue,lz4,flann`。纯空白、混合或变形的 `all` 及单独 importer 选择均拒绝。缺自身或传递依赖 adapter 的根按资格过滤；计划与汇总分别展示请求根、有效根和过滤根，过滤不算警告或失败。
 
-零有效库仍保留所选平台，真实验证工具与入口，但不生成库构建层或执行库消费验证；普通根的空 `BUILD_LIST` 仍发现全部配方。各平台运输含原计划、结果、原样入口、宿主 importer、有效库安装与候选，入口摘要与已验证结果绑定；非空库逐根验证精确闭包。最终汇总不写 Release。环境见[CI 设计](agent-notes/implemented/architecture/2026-10-20-ci-system.md)，证据及缺口见[测试指南](testing.md#ci-验证)。
+零有效库仍保留所选平台，真实验证工具与入口，但不执行库构建或消费；普通根的空 `BUILD_LIST` 仍发现全部配方。非空库逐根验证精确闭包，随后打包运输成品、候选及原样入口，协议见[成品交接](agent-notes/implemented/architecture/2026-11-04-ci-packaged-artifact-handoff.md)。最终汇总不写 Release。环境见[CI 设计](agent-notes/implemented/architecture/2026-10-20-ci-system.md)，证据见[测试指南](testing.md#ci-验证)。
 
 ### 独立 Gitee 发布
 
-[发布流水线](../.github/workflows/publish-artifacts.yml)仅写 Gitee。源码仓库及其分叉均须显式配置目标变量 `GITEE_REPOSITORY`、`GITEE_RELEASE_TAG` 和密钥 `GITEE_TOKEN`，缺失或非法即失败，无上游目标默认值。可信来源来自 `GITHUB_REPOSITORY`，不采用清单自报仓库。自动发布等待同仓库成功构建；手动产物发布指定同仓库 `source_run_id/source_attempt`。两者只读核对原提交及全部运输验证记录后，调用原提交工具打包完整有效集合、所选平台工具和唯一目标注入入口，不二次筛选、不重编三方库；入口不写 Git 元数据。可附 `latest` 映射；独立更新指针要求非空映射，不读构建输入、不要求构建来源。精确运行、入口字节、目标编码及接口见[发布接口](../.github/actions/gitee-release/UPSTREAM.md#gitee-版本化发布适配)。
+[发布流水线](../.github/workflows/publish-artifacts.yml)仅写 Gitee。源码仓库及其分叉须显式配置 `GITEE_REPOSITORY`、`GITEE_RELEASE_TAG` 和密钥 `GITEE_TOKEN`，缺失或非法即失败，无上游默认目标。可信来源取自 `GITHUB_REPOSITORY`，不采用清单自报仓库。自动发布等待同仓库成功构建；手动指定同仓库 `source_run_id/source_attempt`。两者核对原提交、全部验证记录及成品后，原样分发库和工具、生成唯一目标注入入口，不二次筛选、编译 builder 或重打包；入口不写 Git 元数据。可附 `latest` 映射；独立更新指针要求非空映射，不读取或要求构建输入。接口与目标编码见[发布接口](../.github/actions/gitee-release/UPSTREAM.md#gitee-版本化发布适配)。
 
-执行前必须信任控制代码与原构建提交；代码可以外传令牌，脱敏不是沙箱。同名附件按实际字节的 SHA256 核对，相同跳过，不同先删后传，无备份回滚；临时故障退避后从查询重试，参数见[发布接口](../.github/actions/gitee-release/UPSTREAM.md#gitee-版本化发布适配)。部分失败登记就绪项但任务失败，push 未确认也失败。显式重跑复用原输入，不仅凭同名、大小或已登记摘要跳过。真实触发须取得目标及删除替换授权，并核对默认分支实际响应的自动入口，不能假定 workflow_run 使用任务分支控制代码。新库保持私有，用户公开后按[验收交接](testing.md#真实交付与手动验收)验证。
+执行前必须信任控制代码与原构建提交；代码可以外传令牌，脱敏不是沙箱。同名附件核对实际 SHA256，相同跳过，不同先删后传，无回滚；临时故障退避后从查询重试，参数见发布接口。部分失败登记就绪项但任务失败，push 未确认也失败。重跑复用同一成品，不仅凭同名、大小或已登记摘要跳过；旧安装树输入须重新构建，同源码重建不保证相同字节。真实触发须取得目标及删除替换授权，并核对默认分支自动入口，不能假定它使用任务分支代码。新库保持私有，公开后由用户按[验收交接](testing.md#真实交付与手动验收)验证。
 
 ## 远端构建与源码传输授权
 

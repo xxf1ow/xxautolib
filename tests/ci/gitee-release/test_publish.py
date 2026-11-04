@@ -195,7 +195,8 @@ class PublishTests(unittest.TestCase):
                 result = json.loads(output.getvalue())
                 self.assertEqual((result['uploaded'], result['skipped'], result['failed']),
                                  (0, 1, 0) if method == 'POST' else (1, 0, 0))
-                self.assertTrue(result['metadata_committed'])
+                self.assertEqual(result['metadata_committed'], operation == 'target_assets')
+                self.assertIsNotNone(result['metadata_commit'])
                 self.assertEqual(len(self.server.assets), 1)
                 self.assertEqual(self.server.bodies[asset['name']], b'archive\0bytes')
                 self.assertEqual([m for m, _ in self.server.events if m in {'DELETE', 'POST'}],
@@ -218,6 +219,33 @@ class PublishTests(unittest.TestCase):
         self.assertEqual(git(self.bare, 'show', 'HEAD:queue/1/' + asset['name'] + '.sha256'),
                          (asset['sha256'] + '\n').encode())
         self.assertEqual(git(self.bare, 'show', 'HEAD:queue/package.toml'), b'latest = "1"\n')
+
+    def test_republish_ready_assets_is_noop(self):
+        self.remote()
+        library = self.asset()
+        assets = [library]
+        for kind, name, body in [('importer', 'autolib-importer-linux-x86_64.tar.xz', b'fixed tool'),
+                                 ('entry', 'autolib.cmake', b'fixed entry')]:
+            path = self.root / name
+            path.write_bytes(body)
+            asset = dict(kind=kind, name=name, path=str(path), size=len(body), sha256=hashlib.sha256(body).hexdigest())
+            if kind == 'importer':
+                asset['platform'] = 'linux-x86_64'
+            assets.append(asset)
+        first = self.run_release(self.config(assets, {'queue': '1'}))
+        self.assertEqual((first['uploaded'], first['failed']), (3, 0))
+        self.assertTrue(first['metadata_committed'])
+        before = git(self.bare, 'rev-parse', 'HEAD')
+        self.server.events.clear()
+        result = self.run_release(self.config(assets, {'queue': '1'}))
+        self.assertEqual((result['uploaded'], result['failed']), (0, 0))
+        self.assertEqual(result['skipped'], result['selected'])
+        self.assertEqual(result['selected'], 3)
+        self.assertFalse(result['metadata_committed'])
+        self.assertEqual(git(self.bare, 'rev-parse', 'HEAD'), before)
+        self.assertFalse(any(method in {'DELETE', 'POST'} for method, _ in self.server.events))
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(self.run_release(self.config(assets, {'queue': '1'}), entry=True), 0)
 
     def test_attachment_retry_budget_restarts_at_query_and_caps_delay(self):
         self.remote()
@@ -529,7 +557,7 @@ class PublishTests(unittest.TestCase):
         self.assertTrue(result['metadata_committed'])
         self.assertEqual(self.server.events, [])
         self.assertEqual(git(self.bare, 'show', 'HEAD:queue/package.toml'), b'latest = "2"\n')
-        for result in [dict(result, failed=1), dict(result, metadata_committed=False)]:
+        for result in [dict(result, failed=1), dict(result, metadata_committed=False, metadata_commit=None)]:
             output = io.StringIO()
             config = dict(config, work_root=Path(tempfile.mkdtemp(dir=self.root)))
             readonly = config['work_root'] / 'git-object'

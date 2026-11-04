@@ -1,14 +1,69 @@
 import argparse
+import atexit
+from functools import lru_cache
 import hashlib
 import importlib.util
-import io
 import json
 import os
 from pathlib import Path
 import subprocess
+import shutil
 import sys
-import tarfile
+import tempfile
 import unittest
+
+
+@lru_cache(maxsize=1)
+def ci_tool():
+    root = Path(__file__).resolve().parents[3]
+    temporary = tempfile.TemporaryDirectory(prefix='entry-delivery-ci-')
+    atexit.register(temporary.cleanup)
+    executable = Path(temporary.name) / ('autolib-ci.exe' if os.name == 'nt' else 'autolib-ci')
+    subprocess.run(['cmake', '-P', str(root / 'src/autolib-builder/go-sdk.cmake'), '--', 'build',
+                    '-mod=readonly', '-trimpath', '-o', str(executable), './src/autolib-ci'],
+                   cwd=root, check=True, capture_output=True)
+    return executable
+
+
+def packaged_inputs(source, installed, builder, plan, identity):
+    platform = plan['platforms'][0]['id']
+    system = platform.split('-')[0]
+    tool = 'autolib-importer-' + platform + ('.exe' if system == 'windows' else '')
+    work = installed.parent
+    expected = source / 'build/ci' / (identity['run_id'] + '-' + identity['attempt']) / platform
+    if work != expected or installed.name != 'install':
+        raise AssertionError('native installation must use the CI work root')
+    packages = [dict(slot=dict(name=m['name'], version=m['version'],
+                              os='any' if m['platform_independent'] else system,
+                              arch='any' if m['platform_independent'] else platform.split('-', 1)[1]),
+                     built=True, verified=True) for m in plan['platforms'][0]['description']['modules']]
+    result = dict(run=identity, platform=platform, complete=True, error='', packages=packages,
+                  roots=[dict(root=r, verified=True) for r in plan['platforms'][0]['roots']],
+                  importer=dict(file=tool, verified=True),
+                  entry=dict(file='autolib.cmake', verified=True,
+                             sha256=hashlib.sha256((installed / 'autolib.cmake').read_bytes()).hexdigest()))
+    inputs = source / 'build/entry-delivery-inputs'
+    suffix = identity['run_id'] + '-' + identity['attempt']
+    plan_name, transport_name = 'ci-plan-' + suffix, 'ci-package-' + suffix + '-' + platform
+    plan_dir = inputs / plan_name
+    plan_dir.mkdir(parents=True)
+    for name, value in [('plan.json', plan), ('run.json', identity)]:
+        (plan_dir / name).write_text(json.dumps(value), encoding='utf-8')
+    (work / 'results').mkdir(exist_ok=True)
+    (work / 'results' / (platform + '.json')).write_text(json.dumps(result), encoding='utf-8')
+    tool_dir = work / ('build/tools' if packages else 'tools')
+    tool_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(builder, tool_dir / ('autolib-builder.exe' if system == 'windows' else 'autolib-builder'))
+    (inputs / transport_name).mkdir()
+    completed = subprocess.run([str(ci_tool()), 'transport', '--repository', identity['repository'], '--source-root', str(source),
+                    '--plan', str(plan_dir / 'plan.json'), '--run-identity', str(plan_dir / 'run.json'),
+                    '--platform', platform, '--work-root', str(work), '--cmake-command', shutil.which('cmake'),
+                    '--output', str(work / 'transport.tar')], capture_output=True, text=True)
+    if completed.returncode:
+        raise AssertionError(completed.stdout + completed.stderr)
+    shutil.copy2(work / 'transport.tar', inputs / transport_name / 'transport.tar')
+    return inputs, dict(source_run=identity, plan=plan, explicit_latest={},
+                        artifacts=[dict(name=plan_name), dict(name=transport_name)])
 
 
 def prepare_native_fixture(source, installed, builder, system, arch):
@@ -30,44 +85,21 @@ def prepare_native_fixture(source, installed, builder, system, arch):
                                  '--system-name=' + {'linux': 'Linux', 'windows': 'Windows'}[system],
                                  '--architecture=' + arch, '--module=probe@1', '--module=dep@2'))
     platform = system + '-' + arch
-    tool = 'autolib-importer-' + platform + ('.exe' if system == 'windows' else '')
     roots = ['probe@1', 'dep@2']
-    plan = dict(platforms=[dict(id=platform, roots=roots, description=description)], publisher='')
+    plan = dict(platforms=[dict(id=platform, roots=roots, description=description,
+                               requested_roots=roots, filtered_roots=[],
+                               layers=[['dep@1', 'dep@2'], ['probe@1']], system_dependencies={})],
+                requested_modules=roots, publisher='')
     identity = dict(repository='controlled-fork/source', ref='refs/heads/native', sha=sha,
                     checkout_sha=sha, run_id='42', attempt='1')
-    packages = [dict(name=m['name'], version=m['version'], os=system, arch=arch,
-                     dependencies=m['depends'] or [], publish=True) for m in description['modules']]
-    transport = dict(run=identity, platform=platform, producer_prefix=str(installed),
-                     entry='install/autolib.cmake', importer='install/' + tool, packages=packages)
-    result = dict(run=identity, platform=platform, complete=True, error='',
-                  packages=[dict(slot={k: p[k] for k in ['name', 'version', 'os', 'arch']},
-                                 built=True, verified=True) for p in packages],
-                  roots=[dict(root=r, verified=True) for r in roots],
-                  importer=dict(file=tool, verified=True),
-                  entry=dict(file='autolib.cmake', verified=True,
-                             sha256=hashlib.sha256((installed / 'autolib.cmake').read_bytes()).hexdigest()))
-    inputs = source / 'build/entry-delivery-inputs'
-    plan_name, transport_name = 'ci-plan-42-1', 'ci-install-42-1-' + platform
-    (inputs / plan_name).mkdir(parents=True)
-    (inputs / plan_name / 'plan.json').write_text(json.dumps(plan), encoding='utf-8')
-    (inputs / plan_name / 'run.json').write_text(json.dumps(identity), encoding='utf-8')
-    (inputs / transport_name).mkdir()
-    with tarfile.open(inputs / transport_name / 'transport.tar', 'w') as archive:
-        for name, value in [('transport.json', transport), ('plan.json', plan), ('result.json', result)]:
-            data = json.dumps(value).encode()
-            member = tarfile.TarInfo(name)
-            member.size = len(data)
-            archive.addfile(member, io.BytesIO(data))
-        archive.add(installed, arcname='install')
-    selection = dict(source_run=identity, plan=plan, explicit_latest={},
-                     artifacts=[dict(name=plan_name), dict(name=transport_name)])
+    inputs, selection = packaged_inputs(source, installed, builder, plan, identity)
     def snapshot(root):
         return {str(p.relative_to(root)): (p.lstat().st_mode, p.lstat().st_mtime_ns,
                 os.readlink(p) if p.is_symlink() else p.read_bytes() if p.is_file() else None)
                 for p in root.rglob('*')}
     before = snapshot(installed), snapshot(inputs)
     manifest = publication.prepare_publication(
-        selection, inputs, source, builder, source / 'build/entry-delivery-publication',
+        selection, inputs, source, source / 'build/entry-delivery-publication',
         repository='fixture/mirror', tag='中文/release', source_repository='controlled-fork/source')
     if (snapshot(installed), snapshot(inputs)) != before:
         raise AssertionError('production preparation changed native installation or transport inputs')

@@ -18,7 +18,7 @@
 
 `autolib-importer` 负责包选择、精确依赖遍历、HTTPS 下载、安全解包、校验和缓存准备，不复制独立安装来源或执行路径修正。单文件 [autolib.cmake](../src/autolib.cmake) 负责宿主 importer 引导、按需 FetchContent Git 快照及仓库检查、结果身份与闭包校验及包就绪后的 target 加载。adapter 使用已准备的依赖公共目标，不自行推断 sibling 版本目录、重新选择依赖或下载编译。
 
-`autolib-ci` 在选择库时通过 builder 取得精确根及闭包，保留请求、有效及过滤根，按依赖层构建、逐根消费验证并运输安装结果；两个 Eigen 版本各有独立消费者。零库选择仍保留各平台，验证 importer 与入口后运输，不执行库构建或消费。workflow 提供可信源码仓库、平台环境、触发、权限与同目标串行，不在构建矩阵内发布 Release。
+`autolib-ci` 在选择库时通过 builder 取得精确根及闭包，保留请求、有效及过滤根，按依赖层构建、逐根消费验证，再调用同提交 builder 打包并运输最终归档；两个 Eigen 版本各有独立消费者。零库选择仍保留各平台，验证 importer 与入口后打包工具并运输，不执行库构建或消费。workflow 提供可信源码仓库、平台环境、触发、权限与同目标串行，不在构建矩阵内发布 Release。
 
 ## 构建与交付
 
@@ -28,7 +28,7 @@
 
 本地打包读取安装中的精确身份和依赖，在副本修正生产路径并生成版本化 tar.zst、单程序 importer tar.xz 及 SHA256；不读取源码 latest 重选安装版本。只打包显式模块，调用者提供完整分发集合。原安装保持不变。
 
-独立发布以 workflow 运行上下文为可信源码仓库，核对成功构建的精确 run/attempt、原计划平台、安装验证和包级候选，调用原提交 builder 从运输副本打包完整有效集合。全部运输入口必须与原构建 Git 提交字节一致；发布准备只在上传副本注入实际 Gitee 目标和编码 tag，每次交付各平台工具及一个入口，零库仍保留工具和入口。Gitee Action 只接收明确资产清单并核对可信来源；worker 查询远端实际内容，相同则跳过，不同先删后传，临时故障退避后从查询重试。一个协调器登记上传或核对就绪的工具和库摘要及 latest，并确认 Git push；入口也须就绪，但不写 Git 元数据。普通发布只初始化缺失指针，显式映射可以随资产或独立更新。新库私有，用户公开后才匿名消费；附件替换不提供事务回滚。交接及失败约束由[Gitee 交付设计](agent-notes/implemented/architecture/2026-11-02-gitee-delivery-reimplementation.md)拥有。
+独立发布以 workflow 运行上下文为可信源码仓库，核对成功构建的精确 run/attempt、原计划平台、验证结果、包级候选及成品实际大小和 SHA256，原样分发 CI 已生成的归档，不编译 builder 或重新打包。全部运输入口必须与原构建 Git 提交字节一致；发布准备只在上传副本注入实际 Gitee 目标和编码 tag，每次交付各平台工具及一个入口，零库仍保留工具和入口。Gitee Action 只接收明确资产清单并核对可信来源；worker 查询远端实际内容，相同则跳过，不同先删后传，临时故障退避后从查询重试。一个协调器登记上传或核对就绪的工具和库摘要及 latest，并确认 Git push；入口也须就绪，但不写 Git 元数据。普通发布只初始化缺失指针，显式映射可以随资产或独立更新。新库私有，用户公开后才匿名消费；附件替换不提供事务回滚。成品交接由[CI 成品归档交接](agent-notes/implemented/architecture/2026-11-04-ci-packaged-artifact-handoff.md)拥有，元数据及失败约束由[Gitee 交付设计](agent-notes/implemented/architecture/2026-11-02-gitee-delivery-reimplementation.md)拥有。
 
 ## 消费与缓存
 

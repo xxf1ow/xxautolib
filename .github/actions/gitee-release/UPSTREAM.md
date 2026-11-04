@@ -20,9 +20,11 @@
 
 发布清单包含完整构建集合的库、各平台 importer 和唯一 `autolib.cmake` 入口。入口按普通附件校验实际字节、尺寸和 SHA256 并计入上传结果，但不写入 Git 摘要或 latest；入口失败使整体发布失败，其他成功工具和库仍按既有规则登记。`publication_rules.metadata_path` 对合法入口返回 `None`，协调器只登记非 `None` 摘要路径。元数据仓库白名单与上游附件实现保持独立。
 
+发布准备只接受精确 run/attempt 的 `ci-package-*`：库和工具由原生 CI 验证后调用同提交 builder 生成，准备端重算实际大小和 SHA256 并逐字节分发，不执行 builder、不解开或重建内部归档。旧安装树运输要求重新构建，不提供重打包兜底。交接协议由[成品交接记录](../../../docs/agent-notes/implemented/architecture/2026-11-04-ci-packaged-artifact-handoff.md)拥有。
+
 发布准备保留实际 checkout SHA 检查，并从原构建 Git 提交读取 `src/autolib.cmake`，全部运输入口与验证记录须与该字节一致。`prepare_publication(..., repository, tag, source_repository)` 的三个关键字参数分别是实际 Gitee 目标、原始 tag 和独立可信源码仓库。入口上传副本仅替换唯一完整空行 `set(_autolib_release_root "")`；注入点缺失、重复或非空均失败。tag 不得含空白或控制字符，合法值按单个 URL 路径段编码；注入和上传使用同一组 workflow 目标变量，源码、安装和运输输入保持不变。
 
-`publish.py` 成功解析输入后在 stdout 输出 `selected/uploaded/skipped/failed/metadata_committed/metadata_commit` 汇总 JSON；`skipped` 表示远端实际字节的 SHA256 与本次输入一致，不能算作重新上传。上传及跳过项均参与摘要登记和缺失 latest 初始化；入口仍不写 Git 元数据。stderr 输出失败资产的名称、`operation/outcome` 或阶段诊断。API 失败另带 `http_status`、固定原因 `reason` 和异常类型 `exception_type`；未取得状态码或没有底层异常时，对应字段为 null。重试日志另带 `retry` 和 `delay_seconds`。非法输入返回非零，stdout 为空，stderr 说明固定输入规则，不回显输入值；日志不输出底层异常正文、完整 URL、响应或凭据。
+`publish.py` 成功解析输入后在 stdout 输出 `selected/uploaded/skipped/failed/metadata_committed/metadata_commit` 汇总 JSON；`metadata_committed` 表示本次产生新的元数据提交；`metadata_commit` 为已确认远端 SHA，无变化时返回已有 SHA，未确认时为 null。退出成功要求附件无失败且元数据 SHA 已确认，无变化也成功。`skipped` 表示远端实际字节的 SHA256 与本次输入一致，不能算作重新上传。上传及跳过项均参与摘要登记和缺失 latest 初始化；入口仍不写 Git 元数据。stderr 输出失败资产的名称、`operation/outcome` 或阶段诊断。API 失败另带 `http_status`、固定原因 `reason` 和异常类型 `exception_type`；未取得状态码或没有底层异常时，对应字段为 null。重试日志另带 `retry` 和 `delay_seconds`。非法输入返回非零，stdout 为空，stderr 说明固定输入规则，不回显输入值；日志不输出底层异常正文、完整 URL、响应或凭据。
 
 附件更新由 `publish_one` 拥有唯一重试循环：固定本地快照，查询唯一同名附件并下载核对 SHA256，相同则跳过，不同则先删后传，缺失则直接上传。临时网络故障、HTTP 408、429 和 5xx 在退避后从查询重新执行；首次尝试之外最多重试十次，等待为 2、4、8、16、32、32、32、32、32、32 秒。认证、权限、非法输入及响应校验错误直接失败。查询失败不能当作附件缺失，未确认删除不能直接继续上传。下载流式计算摘要，只接受目标仓库的 HTTPS 初始地址及 HTTPS 重定向，凭据只发往 Gitee。
 

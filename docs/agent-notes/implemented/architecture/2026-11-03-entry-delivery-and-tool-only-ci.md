@@ -16,7 +16,7 @@ Status: implemented
 
 ### 设计归属与范围
 
-提案 [CI 成品归档交接与重复发布](../../proposed/architecture/2026-11-04-ci-packaged-artifact-handoff.md)拟部分替代本文的安装树运输及发布端归档生成职责，保留入口来源核对和发布目标注入；尚未实现，本文其余决定继续适用。
+[CI 成品归档交接与重复发布](2026-11-04-ci-packaged-artifact-handoff.md)拥有成品运输及 CI 归档生成职责；本文保留入口来源核对、发布目标注入及其余决定。
 
 本文拥有入口交付、本地与远程地址的确定方式、CI 三种构建选择、fork 构建发布的可信来源规则，以及相应退役范围。它部分替代[版本化包与统一产物交付](../../proposed/architecture/2026-10-29-versioned-artifact-delivery.md)的独立本地来源和四步选择，部分替代[CI 自动发现](2026-10-27-ci-discovery-and-release-sources.md)及[Gitee 交付](2026-11-02-gitee-delivery-reimplementation.md)的空列表、无包平台跳过、固定上游源码限制和发布二次筛选，并扩充入口运输及发布内容。上述记录仍拥有版本、依赖、资格过滤、校验、Git 元数据、权限及历史证据，保持原生命周期，不整体归档。
 
@@ -24,9 +24,9 @@ Status: implemented
 
 ### 完整流程与职责
 
-本地流程是“构建安装入口、宿主 importer 和所选包 → 下游 include 原安装入口 → 检查完整精确闭包 → 加载 adapter”。远程流程是“构建时选择一次 → 验证并运输安装结果 → 原提交发布准备生成注入副本及资产清单 → 上传全部资产并登记工具和库的元数据 → 下游下载入口 → 按需引导宿主工具和准备精确闭包 → 加载 adapter”。完整本地结果或缓存命中时，不进入元数据获取和下载步骤。
+本地流程是“构建安装入口、宿主 importer 和所选包 → 下游 include 原安装入口 → 检查完整精确闭包 → 加载 adapter”。远程流程是“构建时选择一次 → 验证安装并在原生 CI 打包运输成品 → 原提交发布准备生成注入副本及资产清单 → 上传全部资产并登记工具和库的元数据 → 下游下载入口 → 按需引导宿主工具和准备精确闭包 → 加载 adapter”。完整本地结果或缓存命中时，不进入元数据获取和下载步骤。
 
-builder 继续拥有配方、版本解析、安装描述、路径修正和归档；CI 拥有平台计划、执行、验证与运输；发布准备核对原构建输入并生成最终发布字节；Gitee Action 上传明确清单并提交成功工具和库的元数据。workflow 提供可信运行上下文、目标配置和串行调度，不再维护另一套包选择。CMake 和 importer 的消费分工保持不变。
+builder 继续拥有配方、版本解析、安装描述、路径修正和归档；CI 拥有平台计划、执行、验证、驱动打包与运输；发布准备核对原构建成品并生成入口注入副本；Gitee Action 上传明确清单并提交成功工具和库的元数据。workflow 提供可信运行上下文、目标配置和串行调度，不再维护另一套包选择。CMake 和 importer 的消费分工保持不变。
 
 ### 入口安装与下游接入
 
@@ -90,9 +90,9 @@ fork 能使用自己的普通分支完成计划、原生构建、运输、自动
 
 专用元数据仓库的身份和白名单协议沿用统一交付契约。其 `upstream` 字段标识 xxautolib 协议所属项目，不充当本次构建来源；支持 fork 不据此迁移既有元数据、放松专用仓库检查或要求消费者追踪 GitHub 源码仓库。
 
-### 安装结果运输与完整发布
+### 成品运输与完整发布
 
-各平台安装根及运输封装都包含源码版 `autolib.cmake` 和该宿主 importer；有库时再携带所选精确包及包级 latest。运输和汇总校验包括入口的固定路径、普通文件类型与本次原构建来源，不只检查库根。继续保留 Linux 执行权限、合法相对软链接、原始生产前缀、run/attempt 和所选平台完整性，原安装树与解包输入保持只读。
+各平台安装根包含源码版 `autolib.cmake` 和宿主 importer；CI 验证后驱动同提交 builder 生成最终归档。运输携带原样入口、宿主工具归档、可发布的精确库归档及全部计划包名的 latest 候选。固定路径、普通文件类型、run/attempt、来源与所选平台完整性均受检查。Linux 执行权限与合法相对软链接保留在内部归档，外层只含普通文件和必要目录；不运输原始生产前缀或安装树。协议由[成品交接记录](2026-11-04-ci-packaged-artifact-handoff.md)拥有，原安装和输入保持只读。
 
 安装入口、运输中的入口与已核对原构建提交的 `src/autolib.cmake` 必须逐字节一致；沿用仓库对 `.cmake` 的 LF 检出规则，不接受平台改写。构建验证检查安装副本，发布准备在任何远端写入前检查全部运输副本与原提交源码；缺失、内容损坏或来源不一致均失败。最终入口以该源码生成注入副本，不能以重新取源码掩盖运输入口损坏。
 
@@ -133,7 +133,7 @@ CI 只改上传副本，不回写源码入口、生产安装树或运输解包�
 
 本地来源专属测试、fixture、driver 模式和指南随对应能力退出；将独立安装消费和远端缓存复用的有效断言迁到新公共入口，不只删除失败测试。负例保留旧 CMake 用户变量不能改变来源或启用联网的验证，不为了验证旧能力不存在而保留旧实现。
 
-`fixup-metadata.cmake` 和共享路径检查仍服务 builder 从运输副本打包，不能随 importer 的嵌入搬迁路径整份删除。远端安全解包、元数据树及结果检查、精确依赖和版本冲突规则仍有生产消费者，不因来自旧实现而删除；既有 GitHub 消费协议不属于本次顺带清理范围。移除代码不清理、迁移或改写用户已有安装、缓存、归档和远端资产。
+`fixup-metadata.cmake` 和共享路径检查仍服务 builder 从安装副本打包，不能随 importer 的嵌入搬迁路径整份删除。远端安全解包、元数据树及结果检查、精确依赖和版本冲突规则仍有生产消费者，不因来自旧实现而删除；既有 GitHub 消费协议不属于本次顺带清理范围。移除代码不清理、迁移或改写用户已有安装、缓存、归档和远端资产。
 
 ### 文档归属与待讨论事项
 
@@ -169,9 +169,9 @@ CI 只改上传副本，不回写源码入口、生产安装树或运输解包�
 
 [CI 计划](../../../../src/autolib-ci/plan_test.go)和[运输测试](../../../../src/autolib-ci/transport_test.go)覆盖三种选择、过滤、零库保留平台、可信 fork 上下文、精确运行身份及运输入口。普通根和工具专用入口都真实构建并安装原样入口，不用纯文本匹配替代工具执行；工具检查失败不能算作成功。
 
-[发布准备测试](../../../../tests/ci/gitee-release/test_prepare_publication.py)覆盖目标配置、注入点与编码、所有运输对原提交字节核对、输入只读、多平台工具及唯一入口；真实 builder 验证普通库及工具专用重打包。[上传测试](../../../../tests/ci/gitee-release/test_publish.py)通过真实 main、HTTP multipart 和本地裸 Git 验证入口成功及失败、其他成功项登记、无入口元数据和 push 未确认失败，不访问真实 Gitee。
+[发布准备测试](../../../../tests/ci/gitee-release/test_prepare_publication.py)覆盖目标配置、注入点与编码、所有运输对原提交字节核对、输入只读、多平台工具及唯一入口；真实 builder 与生产 CI transport 验证普通库成品，工具专用输入验证三平台清单及固定工具文件名。[上传测试](../../../../tests/ci/gitee-release/test_publish.py)通过真实 main、HTTP multipart 和本地裸 Git 验证入口成功及失败、其他成功项登记、无入口元数据和 push 未确认失败，不访问真实 Gitee。
 
-[生产到消费联动](../../../../tests/ci/gitee-release/test_entry_delivery.py)复用[远端原生闭环](../../../../src/autolib-importer/versioned_remote_loop_test.go)，以 `controlled-fork/source` 构造已验证原构建运输，调用生产 `prepare_publication`，从返回清单读取真实唯一入口及工具、dep@1/2、probe@1 资产，核对最终大小和 SHA256。受控 Git/HTTPS 实际观测 `fixture/mirror` 与 `中文/release` 对应的 `%E4%B8%AD%E6%96%87%2Frelease`，工具引导和 importer 库下载都命中该地址，不由测试重新注入入口。
+[生产到消费联动](../../../../tests/ci/gitee-release/test_entry_delivery.py)复用[远端原生闭环](../../../../src/autolib-importer/versioned_remote_loop_test.go)，以 `controlled-fork/source` 构造已验证原构建计划与结果，调用生产 CI transport 打包，再调用 `prepare_publication`，从返回清单读取真实唯一入口及工具、dep@1/2、probe@1 资产，核对最终大小和 SHA256。受控 Git/HTTPS 实际观测 `fixture/mirror` 与 `中文/release` 对应的 `%E4%B8%AD%E6%96%87%2Frelease`，工具引导和 importer 库下载都命中该地址，不由测试重新注入入口。
 
 109 上联动 Python 1/1、Go RemoteLoop 的 GitHub/Gitee 两子项及 LocalLoop 均通过。每托管首次 clone/ls-tree 各 1、HTTPS 3 次，随后完整缓存、损坏已有候选拒绝及迁移离线消费增量均为 0。新 dep@2 请求和错误包内身份各取新快照，最终每托管 clone/ls-tree 各 3、下载 5、API/Raw 0；真实链接与运行来自当前 dep/1、probe/1，错误身份在 adapter 前拒绝。生产安装、运输、元数据、精确依赖及无关缓存的内容与权限保持不变。
 

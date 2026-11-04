@@ -103,7 +103,8 @@ def publish_one(api: GiteeAPI, release_id: int, asset: dict) -> dict:
 def publish_release(config: dict) -> dict:
     """使用单 Git 副本和附件池，结束后一次提交成功项及必要 latest。
 
-    部分上传失败仍提交其他成功项；push 未确认不报告 metadata_committed。
+    部分上传失败仍提交其他成功项；metadata_committed 表示本次产生新提交，
+    metadata_commit 是已确认的远端 SHA，无变化时仍返回已有 SHA。
     latest-only 不查询 Release。所有 worker 结束后关闭 API 会话。
     """
     assets = config['assets']
@@ -142,8 +143,9 @@ def publish_release(config: dict) -> dict:
         existing = repository['existing_latest']
         selected = choose_latest(existing, config['initial_latest'], succeeded, config['explicit_latest'])
         changes = {name: version for name, version in selected.items() if existing.get(name) != version}
+        previous = repository['head']
         result['metadata_commit'] = commit_metadata(repository, digests, changes)
-        result['metadata_committed'] = True
+        result['metadata_committed'] = result['metadata_commit'] != previous
     except (GiteeAPIError, OSError, RuntimeError, ValueError) as error:
         diagnostic = (error.diagnostic() if isinstance(error, GiteeAPIError)
                       else {'operation': operation, 'outcome': 'unconfirmed'})
@@ -169,7 +171,7 @@ def main() -> int:
             return 1
         result = publish_release(config)
         print(json.dumps(result, sort_keys=True))
-        return int(bool(result['failed']) or not result['metadata_committed'])
+        return int(bool(result['failed']) or result['metadata_commit'] is None)
     except (OSError, ValueError, RuntimeError):
         print('publication failed: input could not be read or operation was not confirmed', file=sys.stderr)
         return 1

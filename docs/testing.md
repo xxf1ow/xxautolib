@@ -28,7 +28,7 @@ cmake -P src/autolib-builder/go-sdk.cmake -- test -mod=readonly ./src/autolib-im
 
 ## Release 下载验证
 
-[远端原生闭环](../src/autolib-importer/versioned_remote_loop_test.go)复用真实轻量库。Gitee 子例从生产 `prepare_publication` 返回清单取得实际入口和资产，验证非上游仓库与编码 tag 的工具及库 URL；GitHub 保留消费协议。空缓存引导后真实链接运行，完整缓存和损坏已有候选均零远端操作；错误身份及损坏候选在 adapter 前拒绝。关闭受控 Git/HTTPS、迁移完整缓存后仍链接运行，原输入及无关缓存不变。证据及缺口由[自定位入口记录](agent-notes/implemented/architecture/2026-11-03-entry-delivery-and-tool-only-ci.md#验证)拥有。
+[远端原生闭环](../src/autolib-importer/versioned_remote_loop_test.go)复用真实轻量库。Gitee 子例经生产 CI transport 打包运输，再从 `prepare_publication` 返回清单取得实际入口和资产，验证非上游仓库与编码 tag 的工具及库 URL；GitHub 保留消费协议。空缓存引导后真实链接运行，完整缓存和损坏已有候选均零远端操作；错误身份及损坏候选在 adapter 前拒绝。关闭受控 Git/HTTPS、迁移完整缓存后仍链接运行，原输入及无关缓存不变。证据及缺口由[自定位入口记录](agent-notes/implemented/architecture/2026-11-03-entry-delivery-and-tool-only-ci.md#验证)拥有。
 
 109 使用[已有 Python 环境](development.md#远端构建与源码传输授权)，按下节发布测试方式选择 `-p test_entry_delivery.py`。该[桥接测试](../tests/ci/gitee-release/test_entry_delivery.py)从仓库根调度 RemoteLoop，不重复单跑同一 Go 用例；原目录存在未知源码差异时，只在逐摘要核对的新隔离源码根运行测试快照，不覆盖未知文件。
 
@@ -38,7 +38,7 @@ cmake -P src/autolib-builder/go-sdk.cmake -- test -mod=readonly ./src/autolib-im
 
 ## CI 验证
 
-[CI 测试](../src/autolib-ci/main_test.go)覆盖精确计划、独立根验证、运输安全与所选平台完整性；workflow 定向测试核对事件条件、参数与接线。本地 fixture 和 workflow 片段执行不模拟完整 Actions，不替代三平台真实验收。109的工具构建命令：
+[CI 测试](../src/autolib-ci/main_test.go)覆盖精确计划、独立根验证、原生 builder 打包、成品摘要与数量、运输安全及所选平台完整性；workflow 定向测试核对事件条件、参数与接线。本地 fixture 和 workflow 片段执行不模拟完整 Actions，不替代三平台真实验收。109的工具构建命令：
 
 ```text
 cmake -P src/autolib-builder/go-sdk.cmake -- build -mod=readonly -trimpath -o build/tools/autolib-ci ./src/autolib-ci
@@ -56,11 +56,11 @@ build/tools/gitee-sync-venv/Scripts/python.exe -m pip install -r .github/actions
 build/tools/gitee-sync-venv/Scripts/python.exe -m unittest discover -s tests/ci/gitee-release -p test_publish.py -v
 ```
 
-按修改所有者替换 `-p` 文件名，不重复整套发布测试。HTTP 替身不访问真实 Gitee；Git 测试只用本地临时裸库。Windows 无 Bash 跳过相关分支检查，真实 builder 用例只在 109 执行。已有通过数量与真实缺口由[交付证据](agent-notes/implemented/architecture/2026-11-02-gitee-delivery-reimplementation.md#已有受控证据)拥有。
+按修改所有者替换 `-p` 文件名，不重复整套发布测试。HTTP 替身不访问真实 Gitee；Git 测试只用本地临时裸库。Windows 无 Bash 跳过相关分支检查，真实 builder 用例只在 109 执行。成品交接、两次准备字节一致及就绪资产重复发布零写入的定向证据由[成品交接记录](agent-notes/implemented/architecture/2026-11-04-ci-packaged-artifact-handoff.md#验证)拥有；既有交付证据由[交付证据](agent-notes/implemented/architecture/2026-11-02-gitee-delivery-reimplementation.md#已有受控证据)拥有。
 
 ## 真实交付与手动验收
 
-Gitee 版本化交付已通过用户手动验收。真实三平台构建记录、摘要空白修复及用户复验结论见[交付证据](agent-notes/implemented/architecture/2026-11-02-gitee-delivery-reimplementation.md#真实构建与用户验收)。修复后二次发布、三平台匿名消费及真实故障注入没有逐项归档日志，不将受控测试等同于这些专项通过。后续 CI、Gitee 写入与故障注入仍按具体授权执行；push 和新库公开由用户负责。
+Gitee 版本化交付已通过用户手动验收。真实三平台构建记录、摘要空白修复及用户复验结论见[交付证据](agent-notes/implemented/architecture/2026-11-02-gitee-delivery-reimplementation.md#真实构建与用户验收)。修复后二次发布、三平台匿名消费及真实故障注入没有逐项归档日志，不将受控测试等同于这些专项通过。成品交接的真实验收需要一次新 `Representative releases` 构建；未合并时，手动选择任务分支的 `Publish artifacts` 并指定该新 run/attempt，核对实际控制提交，不假定默认分支的自动入口使用任务分支代码。全部附件与元数据就绪后，仅重跑发布并保持 run/attempt、artifacts、目标和 latest 不变，预期 `uploaded=0`、`skipped=selected`、`failed=0`、`metadata_committed=false`，无 DELETE/POST 或新元数据提交。fork 采用流程及受控输入审查，不要求第二账号。CI、Gitee 写入与故障注入按具体授权执行；push 和新库公开由用户负责。
 
 ## 安装产物集成验证
 
