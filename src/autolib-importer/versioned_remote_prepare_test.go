@@ -111,38 +111,32 @@ func requireNoPackageStaging(t *testing.T, cache string) {
 }
 
 func TestVersionedMetadataHandoff(t *testing.T) {
-	for _, source := range []string{"cache"} {
-		t.Run(source+" exact dependency", func(t *testing.T) {
-			f := versionedRemote(t)
-			o, cache := versionedFixture(t, "probe")
-			o.RemoteRoot = versionedDownloadRoot
-			root := o.CacheRoot
-			if source == "cache" {
-				root = cache
-			}
-			versionedInstalled(t, root, "probe", "1", "dep@1", "root")
-			versionedLatest(t, root, "probe", "1")
-			dep := f.add(t, "dep", "1", "")
-			f.add(t, "dep", "2", "")
-			putTestFile(t, o.ResultPath, "stale")
-			_, err := prepare(o)
-			if !errors.Is(err, errMetadataRequired) {
-				t.Fatalf("expected metadata handoff: %v", err)
-			}
-			requireNoResult(t, o)
-			requireNoPackageStaging(t, cache)
-			f.requireRequests(t, map[string]int{})
-			versionedRemoteRun(t, o, "", 2)
-			versionedRemoteRun(t, o, f.root, 0)
-			if got := readTestFile(t, o.ResultPath); !strings.Contains(got, "AUTOLIB_PACKAGE_VERSION_dep [[1]]") {
-				t.Fatal(got)
-			}
-			f.requireRequests(t, map[string]int{dep: 1})
-			if _, err := os.Stat(filepath.Join(cache, "dep/package.toml")); !os.IsNotExist(err) {
-				t.Fatal("dependency changed latest", err)
-			}
-		})
-	}
+	t.Run("cache exact dependency", func(t *testing.T) {
+		f := versionedRemote(t)
+		o, cache := versionedFixture(t, "probe")
+		o.RemoteRoot = versionedDownloadRoot
+		versionedInstalled(t, cache, "probe", "1", "dep@1", "root")
+		versionedLatest(t, cache, "probe", "1")
+		dep := f.add(t, "dep", "1", "")
+		f.add(t, "dep", "2", "")
+		putTestFile(t, o.ResultPath, "stale")
+		_, err := prepare(o)
+		if !errors.Is(err, errMetadataRequired) {
+			t.Fatalf("expected metadata handoff: %v", err)
+		}
+		requireNoResult(t, o)
+		requireNoPackageStaging(t, cache)
+		f.requireRequests(t, map[string]int{})
+		versionedRemoteRun(t, o, "", 2)
+		versionedRemoteRun(t, o, f.root, 0)
+		if got := readTestFile(t, o.ResultPath); !strings.Contains(got, "AUTOLIB_PACKAGE_VERSION_dep [[1]]") {
+			t.Fatal(got)
+		}
+		f.requireRequests(t, map[string]int{dep: 1})
+		if _, err := os.Stat(filepath.Join(cache, "dep/package.toml")); !os.IsNotExist(err) {
+			t.Fatal("dependency changed latest", err)
+		}
+	})
 	t.Run("local complete ignores remote and snapshot", func(t *testing.T) {
 		f := versionedRemote(t)
 		o, _ := versionedFixture(t, "probe")

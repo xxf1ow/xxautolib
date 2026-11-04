@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -42,16 +43,49 @@ add_test(NAME forwarded COMMAND "${CMAKE_COMMAND}" -E true)
 	if runtime.GOOS == "windows" {
 		generator = "Visual Studio 17 2022"
 	}
-	output, err := exec.Command(cmake, "-DSOURCE_ROOT="+root, "-DINSTALL_ROOT="+filepath.Join(root, "install"), "-DVALIDATION_ROOT="+filepath.Join(root, "build", "validation"), "-DGENERATOR="+generator, "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL", "-DCMAKE_INSTALL_LIBDIR=fixture-lib", "-DCMAKE_POLICY_VERSION_MINIMUM=3.5", "-P", filepath.Join(repository, "tests", "autolib", "run-installed.cmake")).CombinedOutput()
-	if err != nil {
-		t.Fatalf("driver failed: %v %s", err, output)
+	validation := filepath.Join(root, "build", "validation")
+	for _, explicit := range []bool{false, true} {
+		t.Run(fmt.Sprintf("explicit evidence=%t", explicit), func(t *testing.T) {
+			evidence := validation
+			args := []string{"-DSOURCE_ROOT=" + root, "-DINSTALL_ROOT=" + filepath.Join(root, "install"), "-DVALIDATION_ROOT=" + validation, "-DGENERATOR=" + generator, "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL", "-DCMAKE_INSTALL_LIBDIR=fixture-lib", "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"}
+			if explicit {
+				evidence = filepath.Join(root, "build", "evidence")
+				args = append(args, "-DEVIDENCE_DIRECTORY="+evidence)
+			}
+			args = append(args, "-P", filepath.Join(repository, "tests", "autolib", "run-installed.cmake"))
+			output, err := exec.Command(cmake, args...).CombinedOutput()
+			if err != nil {
+				t.Fatalf("driver failed: %v %s", err, output)
+			}
+			runRoot, err := validationRunFromOutput(output)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if filepath.Dir(runRoot) != evidence {
+				t.Fatalf("consumer logs escaped evidence directory: got %s, want parent %s", runRoot, evidence)
+			}
+			for _, log := range []string{"configure.log", "build.log", "test.log"} {
+				if _, err := os.Stat(filepath.Join(runRoot, log)); err != nil {
+					t.Fatalf("missing consumer log %s: %v", log, err)
+				}
+			}
+			if got := mustReadText(t, filepath.Join(runRoot, "build", "inputs.txt")); got != "MultiThreadedDLL\nfixture-lib\n3.5\n" {
+				t.Fatalf("driver lost production inputs: %q", got)
+			}
+		})
 	}
-	runRoot, err := validationRunFromOutput(output)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := mustReadText(t, filepath.Join(runRoot, "build", "inputs.txt")); got != "MultiThreadedDLL\nfixture-lib\n3.5\n" {
-		t.Fatalf("driver lost production inputs: %q", got)
+}
+
+func TestCIInstalledDriverRejectsEvidenceOutsideBuild(t *testing.T) {
+	root := t.TempDir()
+	for _, evidence := range []string{filepath.Join(root, "build"), filepath.Join(root, "outside")} {
+		output, err := exec.Command("cmake", "-DSOURCE_ROOT="+root, "-DINSTALL_ROOT="+filepath.Join(root, "install"), "-DVALIDATION_ROOT="+filepath.Join(root, "build", "validation"), "-DEVIDENCE_DIRECTORY="+evidence, "-DGENERATOR=Unix Makefiles", "-P", filepath.Join("..", "..", "tests", "autolib", "run-installed.cmake")).CombinedOutput()
+		if err == nil || !strings.Contains(string(output), "EVIDENCE_DIRECTORY must be below") {
+			t.Fatalf("did not reject evidence directory %s before validation: %v\n%s", evidence, err, output)
+		}
+		if _, err := os.Stat(evidence); !os.IsNotExist(err) {
+			t.Fatalf("rejected evidence directory was created: %v", err)
+		}
 	}
 }
 
@@ -161,7 +195,7 @@ func TestCIWindowsIdentity(t *testing.T) {
 	}
 }
 
-func TestCIValidationPathsResolveExecutableSymlinks(t *testing.T) {
+func TestCIValidationPathsResolveDirectorySymlinks(t *testing.T) {
 	t.Run("does not require an archive release root", func(t *testing.T) {
 		o := ciValidationPathFixture(t)
 		if _, err := validateCIValidationPaths(o); err != nil {
@@ -171,23 +205,22 @@ func TestCIValidationPathsResolveExecutableSymlinks(t *testing.T) {
 
 	t.Run("accepts internal targets", func(t *testing.T) {
 		o := ciValidationPathFixture(t)
-		link := filepath.Join(o.SourceRoot, "tools", "importer-link.exe")
-		target := filepath.Join(o.SourceRoot, "tools", "importer-real.exe")
-		createCIExecutableSymlink(t, link, target)
-		o.ImporterFile = link
+		link := filepath.Join(o.SourceRoot, "evidence-link")
+		createCIDirectorySymlink(t, link, o.EvidenceDirectory)
+		o.EvidenceDirectory = link
 		if _, err := validateCIValidationPaths(o); err != nil {
-			t.Fatalf("rejected executable symlinks resolving inside source root: %v", err)
+			t.Fatalf("rejected evidence symlink resolving inside source root: %v", err)
 		}
 	})
 
-	t.Run("rejects external importer target", func(t *testing.T) {
+	t.Run("rejects external evidence target", func(t *testing.T) {
 		o := ciValidationPathFixture(t)
-		outside := filepath.Join(filepath.Dir(o.SourceRoot), "external-importer.exe")
-		link := filepath.Join(o.SourceRoot, "tools", "importer-link.exe")
-		createCIExecutableSymlink(t, link, outside)
-		o.ImporterFile = link
-		if _, err := validateCIValidationPaths(o); err == nil || !strings.Contains(err.Error(), "importer file must resolve inside source root") {
-			t.Fatalf("accepted importer symlink resolving outside source root: %v", err)
+		outside := filepath.Join(filepath.Dir(o.SourceRoot), "external-evidence")
+		link := filepath.Join(o.SourceRoot, "evidence-link")
+		createCIDirectorySymlink(t, link, outside)
+		o.EvidenceDirectory = link
+		if _, err := validateCIValidationPaths(o); err == nil || !strings.Contains(err.Error(), "evidence directory must resolve inside source root") {
+			t.Fatalf("accepted evidence symlink resolving outside source root: %v", err)
 		}
 	})
 }
@@ -197,7 +230,7 @@ func ciValidationPathFixture(t *testing.T) ciValidationOptions {
 	root := t.TempDir()
 	source := filepath.Join(root, "source")
 	for _, path := range []string{
-		filepath.Join(source, "tools"), filepath.Join(source, "install"),
+		filepath.Join(source, "install"),
 		filepath.Join(source, "build", "evidence"),
 	} {
 		if err := os.MkdirAll(path, 0755); err != nil {
@@ -207,21 +240,20 @@ func ciValidationPathFixture(t *testing.T) ciValidationOptions {
 	return ciValidationOptions{
 		SourceRoot: source, InstallRoot: filepath.Join(source, "install"),
 		BuildRoot:    filepath.Join(source, "build"),
-		ImporterFile: filepath.Join(source, "tools", "importer.exe"),
 		CMakeCommand: filepath.Join(source, "cmake.exe"), EvidenceDirectory: filepath.Join(source, "build", "evidence"),
 	}
 }
 
-func createCIExecutableSymlink(t *testing.T, link, target string) {
+func createCIDirectorySymlink(t *testing.T, link, target string) {
 	t.Helper()
-	if err := os.WriteFile(target, []byte("fixture executable"), 0755); err != nil {
+	if err := os.MkdirAll(target, 0755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(target, link); err != nil {
 		if errors.Is(err, os.ErrPermission) || strings.Contains(strings.ToLower(err.Error()), "privilege") {
 			t.Skipf("host does not permit creating symlink fixtures: %v", err)
 		}
-		t.Fatalf("create executable symlink: %v", err)
+		t.Fatalf("create directory symlink: %v", err)
 	}
 }
 

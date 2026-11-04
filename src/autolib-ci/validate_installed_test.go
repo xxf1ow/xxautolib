@@ -71,7 +71,7 @@ set_target_properties(autolib::fresh PROPERTIES IMPORTED_LOCATION_RELEASE "${CMA
 	if err != nil {
 		t.Fatal(err)
 	}
-	o := ciValidationOptions{SourceRoot: root, InstallRoot: install, BuildRoot: filepath.Join(root, "build", "validation"), ImporterFile: importer, CMakeCommand: cmake, EvidenceDirectory: filepath.Join(root, "build", "evidence"), Modules: []string{"fresh@1"}, RootPackages: []string{"fresh@1"}, Context: production}
+	o := ciValidationOptions{SourceRoot: root, InstallRoot: install, BuildRoot: filepath.Join(root, "build", "validation"), CMakeCommand: cmake, EvidenceDirectory: filepath.Join(root, "build", "evidence"), Modules: []string{"fresh@1"}, RootPackages: []string{"fresh@1"}, Context: production}
 	before := ciInstalledBinarySnapshot(t, install)
 	result, err := validateCIRelease(context.Background(), o)
 	if err != nil || !result.Passed {

@@ -579,10 +579,9 @@ class PreparationTests(unittest.TestCase):
         from test_entry_delivery import packaged_inputs
         inputs, _ = packaged_inputs(source, installed, builder, selected_plan, identity)
         (source / 'src/autolib.cmake').write_bytes(dirty_entry)
-        def snapshot(root, include_mtime=True):
-            return {str(p.relative_to(root)): (p.lstat().st_mode if include_mtime else
-                    stat.S_IFMT(p.lstat().st_mode) | stat.S_IMODE(p.lstat().st_mode) & 0o755,
-                    p.lstat().st_mtime_ns if include_mtime else None,
+        def snapshot(root):
+            return {str(p.relative_to(root)): (p.lstat().st_mode,
+                    p.lstat().st_mtime_ns,
                     os.readlink(p) if p.is_symlink() else hashlib.sha256(p.read_bytes()).hexdigest() if p.is_file() else '')
                     for p in root.rglob('*')}
         before = snapshot(installed), snapshot(inputs)

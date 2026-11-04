@@ -179,7 +179,7 @@ func runCILayer(ctx context.Context, o ciRunOptions) (failure error) {
 			if err := visit(root); err != nil {
 				return err
 			}
-			evidence, err := validateCIRelease(ctx, ciValidationOptions{SourceRoot: source, InstallRoot: install, BuildRoot: work, ImporterFile: o.ImporterFile, CMakeCommand: o.CMakeCommand, EvidenceDirectory: filepath.Join(work, "evidence", root), Modules: closure, RootPackages: []string{root}, Context: production})
+			evidence, err := validateCIRelease(ctx, ciValidationOptions{SourceRoot: source, InstallRoot: install, BuildRoot: work, CMakeCommand: o.CMakeCommand, EvidenceDirectory: filepath.Join(work, "evidence", root), Modules: closure, RootPackages: []string{root}, Context: production})
 			if err != nil {
 				return err
 			}

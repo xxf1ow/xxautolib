@@ -19,7 +19,7 @@ import (
 
 type ciValidationOptions struct {
 	SourceRoot, InstallRoot, BuildRoot string
-	ImporterFile, CMakeCommand         string
+	CMakeCommand                       string
 	EvidenceDirectory                  string
 	Modules                            []string
 	RootPackages                       []string
@@ -82,9 +82,7 @@ func validateCIRelease(ctx context.Context, o ciValidationOptions) (ciValidation
 		"-DGENERATOR=" + o.Context.Generator,
 		"-DGENERATOR_PLATFORM=" + o.Context.Platform,
 		"-DGENERATOR_TOOLSET=" + o.Context.Toolset,
-		"-DCONFIGURATION=" + o.Context.Configuration,
 		"-DCMAKE_MSVC_RUNTIME_LIBRARY=" + o.Context.Runtime,
-		"-DMULTI_CONFIG=" + onOff(o.Context.MultiConfig),
 		"-DMODULES=" + strings.Join(o.Modules, ";"),
 		"-DROOT_PACKAGES=" + strings.Join(o.RootPackages, ";"),
 	}
@@ -183,7 +181,6 @@ func validateCIValidationPaths(o ciValidationOptions) (ciValidationRoots, error)
 		name, value string
 	}{
 		{"source root", o.SourceRoot}, {"install root", o.InstallRoot}, {"validation root", o.BuildRoot},
-		{"importer file", o.ImporterFile},
 		{"CMake command", o.CMakeCommand}, {"evidence directory", o.EvidenceDirectory},
 	}
 	for _, item := range paths {
@@ -218,7 +215,7 @@ func validateCIValidationPaths(o ciValidationOptions) (ciValidationRoots, error)
 			}
 		}
 	}
-	return ciValidationRoots{source: source, install: resolved[0], build: resolved[1], evidence: resolved[4]}, nil
+	return ciValidationRoots{source: source, install: resolved[0], build: resolved[1], evidence: resolved[3]}, nil
 }
 
 func resolveExistingPrefix(path string) (string, error) {
@@ -250,13 +247,6 @@ func requirePathWithin(root, path, label string) error {
 		return fmt.Errorf("%s must resolve inside source root", label)
 	}
 	return nil
-}
-
-func onOff(value bool) string {
-	if value {
-		return "ON"
-	}
-	return "OFF"
 }
 
 func validationRunFromOutput(output []byte) (string, error) {

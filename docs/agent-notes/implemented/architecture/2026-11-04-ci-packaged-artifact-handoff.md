@@ -100,7 +100,7 @@ CI 对最终归档计算实际大小和 SHA256，并将其与精确身份写入�
 
 ## 验证
 
-109 的十个 CI 顶层定向用例通过，覆盖真实安装后打包、普通包、any/any 非 publisher、零库、候选与入口、安装只读、库内合法相对链接、危险链接和 FIFO、打包失败不留运输产物及 workflow 接线。两个 PowerShell 子例未执行，Windows 的可信仓库调用亦待原生 runner；Linux 结果不作为 Windows 证据。
+109 的十个 CI 顶层定向用例通过，覆盖真实安装后打包、普通包、any/any 非 publisher、零库、候选与入口、安装只读、库内合法相对链接、危险链接和 FIFO、打包失败不留运输产物及 workflow 接线。该轮两个 PowerShell 子例跳过；Windows 原生构建及可信仓库调用的证据见下节真实托管验收，Linux 结果不作为 Windows 证据。
 
 [发布准备测试](../../../../tests/ci/gitee-release/test_prepare_publication.py)在 109 为 16/16，包括真实 builder 和生产 CI transport 交接、两次 prepare 的所有最终字节一致、真实库内路径修正和链接保留、输入快照不变，以及缺失/等长篡改/错大小/额外及重复资产、平台和运行身份、候选冲突、入口来源、旧格式及外层链接反例。三平台工具文件名正例是协议夹具，不宣称跨平台工具可执行。发布 workflow 的五项定向测试通过，核对无 builder 或 CMake 打包调用且保留来源、目标及权限检查。
 
@@ -108,7 +108,20 @@ CI 对最终归档计算实际大小和 SHA256，并将其与精确身份写入�
 
 [受控发布测试](../../../../tests/ci/gitee-release/test_publish.py)20/20。就绪的库、工具和入口重复发布满足 uploaded=failed=0、skipped=selected、metadata_committed=false，裸 Git HEAD 不变且无 DELETE/POST，真实 main 退出成功。相同附件补齐缺失元数据仍产生提交；受控故障覆盖从查询重试、十次退避上限、部分失败与 push 未确认，不声称真实网络恢复已验收。
 
-真实三平台 CI 成品发布、默认分支自动入口、同一 run/attempt 重复发布仍待用户验收。用户需要一次新构建；未合并时手动选择任务分支发布控制代码并指定该 run/attempt，不能假定自动入口使用该分支。完全就绪后只重跑发布，保持成品、目标及 latest 不变，核对无附件写入与新元数据提交。fork 以可信运行上下文和受控输入审查端到端流程，不要求第二账号；最低 CMake 按既有决定不测试。
+消费日志目录回归先在旧实现确认失败，再在 109 通过 15 个 CI 顶层定向用例，覆盖 driver 的显式与缺省 evidence 目录、越界拒绝、路径软链接、真实安装二进制闭包及运行入口。driver 将 configure/build/CTest 日志写入指定 evidence 下的唯一运行目录，使其落入 workflow 现有诊断收集范围。importer 的精确依赖交接用例及五个子例通过；精简快照辅助函数后的发布准备测试为 16/16。此次日志修复未执行 Windows 原生 runner。
+
+### 真实托管验收
+
+[Representative releases #30](https://github.com/xxf1ow/xxautolib/actions/runs/41810221648) 的 attempt 1 在提交 `75aa375ff0db1d3b0bbd9597eb042cb2e361171f` 完成 Windows x86_64、Linux x86_64/aarch64 的验证、原生打包、成品保留及最终汇总。两次手动发布均使用任务分支控制代码、同一构建 run/attempt 和成品，目标为 `xxf1ow/autolib-release` 的 `autolib-release` tag。
+
+| 发布 | selected | uploaded | skipped | failed | metadata_committed |
+| --- | --- | --- | --- | --- | --- |
+| [Publish artifacts #27](https://github.com/xxf1ow/xxautolib/actions/runs/41811361193) | 17 | 16 | 1 | 0 | true |
+| [Publish artifacts #28](https://github.com/xxf1ow/xxautolib/actions/runs/41812177452) | 17 | 0 | 17 | 0 | false |
+
+两次均确认元数据提交 `9cef670fe4cf8f3804cda0a550c32819cc637e71`；#28 全部跳过，没有新上传或元数据提交。用户已确认验收通过。两次均未发生实际重试，不作为真实故障恢复证据。
+
+默认分支 `workflow_run` 自动发布入口尚未按新流程验收，三平台匿名下游消费与真实故障注入也没有逐项归档证据。复验时使用同一 run/attempt、成品、目标及 latest，完全就绪后的重复发布应全部跳过且不产生元数据提交。fork 以可信运行上下文和受控输入审查端到端流程，不要求第二账号；最低 CMake 按既有决定不测试。
 
 ## 影响
 

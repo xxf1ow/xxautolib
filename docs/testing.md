@@ -24,7 +24,7 @@ Go fixture 验证声明、原生构建、安装及版本化本地和受控远端
 cmake -P src/autolib-builder/go-sdk.cmake -- test -mod=readonly ./src/autolib-importer -run 'TestVersionedLocalLoop$' -count=1 -v
 ```
 
-`MODULES` 选择 smoke 集合，`ROOT_PACKAGES` 选择首次导入根，均接受精确引用。Eigen 3.4.0 与 5.0.1 使用独立消费者，不在同次 configure 混用。VALIDATION_ROOT 必须位于 SOURCE_ROOT 的 build 内，每次生成唯一运行子目录；driver 不编译三方源码，不修改原安装。
+`MODULES` 选择 smoke 集合，`ROOT_PACKAGES` 选择首次导入根，均接受精确引用。Eigen 3.4.0 与 5.0.1 使用独立消费者，不在同次 configure 混用。VALIDATION_ROOT 必须位于 SOURCE_ROOT 的 build 内；可选 EVIDENCE_DIRECTORY 也须位于该 build 内，缺省使用 VALIDATION_ROOT。driver 在 evidence 下生成唯一运行目录，保存 configure/build/CTest 日志；CI 指定的目录位于 workflow 诊断收集范围内。driver 不编译三方源码，不修改原安装。
 
 ## Release 下载验证
 
@@ -60,7 +60,9 @@ build/tools/gitee-sync-venv/Scripts/python.exe -m unittest discover -s tests/ci/
 
 ## 真实交付与手动验收
 
-Gitee 版本化交付已通过用户手动验收。真实三平台构建记录、摘要空白修复及用户复验结论见[交付证据](agent-notes/implemented/architecture/2026-11-02-gitee-delivery-reimplementation.md#真实构建与用户验收)。修复后二次发布、三平台匿名消费及真实故障注入没有逐项归档日志，不将受控测试等同于这些专项通过。成品交接的真实验收需要一次新 `Representative releases` 构建；未合并时，手动选择任务分支的 `Publish artifacts` 并指定该新 run/attempt，核对实际控制提交，不假定默认分支的自动入口使用任务分支代码。全部附件与元数据就绪后，仅重跑发布并保持 run/attempt、artifacts、目标和 latest 不变，预期 `uploaded=0`、`skipped=selected`、`failed=0`、`metadata_committed=false`，无 DELETE/POST 或新元数据提交。fork 采用流程及受控输入审查，不要求第二账号。CI、Gitee 写入与故障注入按具体授权执行；push 和新库公开由用户负责。
+Gitee 版本化交付及 CI 成品交接已通过用户手动验收。早期构建与摘要空白修复见[交付证据](agent-notes/implemented/architecture/2026-11-02-gitee-delivery-reimplementation.md#真实构建与用户验收)；三平台原生构建 #30、发布 #27 与全部跳过且无新元数据提交的重复发布 #28 见[成品交接验收](agent-notes/implemented/architecture/2026-11-04-ci-packaged-artifact-handoff.md#真实托管验收)。默认分支自动发布、三平台匿名消费及真实故障注入尚无专项通过证据；发布 #27/#28 均没有实际重试，不将成功发布等同于故障恢复通过。
+
+复验成品交接时使用成功的 `Representative releases` 构建；未合并时，手动选择任务分支的 `Publish artifacts` 并指定 run/attempt，核对实际控制提交，不假定默认分支自动入口使用任务分支代码。全部附件与元数据就绪后，仅重跑发布并保持 run/attempt、artifacts、目标和 latest 不变，预期 `uploaded=0`、`skipped=selected`、`failed=0`、`metadata_committed=false`，无 DELETE/POST 或新元数据提交。fork 采用流程及受控输入审查，不要求第二账号。CI、Gitee 写入与故障注入按具体授权执行；push 和新库公开由用户负责。
 
 ## 安装产物集成验证
 
