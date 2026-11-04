@@ -106,12 +106,17 @@ func validateCIRelease(ctx context.Context, o ciValidationOptions) (ciValidation
 	if err != nil {
 		return ciValidationResult{EvidenceDirectory: roots.evidence}, err
 	}
+	packageRoots := make([]string, 0, len(o.Modules))
+	for _, module := range o.Modules {
+		parts := strings.SplitN(module, "@", 2)
+		packageRoots = append(packageRoots, filepath.Join(roots.install, parts[0], parts[1]))
+	}
 	if o.Context.OS == "windows" {
-		if err := verifyWindowsPackageInputs(runRoot); err != nil {
+		if err := verifyWindowsPackageInputs(runRoot, packageRoots); err != nil {
 			return ciValidationResult{EvidenceDirectory: roots.evidence}, err
 		}
 	} else {
-		if err := verifyLinuxABIEvidence(runRoot, environment.Production.Linux.GlibcMax); err != nil {
+		if err := verifyLinuxABIEvidence(runRoot, packageRoots, environment.Production.Linux.GlibcMax); err != nil {
 			return ciValidationResult{EvidenceDirectory: roots.evidence}, err
 		}
 	}
@@ -308,8 +313,16 @@ func verifyImporterNoCRuntime(path string) error {
 	return nil
 }
 
-func verifyWindowsPackageInputs(root string) error {
-	packageRoot := filepath.Join(root, "consumer", "3rdparty")
+func requireCIPathInPackages(packageRoots []string, path, label string) error {
+	for _, root := range packageRoots {
+		if err := requirePathWithin(root, filepath.Clean(path), label); err == nil {
+			return nil
+		}
+	}
+	return fmt.Errorf("%s must resolve inside selected installed packages: %s", label, path)
+}
+
+func verifyWindowsPackageInputs(root string, packageRoots []string) error {
 	linkData, err := os.ReadFile(filepath.Join(root, "build", "link-inputs-Release.txt"))
 	if err != nil {
 		return fmt.Errorf("read Windows consumer package link inputs: %w", err)
@@ -320,7 +333,7 @@ func verifyWindowsPackageInputs(root string) error {
 		if input == "" {
 			continue
 		}
-		if err := requirePathWithin(packageRoot, filepath.Clean(input), "Windows consumer link input"); err != nil {
+		if err := requireCIPathInPackages(packageRoots, input, "Windows consumer link input"); err != nil {
 			return err
 		}
 	}
@@ -341,7 +354,7 @@ func verifyWindowsPackageInputs(root string) error {
 			if !strings.Contains(strings.ToLower(link), "lz4") {
 				continue
 			}
-			if err := requirePathWithin(packageRoot, filepath.Clean(link), "FLANN direct LZ4 link input"); err != nil {
+			if err := requireCIPathInPackages(packageRoots, link, "FLANN direct LZ4 link input"); err != nil {
 				return err
 			}
 			flannDirectLZ4 = true
@@ -353,8 +366,8 @@ func verifyWindowsPackageInputs(root string) error {
 	return nil
 }
 
-func verifyLinuxABIEvidence(root, glibcMax string) error {
-	required, err := collectLinuxABIVersions(root)
+func verifyLinuxABIEvidence(root string, packageRoots []string, glibcMax string) error {
+	required, err := collectLinuxABIVersions(root, packageRoots)
 	if err != nil {
 		return err
 	}
@@ -369,11 +382,10 @@ func verifyLinuxABIEvidence(root, glibcMax string) error {
 
 var abiVersionPattern = regexp.MustCompile(`(?:^|\s)\(?(GLIBC_[0-9.]+|GLIBCXX_[0-9.]+|CXXABI_[0-9.]+|GCC_[0-9.]+)\)?(?:\s|$)`)
 
-func collectLinuxABIVersions(root string) ([]string, error) {
-	packageRoot := filepath.Join(root, "consumer", "3rdparty")
+func collectLinuxABIVersions(root string, packageRoots []string) ([]string, error) {
 	consumerFiles := []string{filepath.Join(root, "build", "autolib_smoke")}
-	if info, err := os.Stat(packageRoot); err == nil && info.IsDir() {
-		err = filepath.WalkDir(packageRoot, func(path string, entry os.DirEntry, walkErr error) error {
+	for _, packageRoot := range packageRoots {
+		err := filepath.WalkDir(packageRoot, func(path string, entry os.DirEntry, walkErr error) error {
 			if walkErr != nil {
 				return walkErr
 			}
