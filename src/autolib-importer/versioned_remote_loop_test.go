@@ -50,6 +50,7 @@ func TestVersionedRemoteLoop(t *testing.T) {
 			consumer := e.f.source
 			cache := filepath.Join(consumer, "3rdparty")
 			putTestFile(t, filepath.Join(cache, "autolib.cmake"), readTestFile(t, "../autolib.cmake"))
+			injectEntryRemote(t, filepath.Join(cache, "autolib.cmake"), "https://"+host+"/owner/repo/releases/download/v1")
 			unrelated := putTestFile(t, filepath.Join(cache, "unrelated/7/marker"), "unrelated cache bytes\n")
 			if runtime.GOOS != "windows" {
 				if err := os.Chmod(unrelated, 0440); err != nil {
@@ -58,12 +59,11 @@ func TestVersionedRemoteLoop(t *testing.T) {
 			}
 			unrelatedBefore := sourceSnapshot(t, filepath.Join(cache, "unrelated"))
 			putTestFile(t, filepath.Join(consumer, "main.cpp"), loopConsumerSource)
-			remote := "https://" + host + "/owner/repo/releases/download/v1"
-			cmakeBody := strings.Replace(loopConsumerCMake, `set(AUTOLIB_REMOTE_ROOT "")`, "set(AUTOLIB_REMOTE_ROOT \"${REMOTE_ROOT}\")\nset(CMAKE_TLS_CAINFO \"${TLS_CA}\")", 1)
+			cmakeBody := "set(CMAKE_TLS_CAINFO \"${TLS_CA}\")\n" + loopConsumerCMake
 			putTestFile(t, filepath.Join(consumer, "CMakeLists.txt"), cmakeBody)
-			consume := func(label, source, remoteRoot string) {
+			consume := func(label, source string) {
 				build := filepath.Join(e.f.root, label)
-				loopCommand(t, "cmake", "-S", source, "-B", build, "-G", native.generator, "-DRELEASE_ROOT=", "-DREMOTE_ROOT="+remoteRoot, "-DINSTALL_ROOT="+native.producer, "-DTLS_CA="+e.ca)
+				loopCommand(t, "cmake", "-S", source, "-B", build, "-G", native.generator, "-DINSTALL_ROOT="+native.producer, "-DTLS_CA="+e.ca)
 				loopCommand(t, "cmake", "--build", build, "--config", "Release", "--verbose")
 				out := loopCommand(t, "ctest", "--test-dir", build, "-C", "Release", "-V")
 				if !strings.Contains(out, "header_dep=1 linked_dep=1") {
@@ -85,10 +85,10 @@ func TestVersionedRemoteLoop(t *testing.T) {
 			depAsset := "dep-1-" + runtime.GOOS + "-" + native.arch + ".tar.zst"
 			probeAsset := "probe-1-" + runtime.GOOS + "-" + native.arch + ".tar.zst"
 			want := map[string]int{toolAsset: 1, depAsset: 1, probeAsset: 1}
-			consume("first", consumer, remote)
+			consume("first", consumer)
 			e.counts(t, 1, want)
 			depBefore := sourceSnapshot(t, filepath.Join(cache, "dep/1"))
-			consume("cached", consumer, remote)
+			consume("cached", consumer)
 			e.counts(t, 1, want)
 			// A new configure that needs a different exact package must fetch its own snapshot.
 			newSource := filepath.Join(e.f.root, "new request")
@@ -98,12 +98,10 @@ func TestVersionedRemoteLoop(t *testing.T) {
 project(remote_request NONE)
 set(CMAKE_SYSTEM_NAME %s)
 set(CMAKE_SYSTEM_PROCESSOR %s)
-set(AUTOLIB_LOCAL_ROOT "")
-set(AUTOLIB_REMOTE_ROOT %q)
 include([==[%s]==])
 add_library(consumer INTERFACE)
 autolib_import(TARGET consumer INTERFACE %s)
-`, map[string]string{"linux": "Linux", "windows": "Windows"}[runtime.GOOS], native.arch, remote, entry, packageRef))
+`, map[string]string{"linux": "Linux", "windows": "Windows"}[runtime.GOOS], native.arch, entry, packageRef))
 			}
 			writeRequest(newSource, "dep@2")
 			loopCommand(t, "cmake", "-S", newSource, "-B", filepath.Join(e.f.root, "next-configure"), "-G", native.generator, "-DCMAKE_TLS_CAINFO="+e.ca)
@@ -139,7 +137,7 @@ autolib_import(TARGET consumer INTERFACE %s)
 			} else {
 				loopCommand(t, "cp", "-a", cache, filepath.Join(moved, "3rdparty"))
 			}
-			consume("offline", moved, "")
+			consume("offline", moved)
 			e.counts(t, 3, want)
 			if !reflect.DeepEqual(depBefore, sourceSnapshot(t, filepath.Join(cache, "dep/1"))) || !reflect.DeepEqual(depBefore, sourceSnapshot(t, filepath.Join(moved, "3rdparty/dep/1"))) || !reflect.DeepEqual(unrelatedBefore, sourceSnapshot(t, filepath.Join(cache, "unrelated"))) || !reflect.DeepEqual(unrelatedBefore, sourceSnapshot(t, filepath.Join(moved, "3rdparty/unrelated"))) {
 				t.Fatal("later preparation or offline consumption changed precise dependency or unrelated cache bytes/permissions")
@@ -147,7 +145,7 @@ autolib_import(TARGET consumer INTERFACE %s)
 			if !reflect.DeepEqual(metadataBefore, sourceSnapshot(t, e.repo+".unavailable")) {
 				t.Fatal("offline consumption changed unavailable metadata source")
 			}
-			t.Logf("HTTP assets=%v; Git clone=3 ls-tree=3; API/Raw requests=%d; cached and source-disabled offline configure deltas HTTP=0 Git=0", want, e.apiRequests)
+			t.Logf("HTTP assets=%v; Git clone=3 ls-tree=3; API/Raw requests=%d; cached and offline configure deltas HTTP=0 Git=0", want, e.apiRequests)
 		})
 	}
 	if !reflect.DeepEqual(producerBefore, sourceSnapshot(t, hiddenProducer)) {

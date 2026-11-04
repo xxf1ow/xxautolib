@@ -38,9 +38,9 @@ Git 主来源复用 `git/<包名>/<版本>/`，资源复用 `git/_resources/<包
 
 ## 本地打包与消费
 
-自定义安装根在 configure 前设置环境变量 `AUTOLIB_INSTALL_ROOT`，不是同名 `-D` 参数；相对值以顶层源码目录解析，含空格路径须保持完整。更换根需重新 configure。普通根 build 完成后，宿主 importer 和 `<包名>/<版本>/` 可作为独立消费者的只读本地来源，不要求先打包。
+自定义安装根在 configure 前设置环境变量 `AUTOLIB_INSTALL_ROOT`，不是同名 `-D` 参数；相对值以顶层源码目录解析，含空格路径须保持完整。更换根需重新 configure。消费安装根须包含 `autolib.cmake`、宿主 importer 和 `<包名>/<版本>/`，不要求先打包。
 
-下游在 include 前将 `AUTOLIB_LOCAL_ROOT` 指向该安装根、`AUTOLIB_REMOTE_ROOT` 设为空，然后正常调用 `autolib_import(TARGET app PRIVATE queue flann)`。所需闭包完整时消费不联网；生产端准备 SDK、模块及三方源码不受此约束。Windows importer 为 `autolib-importer-windows-x86_64.exe`，Linux 按宿主架构命名且须可执行。没有 adapter 的模块不能快捷导入。
+下游通过绝对路径直接 include 安装根的 `autolib.cmake`，再调用 `autolib_import(TARGET app PRIVATE queue flann)`，不复制入口或包到另一缓存。所需精确闭包完整时消费不联网；缺工具或包时，本地入口明确失败。Windows importer 为 `autolib-importer-windows-x86_64.exe`，Linux 按宿主架构命名且须可执行。没有 adapter 的模块不能快捷导入。
 
 实际安装前，消费文件被置为未完成；安装失败后不能仅靠残留 sentinel 补齐。保护需要的数据，再按上节移走受影响安装目录和原生构建状态，重新完成真实安装；不删除其他包。已完成安装的精确依赖被冻结，reuse 不能把它重标为源码 latest。adapter 正文更新通过普通根重新 configure/build 的复用目标刷新，不手改已安装描述。
 
@@ -48,15 +48,13 @@ Git 主来源复用 `git/<包名>/<版本>/`，资源复用 `git/_resources/<包
 
 `builder package` 必须显式提供源码、安装、输出根，目标和宿主身份、工具路径及重复模块选择；完整参数见[打包入口](../src/autolib-builder/release.go)。模块可写 `包名@版本`，裸名只读取安装根 latest；包内身份和依赖来自已安装描述，不重新解析源码 latest。输出必须在本副本 build 内且不与安装树重叠；只打包显式模块，不自动补依赖。版本化库 tar.zst、宿主工具 tar.xz、各自摘要和包级 latest 一同交付。真实示例由[本地闭环测试](testing.md#本地二进制闭环)执行。
 
-将 `src/autolib.cmake` 复制到独立工程 `3rdparty/`，在其他同名库发现之前调用 `autolib_import(TARGET app PRIVATE queue flann)`；也可请求 `eigen@3.4.0` 等精确引用。入口所在目录固定为缓存，来源首次 include 后跨作用域固定；工作根为 `${CMAKE_BINARY_DIR}/autolib`。平台从当前 CMake 目标归一，VS 显式平台优先，工具按宿主选择。公共入口校验完整精确闭包，再按依赖顺序加载 adapter；同次 configure 拒绝同包不同版本。返回 `AUTOLIB_PREPARED_PACKAGES` 及每包的 `AUTOLIB_PACKAGE_DIR_<name>`、`AUTOLIB_PACKAGE_VERSION_<name>`，下游不推断目录层级。
+入口自身实际路径所在目录是唯一工具和包根，也是远端下载缓存；目录不得含分号。同次 configure 固定入口根和目标平台，工作目录为 `${CMAKE_BINARY_DIR}/autolib`。平台从当前 CMake 目标归一，VS 显式平台优先，工具按宿主选择。公共入口校验完整精确闭包，再按依赖顺序加载 adapter；同次 configure 拒绝同包不同版本。返回 `AUTOLIB_PREPARED_PACKAGES` 及每包的 `AUTOLIB_PACKAGE_DIR_<name>`、`AUTOLIB_PACKAGE_VERSION_<name>`，下游不推断目录层级。
 
-`AUTOLIB_LOCAL_ROOT` 默认空；非空时解析真实绝对路径并拒绝与入口缓存相同，包括链接别名。本地根、缓存和工作路径不得含分号。工具依次使用入口裸程序、来源裸程序或来源单程序 tar.xz，最终只写入口缓存。库依次使用入口 `<name>/<version>/`、来源同布局安装、来源 `<name>-<version>-<os>-<arch>.tar.zst`；通用包使用 any-any。只有不存在才继续，坏候选立即失败。复制在缓存暂存区修正路径，来源工具、归档和安装树均只读；Linux 保留包内相对软链接及权限，拒绝绝对或越界链接，Windows 未承诺同等链接语义。同缓存根写入由调用方串行。
+源码及本地入口内置远端地址为空；发布入口在上传副本内带实际 Release 地址。调用方不能通过 `AUTOLIB_LOCAL_ROOT`、`AUTOLIB_REMOTE_ROOT` 普通变量、cache 变量或环境变量覆盖来源。完整工具和精确闭包命中时不访问 Git 或 HTTP；只有必需输入缺失且入口内置地址非空时才获取元数据或下载。已有损坏候选立即失败，不自动覆盖；不回退系统库、源码编译或旧格式。直接内部调用参数见 [CLI](../src/autolib-importer/main.go)。
 
-完整缓存允许关闭两来源；缺输入报错，不回退系统库、源码编译或旧格式。直接调用见[CLI参数](../src/autolib-importer/main.go)。
+远程使用者先将已发布的单个 `autolib.cmake` 下载到专用可写目录，例如不纳入版本控制的 `3rdparty/`，再 include 并调用 `autolib_import`。入口下载 URL 可为 HTTP(S) 或 `file://`；下载文件不会携带原目录的工具或包，入口也不根据下载 URL 推导来源。远端工具和包沿用 Git 元数据、SHA256 和安全解包校验；完整缓存可离线复用，缺输入时远程入口仍可能尝试联网。严格禁止联网须使用内置地址为空的入口，不提供离线开关。同根写入由调用方串行，目录中的既有文件不会自动清理。
 
-远端设置为 `AUTOLIB_REMOTE_ROOT=https://<github.com|gitee.com>/<owner>/<repo>/releases/download/<encoded-tag>`；入口按需克隆同仓库元数据，再下载精确归档。合法输入、内部交接和失败规则见[统一交付设计](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md#git-元数据与-release-布局)。完整缓存和完整本地来源不要求 Git 或网络。本地专用用法须显式关闭远端；远端须提供合法专用元数据和匹配资产，历史发行物不代表协议可用。实际验收范围见[测试指南](testing.md#真实交付与手动验收)。
-
-已有目录核对五行包头和导入文件，adapter 检查其所需文件，不逐文件散列；内容校验不认证来源，工具及包内 CMake 必须可信。缓存包和 latest 不自动追随来源，精确请求不改 latest；删除缓存 latest 指向的版本目录后，裸名请求重新发现来源选择，不更新无关缓存。刷新前保护修改，只处理入口缓存的 `<包名>/<版本>/`，不改来源、不删共享依赖；损坏包不是缺包，必须明确处理而非自动重选。FLANN 的包依赖仅 lz4，OpenMP、C++ ABI 和系统运行库由消费环境满足。
+已有目录核对五行包头和导入文件，adapter 检查其所需文件，不逐文件散列；内容校验不认证来源，工具及包内 CMake 必须可信。缓存包和 latest 不自动追随远端，精确请求不改 latest；删除缓存 latest 指向的版本目录后，裸名请求重新发现远端选择，不更新无关缓存。刷新前保护修改，只处理入口缓存的 `<包名>/<版本>/`，不删共享依赖；损坏包不是缺包，必须明确处理而非自动重选。FLANN 的包依赖仅 lz4，OpenMP、C++ ABI 和系统运行库由消费环境满足。
 
 ## CI 开发与运行
 

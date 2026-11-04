@@ -161,55 +161,6 @@ func TestVersionedLocalCatalog(t *testing.T) {
 			t.Fatal("accepted case-colliding installed versions")
 		}
 	})
-	t.Run("archives", func(t *testing.T) {
-		root := t.TempDir()
-		id := packageIdentity{Name: "eigen", Version: "5.0.1", OS: "linux", Arch: "x86_64"}
-		putTestFile(t, filepath.Join(root, "eigen-3.4.0-linux-x86_64.tar.zst"), "unrelated version")
-		putTestFile(t, filepath.Join(root, "other-V1-linux-x86_64.tar.zst"), "unrelated package")
-		putTestFile(t, filepath.Join(root, "other-v1-linux-x86_64.tar.zst"), "unrelated package")
-		if got, _, err := selectLocalArchive(root, id); err != nil || got != "" {
-			t.Fatalf("guessed archive: %s %v", got, err)
-		}
-		want := putTestFile(t, filepath.Join(root, "eigen-5.0.1-linux-x86_64.tar.zst"), "exact")
-		if got, actual, err := selectLocalArchive(root, id); err != nil || got != want || actual != id {
-			t.Fatalf("%s %+v %v", got, actual, err)
-		}
-		putTestFile(t, filepath.Join(root, "eigen-5.0.1-any-any.tar.zst"), "ambiguous")
-		if _, _, err := selectLocalArchive(root, id); err == nil {
-			t.Fatal("accepted competing platform/universal archives")
-		}
-	})
-	t.Run("archive exact spelling", func(t *testing.T) {
-		root := t.TempDir()
-		id := packageIdentity{Name: "eigen", Version: "v1", OS: "linux", Arch: "x86_64"}
-		putTestFile(t, filepath.Join(root, "eigen-V1-linux-x86_64.tar.zst"), "not exact")
-		if _, _, err := selectLocalArchive(root, id); err == nil {
-			t.Fatal("accepted archive case alias")
-		}
-	})
-	t.Run("archive collisions", func(t *testing.T) {
-		root := t.TempDir()
-		for _, version := range []string{"V1", "v1"} {
-			putTestFile(t, filepath.Join(root, "eigen-"+version+"-linux-x86_64.tar.zst"), "collision")
-		}
-		entries, err := os.ReadDir(root)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(entries) != 2 {
-			t.Skip("host cannot represent case-colliding archives")
-		}
-		if _, _, err := selectLocalArchive(root, packageIdentity{Name: "eigen", Version: "V1", OS: "linux", Arch: "x86_64"}); err == nil {
-			t.Fatal("accepted case-colliding archive versions")
-		}
-	})
-	t.Run("SHA is exact", func(t *testing.T) {
-		root := t.TempDir()
-		putTestFile(t, filepath.Join(root, "eigen-0123456789abcdef0123456789abcdef01234567-any-any.tar.zst"), "full SHA")
-		if got, _, err := selectLocalArchive(root, packageIdentity{Name: "eigen", Version: "01234567", OS: "linux", Arch: "x86_64"}); err != nil || got != "" {
-			t.Fatalf("matched SHA prefix: %s %v", got, err)
-		}
-	})
 }
 
 func TestVersionedArchiveIdentity(t *testing.T) {

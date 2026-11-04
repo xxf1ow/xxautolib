@@ -1,8 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
 project(autolib_consumer NONE)
-if(NOT DEFINED AUTOLIB_LOCAL_ROOT)
-    set(AUTOLIB_LOCAL_ROOT "${FIXTURE_RELEASE}")
-endif()
 include("${CMAKE_CURRENT_LIST_DIR}/autolib.cmake")
 add_library(consumer INTERFACE)
 autolib_import(TARGET consumer INTERFACE demo demo)

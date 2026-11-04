@@ -16,7 +16,7 @@ func (p *packageFlags) Set(value string) error { *p = append(*p, value); return 
 func run(args []string, stdout, stderr io.Writer) int {
 	fail := func(err error) int { fmt.Fprintln(stderr, err); return 1 }
 	if len(args) == 0 || args[0] != "prepare" {
-		return fail(fmt.Errorf("usage: autolib-importer prepare [--local-root=<directory>] [--remote-root=<URL>] --cache-root=<directory> --cmake-command=<file> --work-root=<directory> --os=<target OS> --arch=<target arch> --result=<file> --package=<name[@version]> ..."))
+		return fail(fmt.Errorf("usage: autolib-importer prepare [--remote-root=<URL>] [--metadata-root=<directory>] --cache-root=<directory> --os=<target OS> --arch=<target arch> --result=<file> --package=<name[@version]> ..."))
 	}
 	o := prepareOptions{}
 	flags := flag.NewFlagSet("prepare", flag.ContinueOnError)
@@ -24,7 +24,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	for _, field := range []struct {
 		key   string
 		value *string
-	}{{"local-root", &o.LocalRoot}, {"remote-root", &o.RemoteRoot}, {"metadata-root", &o.MetadataRoot}, {"work-root", &o.WorkRoot}, {"cache-root", &o.CacheRoot}, {"cmake-command", &o.CMakeCommand}, {"os", &o.OS}, {"arch", &o.Arch}, {"result", &o.ResultPath}} {
+	}{{"remote-root", &o.RemoteRoot}, {"metadata-root", &o.MetadataRoot}, {"cache-root", &o.CacheRoot}, {"os", &o.OS}, {"arch", &o.Arch}, {"result", &o.ResultPath}} {
 		flags.StringVar(field.value, field.key, "", field.key)
 	}
 	var packages packageFlags
@@ -37,7 +37,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	var emptyOption string
 	flags.Visit(func(f *flag.Flag) {
-		if (f.Name == "local-root" || f.Name == "remote-root" || f.Name == "metadata-root") && f.Value.String() == "" {
+		if (f.Name == "remote-root" || f.Name == "metadata-root") && f.Value.String() == "" {
 			emptyOption = f.Name
 		}
 	})

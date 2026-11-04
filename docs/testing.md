@@ -16,29 +16,21 @@ Go fixture 验证声明、原生构建、安装及版本化本地和受控远端
 
 先通过[普通根入口](development.md#准备与配置)选择代表集完成 configure/build，生成版本化安装、精确依赖描述及宿主工具；本节使用[实机验收](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md#版本化本地消费验证)中的独立生产根，不覆盖旧结果。
 
-[安装消费 driver](../tests/autolib/run-installed.cmake)将入口和测试源码放入独立消费者，正常调用公共 `autolib_import`，由 importer 从只读安装源准备入口缓存，不打包或直接 include 生产 adapter。通过 configure/build/CTest 并记录导入属性、精确目录、链接输入和动态加载位置。SOURCE_ROOT 仅供 driver 复制入口及 smoke，生成的消费者不包含生产源码。
+[安装消费 driver](../tests/autolib/run-installed.cmake)只将 smoke 源码放入独立消费者，直接 include `INSTALL_ROOT/autolib.cmake`，由公共 `autolib_import` 消费同根精确闭包。安装根必须已有入口、宿主工具及包。driver 执行 configure/build/CTest，并记录导入属性、精确目录、链接输入和动态加载位置；SOURCE_ROOT 仅用于取得 smoke，不复制生产入口或安装包。
 
-从安装复制验证代表集：
-
-```text
-cmake -DSOURCE_ROOT=/home/lxx/xxautolib -DINSTALL_ROOT=/home/lxx/xxautolib/build/versioned-stage2-install -DVALIDATION_ROOT=/home/lxx/xxautolib/build/validation/versioned-stage2/installed "-DGENERATOR=Unix Makefiles" "-DROOT_PACKAGES=flann;queue" -P tests/autolib/run-installed.cmake
-```
-
-再用[本地归档 driver](../tests/autolib/run-local.cmake)打包并消费；默认 relocate 模式将完整消费者及入口缓存搬迁、隐藏归档来源，并在两源均空时重新 configure/build/CTest：
+[原生闭环 fixture](../src/autolib-importer/versioned_local_loop_test.go)使用真实 builder 构建轻量 probe/dep，独立消费者直接 include 安装入口。头版本与机器码版本须同时为 1，运行时加载路径、导入属性和链接输入须位于同一安装根；重复消费不修改安装内容。错头版本负样本必须运行失败。fixture 显式把源码入口放入测试安装根。运行此闭环使用：
 
 ```text
-cmake -DSOURCE_ROOT=/home/lxx/xxautolib -DINSTALL_ROOT=/home/lxx/xxautolib/build/versioned-stage2-install -DRELEASE_DIR=/home/lxx/xxautolib/build/validation/versioned-stage2/archive/release -DVALIDATION_ROOT=/home/lxx/xxautolib/build/validation/versioned-stage2/archive -DBUILDER_FILE=/home/lxx/xxautolib/build/versioned-stage2-producer/tools/autolib-builder -DIMPORTER_FILE=/home/lxx/xxautolib/build/versioned-stage2-install/autolib-importer-linux-x86_64 -DTARGET_OS=linux -DTARGET_ARCH=x86_64 "-DGENERATOR=Unix Makefiles" "-DMODULES=queue;lz4;flann" "-DROOT_PACKAGES=flann;queue" -P tests/autolib/run-local.cmake
+cmake -P src/autolib-builder/go-sdk.cmake -- test -mod=readonly ./src/autolib-importer -run 'TestVersionedLocalLoop$' -count=1 -v
 ```
 
-`MODULES` 是打包和 smoke 集合，`ROOT_PACKAGES` 是首次导入请求，默认等于 MODULES；flann、queue 的闭包为 `lz4;flann;queue`，生产描述固定 `lz4@1.10.0`。两者接受精确引用。Eigen 3.4.0 和 5.0.1 分别在独立消费者验证，设置两项均为对应精确引用，不在同次 configure 混用。`RELEASE_READY=ON` 使用 RELEASE_DIR 已有版本化资产，`VALIDATION_MODE=single` 仅消费一次；driver 不编译三方源码。VALIDATION_ROOT 每次新建运行子目录，RELEASE_DIR 必须在该根内；原安装和现成归档不变。
-
-[原生闭环 fixture](../src/autolib-importer/versioned_local_loop_test.go)使用真实 builder、头版本与链接版本双断言及动态加载检查，覆盖复制、归档、隐藏生产树后缓存搬迁；错头版本负样本必须运行失败。真实 Linux 验收另核对相对软链接、原安装的内容/类型/权限/mtime/链接不变，删除测试缓存 latest 目标后重发现及无关缓存不变。只删除解析确认的测试自有版本目录，保留生产结果和日志。本轮新协议未验证 Windows、Linux aarch64、最低 CMake 3.20；历史三平台闭环见[CI 验证](#ci-验证)，不能替代这些缺口。
+`MODULES` 选择 smoke 集合，`ROOT_PACKAGES` 选择首次导入根，均接受精确引用。Eigen 3.4.0 与 5.0.1 使用独立消费者，不在同次 configure 混用。VALIDATION_ROOT 必须位于 SOURCE_ROOT 的 build 内，每次生成唯一运行子目录；driver 不编译三方源码，不修改原安装。
 
 ## Release 下载验证
 
-[远端原生闭环](../src/autolib-importer/versioned_remote_loop_test.go)通过普通根入口和真实 builder 生成轻量 probe/dep 与 importer 归档；两种托管共用专用 Git 元数据协议和受控 HTTPS。空缓存获取工具与精确闭包后真实链接运行，校验当前缓存加载位置及头/机器码版本；有效摘要但错误包内身份在 adapter 执行前失败。完整缓存复制到新消费者、关闭测试 Git/HTTPS 后，两源均空仍通过 configure/build/CTest，原来源、精确依赖和无关缓存不变；缓存复用零远端操作，需要新包的新 configure 获取新快照。实际计数及缺口见[远端消费验证](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md#版本化远端消费验证)。
+[远端原生闭环](../src/autolib-importer/versioned_remote_loop_test.go)通过普通根入口和真实 builder 生成轻量 probe/dep 与 importer 归档；两种托管共用专用 Git 元数据协议和受控 HTTPS。空缓存获取工具与精确闭包后真实链接运行，校验当前缓存加载位置及头/机器码版本；有效摘要但错误包内身份在 adapter 执行前失败。完整缓存复制到新消费者、关闭测试 Git/HTTPS 后，保留发布入口内置地址仍通过 configure/build/CTest，原来源、精确依赖和无关缓存不变；缓存复用零远端操作，需要新包的新 configure 获取新快照。实际计数及缺口见[远端消费验证](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md#版本化远端消费验证)。
 
-[下载 driver](../tests/autolib/run-github.cmake)支持 GitHub/Gitee 下载根，将入口及 smoke 复制到独立消费者，由公共入口准备缓存。`MODULES` 选择 smoke，`ROOT_PACKAGES` 选择导入根；默认分别为 `queue;lz4;flann`、`flann;queue`，只传 MODULES 时根跟随该集合。两者透传首次及后续 configure；两个精确 Eigen 版本各自调用 driver，使用独立消费者与缓存。运行库路径取自 `prepared-state.cmake`，不自行搬库。`TestGitHubValidationDriver` 执行参数、缓存路径及入口失败断言。真实托管和 Windows/Visual Studio、Linux aarch64 尚未验证；最低 CMake 按用户决定不安排任何形式测试，仅用 109 现有 CMake 3.31.12，不宣称最低版本通过。
+[下载 driver](../tests/autolib/run-github.cmake)用 `ENTRY_URL` 下载发布入口到独立消费者的 `3rdparty/`，再 include 并消费，不读取源码入口或用户来源变量。`ENTRY_URL` 支持 CMake 下载的 HTTP(S) 和 `file://`；`MODULES`、`ROOT_PACKAGES` 分别选择 smoke 和导入根。driver 保留发布入口字节，执行构建、CTest 和缓存 reconfigure。受控 Git/HTTPS fixture 不替代真实托管验收。
 
 历史 GitHub 三平台供给、裸 importer 消费及 Windows 下载 driver 依据见[消费验收](agent-notes/proposed/architecture/2026-10-25-target-import-and-release-consumption.md#已验收范围)；真实 Gitee 用户验收、受控 TLS、分页及失败检查见[双来源记录](agent-notes/implemented/architecture/2026-10-27-ci-discovery-and-release-sources.md#验证)。它们不证明压缩工具新格式、版本化交付、Linux 双架构专项或最低 CMake 通过。裸资产、API 探测或同步成功不证明完整消费，不能替换现有工具冒充空根引导。
 

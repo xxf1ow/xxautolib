@@ -27,13 +27,12 @@ function(run_logged label)
 endfunction()
 
 set(consumer "${run}/consumer")
-file(MAKE_DIRECTORY "${consumer}/3rdparty")
+file(MAKE_DIRECTORY "${consumer}")
 foreach(file IN ITEMS CMakeLists.txt smoke.cpp)
     if(EXISTS "${SOURCE_ROOT}/tests/autolib/${file}")
         configure_file("${SOURCE_ROOT}/tests/autolib/${file}" "${consumer}/${file}" COPYONLY)
     endif()
 endforeach()
-configure_file("${SOURCE_ROOT}/src/autolib.cmake" "${consumer}/3rdparty/autolib.cmake" COPYONLY)
 if(NOT ROOT_PACKAGES)
     set(ROOT_PACKAGES flann queue)
 endif()
@@ -42,9 +41,8 @@ if(NOT MODULES)
 endif()
 string(REPLACE ";" "\\;" modules "${MODULES}")
 set(configure "${CMAKE_COMMAND}" -S "${consumer}" -B "${run}/build" -G "${GENERATOR}"
-    "-DAUTOLIB_ENTRY=${consumer}/3rdparty/autolib.cmake" "-DRELEASE_ROOT=${INSTALL_ROOT}"
-    "-DINSTALL_ROOT=${INSTALL_ROOT}" "-DMODULES=${modules}"
-    -DAUTOLIB_REMOTE_ROOT= -DCMAKE_BUILD_TYPE=Release)
+    "-DAUTOLIB_ENTRY=${INSTALL_ROOT}/autolib.cmake" "-DMODULES=${modules}"
+    -DCMAKE_BUILD_TYPE=Release)
 if(GENERATOR_PLATFORM)
     list(APPEND configure -A "${GENERATOR_PLATFORM}")
 endif()

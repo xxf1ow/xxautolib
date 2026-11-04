@@ -42,8 +42,6 @@ func TestCMakeGiteeSnapshotReuse(t *testing.T) {
 			putTestFile(t, filepath.Join(f.source, "main.cpp"), "#include <demo.h>\n#include <extra.h>\nint main() { return demo_value() + extra_value() == 42 ? 0 : 1; }\n")
 			putTestFile(t, filepath.Join(f.source, "CMakeLists.txt"), `cmake_minimum_required(VERSION 3.20)
 project(gitee_consumer LANGUAGES CXX)
-set(AUTOLIB_LOCAL_ROOT "")
-set(AUTOLIB_REMOTE_ROOT "https://gitee.com/owner/repo/releases/download/v1")
 include([==[`+filepath.ToSlash(filepath.Join(entryCache(f), "autolib.cmake"))+`]==])
 add_executable(consumer main.cpp)
 autolib_import(TARGET consumer PRIVATE demo)
@@ -52,6 +50,7 @@ if(NOT AUTOLIB_PREPARED_PACKAGES STREQUAL "dep;demo" OR NOT AUTOLIB_PACKAGE_VERS
 endif()
 autolib_import(TARGET consumer PRIVATE extra)
 `)
+			injectEntryRemote(t, filepath.Join(entryCache(f), "autolib.cmake"), "https://gitee.com/owner/repo/releases/download/v1")
 			if runtime.GOOS == "windows" {
 				f.generator = "Visual Studio 17 2022"
 			}

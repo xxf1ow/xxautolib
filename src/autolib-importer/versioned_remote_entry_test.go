@@ -1,6 +1,7 @@
 package main
 
 import (
+	"archive/tar"
 	"crypto/sha256"
 	"fmt"
 	"net/http"
@@ -28,6 +29,9 @@ type versionedRemoteEntry struct {
 func remoteEntry(t *testing.T, host string) *versionedRemoteEntry {
 	t.Helper()
 	f := versionedEntryFixture(t, false)
+	if err := os.Remove(filepath.Join(entryCache(f), f.toolAsset)); err != nil {
+		t.Fatal(err)
+	}
 	e := &versionedRemoteEntry{f: f, host: host, trace: filepath.Join(f.root, "git.trace"), assets: map[string]string{}, status: map[string]int{}, redirects: map[string]string{}, requests: map[string]int{}}
 	e.repo = snapshotRepository(t, metadataRepositoryCase{Files: map[string]string{".autolib-repository.json": `{"type":"xxautolib-artifacts","schema":1,"upstream":"https://github.com/xxf1ow/xxautolib"}`}})
 	redirect := "url.file://" + filepath.ToSlash(e.repo) + ".insteadOf=https://" + host + "/owner/repo.git"
@@ -86,9 +90,8 @@ func (e *versionedRemoteEntry) pkg(t *testing.T, name, version, dependencies str
 
 func (e *versionedRemoteEntry) consumer(t *testing.T, packages, tail string) {
 	t.Helper()
-	versionedEntryConsumer(e.f, "set(AUTOLIB_LOCAL_ROOT \"\")\n", packages, tail)
-	path := filepath.Join(e.f.source, "CMakeLists.txt")
-	putTestFile(t, path, strings.Replace(readTestFile(t, path), `set(AUTOLIB_REMOTE_ROOT "")`, `set(AUTOLIB_REMOTE_ROOT "https://`+e.host+`/owner/repo/releases/download/v1")`, 1))
+	versionedEntryConsumer(e.f, "", packages, tail)
+	injectEntryRemote(t, filepath.Join(entryCache(e.f), "autolib.cmake"), "https://"+e.host+"/owner/repo/releases/download/v1")
 }
 
 func (e *versionedRemoteEntry) configure(t *testing.T, extra ...string) (string, error) {
@@ -124,7 +127,7 @@ func (e *versionedRemoteEntry) counts(t *testing.T, clones int, want map[string]
 
 func TestVersionedRemoteBootstrap(t *testing.T) {
 	for _, host := range []string{"github.com", "gitee.com"} {
-		for _, kind := range []string{"empty cache", "crlf digest", "padded digest", "embedded whitespace digest", "multiple digests", "bad digest", "missing digest", "invalid digest", "bad archive", "multiple members", "untrusted certificate", "bad local tool"} {
+		for _, kind := range []string{"empty cache", "crlf digest", "padded digest", "embedded whitespace digest", "multiple digests", "bad digest", "missing digest", "invalid digest", "bad archive", "truncated archive", "absolute member", "traversal member", "symlink member", "multiple members", "untrusted certificate", "bad local tool"} {
 			t.Run(host+"/"+kind, func(t *testing.T) {
 				e := remoteEntry(t, host)
 				f := e.f
@@ -136,6 +139,21 @@ func TestVersionedRemoteBootstrap(t *testing.T) {
 				}
 				if kind == "bad archive" {
 					tool = "broken archive"
+				}
+				if kind == "truncated archive" {
+					tool = tool[:len(tool)/2]
+				}
+				if kind == "absolute member" || kind == "traversal member" || kind == "symlink member" {
+					member := archiveMember{Name: f.toolAsset, Body: readTestFile(t, f.tool)}
+					switch kind {
+					case "absolute member":
+						member.Name = "/" + f.toolAsset
+					case "traversal member":
+						member.Name = "../" + f.toolAsset
+					case "symlink member":
+						member = archiveMember{Name: f.toolAsset, Link: "../outside", Kind: tar.TypeSymlink}
+					}
+					tool = readTestFile(t, testArchive(t, []archiveMember{member}))
 				}
 				if kind == "multiple members" {
 					tool = readTestFile(t, testArchive(t, []archiveMember{{Name: f.toolAsset, Body: readTestFile(t, f.tool)}, {Name: "extra", Body: "invalid"}}))

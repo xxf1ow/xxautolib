@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/klauspost/compress/zstd"
@@ -14,7 +15,7 @@ func localReleaseFixture(t *testing.T, names ...string) prepareOptions {
 	o := localGraphFixture(t)
 	o.Packages = names
 	for _, name := range names {
-		graphArchive(t, o.LocalRoot, packageIdentity{name, "1.0", o.OS, o.Arch}, "")
+		graphInstalled(t, o.CacheRoot, packageIdentity{name, "1.0", o.OS, o.Arch}, "")
 	}
 	return o
 }
@@ -84,4 +85,24 @@ func testArchive(t *testing.T, members []archiveMember) string {
 		}
 	}
 	return path
+}
+
+func installTestMembers(t *testing.T, root string, members []archiveMember) {
+	t.Helper()
+	for _, m := range members {
+		if m.Kind == tar.TypeDir {
+			if err := os.MkdirAll(filepath.Join(root, m.Name), 0755); err != nil {
+				t.Fatal(err)
+			}
+		} else {
+			putTestFile(t, filepath.Join(root, m.Name), m.Body)
+		}
+	}
+}
+func injectEntryRemote(t *testing.T, path, remote string) {
+	t.Helper()
+	body := readTestFile(t, path)
+	// Fixtures inject only a copy of the source entry, matching release preparation.
+	body = strings.Replace(body, `set(_autolib_release_root "")`, `set(_autolib_release_root "`+remote+`")`, 1)
+	putTestFile(t, path, body)
 }
