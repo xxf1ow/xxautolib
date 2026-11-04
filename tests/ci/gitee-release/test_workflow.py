@@ -87,12 +87,13 @@ class WorkflowTests(unittest.TestCase):
                           'Initialize fixed Release', 'autolib-ci init'):
             self.assertNotIn(forbidden, build)
         self.assertNotIn('contents: write', self.document)
-        self.assertIn("group: artifact-publication-gitee-${{ vars.GITEE_REPOSITORY || 'xxf1ow/autolib-release' }}", self.document)
+        self.assertIn('group: artifact-publication-gitee-${{ vars.GITEE_REPOSITORY }}', self.document)
         self.assertIn('cancel-in-progress: false', self.document)
         for name, env in (('host', 'PUBLISH_HOST'), ('mode', 'PUBLISH_MODE'), ('input', 'PUBLISH_INPUT'),
                           ('latest', 'PUBLISH_LATEST'), ('repository', 'GITEE_REPOSITORY'), ('tag', 'GITEE_RELEASE_TAG')):
             self.assertIn(env + ': ${{ inputs.' + name + ' }}', self.action)
         self.assertIn('publish.py', self.action)
+        self.assertIn('GITHUB_REPOSITORY: ${{ github.repository }}', self.action)
         self.assertNotIn('pip install', self.action)
         in_run = False
         for line in self.document.splitlines():
@@ -114,9 +115,26 @@ class WorkflowTests(unittest.TestCase):
                  ('refs/heads/topic', 'gitee', 'other', False)]
         for ref, host, mode, expected in cases:
             with self.subTest(ref=ref, host=host, mode=mode):
-                result = self.bash(text, dict(GITHUB_REF=ref, PUBLISH_HOST=host, PUBLISH_MODE=mode))
+                result = self.bash(text, dict(GITHUB_REF=ref, PUBLISH_HOST=host, PUBLISH_MODE=mode,
+                                             GITEE_REPOSITORY='fixture/mirror', GITEE_RELEASE_TAG='中文/release'))
                 self.assertEqual(result.returncode == 0, expected, result.stderr)
         self.assertNotIn('${{', text)
+
+    def test_target_required_and_same_for_preparation_and_upload(self):
+        text = script(self.document, 'Validate publication request')
+        env = dict(GITHUB_REF='refs/heads/topic', PUBLISH_HOST='gitee', PUBLISH_MODE='artifacts',
+                   GITEE_REPOSITORY='fixture/mirror', GITEE_RELEASE_TAG='中文/release')
+        for field in ['GITEE_REPOSITORY', 'GITEE_RELEASE_TAG']:
+            with self.subTest(field=field):
+                result = self.bash(text, dict(env, **{field: ''}))
+                self.assertNotEqual(result.returncode, 0)
+        prepare = script(self.document, 'Prepare publication')
+        self.assertIn('--repository "$GITEE_REPOSITORY"', prepare)
+        self.assertIn('--tag "$GITEE_RELEASE_TAG"', prepare)
+        self.assertIn('--source-repository "$GITHUB_REPOSITORY"', prepare)
+        publish = step(self.document, 'name: Publish selected artifacts or latest')
+        self.assertIn('repository: ${{ env.GITEE_REPOSITORY }}', publish)
+        self.assertIn('tag: ${{ env.GITEE_RELEASE_TAG }}', publish)
 
     def test_empty_publication_skips_writes(self):
         text = script(self.document, 'Prepare publication')

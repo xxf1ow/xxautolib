@@ -11,6 +11,7 @@ import stat
 import sys
 import tempfile
 from typing import Mapping
+import unicodedata
 
 from gitee_api import GiteeAPI, GiteeAPIError
 from metadata_repository import commit_metadata, open_repository
@@ -27,16 +28,15 @@ def resolve_config(environment: Mapping[str, str]) -> dict:
     repository, tag = environment.get('GITEE_REPOSITORY', ''), environment.get('GITEE_RELEASE_TAG', '')
     token = environment.get('GITEE_TOKEN', '')
     if (host != 'gitee' or mode not in {'artifacts', 'latest'}
-            or not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repository)
-            or any(p in {'.', '..'} for p in repository.split('/'))
-            or not tag or any(ord(c) < 32 or ord(c) == 127 for c in tag)
+            or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*', repository)
+            or not tag or any(c.isspace() or unicodedata.category(c) == 'Cc' for c in tag)
             or not token or '\r' in token or '\n' in token):
         raise ValueError('invalid publication host, mode, repository, tag or credentials')
     input_file, latest = environment.get('PUBLISH_INPUT', ''), environment.get('PUBLISH_LATEST', '')
     if mode == 'artifacts':
         if not input_file or latest:
             raise ValueError('artifacts requires input and forbids a separate latest mapping')
-        publication = load_publication(Path(input_file))
+        publication = load_publication(Path(input_file), source_repository=environment.get('GITHUB_REPOSITORY', ''))
     else:
         if input_file or not latest:
             raise ValueError('latest requires a nonempty mapping and forbids input')
@@ -125,7 +125,8 @@ def publish_release(config: dict) -> dict:
         successes = {item['name']: item for item in outcomes if item['status'] == 'uploaded'}
         result.update(uploaded=len(successes), failed=len(assets) - len(successes))
         operation = 'metadata_commit'
-        digests = {item['metadata_path']: item['sha256'] for item in successes.values()}
+        digests = {item['metadata_path']: item['sha256'] for item in successes.values()
+                   if item['metadata_path'] is not None}
         succeeded = {asset['package']['name'] for asset in assets
                      if asset['kind'] == 'library' and asset['name'] in successes}
         existing = repository['existing_latest']

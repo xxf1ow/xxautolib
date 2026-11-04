@@ -300,6 +300,35 @@ class PublishTests(unittest.TestCase):
                          (hashlib.sha256(b'tool').hexdigest() + '\n').encode())
         self.assertNotIn('package.toml', git(self.bare, 'ls-tree', '-r', '--name-only', 'HEAD').decode())
 
+    def test_entry_success_or_failure_never_registers_git_metadata(self):
+        self.remote()
+        path = self.root / 'autolib.cmake'
+        path.write_bytes(b'entry')
+        entry_asset = dict(kind='entry', name='autolib.cmake', path=str(path), size=5,
+                           sha256=hashlib.sha256(b'entry').hexdigest())
+        tool_name = 'autolib-importer-linux-x86_64.tar.xz'
+        tool_path = self.root / tool_name
+        tool_path.write_bytes(b'tool')
+        importer = dict(kind='importer', name=tool_name, platform='linux-x86_64', path=str(tool_path),
+                        size=4, sha256=hashlib.sha256(b'tool').hexdigest())
+        for fail in [False, True]:
+            with self.subTest(fail=fail):
+                self.server.fail = {'autolib.cmake'} if fail else set()
+                library = self.asset('queue', '2' if fail else '1')
+                errors, output = io.StringIO(), io.StringIO()
+                with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+                    code = self.run_release(self.config([entry_asset, library, importer], {'queue': '1'}), entry=True)
+                result = json.loads(output.getvalue())
+                self.assertEqual(code, int(fail))
+                self.assertEqual((result['uploaded'], result['failed']), (2, 1) if fail else (3, 0))
+                self.assertTrue(result['metadata_committed'])
+                paths = git(self.bare, 'ls-tree', '-r', '--name-only', 'HEAD').decode().splitlines()
+                self.assertFalse(any('autolib.cmake' in name for name in paths))
+                self.assertIn('queue/' + library['package']['version'] + '/' + library['name'] + '.sha256', paths)
+                self.assertIn('autolib-importer/' + tool_name + '.sha256', paths)
+                if not fail:
+                    self.assertEqual(self.server.bodies['autolib.cmake'], b'entry')
+
     def test_attachment_pool_respects_cpu_affinity_and_continues_after_failure(self):
         self.remote()
         assets = [self.asset('p' + str(i)) for i in range(5)]
@@ -429,13 +458,16 @@ class PublishTests(unittest.TestCase):
         manifest = self.root / 'publication.json'
         manifest.write_text(json.dumps(document))
         environment = {'PUBLISH_HOST': 'gitee', 'PUBLISH_MODE': 'artifacts', 'PUBLISH_INPUT': str(manifest),
+                       'GITHUB_REPOSITORY': 'xxf1ow/xxautolib',
                        'GITEE_REPOSITORY': 'fixture/mirror', 'GITEE_RELEASE_TAG': 'fixed', 'GITEE_TOKEN': 'fake-secret'}
         config = self.module.resolve_config(environment)
         self.addCleanup(lambda: Path(config['work_root']).rmdir())
         self.assertEqual(config['assets'][0]['path'], asset['path'])
         self.assertEqual(config['initial_latest'], {'queue': '1'})
         for changes in [{'PUBLISH_LATEST': '{"queue":"2"}'}, {'PUBLISH_HOST': 'github'},
-                        {'PUBLISH_MODE': 'latest'}, {'GITEE_TOKEN': ''}, {'GITEE_RELEASE_TAG': ''}]:
+                        {'PUBLISH_MODE': 'latest'}, {'GITEE_TOKEN': ''}, {'GITEE_RELEASE_TAG': ''},
+                        {'GITHUB_REPOSITORY': 'another/source'}, {'GITHUB_REPOSITORY': ''},
+                        {'GITEE_RELEASE_TAG': 'has space'}, {'GITEE_RELEASE_TAG': 'wide\u3000space'}]:
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 self.module.resolve_config(dict(environment, **changes))
 

@@ -22,9 +22,6 @@ on:
       source_attempt:
         description: Exact original run attempt (artifacts mode)
         type: string
-      packages:
-        description: Exact name@version or autolib-importer, comma-separated; blank selects all
-        type: string
       latest:
         description: Explicit latest JSON object; required in latest mode
         type: string
@@ -35,7 +32,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: artifact-publication-gitee-${{ vars.GITEE_REPOSITORY || 'xxf1ow/autolib-release' }}
+  group: artifact-publication-gitee-${{ vars.GITEE_REPOSITORY }}
   cancel-in-progress: false
 
 jobs:
@@ -49,12 +46,18 @@ jobs:
     env:
       PUBLISH_HOST: ${{ github.event_name == 'workflow_run' && 'gitee' || inputs.host }}
       PUBLISH_MODE: ${{ github.event_name == 'workflow_run' && 'artifacts' || inputs.mode }}
+      GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}
+      GITEE_RELEASE_TAG: ${{ vars.GITEE_RELEASE_TAG }}
     steps:
       - name: Validate publication request
         run: |
           set -euo pipefail
           if [[ "$GITHUB_REF" != refs/heads/?* || "$PUBLISH_HOST" != gitee || ( "$PUBLISH_MODE" != artifacts && "$PUBLISH_MODE" != latest ) ]]; then
             echo "Publication requires a branch ref, host gitee and mode artifacts or latest." >&2
+            exit 1
+          fi
+          if [[ ! "$GITEE_REPOSITORY" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$ || -z "$GITEE_RELEASE_TAG" || "$GITEE_RELEASE_TAG" =~ [[:space:][:cntrl:]] ]]; then
+            echo "Publication requires an explicit valid Gitee repository and nonempty tag without whitespace or controls." >&2
             exit 1
           fi
       - uses: actions/checkout@v7
@@ -71,7 +74,6 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           SOURCE_RUN_ID: ${{ inputs.source_run_id }}
           SOURCE_ATTEMPT: ${{ inputs.source_attempt }}
-          PACKAGES: ${{ inputs.packages }}
           LATEST: ${{ inputs.latest }}
         run: |
           set -euo pipefail
@@ -104,7 +106,7 @@ jobs:
         if: ${{ env.PUBLISH_MODE == 'artifacts' }}
         run: |
           set -euo pipefail
-          manifest=$(python .github/scripts/prepare-publication.py prepare --selection build/publication-control/selection.json --input-root build/publication-input --source-root build/source --builder-file "$GITHUB_WORKSPACE/build/tools/source-builder" --output-root build/source/build/publication)
+          manifest=$(python .github/scripts/prepare-publication.py prepare --selection build/publication-control/selection.json --input-root build/publication-input --source-root build/source --builder-file "$GITHUB_WORKSPACE/build/tools/source-builder" --output-root build/source/build/publication --repository "$GITEE_REPOSITORY" --tag "$GITEE_RELEASE_TAG" --source-repository "$GITHUB_REPOSITORY")
           has_writes=$(jq -r '(.assets|length > 0) or (.explicit_latest|length > 0)' "$manifest")
           echo "input=$manifest" >> "$GITHUB_OUTPUT"
           echo "has_writes=$has_writes" >> "$GITHUB_OUTPUT"
@@ -123,7 +125,7 @@ jobs:
           mode: ${{ env.PUBLISH_MODE }}
           input: ${{ steps.publication.outputs.input }}
           latest: ${{ env.PUBLISH_MODE == 'latest' && inputs.latest || '' }}
-          repository: ${{ vars.GITEE_REPOSITORY || 'xxf1ow/autolib-release' }}
-          tag: ${{ vars.GITEE_RELEASE_TAG || 'autolib-release' }}
+          repository: ${{ env.GITEE_REPOSITORY }}
+          tag: ${{ env.GITEE_RELEASE_TAG }}
         env:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}

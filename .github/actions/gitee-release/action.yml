@@ -1,5 +1,5 @@
 name: Gitee artifact publication
-description: Publish selected local archives and metadata to Gitee
+description: Publish declared local assets and metadata to Gitee
 inputs:
   host:
     description: Publication host (gitee only)
@@ -31,4 +31,5 @@ runs:
         PUBLISH_LATEST: ${{ inputs.latest }}
         GITEE_REPOSITORY: ${{ inputs.repository }}
         GITEE_RELEASE_TAG: ${{ inputs.tag }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
       run: python "${{ github.action_path }}/publish.py"

@@ -16,7 +16,11 @@
 
 ## Gitee 版本化发布适配
 
-`action.yml` 接收 `host/mode/input/latest/repository/tag`，映射为 `PUBLISH_HOST/PUBLISH_MODE/PUBLISH_INPUT/PUBLISH_LATEST/GITEE_REPOSITORY/GITEE_RELEASE_TAG` 并调用 `publish.py`；写入步骤仅提供 `GITEE_TOKEN`。依赖由 workflow 隔离安装。artifacts 模式只读 publication.json；latest 模式无资产输入。上游 README 保留原始接口，不作为项目 Action 用法；信任和运行前提见[开发指南](../../../docs/development.md#独立-gitee-发布)。
+`action.yml` 接收 `host/mode/input/latest/repository/tag`，映射为 `PUBLISH_HOST/PUBLISH_MODE/PUBLISH_INPUT/PUBLISH_LATEST/GITEE_REPOSITORY/GITEE_RELEASE_TAG` 并调用 `publish.py`，从 GitHub 运行上下文传入可信 `GITHUB_REPOSITORY`；写入步骤仅提供 `GITEE_TOKEN`。依赖由 workflow 隔离安装。artifacts 模式只读 publication.json，并独立核对清单来源仓库；latest 模式不读取构建输入或要求构建来源。上游 README 保留原始接口，不作为项目 Action 用法；信任和运行前提见[开发指南](../../../docs/development.md#独立-gitee-发布)。
+
+发布清单包含完整构建集合的库、各平台 importer 和唯一 `autolib.cmake` 入口。入口按普通附件校验实际字节、尺寸和 SHA256 并计入上传结果，但不写入 Git 摘要或 latest；入口失败使整体发布失败，其他成功工具和库仍按既有规则登记。`publication_rules.metadata_path` 对合法入口返回 `None`，协调器只登记非 `None` 摘要路径。元数据仓库白名单与上游附件实现保持独立。
+
+发布准备保留实际 checkout SHA 检查，并从原构建 Git 提交读取 `src/autolib.cmake`，全部运输入口与验证记录须与该字节一致。`prepare_publication(..., repository, tag, source_repository)` 的三个关键字参数分别是实际 Gitee 目标、原始 tag 和独立可信源码仓库。入口上传副本仅替换唯一完整空行 `set(_autolib_release_root "")`；注入点缺失、重复或非空均失败。tag 不得含空白或控制字符，合法值按单个 URL 路径段编码；注入和上传使用同一组 workflow 目标变量，源码、安装和运输输入保持不变。
 
 `publish.py` 成功解析输入后在 stdout 输出五字段汇总 JSON，在 stderr 输出失败资产的名称、`operation/outcome` 或阶段诊断。非法输入返回非零，stdout 为空，stderr 说明固定输入规则，不回显输入值。API 写入未确认标为 `unknown`，其他阶段未确认标为 `unconfirmed`；不输出底层异常正文、响应或凭据，也不据此自动重试写入。
 

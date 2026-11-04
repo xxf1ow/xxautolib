@@ -66,9 +66,9 @@ Git 主来源复用 `git/<包名>/<版本>/`，资源复用 `git/_resources/<包
 
 ### 独立 Gitee 发布
 
-[发布 workflow](../.github/workflows/publish-artifacts.yml)仅写 Gitee，沿用 secret `GITEE_TOKEN` 及 variables `GITEE_REPOSITORY`、`GITEE_RELEASE_TAG`。自动入口等待整个构建成功，使用精确 run/attempt；手动 artifacts 模式指定 `source_run_id/source_attempt`，`packages` 留空为全部，否则填精确 `name@version` 或 `autolib-importer`。可附 JSON `latest`；latest 模式仅需非空映射，不读取构建资产。发布准备核对输入后使用原提交 builder 打包，不重新编译三方库。
+[发布流水线](../.github/workflows/publish-artifacts.yml)仅写 Gitee。源码仓库及其分叉均须显式配置目标变量 `GITEE_REPOSITORY`、`GITEE_RELEASE_TAG` 和密钥 `GITEE_TOKEN`，缺失或非法即失败，无上游目标默认值。可信来源来自 `GITHUB_REPOSITORY`，不采用清单自报仓库。自动发布等待同仓库成功构建；手动产物发布指定同仓库 `source_run_id/source_attempt`。两者只读核对原提交及全部运输验证记录后，调用原提交工具打包完整有效集合、所选平台工具和唯一目标注入入口，不二次筛选、不重编三方库；入口不写 Git 元数据。可附 `latest` 映射；独立更新指针要求非空映射，不读构建输入、不要求构建来源。精确运行、入口字节、目标编码及接口见[发布接口](../.github/actions/gitee-release/UPSTREAM.md#gitee-版本化发布适配)。
 
-执行前必须信任控制代码与原构建提交；代码可以外传令牌，脱敏不是沙箱。同名替换先删后传，无备份回滚；部分失败登记成功项但任务失败，push 未确认也失败。显式重跑复用原输入并重新上传，不按同名或大小跳过。适配接口见[Action 说明](../.github/actions/gitee-release/UPSTREAM.md#gitee-版本化发布适配)。真实触发须取得目标及删除替换授权，并核对默认分支实际响应的自动入口，不能假定 workflow_run 使用任务分支控制代码。新库保持私有，用户公开后按[验收交接](testing.md#真实交付与手动验收)验证。
+执行前必须信任控制代码与原构建提交；代码可以外传令牌，脱敏不是沙箱。同名替换先删后传，无备份回滚；部分失败登记成功项但任务失败，push 未确认也失败。显式重跑复用原输入并重新上传，不按同名或大小跳过。真实触发须取得目标及删除替换授权，并核对默认分支实际响应的自动入口，不能假定 workflow_run 使用任务分支控制代码。新库保持私有，用户公开后按[验收交接](testing.md#真实交付与手动验收)验证。
 
 ## 远端构建与源码传输授权
 

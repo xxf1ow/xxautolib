@@ -23,6 +23,8 @@ SHA = 'a' * 40
 PLATFORMS = ['linux-x86_64', 'windows-x86_64', 'linux-aarch64']
 RUN = dict(repository=REPOSITORY, ref='refs/heads/release', sha=SHA,
            checkout_sha=SHA, run_id='42', attempt='2')
+ENTRY = b'# original entry\nset(_autolib_release_root "")\n# retained bytes\n'
+RELEASE_ROOT = 'https://gitee.com/fixture/mirror/releases/download/%E4%B8%AD%E6%96%87%2Frelease'
 
 
 def load_module():
@@ -42,7 +44,8 @@ def module(name, version, universal=False):
 def plan(platforms):
     modules = [module('eigen', '3.4.0', True), module('eigen', '5.0.1', True),
                module('queue', '1.0')]
-    return dict(platforms=[dict(id=p, roots=['eigen@3.4.0', 'eigen@5.0.1', 'queue@1.0'],
+    return dict(platforms=[dict(id=p, requested_roots=['eigen@3.4.0', 'eigen@5.0.1', 'queue@1.0'],
+                               filtered_roots=[], roots=['eigen@3.4.0', 'eigen@5.0.1', 'queue@1.0'],
                                description=dict(modules=modules),
                                layers=[['eigen@3.4.0', 'eigen@5.0.1', 'queue@1.0']])
                            for p in platforms], requested_modules=[], publisher=platforms[0] if platforms else '')
@@ -64,7 +67,7 @@ def zipped(files):
     return output.getvalue()
 
 
-def make_transport(path, selected_plan, platform, mutate=None, extra=()):
+def make_transport(path, selected_plan, platform, mutate=None, extra=(), identity=RUN):
     packages = []
     os_name, arch = platform.split('-', 1)
     for item in selected_plan['platforms'][0]['description']['modules']:
@@ -73,16 +76,18 @@ def make_transport(path, selected_plan, platform, mutate=None, extra=()):
                              os='any' if universal else os_name,
                              arch='any' if universal else arch, dependencies=[],
                              publish=not universal or selected_plan['publisher'] == platform))
-    transport = dict(run=RUN.copy(), platform=platform,
+    transport = dict(run=identity.copy(), platform=platform, entry='install/autolib.cmake',
                      producer_prefix=r'C:\producer space\install' if os_name == 'windows' else '/producer space/install',
                      packages=packages, importer='install/' + tool(platform))
-    result = dict(run=RUN.copy(), platform=platform, complete=True, error='',
+    result = dict(run=identity.copy(), platform=platform, complete=True, error='',
                   packages=[dict(slot={k: p[k] for k in ['name', 'version', 'os', 'arch']},
                                  built=True, verified=True) for p in packages],
                   roots=[dict(root=r, verified=True) for r in selected_plan['platforms'][0]['roots']],
-                  importer=dict(file=tool(platform), verified=True))
+                  importer=dict(file=tool(platform), verified=True),
+                  entry=dict(file='autolib.cmake', sha256=hashlib.sha256(ENTRY).hexdigest(), verified=True))
     files = {'transport.json': json_bytes(transport), 'plan.json': json_bytes(selected_plan),
              'result.json': json_bytes(result), 'install/' + tool(platform): b'tool',
+             'install/autolib.cmake': ENTRY,
              'install/eigen/package.toml': b'latest = "3.4.0"\n',
              'install/queue/package.toml': b'latest = "1.0"\n'}
     for p in packages:
@@ -115,7 +120,12 @@ class PreparationTests(unittest.TestCase):
         return dict(source_run=RUN.copy(), plan=selected_plan,
                     artifacts=[dict(id=1, name='ci-plan-42-2')] +
                     [dict(id=n + 2, name='ci-install-42-2-' + p) for n, p in enumerate(platforms)],
-                    packages=[], explicit_latest={})
+                    explicit_latest={})
+
+    def prepare(self, selected, inputs, source, builder, output, **options):
+        return self.api.prepare_publication(selected, inputs, source, builder, output,
+                                            repository='fixture/mirror', tag='中文/release',
+                                            source_repository=options.get('source_repository', REPOSITORY))
 
     def inputs(self, selection, mutate=None):
         inputs = self.root / 'inputs'
@@ -123,11 +133,12 @@ class PreparationTests(unittest.TestCase):
         directory = inputs / 'ci-plan-42-2'
         directory.mkdir()
         (directory / 'plan.json').write_bytes(json_bytes(selection['plan']))
-        (directory / 'run.json').write_bytes(json_bytes(RUN))
+        (directory / 'run.json').write_bytes(json_bytes(selection['source_run']))
         for platform in [p['id'] for p in selection['plan']['platforms']]:
             directory = inputs / ('ci-install-42-2-' + platform)
             directory.mkdir()
-            make_transport(directory / 'transport.tar', selection['plan'], platform, mutate)
+            make_transport(directory / 'transport.tar', selection['plan'], platform, mutate,
+                           identity=selection['source_run'])
         return inputs
 
     def source_api(self, platforms=PLATFORMS):
@@ -160,11 +171,15 @@ class PreparationTests(unittest.TestCase):
                     selected = self.api.select_source(env)
                 self.assertEqual(selected['source_run'], RUN)
                 self.assertEqual(len(selected['artifacts']), len(platforms) + 1)
+                self.assertNotIn('packages', selected)
         changes = [lambda r, a: a.pop(), lambda r, a: a.append(copy.deepcopy(a[-1])),
                    lambda r, a: a[-1].update(expired=True),
                    lambda r, a: r['repository'].update(full_name='other/repo'),
                    lambda r, a: r.update(path='.github/workflows/other.yml'),
                    lambda r, a: r.update(head_sha='b' * 40),
+                   lambda r, a: a[-1]['workflow_run'].update(head_sha='b' * 40),
+                   lambda r, a: a[-1]['workflow_run'].update(repository_id=8),
+                   lambda r, a: a[-1]['workflow_run'].update(head_repository_id=8),
                    lambda r, a: a[-1].update(name='ci-install-42-1-linux-aarch64'),
                    lambda r, a: r.update(event='pull_request'),
                    lambda r, a: r.update(conclusion='failure'),
@@ -175,6 +190,51 @@ class PreparationTests(unittest.TestCase):
             with self.subTest(change=change), patch.object(self.api, '_request', side_effect=request):
                 with self.assertRaises((ValueError, KeyError)):
                     self.api.select_source(env)
+
+    def test_fork_selection_uses_trusted_repository(self):
+        trusted = 'another-fork/source'
+        run, artifacts, request = self.source_api()
+        run['repository']['full_name'] = run['head_repository']['full_name'] = trusted
+        def fork_request(url, token):
+            self.assertIn('/repos/' + trusted + '/', url)
+            if '/artifacts/1/zip' in url:
+                return zipped({'plan.json': json_bytes(plan(PLATFORMS)),
+                               'run.json': json_bytes(dict(RUN, repository=trusted))})
+            return request(url, token)
+        env = dict(GITHUB_REPOSITORY=trusted, SOURCE_RUN_ID='42', SOURCE_ATTEMPT='2')
+        with patch.object(self.api, '_request', side_effect=fork_request):
+            manual = self.api.select_source(env)
+            self.assertEqual(manual['source_run']['repository'], trusted)
+            event = self.root / 'event.json'
+            event.write_bytes(json_bytes({'workflow_run': run}))
+            automatic = dict(GITHUB_REPOSITORY=trusted, GITHUB_EVENT_PATH=str(event))
+            self.assertEqual(self.api.select_source(automatic), manual)
+            event.write_bytes(json_bytes({'workflow_run': dict(run, head_sha='b' * 40)}))
+            with self.assertRaises(ValueError):
+                self.api.select_source(automatic)
+            run['head_repository'] = dict(id=8, full_name=REPOSITORY)
+            with self.assertRaises(ValueError):
+                self.api.select_source(env)
+
+    def test_inject_release_root_preserves_bytes_and_encodes_tag(self):
+        injected = self.api.inject_release_root(ENTRY, 'fixture/mirror', '中文/release')
+        self.assertEqual(injected, ENTRY.replace(b'set(_autolib_release_root "")',
+                                                ('set(_autolib_release_root "' + RELEASE_ROOT + '")').encode()))
+        self.assertEqual(ENTRY, b'# original entry\nset(_autolib_release_root "")\n# retained bytes\n')
+        commented = b'# set(_autolib_release_root "")\n' + ENTRY
+        self.assertEqual(self.api.inject_release_root(commented, 'fixture/mirror', '中文/release'),
+                         b'# set(_autolib_release_root "")\n' + injected)
+        for source in [b'', ENTRY + ENTRY, ENTRY.replace(b'""', b'"nonempty"'),
+                       ENTRY.replace(b'set(', b' set('), ENTRY.replace(b')\n', b') # extra\n')]:
+            with self.subTest(source=source), self.assertRaises(ValueError):
+                self.api.inject_release_root(source, 'fixture/mirror', 'fixed')
+        for repository, tag in [('', 'fixed'), ('bad', 'fixed'), ('../repo', 'fixed'),
+                                ('-owner/repo', 'fixed'), ('owner/.repo', 'fixed'),
+                                ('fixture/mirror', ''), ('fixture/mirror', 'has space'),
+                                ('fixture/mirror', 'line\nfeed'), ('fixture/mirror', 'wide\u3000space'),
+                                ('fixture/mirror', '\u0080control')]:
+            with self.subTest(repository=repository, tag=tag), self.assertRaises(ValueError):
+                self.api.inject_release_root(ENTRY, repository, tag)
 
     def test_safe_transport_unpack(self):
         source = self.root / 'transport.tar'
@@ -231,13 +291,17 @@ class PreparationTests(unittest.TestCase):
                     inputs = self.inputs(selected)
                     calls = []
                     with patch.object(self.api.subprocess, 'run', side_effect=self.fake_builder(calls)):
-                        manifest = self.api.prepare_publication(selected, inputs, self.root, Path('builder'), self.root / 'build/empty')
-                    self.assertEqual(json.loads(manifest.read_text())['assets'], [])
+                        manifest = self.prepare(selected, inputs, self.root, Path('builder'), self.root / 'build/empty')
+                    self.assertEqual([a['kind'] for a in json.loads(manifest.read_text())['assets']], ['entry'])
                     self.assertEqual(calls, [])
 
     def fake_builder(self, calls):
         def run(command, **kwargs):
             if command[0] == 'git':
+                if 'show' in command:
+                    self.assertEqual(command[-1], SHA + ':src/autolib.cmake')
+                    self.assertFalse(kwargs.get('text', False))
+                    return subprocess.CompletedProcess(command, 0, stdout=ENTRY)
                 return subprocess.CompletedProcess(command, 0, stdout=SHA + '\n')
             calls.append(command)
             args = dict(x[2:].split('=', 1) for x in command[2:] if x.startswith('--') and not x.startswith('--module='))
@@ -262,26 +326,23 @@ class PreparationTests(unittest.TestCase):
         latest.write_text('latest = "5.0.1"')
         calls = []
         with patch.object(self.api.subprocess, 'run', side_effect=self.fake_builder(calls)):
-            first = self.api.prepare_publication(selection, inputs, source, Path('builder'), source / 'build/publication')
+            first = self.prepare(selection, inputs, source, Path('builder'), source / 'build/publication')
             publication = json.loads(first.read_text())
             self.assertEqual(publication['initial_latest'], {'eigen': '3.4.0', 'queue': '1.0'})
-            self.assertEqual(len(publication['assets']), 8)
+            self.assertEqual(len(publication['assets']), 9)
+            entry = next(a for a in publication['assets'] if a['kind'] == 'entry')
+            self.assertEqual(set(entry), {'kind', 'name', 'path', 'size', 'sha256'})
+            self.assertEqual(entry['name'], 'autolib.cmake')
+            self.assertIn(RELEASE_ROOT.encode(), (first.parent / entry['path']).read_bytes())
             self.assertEqual(sum(a['name'] == 'eigen-3.4.0-any-any.tar.zst' for a in publication['assets']), 1)
             for asset in publication['assets']:
                 self.assertEqual(asset['sha256'], hashlib.sha256((first.parent / asset['path']).read_bytes()).hexdigest())
             prefixes = [next(x for x in c if x.startswith('--producer-prefix=')) for c in calls]
             self.assertIn('--producer-prefix=C:\\producer space\\install', prefixes)
-            second = self.api.prepare_publication(selection, inputs, source, Path('builder'), source / 'build/publication')
+            second = self.prepare(selection, inputs, source, Path('builder'), source / 'build/publication')
             self.assertNotEqual(first, second)
             again = json.loads(second.read_text())
             self.assertNotEqual(publication['assets'][0]['sha256'], again['assets'][0]['sha256'])
-            for choice in ['missing@1', 'queue@2', 'missing-importer']:
-                invalid = copy.deepcopy(selection)
-                invalid['packages'] = [choice]
-                before = len(calls)
-                with self.assertRaises(ValueError):
-                    self.api.prepare_publication(invalid, inputs, source, Path('builder'), source / 'build/unmatched')
-                self.assertEqual(len(calls), before)
 
     def test_invalid_candidates_and_result_fail_before_builder(self):
         for index, mutation in enumerate([
@@ -304,24 +365,106 @@ class PreparationTests(unittest.TestCase):
             calls = []
             with self.subTest(index=index), patch.object(self.api.subprocess, 'run', side_effect=self.fake_builder(calls)):
                 with self.assertRaises((ValueError, FileNotFoundError)):
-                    self.api.prepare_publication(selected, inputs, case, Path('builder'), case / 'build/output')
+                    self.prepare(selected, inputs, case, Path('builder'), case / 'build/output')
                 self.assertEqual(calls, [])
 
-    def test_exact_asset_and_importer_selection(self):
-        selected = self.selection(['linux-x86_64'])
+    def test_tool_only_three_platforms_publish_all_tools_and_one_entry(self):
+        selected = self.selection()
+        selected['plan']['publisher'] = ''
+        for platform in selected['plan']['platforms']:
+            platform.update(roots=[], requested_roots=[], filtered_roots=[], layers=[])
+            platform['description']['modules'] = []
         inputs = self.inputs(selected)
         calls = []
         with patch.object(self.api.subprocess, 'run', side_effect=self.fake_builder(calls)):
-            for choices, names, candidates in [
-                (['queue@1.0'], ['queue-1.0-linux-x86_64.tar.zst'], {'queue': '1.0'}),
-                (['autolib-importer'], ['autolib-importer-linux-x86_64.tar.xz'], {}),
-                (['eigen@5.0.1'], ['eigen-5.0.1-any-any.tar.zst'], {'eigen': '3.4.0'}),
-            ]:
-                selected['packages'] = choices
-                path = self.api.prepare_publication(selected, inputs, self.root, Path('builder'), self.root / 'build/selected')
-                publication = json.loads(path.read_text())
-                self.assertEqual([a['name'] for a in publication['assets']], names)
-                self.assertEqual(publication['initial_latest'], candidates)
+            path = self.prepare(selected, inputs, self.root, Path('builder'), self.root / 'build/tools')
+        publication = json.loads(path.read_text())
+        self.assertEqual(sorted(a['name'] for a in publication['assets']),
+                         sorted(['autolib.cmake'] + [tool(p) + '.tar.xz' for p in PLATFORMS]))
+        self.assertEqual(publication['initial_latest'], {})
+        self.assertEqual(len(calls), 3)
+        self.assertFalse(any(x.startswith('--module=') for c in calls for x in c))
+
+    def test_every_transport_entry_matches_original_commit_before_builder(self):
+        changes = [lambda t, r, f: f.pop('install/autolib.cmake'),
+                   lambda t, r, f: f.update({'install/autolib.cmake': b'changed'}),
+                   lambda t, r, f: t.update(entry='install/other.cmake'),
+                   lambda t, r, f: r['entry'].update(verified=False),
+                   lambda t, r, f: r['entry'].update(verified=1),
+                   lambda t, r, f: r['entry'].update(sha256='0' * 64),
+                   lambda t, r, f: r['entry'].update(file='wrong.cmake'),
+                   lambda t, r, f: (f.update({'install/autolib.cmake': b'self-reported'}),
+                                     r['entry'].update(sha256=hashlib.sha256(b'self-reported').hexdigest()))]
+        for index, change in enumerate(changes):
+            with self.subTest(index=index):
+                case = self.root / str(index)
+                case.mkdir()
+                old_root, self.root = self.root, case
+                selected = self.selection()
+                def mutate(t, r, f):
+                    if t['platform'] == PLATFORMS[-1]:
+                        change(t, r, f)
+                inputs = self.inputs(selected, mutate)
+                self.root = old_root
+                before = {p: p.read_bytes() for p in inputs.rglob('*') if p.is_file()}
+                calls = []
+                with patch.object(self.api.subprocess, 'run', side_effect=self.fake_builder(calls)):
+                    with self.assertRaises((ValueError, FileNotFoundError)):
+                        self.prepare(selected, inputs, case, Path('builder'), case / 'build/output')
+                self.assertEqual(calls, [])
+                self.assertEqual({p: p.read_bytes() for p in before}, before)
+
+    def test_linked_or_directory_entry_is_rejected_before_builder(self):
+        for kind in [tarfile.SYMTYPE, tarfile.DIRTYPE]:
+            with self.subTest(kind=kind):
+                case = self.root / str(kind)
+                case.mkdir()
+                old_root, self.root = self.root, case
+                selected = self.selection(['linux-x86_64'])
+                inputs = self.inputs(selected)
+                self.root = old_root
+                special = tarfile.TarInfo('install/autolib.cmake')
+                special.type, special.linkname = kind, 'entry-copy'
+                def mutate(t, r, f):
+                    f.pop('install/autolib.cmake')
+                    f['install/entry-copy'] = ENTRY
+                make_transport(inputs / 'ci-install-42-2-linux-x86_64/transport.tar',
+                               selected['plan'], 'linux-x86_64', mutate, extra=[special])
+                calls = []
+                with patch.object(self.api.subprocess, 'run', side_effect=self.fake_builder(calls)):
+                    with self.assertRaises(ValueError):
+                        self.prepare(selected, inputs, case, Path('builder'), case / 'build/output')
+                self.assertEqual(calls, [])
+
+    def test_checkout_sha_is_checked_before_builder(self):
+        selected = self.selection(['linux-x86_64'])
+        inputs = self.inputs(selected)
+        calls = []
+        original = self.fake_builder(calls)
+        def wrong_checkout(command, **kwargs):
+            if command[0] == 'git' and 'rev-parse' in command:
+                return subprocess.CompletedProcess(command, 0, stdout='b' * 40 + '\n')
+            return original(command, **kwargs)
+        with patch.object(self.api.subprocess, 'run', side_effect=wrong_checkout):
+            with self.assertRaises(ValueError):
+                self.prepare(selected, inputs, self.root, Path('builder'), self.root / 'build/output')
+        self.assertEqual(calls, [])
+
+    def test_preparation_uses_trusted_fork_and_original_git_bytes(self):
+        selected = self.selection(['linux-x86_64'])
+        selected['source_run']['repository'] = 'fork/source'
+        inputs = self.inputs(selected)
+        (self.root / 'src').mkdir()
+        (self.root / 'src/autolib.cmake').write_bytes(b'modified working tree')
+        calls = []
+        with patch.object(self.api.subprocess, 'run', side_effect=self.fake_builder(calls)):
+            with self.assertRaises(ValueError):
+                self.prepare(selected, inputs, self.root, Path('builder'), self.root / 'build/wrong')
+            manifest = self.prepare(selected, inputs, self.root, Path('builder'), self.root / 'build/fork',
+                                    source_repository='fork/source')
+        entry = next(a for a in json.loads(manifest.read_text())['assets'] if a['kind'] == 'entry')
+        self.assertTrue((manifest.parent / entry['path']).read_bytes().startswith(b'# original entry\n'))
+        self.assertEqual((self.root / 'src/autolib.cmake').read_bytes(), b'modified working tree')
 
     @unittest.skipUnless(os.environ.get('AUTOLIB_PUBLICATION_BUILDER'), 'real builder integration runs on authorized 109 only')
     def test_public_cli_real_builder(self):
@@ -338,6 +481,8 @@ class PreparationTests(unittest.TestCase):
             return completed.stdout.strip()
         put('go.mod', 'module fixture\n')
         put('go.sum', '')
+        original_entry = (SCRIPT.parents[2] / 'src/autolib.cmake').read_bytes()
+        put('src/autolib.cmake', original_entry.decode('utf-8'))
         (source / 'src/autolib-builder').mkdir(parents=True)
         put('src/dependencies/queue/package.toml', 'latest="1.0"\n')
         put('src/dependencies/queue/1.0/module.toml', 'name="queue"\nversion="1.0"\ntype="cmake"\n[source]\nGIT_REPOSITORY="unused"\nGIT_TAG="fixed"\n')
@@ -364,6 +509,9 @@ class PreparationTests(unittest.TestCase):
         importer = installed / tool('linux-x86_64')
         importer.write_bytes(b'fixture importer must not execute\n')
         importer.chmod(0o755)
+        (installed / 'autolib.cmake').write_bytes(original_entry)
+        dirty_entry = original_entry + b'# working tree change must not be published\n'
+        (source / 'src/autolib.cmake').write_bytes(dirty_entry)
         description = json.loads(run(builder, 'describe', '--source-root=' + str(source), '--system-name=Linux',
                                      '--architecture=x86_64', '--module=queue@1.0'))
         selected_plan = dict(platforms=[dict(id='linux-x86_64', roots=['queue@1.0'], description=description,
@@ -371,11 +519,13 @@ class PreparationTests(unittest.TestCase):
                              requested_modules=['queue@1.0'], publisher='')
         identity = dict(RUN, sha=sha, checkout_sha=sha)
         transport = dict(run=identity, platform='linux-x86_64', producer_prefix=producer_prefix,
+                         entry='install/autolib.cmake',
                          packages=[dict(name='queue', version='1.0', os='linux', arch='x86_64', dependencies=[], publish=True)],
                          importer='install/' + tool('linux-x86_64'))
         result = dict(run=identity, platform='linux-x86_64', complete=True, error='',
                       packages=[dict(slot=dict(name='queue', version='1.0', os='linux', arch='x86_64'), built=True, verified=True)],
-                      roots=[dict(root='queue@1.0', verified=True)], importer=dict(file=tool('linux-x86_64'), verified=True))
+                      roots=[dict(root='queue@1.0', verified=True)], importer=dict(file=tool('linux-x86_64'), verified=True),
+                      entry=dict(file='autolib.cmake', sha256=hashlib.sha256(original_entry).hexdigest(), verified=True))
         inputs = self.root / 'real inputs'
         plan_dir = inputs / 'ci-plan-42-2'
         plan_dir.mkdir(parents=True)
@@ -426,18 +576,19 @@ class PreparationTests(unittest.TestCase):
         self.addCleanup(server.shutdown)
         env = dict(os.environ, GITHUB_REPOSITORY=REPOSITORY, SOURCE_RUN_ID='42', SOURCE_ATTEMPT='2',
                    GITHUB_API_URL=f'http://127.0.0.1:{server.server_port}', GITHUB_EVENT_PATH='',
-                   GITHUB_TOKEN='', PACKAGES='', LATEST='')
+                   GITHUB_TOKEN='', LATEST='')
         selection = self.root / 'selection.json'
         run(os.sys.executable, SCRIPT, 'select', '--output', selection, env=env)
         paths = []
         for _ in range(2):
             manifest = Path(run(os.sys.executable, SCRIPT, 'prepare', '--selection', selection,
                                 '--input-root', inputs, '--source-root', source, '--builder-file', builder,
-                                '--output-root', source / 'build/publication'))
+                                '--output-root', source / 'build/publication', '--repository', 'fixture/mirror',
+                                '--tag', '中文/release', '--source-repository', REPOSITORY))
             paths.append(manifest)
             publication = json.loads(manifest.read_text())
             self.assertEqual(publication['initial_latest'], {'queue': '1.0'})
-            self.assertEqual(len(publication['assets']), 2)
+            self.assertEqual(len(publication['assets']), 3)
             for asset in publication['assets']:
                 self.assertEqual(asset['sha256'], hashlib.sha256((manifest.parent / asset['path']).read_bytes()).hexdigest())
                 if asset['kind'] == 'library':
@@ -447,15 +598,65 @@ class PreparationTests(unittest.TestCase):
                     relocated = extracted / 'queue/1.0'
                     self.assertNotIn(producer_prefix, (relocated / 'config.cmake').read_text())
                     self.assertEqual(os.readlink(relocated / 'header-link'), 'include/input.h')
-                else:
+                elif asset['kind'] == 'importer':
                     with tarfile.open(manifest.parent / asset['path'], 'r:xz') as archive:
                         self.assertEqual(archive.getnames(), [tool('linux-x86_64')])
+                        self.assertEqual(archive.extractfile(tool('linux-x86_64')).read(), importer.read_bytes())
+                else:
+                    self.assertEqual((manifest.parent / asset['path']).read_bytes(),
+                                     self.api.inject_release_root(original_entry, 'fixture/mirror', '中文/release'))
             unpacked = manifest.parent / 'input-linux-x86_64/install'
             self.assertEqual(snapshot(unpacked, include_mtime=False), snapshot(installed, include_mtime=False))
         self.assertNotEqual(paths[0], paths[1])
         self.assertEqual((snapshot(installed), snapshot(inputs)), before)
+        self.assertEqual((source / 'src/autolib.cmake').read_bytes(), dirty_entry)
         self.assertEqual(set(methods), {'GET'})
-        print('real CLI select/prepare: 2 reruns, 2 assets each; exact producer prefix; original/input snapshots unchanged; extracted payload/types/normalized modes/links match')
+        print('real CLI select/prepare: 2 reruns, 3 assets each; exact producer prefix; original/input snapshots unchanged; extracted payload/types/normalized modes/links match')
+
+        selected_plan = plan(PLATFORMS)
+        selected_plan['publisher'] = ''
+        for platform in selected_plan['platforms']:
+            platform.update(roots=[], requested_roots=[], filtered_roots=[], layers=[])
+            platform['description']['modules'] = []
+        tool_inputs = self.root / 'tool-only inputs'
+        tool_plan = tool_inputs / 'ci-plan-42-2'
+        tool_plan.mkdir(parents=True)
+        (tool_plan / 'plan.json').write_bytes(json_bytes(selected_plan))
+        (tool_plan / 'run.json').write_bytes(json_bytes(identity))
+        for platform in PLATFORMS:
+            directory = tool_inputs / ('ci-install-42-2-' + platform)
+            directory.mkdir()
+            def entry_from_commit(t, r, f):
+                f['install/autolib.cmake'] = original_entry
+                r['entry']['sha256'] = hashlib.sha256(original_entry).hexdigest()
+                for name in ['install/eigen/package.toml', 'install/queue/package.toml']:
+                    f.pop(name)
+            make_transport(directory / 'transport.tar', selected_plan, platform, entry_from_commit, identity=identity)
+        chosen = dict(source_run=identity, plan=selected_plan, explicit_latest={},
+                      artifacts=[dict(id=1, name='ci-plan-42-2')] +
+                      [dict(id=i + 2, name='ci-install-42-2-' + p) for i, p in enumerate(PLATFORMS)])
+        selection.write_bytes(json_bytes(chosen))
+        before = snapshot(tool_inputs)
+        manifest = Path(run(os.sys.executable, SCRIPT, 'prepare', '--selection', selection,
+                            '--input-root', tool_inputs, '--source-root', source, '--builder-file', builder,
+                            '--output-root', source / 'build/tool-publication', '--repository', 'fixture/mirror',
+                            '--tag', '中文/release', '--source-repository', REPOSITORY))
+        publication = json.loads(manifest.read_text())
+        self.assertEqual(publication['initial_latest'], {})
+        self.assertEqual(sorted(a['name'] for a in publication['assets']),
+                         sorted(['autolib.cmake'] + [tool(p) + '.tar.xz' for p in PLATFORMS]))
+        for asset in publication['assets']:
+            payload = manifest.parent / asset['path']
+            self.assertEqual(asset['sha256'], hashlib.sha256(payload.read_bytes()).hexdigest())
+            self.assertEqual(asset['size'], payload.stat().st_size)
+            if asset['kind'] == 'importer':
+                with tarfile.open(payload, 'r:xz') as archive:
+                    self.assertEqual(archive.getnames(), [tool(asset['platform'])])
+                    self.assertEqual(archive.extractfile(tool(asset['platform'])).read(), b'tool')
+        self.assertEqual(snapshot(tool_inputs), before)
+        self.assertEqual((source / 'src/autolib.cmake').read_bytes(), dirty_entry)
+        print('real builder tool-only: 3 importer archives + 1 entry; no library candidates; source and transport inputs unchanged')
+        print('production manifest returned: ' + str(manifest))
 
 
 if __name__ == '__main__':
