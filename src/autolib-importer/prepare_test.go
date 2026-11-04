@@ -1,7 +1,6 @@
 package main
 
 import (
-	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
@@ -30,9 +29,6 @@ func TestPrepareReuse(t *testing.T) {
 		t.Fatal(err)
 	}
 	putTestFile(t, filepath.Join(got[0].Directory, "data"), "local authority")
-	if err := os.Rename(filepath.Join(o.LocalRoot, "demo-1.0-linux-aarch64.tar.zst"), filepath.Join(o.LocalRoot, "archive-away")); err != nil {
-		t.Fatal(err)
-	}
 	if _, err := prepare(o); err != nil {
 		t.Fatal(err)
 	}
@@ -58,11 +54,6 @@ func TestPrepareFailures(t *testing.T) {
 	o.RemoteRoot = "https://example.invalid/release"
 	if _, err := prepare(o); err == nil {
 		t.Fatal("accepted unsupported remote source for missing package")
-	}
-	o.RemoteRoot = ""
-	o.LocalRoot = "https://example.invalid/release"
-	if _, err := prepare(o); err == nil {
-		t.Fatal("accepted URL as local root")
 	}
 }
 

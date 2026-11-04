@@ -18,10 +18,7 @@ func TestVersionedRejectSourceResponse(t *testing.T) {
 }
 
 func prepareArguments(o prepareOptions) []string {
-	args := []string{"prepare", "--cache-root=" + o.CacheRoot, "--cmake-command=" + o.CMakeCommand, "--work-root=" + o.WorkRoot, "--os=" + o.OS, "--arch=" + o.Arch, "--result=" + o.ResultPath}
-	if o.LocalRoot != "" {
-		args = append(args, "--local-root="+o.LocalRoot)
-	}
+	args := []string{"prepare", "--cache-root=" + o.CacheRoot, "--os=" + o.OS, "--arch=" + o.Arch, "--result=" + o.ResultPath}
 	if o.MetadataRoot != "" {
 		args = append(args, "--metadata-root="+o.MetadataRoot)
 	}
@@ -47,13 +44,13 @@ func TestImporterCLI(t *testing.T) {
 			t.Fatalf("accepted %q: %d %s", bad, code, stderr.String())
 		}
 	}
-	for _, option := range []string{"--cache-root=", "--cmake-command="} {
+	for _, option := range []string{"--cache-root=", "--result="} {
 		stderr.Reset()
 		if code := run(append(append([]string{}, args...), option), &stdout, &stderr); code == 0 {
 			t.Fatal("accepted missing required internal option", option)
 		}
 	}
-	o.LocalRoot, o.RemoteRoot = "", ""
+	o.RemoteRoot = ""
 	stderr.Reset()
 	if code := run(prepareArguments(o), &stdout, &stderr); code != 0 {
 		t.Fatalf("offline CLI %d: %s", code, stderr.String())

@@ -28,8 +28,8 @@ func ciImporterExecutable(platform string) string {
 	return name
 }
 
-func finalizeCI(plan ciPlan, run ciRunIdentity, results []ciPlatformResult) error {
-	if run.Repository != ciGitHubRepository || !commitPattern.MatchString(run.SHA) || run.CheckoutSHA != run.SHA || !ciRunNumber(run.RunID) || !ciRunNumber(run.Attempt) {
+func finalizeCI(plan ciPlan, repository string, run ciRunIdentity, results []ciPlatformResult) error {
+	if !ciRepositoryPattern.MatchString(repository) || run.Repository != repository || !commitPattern.MatchString(run.SHA) || run.CheckoutSHA != run.SHA || !ciRunNumber(run.RunID) || !ciRunNumber(run.Attempt) {
 		return errors.New("invalid run identity")
 	}
 	if len(results) != len(plan.Platforms) {
@@ -46,6 +46,7 @@ func finalizeCI(plan ciPlan, run ciRunIdentity, results []ciPlatformResult) erro
 		selected[platform.ID] = platform
 	}
 	seen := map[string]bool{}
+	entryDigest := ""
 	for _, result := range results {
 		platform, ok := selected[result.Platform]
 		if !ok || seen[result.Platform] || result.Run != run || !result.Complete || result.Error != "" {
@@ -55,6 +56,10 @@ func finalizeCI(plan ciPlan, run ciRunIdentity, results []ciPlatformResult) erro
 		if !result.Importer.Verified || result.Importer.File != ciImporterExecutable(result.Platform) {
 			return fmt.Errorf("platform %s importer is not verified", result.Platform)
 		}
+		if !result.Entry.Verified || result.Entry.File != "autolib.cmake" || !digestValue.MatchString(result.Entry.SHA256) || (entryDigest != "" && result.Entry.SHA256 != entryDigest) {
+			return fmt.Errorf("platform %s entry is unverified or has inconsistent SHA256", result.Platform)
+		}
+		entryDigest = result.Entry.SHA256
 		if len(result.Packages) != len(platform.Description.Modules) {
 			return fmt.Errorf("platform %s package results are incomplete", result.Platform)
 		}
@@ -96,11 +101,12 @@ func runCIFinalize(args []string, stdout, stderr io.Writer) int {
 	planFile := flags.String("plan", "", "plan JSON file")
 	runFile := flags.String("run-identity", "", "run identity JSON file")
 	resultRoot := flags.String("results", "", "directory of platform result JSON files")
+	repository := flags.String("repository", "", "trusted GitHub source repository")
 	if err := flags.Parse(args); err != nil {
 		return 1
 	}
-	if *planFile == "" || *runFile == "" || *resultRoot == "" || flags.NArg() != 0 {
-		return fail(errors.New("finalize requires --plan, --run-identity and --results"))
+	if *planFile == "" || *runFile == "" || *resultRoot == "" || *repository == "" || flags.NArg() != 0 {
+		return fail(errors.New("finalize requires --plan, --run-identity, --results and --repository"))
 	}
 	var plan ciPlan
 	var identity ciRunIdentity
@@ -109,6 +115,9 @@ func runCIFinalize(args []string, stdout, stderr io.Writer) int {
 	}
 	if err := decodeStrictJSONFile(*runFile, &identity); err != nil {
 		return fail(err)
+	}
+	for _, platform := range plan.Platforms {
+		fmt.Fprintf(stdout, "%s: requested_roots=%v roots=%v filtered_roots=%v\n", platform.ID, platform.RequestedRoots, platform.Roots, platform.FilteredRoots)
 	}
 	files, err := filepath.Glob(filepath.Join(*resultRoot, "*.json"))
 	if err != nil {
@@ -126,7 +135,7 @@ func runCIFinalize(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintf(stdout, "  %s@%s: built=%t verified=%t\n", item.Slot.Name, item.Slot.Version, item.Built, item.Verified)
 		}
 	}
-	if err := finalizeCI(plan, identity, results); err != nil {
+	if err := finalizeCI(plan, *repository, identity, results); err != nil {
 		return fail(err)
 	}
 	fmt.Fprintln(stdout, "CI selected work verified")

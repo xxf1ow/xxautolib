@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
-const ciGitHubRepository = "xxf1ow/xxautolib"
+var ciRepositoryPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9_][A-Za-z0-9_.-]*$`)
 
 type ciRunIdentity struct {
 	Repository  string `json:"repository"`
@@ -20,8 +21,8 @@ type ciRunIdentity struct {
 	Attempt     string `json:"attempt"`
 }
 
-func validateCIRunIdentity(ctx context.Context, sourceRoot string, run ciRunIdentity) error {
-	if run.Repository != ciGitHubRepository || !commitPattern.MatchString(run.SHA) || run.CheckoutSHA != run.SHA || !ciRunNumber(run.RunID) || !ciRunNumber(run.Attempt) {
+func validateCIRunIdentity(ctx context.Context, sourceRoot, repository string, run ciRunIdentity) error {
+	if !ciRepositoryPattern.MatchString(repository) || run.Repository != repository || !commitPattern.MatchString(run.SHA) || run.CheckoutSHA != run.SHA || !ciRunNumber(run.RunID) || !ciRunNumber(run.Attempt) {
 		return errors.New("CI requires the source repository, matching event/checkout SHA and positive run ID/attempt")
 	}
 	if !strings.HasPrefix(run.Ref, "refs/heads/") || run.Ref == "refs/heads/" {
@@ -46,7 +47,7 @@ func loadCIWork(ctx context.Context, o ciRunOptions) (ciPlan, ciRunIdentity, *ci
 	fail := func(err error) (ciPlan, ciRunIdentity, *ciPlatformPlan, string, string, error) {
 		return plan, run, nil, "", "", err
 	}
-	for name, value := range map[string]string{"source-root": o.SourceRoot, "plan": o.PlanFile, "run-identity": o.RunIdentityFile, "platform": o.Platform, "work-root": o.WorkRoot} {
+	for name, value := range map[string]string{"repository": o.Repository, "source-root": o.SourceRoot, "plan": o.PlanFile, "run-identity": o.RunIdentityFile, "platform": o.Platform, "work-root": o.WorkRoot} {
 		if strings.TrimSpace(value) == "" {
 			return fail(fmt.Errorf("--%s is required", name))
 		}
@@ -57,7 +58,7 @@ func loadCIWork(ctx context.Context, o ciRunOptions) (ciPlan, ciRunIdentity, *ci
 	if err := decodeStrictJSONFile(o.RunIdentityFile, &run); err != nil {
 		return fail(err)
 	}
-	if err := validateCIRunIdentity(ctx, o.SourceRoot, run); err != nil {
+	if err := validateCIRunIdentity(ctx, o.SourceRoot, o.Repository, run); err != nil {
 		return fail(err)
 	}
 	source, err := filepath.Abs(o.SourceRoot)
@@ -95,8 +96,8 @@ func loadCIWork(ctx context.Context, o ciRunOptions) (ciPlan, ciRunIdentity, *ci
 	if _, _, err := ciTarget(o.Platform); err != nil {
 		return fail(err)
 	}
-	if len(selected.Roots) == 0 || len(selected.Description.Modules) == 0 {
-		return fail(errors.New("selected platform has no qualified roots"))
+	if (len(selected.Roots) == 0) != (len(selected.Description.Modules) == 0) || (len(selected.Description.Modules) == 0 && len(selected.Layers) != 0) {
+		return fail(errors.New("selected platform has inconsistent library work"))
 	}
 	return plan, run, selected, source, work, nil
 }

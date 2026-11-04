@@ -16,32 +16,37 @@ func TestInstalledValidationDriver(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, kind := range []string{"complete", "exact refs", "missing tool", "missing descriptor"} {
+	for _, kind := range []string{"complete", "exact refs", "missing tool", "missing descriptor", "wrong runtime"} {
 		t.Run(kind, func(t *testing.T) {
 			root := t.TempDir()
 			install := filepath.Join(root, "installed packages")
 			putTestFile(t, filepath.Join(root, "src/autolib.cmake"), readTestFile(t, "../autolib.cmake"))
+			putTestFile(t, filepath.Join(install, "autolib.cmake"), readTestFile(t, "../autolib.cmake"))
 			roots := "flann;queue"
 			if kind == "exact refs" {
 				roots = "flann@1.0;queue@1.0"
 			}
+			runtimePath := "${AUTOLIB_PACKAGE_DIR_flann}/lib/libflann.so"
+			if kind == "wrong runtime" {
+				runtimePath = "${AUTOLIB_PACKAGE_DIR_flann}.other/lib/libflann.so"
+			}
 			putTestFile(t, filepath.Join(root, "tests/autolib/CMakeLists.txt"), `cmake_minimum_required(VERSION 3.20)
 project(installed_fixture NONE)
-if(NOT ROOT_PACKAGES STREQUAL "`+roots+`" OR NOT AUTOLIB_REMOTE_ROOT STREQUAL "")
+if(NOT ROOT_PACKAGES STREQUAL "`+roots+`")
     message(FATAL_ERROR "driver lost local-only exact roots")
 endif()
 set(CMAKE_SYSTEM_NAME Linux)
 set(CMAKE_SYSTEM_PROCESSOR aarch64)
-set(AUTOLIB_LOCAL_ROOT "${RELEASE_ROOT}")
 include("${AUTOLIB_ENTRY}")
 add_library(app INTERFACE)
 autolib_import(TARGET app INTERFACE ${ROOT_PACKAGES})
-if(NOT AUTOLIB_PACKAGE_DIR_flann STREQUAL "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/flann/1.0")
-    message(FATAL_ERROR "driver did not copy the installation into the entry cache")
+get_filename_component(entry_root "${AUTOLIB_ENTRY}" DIRECTORY)
+if(NOT AUTOLIB_PACKAGE_DIR_flann STREQUAL "${entry_root}/flann/1.0")
+    message(FATAL_ERROR "driver did not use the original installation")
 endif()
-file(WRITE "${CMAKE_BINARY_DIR}/prepared-state.cmake" "set(AUTOLIB_FLANN_RUNTIME_DIR [==[${AUTOLIB_PACKAGE_DIR_flann}/lib]==])\n")
+file(WRITE "${CMAKE_BINARY_DIR}/prepared-state.cmake" "set(AUTOLIB_PACKAGE_DIR_flann [==[${AUTOLIB_PACKAGE_DIR_flann}]==])\nset(AUTOLIB_FLANN_RUNTIME_DIR [==[${AUTOLIB_PACKAGE_DIR_flann}/lib]==])\n")
 enable_testing()
-add_test(NAME installed COMMAND "${CMAKE_COMMAND}" -E true)
+add_test(NAME installed COMMAND "${CMAKE_COMMAND}" -E echo "runtime_flann=`+runtimePath+`")
 `)
 			for _, name := range []string{"queue", "lz4", "flann"} {
 				id := packageIdentity{name, "1.0", "linux", "aarch64"}
@@ -95,6 +100,11 @@ add_test(NAME installed COMMAND "${CMAKE_COMMAND}" -E true)
 				}
 				if configure := readTestFile(t, filepath.Join(runs[0], "configure.log")); strings.Contains(configure, "Ignoring extra path") {
 					t.Fatalf("driver split list arguments into extra command-line paths:\n%s", configure)
+				}
+			} else if kind == "wrong runtime" {
+				runs, _ := filepath.Glob(filepath.Join(root, "build/validation/run-*"))
+				if len(runs) != 1 || !strings.Contains(readTestFile(t, filepath.Join(runs[0], "test.log")), "100% tests passed") || !strings.Contains(string(out), "Runtime did not report a library from the selected package") {
+					t.Fatalf("driver did not reject a successful smoke with the wrong runtime: %s", out)
 				}
 			} else if !strings.Contains(string(out), "importer") {
 				t.Fatalf("missing installation did not fail through consumption: %s", out)

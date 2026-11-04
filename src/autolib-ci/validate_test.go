@@ -2,10 +2,12 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -25,6 +27,7 @@ func TestCIInstalledDriverProductionInputs(t *testing.T) {
 	}
 	t.Cleanup(func() { os.RemoveAll(root) })
 	writeCIFixture(t, root, "src/autolib.cmake", "# unused entry for driver argument fixture\n")
+	writeCIFixture(t, root, "install/autolib.cmake", "# installed entry for driver argument fixture\n")
 	writeCIFixture(t, root, "tests/autolib/CMakeLists.txt", `cmake_minimum_required(VERSION 3.20)
 project(driver_inputs NONE)
 enable_testing()
@@ -40,16 +43,49 @@ add_test(NAME forwarded COMMAND "${CMAKE_COMMAND}" -E true)
 	if runtime.GOOS == "windows" {
 		generator = "Visual Studio 17 2022"
 	}
-	output, err := exec.Command(cmake, "-DSOURCE_ROOT="+root, "-DINSTALL_ROOT="+filepath.Join(root, "install"), "-DVALIDATION_ROOT="+filepath.Join(root, "build", "validation"), "-DGENERATOR="+generator, "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL", "-DCMAKE_INSTALL_LIBDIR=fixture-lib", "-DCMAKE_POLICY_VERSION_MINIMUM=3.5", "-P", filepath.Join(repository, "tests", "autolib", "run-installed.cmake")).CombinedOutput()
-	if err != nil {
-		t.Fatalf("driver failed: %v %s", err, output)
+	validation := filepath.Join(root, "build", "validation")
+	for _, explicit := range []bool{false, true} {
+		t.Run(fmt.Sprintf("explicit evidence=%t", explicit), func(t *testing.T) {
+			evidence := validation
+			args := []string{"-DSOURCE_ROOT=" + root, "-DINSTALL_ROOT=" + filepath.Join(root, "install"), "-DVALIDATION_ROOT=" + validation, "-DGENERATOR=" + generator, "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL", "-DCMAKE_INSTALL_LIBDIR=fixture-lib", "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"}
+			if explicit {
+				evidence = filepath.Join(root, "build", "evidence")
+				args = append(args, "-DEVIDENCE_DIRECTORY="+evidence)
+			}
+			args = append(args, "-P", filepath.Join(repository, "tests", "autolib", "run-installed.cmake"))
+			output, err := exec.Command(cmake, args...).CombinedOutput()
+			if err != nil {
+				t.Fatalf("driver failed: %v %s", err, output)
+			}
+			runRoot, err := validationRunFromOutput(output)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if filepath.Dir(runRoot) != evidence {
+				t.Fatalf("consumer logs escaped evidence directory: got %s, want parent %s", runRoot, evidence)
+			}
+			for _, log := range []string{"configure.log", "build.log", "test.log"} {
+				if _, err := os.Stat(filepath.Join(runRoot, log)); err != nil {
+					t.Fatalf("missing consumer log %s: %v", log, err)
+				}
+			}
+			if got := mustReadText(t, filepath.Join(runRoot, "build", "inputs.txt")); got != "MultiThreadedDLL\nfixture-lib\n3.5\n" {
+				t.Fatalf("driver lost production inputs: %q", got)
+			}
+		})
 	}
-	runRoot, err := validationRunFromOutput(output)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := mustReadText(t, filepath.Join(runRoot, "build", "inputs.txt")); got != "MultiThreadedDLL\nfixture-lib\n3.5\n" {
-		t.Fatalf("driver lost production inputs: %q", got)
+}
+
+func TestCIInstalledDriverRejectsEvidenceOutsideBuild(t *testing.T) {
+	root := t.TempDir()
+	for _, evidence := range []string{filepath.Join(root, "build"), filepath.Join(root, "outside")} {
+		output, err := exec.Command("cmake", "-DSOURCE_ROOT="+root, "-DINSTALL_ROOT="+filepath.Join(root, "install"), "-DVALIDATION_ROOT="+filepath.Join(root, "build", "validation"), "-DEVIDENCE_DIRECTORY="+evidence, "-DGENERATOR=Unix Makefiles", "-P", filepath.Join("..", "..", "tests", "autolib", "run-installed.cmake")).CombinedOutput()
+		if err == nil || !strings.Contains(string(output), "EVIDENCE_DIRECTORY must be below") {
+			t.Fatalf("did not reject evidence directory %s before validation: %v\n%s", evidence, err, output)
+		}
+		if _, err := os.Stat(evidence); !os.IsNotExist(err) {
+			t.Fatalf("rejected evidence directory was created: %v", err)
+		}
 	}
 }
 
@@ -93,16 +129,17 @@ func TestCILinuxABIRecordsRealSymbolRequirements(t *testing.T) {
 		t.Skip("requires native Linux compiler and objdump")
 	}
 	root := t.TempDir()
-	packages := filepath.Join(root, "consumer", "3rdparty")
-	libraryRoot := filepath.Join(packages, "fresh", "lib")
-	build := filepath.Join(root, "build")
+	packages := filepath.Join(root, "installed")
+	libraryRoot := filepath.Join(packages, "fresh", "1", "lib")
+	run := filepath.Join(root, "validation", "run-fixture")
+	build := filepath.Join(run, "build")
 	for _, directory := range []string{libraryRoot, build} {
 		if err := os.MkdirAll(directory, 0755); err != nil {
 			t.Fatal(err)
 		}
 	}
 	writeCIFixture(t, root, "consumer.cpp", "#include <cstdio>\nint main() { return std::puts(\"ABI fixture\") < 0; }\n")
-	writeCIFixture(t, root, "library.cpp", "#include <cstdio>\n#include <string>\nextern \"C\" int abi_fixture() { std::string text(128, 'x'); return std::puts(text.c_str()); }\n")
+	writeCIFixture(t, root, "library.cpp", ciABIFixtureLibrary)
 	for _, args := range [][]string{
 		{filepath.Join(root, "consumer.cpp"), "-o", filepath.Join(build, "autolib_smoke")},
 		{"-fPIC", "-shared", filepath.Join(root, "library.cpp"), "-o", filepath.Join(libraryRoot, "libfresh.so")},
@@ -111,19 +148,41 @@ func TestCILinuxABIRecordsRealSymbolRequirements(t *testing.T) {
 			t.Fatalf("compile ABI fixture: %v\n%s", err, output)
 		}
 	}
-	if err := verifyLinuxABIEvidence(root, "2.99"); err != nil {
+	// This version is required by getentropy inside the library, not by the executable.
+	_, consumerRequirements, err := linuxObjdumpVersions(filepath.Join(build, "autolib_smoke"))
+	if err != nil || consumerRequirements["GLIBC_2.25"] {
+		t.Fatalf("consumer cannot isolate library-only GLIBC_2.25 requirement: %v %v", consumerRequirements, err)
+	}
+	writeCIFixture(t, packages, "unrelated/1/lib/libunrelated.so", "not an ELF library\n")
+	writeCIFixture(t, packages, "fresh/2/lib/libfresh.so", "unselected version is not an ELF library\n")
+	packageRoots := []string{filepath.Join(packages, "fresh", "1")}
+	if err := verifyLinuxABIEvidence(run, packageRoots, "2.31"); err != nil {
 		t.Fatal(err)
 	}
-	report := mustReadText(t, filepath.Join(root, "abi-requirements.txt"))
+	report := mustReadText(t, filepath.Join(run, "abi-requirements.txt"))
 	for _, prefix := range []string{"GLIBC_", "GLIBCXX_", "CXXABI_", "GCC_"} {
 		if !strings.Contains(report, prefix) {
 			t.Errorf("real consumer/library %s requirements missing from ABI report: %q", prefix, report)
 		}
 	}
-	if err := verifyLinuxABIEvidence(root, "2.0"); err == nil {
-		t.Fatal("accepted real GLIBC requirements above the configured maximum")
+	if !slices.Contains(strings.Fields(report), "GLIBC_2.25") {
+		t.Errorf("library-only GLIBC_2.25 missing from ABI report: %q", report)
+	}
+	if err := verifyLinuxABIEvidence(run, packageRoots, "2.24"); err == nil || !strings.Contains(err.Error(), "GLIBC_2.25") {
+		t.Fatalf("accepted library-only GLIBC requirement above the configured maximum: %v", err)
 	}
 }
+
+const ciABIFixtureLibrary = `#include <cstdio>
+#include <string>
+#include <unistd.h>
+extern "C" int abi_fixture() {
+    char random;
+    if (getentropy(&random, 1) != 0) return -1;
+    std::string text(128, 'x');
+    return std::puts(text.c_str()) < 0 ? -1 : 1;
+}
+`
 
 func TestCIWindowsIdentity(t *testing.T) {
 	config, err := loadCIEnvironment(filepath.Join("..", "..", ".github", "ci-tools.json"))
@@ -136,7 +195,7 @@ func TestCIWindowsIdentity(t *testing.T) {
 	}
 }
 
-func TestCIValidationPathsResolveExecutableSymlinks(t *testing.T) {
+func TestCIValidationPathsResolveDirectorySymlinks(t *testing.T) {
 	t.Run("does not require an archive release root", func(t *testing.T) {
 		o := ciValidationPathFixture(t)
 		if _, err := validateCIValidationPaths(o); err != nil {
@@ -146,23 +205,22 @@ func TestCIValidationPathsResolveExecutableSymlinks(t *testing.T) {
 
 	t.Run("accepts internal targets", func(t *testing.T) {
 		o := ciValidationPathFixture(t)
-		link := filepath.Join(o.SourceRoot, "tools", "importer-link.exe")
-		target := filepath.Join(o.SourceRoot, "tools", "importer-real.exe")
-		createCIExecutableSymlink(t, link, target)
-		o.ImporterFile = link
+		link := filepath.Join(o.SourceRoot, "evidence-link")
+		createCIDirectorySymlink(t, link, o.EvidenceDirectory)
+		o.EvidenceDirectory = link
 		if _, err := validateCIValidationPaths(o); err != nil {
-			t.Fatalf("rejected executable symlinks resolving inside source root: %v", err)
+			t.Fatalf("rejected evidence symlink resolving inside source root: %v", err)
 		}
 	})
 
-	t.Run("rejects external importer target", func(t *testing.T) {
+	t.Run("rejects external evidence target", func(t *testing.T) {
 		o := ciValidationPathFixture(t)
-		outside := filepath.Join(filepath.Dir(o.SourceRoot), "external-importer.exe")
-		link := filepath.Join(o.SourceRoot, "tools", "importer-link.exe")
-		createCIExecutableSymlink(t, link, outside)
-		o.ImporterFile = link
-		if _, err := validateCIValidationPaths(o); err == nil || !strings.Contains(err.Error(), "importer file must resolve inside source root") {
-			t.Fatalf("accepted importer symlink resolving outside source root: %v", err)
+		outside := filepath.Join(filepath.Dir(o.SourceRoot), "external-evidence")
+		link := filepath.Join(o.SourceRoot, "evidence-link")
+		createCIDirectorySymlink(t, link, outside)
+		o.EvidenceDirectory = link
+		if _, err := validateCIValidationPaths(o); err == nil || !strings.Contains(err.Error(), "evidence directory must resolve inside source root") {
+			t.Fatalf("accepted evidence symlink resolving outside source root: %v", err)
 		}
 	})
 }
@@ -172,7 +230,7 @@ func ciValidationPathFixture(t *testing.T) ciValidationOptions {
 	root := t.TempDir()
 	source := filepath.Join(root, "source")
 	for _, path := range []string{
-		filepath.Join(source, "tools"), filepath.Join(source, "install"),
+		filepath.Join(source, "install"),
 		filepath.Join(source, "build", "evidence"),
 	} {
 		if err := os.MkdirAll(path, 0755); err != nil {
@@ -182,29 +240,28 @@ func ciValidationPathFixture(t *testing.T) ciValidationOptions {
 	return ciValidationOptions{
 		SourceRoot: source, InstallRoot: filepath.Join(source, "install"),
 		BuildRoot:    filepath.Join(source, "build"),
-		ImporterFile: filepath.Join(source, "tools", "importer.exe"),
 		CMakeCommand: filepath.Join(source, "cmake.exe"), EvidenceDirectory: filepath.Join(source, "build", "evidence"),
 	}
 }
 
-func createCIExecutableSymlink(t *testing.T, link, target string) {
+func createCIDirectorySymlink(t *testing.T, link, target string) {
 	t.Helper()
-	if err := os.WriteFile(target, []byte("fixture executable"), 0755); err != nil {
+	if err := os.MkdirAll(target, 0755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(target, link); err != nil {
 		if errors.Is(err, os.ErrPermission) || strings.Contains(strings.ToLower(err.Error()), "privilege") {
 			t.Skipf("host does not permit creating symlink fixtures: %v", err)
 		}
-		t.Fatalf("create executable symlink: %v", err)
+		t.Fatalf("create directory symlink: %v", err)
 	}
 }
 
 func TestCIWindowsPackageInputsRequirePreparedDirectLZ4(t *testing.T) {
 	root := t.TempDir()
-	packageRoot := filepath.Join(root, "consumer", "3rdparty")
-	flannLink := filepath.Join(packageRoot, "flann", "lib", "flann.lib")
-	lz4Link := filepath.Join(packageRoot, "lz4", "lib", "lz4.lib")
+	packageRoot := filepath.Join(root, "installed")
+	flannLink := filepath.Join(packageRoot, "flann", "1", "lib", "flann.lib")
+	lz4Link := filepath.Join(packageRoot, "lz4", "1", "lib", "lz4.lib")
 	for _, path := range []string{flannLink, lz4Link} {
 		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 			t.Fatal(err)
@@ -213,26 +270,46 @@ func TestCIWindowsPackageInputsRequirePreparedDirectLZ4(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	build := filepath.Join(root, "build")
+	run := filepath.Join(root, "validation", "run-fixture")
+	build := filepath.Join(run, "build")
 	if err := os.MkdirAll(build, 0755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(build, "link-inputs-Release.txt"), []byte(flannLink+"\n"+lz4Link+"\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	properties := "flann::flann\tINTERFACE_LINK_LIBRARIES\t" + filepath.Join(packageRoot, "flann", "lib", "cmake", "flann", "..", "..", "..", "..", "lz4", "lib", "lz4.lib") + "\n"
+	properties := "flann::flann\tINTERFACE_LINK_LIBRARIES\t" + filepath.Join(packageRoot, "flann", "1", "..", "..", "lz4", "1", "lib", "lz4.lib") + "\n"
 	propertiesPath := filepath.Join(build, "imported-properties.txt")
 	if err := os.WriteFile(propertiesPath, []byte(properties), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := verifyWindowsPackageInputs(root); err != nil {
+	packageRoots := []string{filepath.Join(packageRoot, "flann", "1"), filepath.Join(packageRoot, "lz4", "1")}
+	if err := verifyWindowsPackageInputs(run, packageRoots); err != nil {
 		t.Fatalf("rejected prepared FLANN and direct LZ4 link inputs: %v", err)
 	}
-	if err := os.WriteFile(propertiesPath, []byte("flann::flann\tINTERFACE_LINK_LIBRARIES\t"+filepath.Join(t.TempDir(), "lz4", "lib", "lz4.lib")+"\n"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	if err := verifyWindowsPackageInputs(root); err == nil {
-		t.Fatal("accepted FLANN's direct LZ4 link input outside the prepared packages")
+	for _, test := range []struct{ name, input, direct string }{
+		{"external link", filepath.Join(t.TempDir(), "external.lib"), lz4Link},
+		{"external LZ4", lz4Link, filepath.Join(t.TempDir(), "lz4.lib")},
+		{"unselected installed version", filepath.Join(packageRoot, "lz4", "2", "lib", "lz4.lib"), lz4Link},
+		{"unselected installed LZ4", lz4Link, filepath.Join(packageRoot, "lz4", "2", "lib", "lz4.lib")},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			for _, path := range []string{test.input, test.direct} {
+				if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, nil, 0644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			writeCIFixture(t, root, filepath.Join("validation", "run-fixture", "build", "link-inputs-Release.txt"), flannLink+"\n"+test.input+"\n")
+			if err := os.WriteFile(propertiesPath, []byte("flann::flann\tINTERFACE_LINK_LIBRARIES\t"+test.direct+"\n"), 0644); err != nil {
+				t.Fatal(err)
+			}
+			if err := verifyWindowsPackageInputs(run, packageRoots); err == nil || !strings.Contains(err.Error(), "must resolve inside selected installed packages") {
+				t.Fatalf("did not reject link input outside the selected installed packages: %v", err)
+			}
+		})
 	}
 }
 
@@ -242,12 +319,8 @@ func TestCIImporterSmoke(t *testing.T) {
 	if err := verifyImporterNoCRuntime(importer); err != nil {
 		t.Fatal(err)
 	}
-	cmake, err := exec.LookPath("cmake")
-	if err != nil {
-		t.Fatal(err)
-	}
 	osName, arch := testPlatform()
-	command := exec.Command(importer, "prepare", "--local-root="+root, "--cache-root="+filepath.Join(root, "cache"), "--work-root="+filepath.Join(root, "work"), "--cmake-command="+cmake, "--os="+osName, "--arch="+arch, "--result="+filepath.Join(root, "result.cmake"), "--package=ci-smoke")
+	command := exec.Command(importer, "prepare", "--cache-root="+root, "--os="+osName, "--arch="+arch, "--result="+filepath.Join(root, "result.cmake"), "--package=ci-smoke")
 	output, err := command.CombinedOutput()
 	var exit *exec.ExitError
 	if !errors.As(err, &exit) || exit.ExitCode() != 1 || !strings.Contains(string(output), "missing package input") {

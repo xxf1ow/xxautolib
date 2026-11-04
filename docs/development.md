@@ -1,6 +1,6 @@
 # 开发
 
-先准备 Git、CMake（3.20+）和 C/C++ 编译器，通过根入口构建安装。Go SDK 和固定模块自动准备；FLANN、OpenCV 需要 pkg-config，FLANN 使用 OpenMP，FFmpeg 按机器环境探测。builder 和 Go 测试不需要 Python 或 uv；Gitee 发布使用 Python，技能校验器自行准备环境。
+先准备 Git、CMake（3.20+）和 C/C++ 编译器，通过根入口构建安装。Go SDK 和固定模块自动准备；FLANN、OpenCV 需要 pkg-config，FLANN 使用 OpenMP，FFmpeg 按机器环境探测。builder 和普通 Go 测试不需要 Python 或 uv；发布及其整链夹具需要 Python 3.12，技能校验器自行准备环境。
 
 ## 准备与配置
 
@@ -38,35 +38,37 @@ Git 主来源复用 `git/<包名>/<版本>/`，资源复用 `git/_resources/<包
 
 ## 本地打包与消费
 
-自定义安装根在 configure 前设置环境变量 `AUTOLIB_INSTALL_ROOT`，不是同名 `-D` 参数；相对值以顶层源码目录解析，含空格路径须保持完整。更换根需重新 configure。普通根 build 完成后，宿主 importer 和 `<包名>/<版本>/` 可作为独立消费者的只读本地来源，不要求先打包。
+自定义安装根在 configure 前设置环境变量 `AUTOLIB_INSTALL_ROOT`，不是同名 `-D` 参数；相对值以顶层源码目录解析，含空格路径须保持完整。更换根需重新 configure。消费安装根须包含 `autolib.cmake`、宿主 importer 和 `<包名>/<版本>/`，不要求先打包。
 
-下游在 include 前将 `AUTOLIB_LOCAL_ROOT` 指向该安装根、`AUTOLIB_REMOTE_ROOT` 设为空，然后正常调用 `autolib_import(TARGET app PRIVATE queue flann)`。所需闭包完整时消费不联网；生产端准备 SDK、模块及三方源码不受此约束。Windows importer 为 `autolib-importer-windows-x86_64.exe`，Linux 按宿主架构命名且须可执行。没有 adapter 的模块不能快捷导入。
+下游通过绝对路径直接 include 安装根的 `autolib.cmake`，再调用 `autolib_import(TARGET app PRIVATE queue flann)`，不复制入口或包到另一缓存。所需精确闭包完整时消费不联网；缺工具或包时，本地入口明确失败。Windows importer 为 `autolib-importer-windows-x86_64.exe`，Linux 按宿主架构命名且须可执行。没有 adapter 的模块不能快捷导入。
 
 实际安装前，消费文件被置为未完成；安装失败后不能仅靠残留 sentinel 补齐。保护需要的数据，再按上节移走受影响安装目录和原生构建状态，重新完成真实安装；不删除其他包。已完成安装的精确依赖被冻结，reuse 不能把它重标为源码 latest。adapter 正文更新通过普通根重新 configure/build 的复用目标刷新，不手改已安装描述。
 
-需要分发时再使用 `builder package`；CI 工具准备见[CI 验证](testing.md#ci-验证)。
+本地需要分发时使用 `builder package`；CI 在验证后显式调用同一命令，不按 CI 环境改变 builder 行为。CI 工具准备见[CI 验证](testing.md#ci-验证)。
 
 `builder package` 必须显式提供源码、安装、输出根，目标和宿主身份、工具路径及重复模块选择；完整参数见[打包入口](../src/autolib-builder/release.go)。模块可写 `包名@版本`，裸名只读取安装根 latest；包内身份和依赖来自已安装描述，不重新解析源码 latest。输出必须在本副本 build 内且不与安装树重叠；只打包显式模块，不自动补依赖。版本化库 tar.zst、宿主工具 tar.xz、各自摘要和包级 latest 一同交付。真实示例由[本地闭环测试](testing.md#本地二进制闭环)执行。
 
-将 `src/autolib.cmake` 复制到独立工程 `3rdparty/`，在其他同名库发现之前调用 `autolib_import(TARGET app PRIVATE queue flann)`；也可请求 `eigen@3.4.0` 等精确引用。入口所在目录固定为缓存，来源首次 include 后跨作用域固定；工作根为 `${CMAKE_BINARY_DIR}/autolib`。平台从当前 CMake 目标归一，VS 显式平台优先，工具按宿主选择。公共入口校验完整精确闭包，再按依赖顺序加载 adapter；同次 configure 拒绝同包不同版本。返回 `AUTOLIB_PREPARED_PACKAGES` 及每包的 `AUTOLIB_PACKAGE_DIR_<name>`、`AUTOLIB_PACKAGE_VERSION_<name>`，下游不推断目录层级。
+入口自身实际路径所在目录是唯一工具和包根，也是远端下载缓存；目录不得含分号。同次 configure 固定入口根和目标平台，工作目录为 `${CMAKE_BINARY_DIR}/autolib`。平台从当前 CMake 目标归一，VS 显式平台优先，工具按宿主选择。公共入口校验完整精确闭包，再按依赖顺序加载 adapter；同次 configure 拒绝同包不同版本。返回 `AUTOLIB_PREPARED_PACKAGES` 及每包的 `AUTOLIB_PACKAGE_DIR_<name>`、`AUTOLIB_PACKAGE_VERSION_<name>`，下游不推断目录层级。
 
-`AUTOLIB_LOCAL_ROOT` 默认空；非空时解析真实绝对路径并拒绝与入口缓存相同，包括链接别名。本地根、缓存和工作路径不得含分号。工具依次使用入口裸程序、来源裸程序或来源单程序 tar.xz，最终只写入口缓存。库依次使用入口 `<name>/<version>/`、来源同布局安装、来源 `<name>-<version>-<os>-<arch>.tar.zst`；通用包使用 any-any。只有不存在才继续，坏候选立即失败。复制在缓存暂存区修正路径，来源工具、归档和安装树均只读；Linux 保留包内相对软链接及权限，拒绝绝对或越界链接，Windows 未承诺同等链接语义。同缓存根写入由调用方串行。
+源码及本地入口内置远端地址为空；发布入口在上传副本内带实际 Release 地址。调用方不能通过 `AUTOLIB_LOCAL_ROOT`、`AUTOLIB_REMOTE_ROOT` 普通变量、cache 变量或环境变量覆盖来源。完整工具和精确闭包命中时不访问 Git 或 HTTP；只有必需输入缺失且入口内置地址非空时才获取元数据或下载。已有损坏候选立即失败，不自动覆盖；不回退系统库、源码编译或旧格式。直接内部调用参数见 [CLI](../src/autolib-importer/main.go)。
 
-完整缓存允许关闭两来源；缺输入报错，不回退系统库、源码编译或旧格式。直接调用见[CLI参数](../src/autolib-importer/main.go)。
+远程使用者先将已发布的单个 `autolib.cmake` 下载到专用可写目录，例如不纳入版本控制的 `3rdparty/`，再 include 并调用 `autolib_import`。入口下载 URL 可为 HTTP(S) 或 `file://`；下载文件不会携带原目录的工具或包，入口也不根据下载 URL 推导来源。远端工具和包沿用 Git 元数据、SHA256 和安全解包校验；完整缓存可离线复用，缺输入时远程入口仍可能尝试联网。严格禁止联网须使用内置地址为空的入口，不提供离线开关。同根写入由调用方串行，目录中的既有文件不会自动清理。
 
-远端设置为 `AUTOLIB_REMOTE_ROOT=https://<github.com|gitee.com>/<owner>/<repo>/releases/download/<encoded-tag>`；入口按需克隆同仓库元数据，再下载精确归档。合法输入、内部交接和失败规则见[统一交付设计](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md#git-元数据与-release-布局)。完整缓存和完整本地来源不要求 Git 或网络。本地专用用法须显式关闭远端；远端须提供合法专用元数据和匹配资产，历史发行物不代表协议可用。实际验收范围见[测试指南](testing.md#真实交付与手动验收)。
-
-已有目录核对五行包头和导入文件，adapter 检查其所需文件，不逐文件散列；内容校验不认证来源，工具及包内 CMake 必须可信。缓存包和 latest 不自动追随来源，精确请求不改 latest；删除缓存 latest 指向的版本目录后，裸名请求重新发现来源选择，不更新无关缓存。刷新前保护修改，只处理入口缓存的 `<包名>/<版本>/`，不改来源、不删共享依赖；损坏包不是缺包，必须明确处理而非自动重选。FLANN 的包依赖仅 lz4，OpenMP、C++ ABI 和系统运行库由消费环境满足。
+已有目录核对五行包头和导入文件，adapter 检查其所需文件，不逐文件散列；内容校验不认证来源，工具及包内 CMake 必须可信。缓存包和 latest 不自动追随远端，精确请求不改 latest；删除缓存 latest 指向的版本目录后，裸名请求重新发现远端选择，不更新无关缓存。刷新前保护修改，只处理入口缓存的 `<包名>/<版本>/`，不删共享依赖；损坏包不是缺包，必须明确处理而非自动重选。FLANN 的包依赖仅 lz4，OpenMP、C++ ABI 和系统运行库由消费环境满足。
 
 ## CI 开发与运行
 
-[手动流水线](../.github/workflows/build-platform.yml)接受同仓库普通分支、拒绝 tag，检出事件提交；平台默认 all，模块留空发现全部合资格配方版本，也可选择 `eigen@3.4.0,eigen@5.0.1,queue,lz4,flann`。缺自身或传递依赖 adapter 的根静默过滤，全过滤成功且零发布。各平台构建精确闭包并逐根验证，上传含原计划、结果、安装与候选的运输 artifact；最终汇总不写 Release。环境见[CI 设计](agent-notes/implemented/architecture/2026-10-20-ci-system.md)，证据及缺口见[测试指南](testing.md#ci-验证)。
+[手动流水线](../.github/workflows/build-platform.yml)接受当前源码仓库的普通分支、拒绝 tag，检出事件提交；workflow 将 `GITHUB_REPOSITORY` 作为可信仓库传给运行、运输和汇总校验，支持 fork。平台默认 all。
+
+模块未提供或空字符串只准备 importer 和入口，原始输入严格等于 `all` 才发现全部合资格配方版本，也可选择 `eigen@3.4.0,eigen@5.0.1,queue,lz4,flann`。纯空白、混合或变形的 `all` 及单独 importer 选择均拒绝。缺自身或传递依赖 adapter 的根按资格过滤；计划与汇总分别展示请求根、有效根和过滤根，过滤不算警告或失败。
+
+零有效库仍保留所选平台，真实验证工具与入口，但不执行库构建或消费；普通根的空 `BUILD_LIST` 仍发现全部配方。非空库逐根验证精确闭包，随后打包运输成品、候选及原样入口，协议见[成品交接](agent-notes/implemented/architecture/2026-11-04-ci-packaged-artifact-handoff.md)。最终汇总不写 Release。环境见[CI 设计](agent-notes/implemented/architecture/2026-10-20-ci-system.md)，证据见[测试指南](testing.md#ci-验证)。
 
 ### 独立 Gitee 发布
 
-[发布 workflow](../.github/workflows/publish-artifacts.yml)仅写 Gitee，沿用 secret `GITEE_TOKEN` 及 variables `GITEE_REPOSITORY`、`GITEE_RELEASE_TAG`。自动入口等待整个构建成功，使用精确 run/attempt；手动 artifacts 模式指定 `source_run_id/source_attempt`，`packages` 留空为全部，否则填精确 `name@version` 或 `autolib-importer`。可附 JSON `latest`；latest 模式仅需非空映射，不读取构建资产。发布准备核对输入后使用原提交 builder 打包，不重新编译三方库。
+[发布流水线](../.github/workflows/publish-artifacts.yml)仅写 Gitee。源码仓库及其分叉须显式配置 `GITEE_REPOSITORY`、`GITEE_RELEASE_TAG` 和密钥 `GITEE_TOKEN`，缺失或非法即失败，无上游默认目标。可信来源取自 `GITHUB_REPOSITORY`，不采用清单自报仓库。自动发布等待同仓库成功构建；手动指定同仓库 `source_run_id/source_attempt`。两者核对原提交、全部验证记录及成品后，原样分发库和工具、生成唯一目标注入入口，不二次筛选、编译 builder 或重打包；入口不写 Git 元数据。可附 `latest` 映射；独立更新指针要求非空映射，不读取或要求构建输入。接口与目标编码见[发布接口](../.github/actions/gitee-release/UPSTREAM.md#gitee-版本化发布适配)。
 
-执行前必须信任控制代码与原构建提交；代码可以外传令牌，脱敏不是沙箱。同名替换先删后传，无备份回滚；部分失败登记成功项但任务失败，push 未确认也失败。显式重跑复用原输入并重新上传，不按同名或大小跳过。适配接口见[Action 说明](../.github/actions/gitee-release/UPSTREAM.md#gitee-版本化发布适配)。真实触发须取得目标及删除替换授权，并核对默认分支实际响应的自动入口，不能假定 workflow_run 使用任务分支控制代码。新库保持私有，用户公开后按[验收交接](testing.md#真实交付与手动验收)验证。
+执行前必须信任控制代码与原构建提交；代码可以外传令牌，脱敏不是沙箱。同名附件核对实际 SHA256，相同跳过，不同先删后传，无回滚；临时故障退避后从查询重试，参数见发布接口。部分失败登记就绪项但任务失败，push 未确认也失败。重跑复用同一成品，不仅凭同名、大小或已登记摘要跳过；旧安装树输入须重新构建，同源码重建不保证相同字节。真实触发须取得目标及删除替换授权，并核对默认分支自动入口，不能假定它使用任务分支代码。新库保持私有，公开后由用户按[验收交接](testing.md#真实交付与手动验收)验证。
 
 ## 远端构建与源码传输授权
 
@@ -74,7 +76,7 @@ Git 主来源复用 `git/<包名>/<版本>/`，资源复用 `git/_resources/<包
 
 定向验证只用 109 现有环境；最低 CMake 按用户决定不安排任何形式测试，不下载或传输旧工具。
 
-109 使用既有 Make 4.4.1：`/home/lxx/xxautolib/build/task3-make-V1Bt5n/install/bin/make`，仅为测试进程前置 PATH；清理 build 须保留该目录。
+109 使用既有 Make 4.4.1：`/home/lxx/xxautolib/build/task3-make-V1Bt5n/install/bin/make`，仅为测试进程前置 PATH；清理 build 须保留该目录。发布归档测试使用已有且支持 xz 的 `/home/lxx/.local/share/uv/python/cpython-3.12.14-linux-x86_64-gnu/bin/python3.12`，不重装工具。
 
 ## 日常修改
 

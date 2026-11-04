@@ -16,35 +16,29 @@ Go fixture 验证声明、原生构建、安装及版本化本地和受控远端
 
 先通过[普通根入口](development.md#准备与配置)选择代表集完成 configure/build，生成版本化安装、精确依赖描述及宿主工具；本节使用[实机验收](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md#版本化本地消费验证)中的独立生产根，不覆盖旧结果。
 
-[安装消费 driver](../tests/autolib/run-installed.cmake)将入口和测试源码放入独立消费者，正常调用公共 `autolib_import`，由 importer 从只读安装源准备入口缓存，不打包或直接 include 生产 adapter。通过 configure/build/CTest 并记录导入属性、精确目录、链接输入和动态加载位置。SOURCE_ROOT 仅供 driver 复制入口及 smoke，生成的消费者不包含生产源码。
+[安装消费 driver](../tests/autolib/run-installed.cmake)只将 smoke 源码放入独立消费者，直接 include `INSTALL_ROOT/autolib.cmake`，由公共 `autolib_import` 消费同根精确闭包。安装根必须已有入口、宿主工具及包。driver 执行 configure/build/CTest，并记录导入属性、精确目录、链接输入和动态加载位置；SOURCE_ROOT 仅用于取得 smoke，不复制生产入口或安装包。
 
-从安装复制验证代表集：
-
-```text
-cmake -DSOURCE_ROOT=/home/lxx/xxautolib -DINSTALL_ROOT=/home/lxx/xxautolib/build/versioned-stage2-install -DVALIDATION_ROOT=/home/lxx/xxautolib/build/validation/versioned-stage2/installed "-DGENERATOR=Unix Makefiles" "-DROOT_PACKAGES=flann;queue" -P tests/autolib/run-installed.cmake
-```
-
-再用[本地归档 driver](../tests/autolib/run-local.cmake)打包并消费；默认 relocate 模式将完整消费者及入口缓存搬迁、隐藏归档来源，并在两源均空时重新 configure/build/CTest：
+[原生闭环 fixture](../src/autolib-importer/versioned_local_loop_test.go)通过普通根真实安装入口和轻量 probe/dep，独立消费者直接 include 安装入口。头版本与机器码版本须同时为 1，运行加载路径、导入属性和链接输入须位于同一安装根；重复消费不改安装。错头版本负样本必须运行失败。运行此闭环使用：
 
 ```text
-cmake -DSOURCE_ROOT=/home/lxx/xxautolib -DINSTALL_ROOT=/home/lxx/xxautolib/build/versioned-stage2-install -DRELEASE_DIR=/home/lxx/xxautolib/build/validation/versioned-stage2/archive/release -DVALIDATION_ROOT=/home/lxx/xxautolib/build/validation/versioned-stage2/archive -DBUILDER_FILE=/home/lxx/xxautolib/build/versioned-stage2-producer/tools/autolib-builder -DIMPORTER_FILE=/home/lxx/xxautolib/build/versioned-stage2-install/autolib-importer-linux-x86_64 -DTARGET_OS=linux -DTARGET_ARCH=x86_64 "-DGENERATOR=Unix Makefiles" "-DMODULES=queue;lz4;flann" "-DROOT_PACKAGES=flann;queue" -P tests/autolib/run-local.cmake
+cmake -P src/autolib-builder/go-sdk.cmake -- test -mod=readonly ./src/autolib-importer -run 'TestVersionedLocalLoop$' -count=1 -v
 ```
 
-`MODULES` 是打包和 smoke 集合，`ROOT_PACKAGES` 是首次导入请求，默认等于 MODULES；flann、queue 的闭包为 `lz4;flann;queue`，生产描述固定 `lz4@1.10.0`。两者接受精确引用。Eigen 3.4.0 和 5.0.1 分别在独立消费者验证，设置两项均为对应精确引用，不在同次 configure 混用。`RELEASE_READY=ON` 使用 RELEASE_DIR 已有版本化资产，`VALIDATION_MODE=single` 仅消费一次；driver 不编译三方源码。VALIDATION_ROOT 每次新建运行子目录，RELEASE_DIR 必须在该根内；原安装和现成归档不变。
-
-[原生闭环 fixture](../src/autolib-importer/versioned_local_loop_test.go)使用真实 builder、头版本与链接版本双断言及动态加载检查，覆盖复制、归档、隐藏生产树后缓存搬迁；错头版本负样本必须运行失败。真实 Linux 验收另核对相对软链接、原安装的内容/类型/权限/mtime/链接不变，删除测试缓存 latest 目标后重发现及无关缓存不变。只删除解析确认的测试自有版本目录，保留生产结果和日志。本轮新协议未验证 Windows、Linux aarch64、最低 CMake 3.20；历史三平台闭环见[CI 验证](#ci-验证)，不能替代这些缺口。
+`MODULES` 选择 smoke 集合，`ROOT_PACKAGES` 选择首次导入根，均接受精确引用。Eigen 3.4.0 与 5.0.1 使用独立消费者，不在同次 configure 混用。VALIDATION_ROOT 必须位于 SOURCE_ROOT 的 build 内；可选 EVIDENCE_DIRECTORY 也须位于该 build 内，缺省使用 VALIDATION_ROOT。driver 在 evidence 下生成唯一运行目录，保存 configure/build/CTest 日志；CI 指定的目录位于 workflow 诊断收集范围内。driver 不编译三方源码，不修改原安装。
 
 ## Release 下载验证
 
-[远端原生闭环](../src/autolib-importer/versioned_remote_loop_test.go)通过普通根入口和真实 builder 生成轻量 probe/dep 与 importer 归档；两种托管共用专用 Git 元数据协议和受控 HTTPS。空缓存获取工具与精确闭包后真实链接运行，校验当前缓存加载位置及头/机器码版本；有效摘要但错误包内身份在 adapter 执行前失败。完整缓存复制到新消费者、关闭测试 Git/HTTPS 后，两源均空仍通过 configure/build/CTest，原来源、精确依赖和无关缓存不变；缓存复用零远端操作，需要新包的新 configure 获取新快照。实际计数及缺口见[远端消费验证](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md#版本化远端消费验证)。
+[远端原生闭环](../src/autolib-importer/versioned_remote_loop_test.go)复用真实轻量库。Gitee 子例经生产 CI transport 打包运输，再从 `prepare_publication` 返回清单取得实际入口和资产，验证非上游仓库与编码 tag 的工具及库 URL；GitHub 保留消费协议。空缓存引导后真实链接运行，完整缓存和损坏已有候选均零远端操作；错误身份及损坏候选在 adapter 前拒绝。关闭受控 Git/HTTPS、迁移完整缓存后仍链接运行，原输入及无关缓存不变。证据及缺口由[自定位入口记录](agent-notes/implemented/architecture/2026-11-03-entry-delivery-and-tool-only-ci.md#验证)拥有。
 
-[下载 driver](../tests/autolib/run-github.cmake)支持 GitHub/Gitee 下载根，将入口及 smoke 复制到独立消费者，由公共入口准备缓存。`MODULES` 选择 smoke，`ROOT_PACKAGES` 选择导入根；默认分别为 `queue;lz4;flann`、`flann;queue`，只传 MODULES 时根跟随该集合。两者透传首次及后续 configure；两个精确 Eigen 版本各自调用 driver，使用独立消费者与缓存。运行库路径取自 `prepared-state.cmake`，不自行搬库。`TestGitHubValidationDriver` 执行参数、缓存路径及入口失败断言。真实托管和 Windows/Visual Studio、Linux aarch64 尚未验证；最低 CMake 按用户决定不安排任何形式测试，仅用 109 现有 CMake 3.31.12，不宣称最低版本通过。
+109 使用[已有 Python 环境](development.md#远端构建与源码传输授权)，按下节发布测试方式选择 `-p test_entry_delivery.py`。该[桥接测试](../tests/ci/gitee-release/test_entry_delivery.py)从仓库根调度 RemoteLoop，不重复单跑同一 Go 用例；原目录存在未知源码差异时，只在逐摘要核对的新隔离源码根运行测试快照，不覆盖未知文件。
+
+[下载 driver](../tests/autolib/run-github.cmake)用 `ENTRY_URL` 下载发布入口到独立消费者的 `3rdparty/`，再 include 并消费，不读取源码入口或用户来源变量。`ENTRY_URL` 支持 CMake 下载的 HTTP(S) 和 `file://`；`MODULES`、`ROOT_PACKAGES` 分别选择 smoke 和导入根。driver 保留发布入口字节，执行构建、CTest 和缓存 reconfigure。受控 Git/HTTPS fixture 不替代真实托管验收。
 
 历史 GitHub 三平台供给、裸 importer 消费及 Windows 下载 driver 依据见[消费验收](agent-notes/proposed/architecture/2026-10-25-target-import-and-release-consumption.md#已验收范围)；真实 Gitee 用户验收、受控 TLS、分页及失败检查见[双来源记录](agent-notes/implemented/architecture/2026-10-27-ci-discovery-and-release-sources.md#验证)。它们不证明压缩工具新格式、版本化交付、Linux 双架构专项或最低 CMake 通过。裸资产、API 探测或同步成功不证明完整消费，不能替换现有工具冒充空根引导。
 
 ## CI 验证
 
-[CI 测试](../src/autolib-ci/main_test.go)覆盖精确计划、独立根验证、运输安全与所选平台完整性；workflow 定向测试核对事件条件、参数与接线。本地 fixture 和 workflow 片段执行不模拟完整 Actions，不替代三平台真实验收。109的工具构建命令：
+[CI 测试](../src/autolib-ci/main_test.go)覆盖精确计划、独立根验证、原生 builder 打包、成品摘要与数量、运输安全及所选平台完整性；workflow 定向测试核对事件条件、参数与接线。本地 fixture 和 workflow 片段执行不模拟完整 Actions，不替代三平台真实验收。109的工具构建命令：
 
 ```text
 cmake -P src/autolib-builder/go-sdk.cmake -- build -mod=readonly -trimpath -o build/tools/autolib-ci ./src/autolib-ci
@@ -62,11 +56,13 @@ build/tools/gitee-sync-venv/Scripts/python.exe -m pip install -r .github/actions
 build/tools/gitee-sync-venv/Scripts/python.exe -m unittest discover -s tests/ci/gitee-release -p test_publish.py -v
 ```
 
-按修改所有者替换 `-p` 文件名，不重复整套发布测试。HTTP 替身不访问真实 Gitee；Git 测试只用本地临时裸库。Windows 无 Bash 跳过相关分支检查，真实 builder 用例只在 109 执行。已有通过数量与真实缺口由[交付证据](agent-notes/implemented/architecture/2026-11-02-gitee-delivery-reimplementation.md#已有受控证据)拥有。
+按修改所有者替换 `-p` 文件名，不重复整套发布测试。HTTP 替身不访问真实 Gitee；Git 测试只用本地临时裸库。Windows 无 Bash 跳过相关分支检查，真实 builder 用例只在 109 执行。成品交接、两次准备字节一致及就绪资产重复发布零写入的定向证据由[成品交接记录](agent-notes/implemented/architecture/2026-11-04-ci-packaged-artifact-handoff.md#验证)拥有；既有交付证据由[交付证据](agent-notes/implemented/architecture/2026-11-02-gitee-delivery-reimplementation.md#已有受控证据)拥有。
 
 ## 真实交付与手动验收
 
-Gitee 版本化交付已通过用户手动验收。真实三平台构建记录、摘要空白修复及用户复验结论见[交付证据](agent-notes/implemented/architecture/2026-11-02-gitee-delivery-reimplementation.md#真实构建与用户验收)。修复后二次发布、三平台匿名消费及真实故障注入没有逐项归档日志，不将受控测试等同于这些专项通过。后续 CI、Gitee 写入与故障注入仍按具体授权执行；push 和新库公开由用户负责。
+Gitee 版本化交付及 CI 成品交接已通过用户手动验收。早期构建与摘要空白修复见[交付证据](agent-notes/implemented/architecture/2026-11-02-gitee-delivery-reimplementation.md#真实构建与用户验收)；三平台原生构建 #30、发布 #27 与全部跳过且无新元数据提交的重复发布 #28 见[成品交接验收](agent-notes/implemented/architecture/2026-11-04-ci-packaged-artifact-handoff.md#真实托管验收)。默认分支自动发布、三平台匿名消费及真实故障注入尚无专项通过证据；发布 #27/#28 均没有实际重试，不将成功发布等同于故障恢复通过。
+
+复验成品交接时使用成功的 `Representative releases` 构建；未合并时，手动选择任务分支的 `Publish artifacts` 并指定 run/attempt，核对实际控制提交，不假定默认分支自动入口使用任务分支代码。全部附件与元数据就绪后，仅重跑发布并保持 run/attempt、artifacts、目标和 latest 不变，预期 `uploaded=0`、`skipped=selected`、`failed=0`、`metadata_committed=false`，无 DELETE/POST 或新元数据提交。fork 采用流程及受控输入审查，不要求第二账号。CI、Gitee 写入与故障注入按具体授权执行；push 和新库公开由用户负责。
 
 ## 安装产物集成验证
 

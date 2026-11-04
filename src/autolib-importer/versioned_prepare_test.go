@@ -6,7 +6,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -16,8 +15,7 @@ func versionedFixture(t *testing.T, requests ...string) (prepareOptions, string)
 	t.Helper()
 	o := localGraphFixture(t)
 	o.Packages = requests
-	cache := filepath.Join(filepath.Dir(o.WorkRoot), "cache")
-	o.CacheRoot, o.CMakeCommand = cache, "cmake"
+	cache := o.CacheRoot
 	return o, cache
 }
 
@@ -50,90 +48,17 @@ func requireNoResult(t *testing.T, o prepareOptions) {
 	}
 }
 
-func TestVersionedLocalPriority(t *testing.T) {
-	for _, kind := range []string{"cache", "installation", "archive", "bad cache", "bad installation", "wrong identity", "incomplete", "case version", "case archive"} {
-		t.Run(kind, func(t *testing.T) {
-			o, cache := versionedFixture(t, "demo@1.0")
-			archive := versionedArchive(t, o.LocalRoot, "demo", "1.0", "")
-			switch kind {
-			case "cache", "bad cache":
-				dir := versionedInstalled(t, cache, "demo", "1.0", "", "cache")
-				versionedInstalled(t, o.LocalRoot, "demo", "1.0", "", "installation")
-				if kind == "bad cache" {
-					putTestFile(t, filepath.Join(dir, "autolib-import.cmake"), "broken")
-				}
-			case "installation", "bad installation", "wrong identity", "incomplete":
-				dir := versionedInstalled(t, o.LocalRoot, "demo", "1.0", "", "installation")
-				if kind == "bad installation" {
-					putTestFile(t, filepath.Join(dir, "autolib-import.cmake"), "broken")
-				}
-				if kind == "wrong identity" {
-					putTestFile(t, filepath.Join(dir, "autolib-import.cmake"), identityHeader(packageIdentity{"demo", "1.0", "windows", "x86_64"}))
-				}
-				if kind == "incomplete" {
-					if err := os.Remove(filepath.Join(dir, "autolib-import.cmake")); err != nil {
-						t.Fatal(err)
-					}
-				}
-				if kind == "installation" {
-					putTestFile(t, archive, "shadowed corrupt archive")
-				}
-			case "case version":
-				versionedInstalled(t, cache, "demo", "A", "", "upper")
-				versionedInstalled(t, cache, "demo", "a", "", "lower")
-				entries, err := os.ReadDir(filepath.Join(cache, "demo"))
-				if err != nil {
-					t.Fatal(err)
-				}
-				if len(entries) != 2 {
-					t.Skip("host cannot represent case-colliding version directories")
-				}
-			case "case archive":
-				if err := os.Rename(archive, strings.Replace(archive, "demo-", "Demo-", 1)); err != nil {
-					t.Fatal(err)
-				}
-			}
-			got, err := prepare(o)
-			if !slices.Contains([]string{"cache", "installation", "archive"}, kind) {
-				if err == nil {
-					t.Fatal("accepted damaged or aliased candidate")
-				}
-				requireNoResult(t, o)
-				return
-			}
-			if err != nil || len(got) != 1 {
-				t.Fatalf("%+v %v", got, err)
-			}
-			if got[0] != (preparedPackage{Name: "demo", Version: "1.0", Directory: filepath.Join(cache, "demo", "1.0")}) {
-				t.Fatal(got)
-			}
-			if data := readTestFile(t, filepath.Join(got[0].Directory, "data")); data != kind {
-				t.Fatalf("selected %q, want %q", data, kind)
-			}
-			entries, err := os.ReadDir(cache)
-			if err != nil {
-				t.Fatal(err)
-			}
-			for _, entry := range entries {
-				if strings.HasPrefix(entry.Name(), ".") {
-					t.Fatal("leaked staging", entry.Name())
-				}
-			}
-		})
-	}
-}
-
 func TestVersionedCacheLifecycle(t *testing.T) {
-	t.Run("failed closure cannot revive stale latest", func(t *testing.T) {
+	t.Run("failed closure preserves existing root", func(t *testing.T) {
 		o, cache := versionedFixture(t, "demo")
 		versionedLatest(t, cache, "demo", "1")
-		versionedLatest(t, o.LocalRoot, "demo", "1")
-		versionedArchive(t, o.LocalRoot, "demo", "1", "missing@7")
+		versionedLatest(t, o.CacheRoot, "demo", "1")
+		versionedInstalled(t, o.CacheRoot, "demo", "1", "missing@7", "cache")
 		if _, err := prepare(o); err == nil {
 			t.Fatal("accepted incomplete closure")
 		}
-		if _, err := os.Lstat(filepath.Join(cache, "demo/1")); !os.IsNotExist(err) {
-			t.Fatal("failed root revived stale latest", err)
+		if got := readTestFile(t, filepath.Join(cache, "demo/1/data")); got != "cache" {
+			t.Fatal("failed closure changed existing root")
 		}
 		requireNoResult(t, o)
 	})
@@ -142,7 +67,7 @@ func TestVersionedCacheLifecycle(t *testing.T) {
 		versionedInstalled(t, cache, "demo", "1", "leaf@2", "cache")
 		versionedInstalled(t, cache, "leaf", "2", "", "leaf")
 		versionedLatest(t, cache, "demo", "1")
-		o.LocalRoot, o.RemoteRoot = "", ""
+		o.RemoteRoot = ""
 		got, err := prepare(o)
 		if err != nil || len(got) != 2 {
 			t.Fatalf("offline cache: %+v %v", got, err)
@@ -155,43 +80,16 @@ func TestVersionedCacheLifecycle(t *testing.T) {
 			t.Fatal("exact request registered latest", err)
 		}
 	})
-	t.Run("deleted target reselects without refreshing unrelated", func(t *testing.T) {
-		o, cache := versionedFixture(t, "demo")
-		versionedInstalled(t, cache, "demo", "1", "", "old")
-		versionedLatest(t, cache, "demo", "1")
-		versionedInstalled(t, cache, "unrelated", "1", "", "keep")
-		versionedLatest(t, cache, "unrelated", "1")
-		versionedLatest(t, o.LocalRoot, "demo", "2")
-		versionedArchive(t, o.LocalRoot, "demo", "2", "")
-		if _, err := prepare(o); err != nil {
-			t.Fatal(err)
-		}
-		if version, err := readPackageLatest(cache, "demo"); err != nil || version != "1" {
-			t.Fatal(version, err)
-		}
-		if err := os.Rename(filepath.Join(cache, "demo/1"), filepath.Join(cache, "demo/removed")); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := prepare(o); err != nil {
-			t.Fatal(err)
-		}
-		if version, err := readPackageLatest(cache, "demo"); err != nil || version != "2" {
-			t.Fatal(version, err)
-		}
-		if version, err := readPackageLatest(cache, "unrelated"); err != nil || version != "1" {
-			t.Fatal(version, err)
-		}
-	})
 	for _, kind := range []string{"missing latest", "latest missing artifact", "bad target", "failed dependency", "stale result"} {
 		t.Run(kind, func(t *testing.T) {
 			o, cache := versionedFixture(t, "demo")
 			dir := versionedInstalled(t, cache, "demo", "1", "", "cached other version")
-			versionedArchive(t, o.LocalRoot, "demo", "2", "missing@7")
+			versionedInstalled(t, o.CacheRoot, "demo", "2", "missing@7", "cache")
 			if kind != "missing latest" {
-				versionedLatest(t, o.LocalRoot, "demo", "2")
+				versionedLatest(t, o.CacheRoot, "demo", "2")
 			}
 			if kind == "latest missing artifact" {
-				versionedLatest(t, o.LocalRoot, "demo", "99")
+				versionedLatest(t, o.CacheRoot, "demo", "99")
 			}
 			if kind == "bad target" {
 				versionedLatest(t, cache, "demo", "1")
@@ -204,8 +102,8 @@ func TestVersionedCacheLifecycle(t *testing.T) {
 				t.Fatal("accepted unavailable root or closure")
 			}
 			requireNoResult(t, o)
-			if kind != "bad target" {
-				if _, err := os.Lstat(filepath.Join(cache, "demo/package.toml")); !os.IsNotExist(err) {
+			if kind != "bad target" && kind != "missing latest" {
+				if latest, err := readPackageLatest(cache, "demo"); err != nil || latest != map[string]string{"missing latest": "", "latest missing artifact": "99", "failed dependency": "2", "stale result": "2"}[kind] {
 					t.Fatal("failed root registered latest", err)
 				}
 			}
@@ -218,15 +116,14 @@ func TestVersionedExactClosure(t *testing.T) {
 		o, cache := versionedFixture(t, "app")
 		versionedInstalled(t, cache, "app", "1", "leaf@2", "root remains")
 		versionedLatest(t, cache, "app", "1")
-		versionedArchive(t, o.LocalRoot, "leaf", "2", "")
-		versionedLatest(t, o.LocalRoot, "leaf", "3")
-		versionedArchive(t, o.LocalRoot, "leaf", "3", "")
-		versionedLatest(t, o.LocalRoot, "app", "9")
+		versionedInstalled(t, o.CacheRoot, "leaf", "2", "", "cache")
+		versionedLatest(t, o.CacheRoot, "leaf", "3")
+		versionedInstalled(t, o.CacheRoot, "leaf", "3", "", "cache")
 		got, err := prepare(o)
 		if err != nil || len(got) != 2 || got[0].Name != "leaf" || got[0].Version != "2" || got[1].Name != "app" || got[1].Version != "1" {
 			t.Fatalf("%+v %v", got, err)
 		}
-		if _, err := os.Lstat(filepath.Join(cache, "leaf/package.toml")); !os.IsNotExist(err) {
+		if latest, err := readPackageLatest(cache, "leaf"); err != nil || latest != "3" {
 			t.Fatal("dependency latest registered", err)
 		}
 		if readTestFile(t, filepath.Join(cache, "app/1/data")) != "root remains" {
@@ -240,7 +137,7 @@ func TestVersionedExactClosure(t *testing.T) {
 	t.Run("diamond conflict reports both chains", func(t *testing.T) {
 		o, _ := versionedFixture(t, "app@1")
 		for _, p := range [][3]string{{"app", "1", "left@1;right@1"}, {"left", "1", "leaf@2"}, {"right", "1", "leaf@3"}, {"leaf", "2", ""}, {"leaf", "3", ""}} {
-			versionedArchive(t, o.LocalRoot, p[0], p[1], p[2])
+			versionedInstalled(t, o.CacheRoot, p[0], p[1], p[2], "cache")
 		}
 		_, err := prepare(o)
 		if err == nil {
@@ -255,8 +152,8 @@ func TestVersionedExactClosure(t *testing.T) {
 	})
 	t.Run("cycle", func(t *testing.T) {
 		o, _ := versionedFixture(t, "app@1")
-		versionedArchive(t, o.LocalRoot, "app", "1", "leaf@2")
-		versionedArchive(t, o.LocalRoot, "leaf", "2", "app@1")
+		versionedInstalled(t, o.CacheRoot, "app", "1", "leaf@2", "cache")
+		versionedInstalled(t, o.CacheRoot, "leaf", "2", "app@1", "cache")
 		if _, err := prepare(o); err == nil || !strings.Contains(err.Error(), "cycle") {
 			t.Fatal(err)
 		}
@@ -297,158 +194,68 @@ func sourceSnapshot(t *testing.T, root string) []string {
 	return records
 }
 
-func TestVersionedSourceIsolation(t *testing.T) {
-	t.Run("copy and relocate only cache", func(t *testing.T) {
-		o, cache := versionedFixture(t, "demo@1")
-		dir := versionedInstalled(t, o.LocalRoot, "demo", "1", "", "source")
-		config := "set(PREFIX \"" + filepath.ToSlash(o.LocalRoot) + "/demo/1\")\n"
-		putTestFile(t, filepath.Join(dir, "lib/cmake/demo/config.cmake"), config)
-		if err := os.Chmod(filepath.Join(dir, "data"), 0755); err != nil {
-			t.Fatal(err)
-		}
-		if runtime.GOOS == "linux" {
-			if err := os.Symlink("data", filepath.Join(dir, "relative")); err != nil {
-				t.Fatal(err)
-			}
-		}
-		before := sourceSnapshot(t, o.LocalRoot)
-		if _, err := prepare(o); err != nil {
-			t.Fatal(err)
-		}
-		if !slices.Equal(before, sourceSnapshot(t, o.LocalRoot)) {
-			t.Fatal("source installation changed")
-		}
-		if strings.Contains(readTestFile(t, filepath.Join(cache, "demo/1/lib/cmake/demo/config.cmake")), filepath.ToSlash(o.LocalRoot)) {
-			t.Fatal("producer path remains")
-		}
-		if runtime.GOOS == "linux" {
-			if link, err := os.Readlink(filepath.Join(cache, "demo/1/relative")); err != nil || link != "data" {
-				t.Fatal(link, err)
-			}
-			if info, err := os.Stat(filepath.Join(cache, "demo/1/data")); err != nil || info.Mode().Perm() != 0755 {
-				t.Fatal(info, err)
-			}
-		}
-	})
-	t.Run("nonexistent source not created", func(t *testing.T) {
-		o, _ := versionedFixture(t, "demo@1")
-		if _, err := prepare(o); err == nil {
-			t.Fatal("accepted missing input")
-		}
-		if _, err := os.Lstat(o.LocalRoot); !os.IsNotExist(err) {
-			t.Fatal("source created", err)
-		}
-	})
-	if runtime.GOOS != "linux" {
-		return
-	}
-	t.Run("physical root aliases rejected before writes", func(t *testing.T) {
-		o, cache := versionedFixture(t, "demo@1")
-		versionedInstalled(t, cache, "demo", "1", "", "keep")
-		alias := filepath.Join(filepath.Dir(cache), "alias")
-		if err := os.Symlink(cache, alias); err != nil {
-			t.Fatal(err)
-		}
-		o.LocalRoot = alias
-		before := sourceSnapshot(t, cache)
-		if _, err := prepare(o); err == nil {
-			t.Fatal("accepted physical alias")
-		}
-		if !slices.Equal(before, sourceSnapshot(t, cache)) {
-			t.Fatal("alias rejection wrote cache")
-		}
-	})
-}
-
-func TestVersionedLocalDigest(t *testing.T) {
-	for _, digest := range []string{"absent", "valid", "crlf", "padded", "mismatch", "uppercase", "malformed", "directory"} {
-		t.Run(digest, func(t *testing.T) {
-			o, _ := versionedFixture(t, "demo@1")
-			archive := versionedArchive(t, o.LocalRoot, "demo", "1", "")
-			sum := fmt.Sprintf("%x\n", sha256.Sum256([]byte(readTestFile(t, archive))))
-			switch digest {
-			case "valid":
-				putTestFile(t, archive+".sha256", sum)
-			case "crlf":
-				putTestFile(t, archive+".sha256", strings.TrimSuffix(sum, "\n")+"\r\n")
-			case "padded":
-				putTestFile(t, archive+".sha256", " \t\r\n"+sum+"\r\n\t ")
-			case "mismatch":
-				putTestFile(t, archive+".sha256", strings.Repeat("0", 64)+"\n")
-			case "uppercase":
-				putTestFile(t, archive+".sha256", strings.ToUpper(sum))
-			case "malformed":
-				putTestFile(t, archive+".sha256", "not a hash\n")
-			case "directory":
-				if err := os.Mkdir(archive+".sha256", 0755); err != nil {
+func TestVersionedCacheCandidates(t *testing.T) {
+	for _, kind := range []string{"complete", "bad metadata", "wrong identity", "missing metadata", "case version"} {
+		t.Run(kind, func(t *testing.T) {
+			o, cache := versionedFixture(t, "demo@1.0")
+			dir := versionedInstalled(t, cache, "demo", "1.0", "", "cache")
+			switch kind {
+			case "bad metadata":
+				putTestFile(t, filepath.Join(dir, "autolib-import.cmake"), "broken")
+			case "wrong identity":
+				putTestFile(t, filepath.Join(dir, "autolib-import.cmake"), identityHeader(packageIdentity{"demo", "1.0", "windows", "x86_64"}))
+			case "missing metadata":
+				if err := os.Remove(filepath.Join(dir, "autolib-import.cmake")); err != nil {
 					t.Fatal(err)
 				}
+			case "case version":
+				versionedInstalled(t, cache, "demo", "A", "", "upper")
+				versionedInstalled(t, cache, "demo", "a", "", "lower")
+				entries, err := os.ReadDir(filepath.Join(cache, "demo"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(entries) != 3 {
+					t.Skip("host cannot represent case-colliding versions")
+				}
 			}
-			before := sourceSnapshot(t, o.LocalRoot)
-			_, err := prepare(o)
-			if (err == nil) != (digest == "absent" || digest == "valid" || digest == "crlf" || digest == "padded") {
-				t.Fatal(err)
+			before := sourceSnapshot(t, cache)
+			got, err := prepare(o)
+			if (err == nil) != (kind == "complete") {
+				t.Fatalf("%+v %v", got, err)
 			}
-			if !slices.Equal(before, sourceSnapshot(t, o.LocalRoot)) {
-				t.Fatal("archive source changed")
+			if kind == "complete" && (len(got) != 1 || got[0] != (preparedPackage{Name: "demo", Version: "1.0", Directory: filepath.Join(cache, "demo", "1.0")})) {
+				t.Fatal(got)
 			}
 			if err != nil {
 				requireNoResult(t, o)
+			}
+			if !slices.Equal(before, sourceSnapshot(t, cache)) {
+				t.Fatal("prepare changed authoritative cache")
 			}
 		})
 	}
 }
-
 func TestVersionedReadonlyInstallation(t *testing.T) {
-	if runtime.GOOS != "linux" {
-		t.Skip("requires native Linux chmod permission semantics")
-	}
-	for _, kind := range []string{"copy and relocate", "missing dependency cleans staging", "relocation failure cleans staging"} {
+	for _, kind := range []string{"complete", "missing dependency"} {
 		t.Run(kind, func(t *testing.T) {
-			o, cache := versionedFixture(t, "demo@1")
-			dependencies := ""
-			if kind == "missing dependency cleans staging" {
-				dependencies = "absent@2"
+			o, cache := versionedFixture(t, "demo")
+			versionedInstalled(t, cache, "demo", "1", "leaf@2", "keep")
+			versionedLatest(t, cache, "demo", "1")
+			if kind == "complete" {
+				versionedInstalled(t, cache, "leaf", "2", "", "leaf")
 			}
-			dir := versionedInstalled(t, o.LocalRoot, "demo", "1", dependencies, "keep")
-			putTestFile(t, filepath.Join(dir, "lib/cmake/demo/config.cmake"), "set(PREFIX \""+filepath.ToSlash(dir)+"\")\n")
-			if kind == "relocation failure cleans staging" {
-				o.CMakeCommand = filepath.Join(t.TempDir(), "missing-cmake")
-			}
-			readonlyEntrySource(t, o.LocalRoot)
-			entryDirectoryCleanup(t, cache)
-			before := sourceSnapshot(t, o.LocalRoot)
+			readonlyEntrySource(t, cache)
+			before := sourceSnapshot(t, cache)
 			_, err := prepare(o)
-			if (err == nil) != (kind == "copy and relocate") {
-				t.Fatalf("readonly prepare: %v", err)
+			if (err == nil) != (kind == "complete") {
+				t.Fatal(err)
 			}
-			if !slices.Equal(before, sourceSnapshot(t, o.LocalRoot)) {
-				t.Fatal("readonly installation changed")
-			}
-			entries, readErr := os.ReadDir(cache)
-			if readErr != nil {
-				t.Fatal(readErr)
-			}
-			for _, entry := range entries {
-				if strings.HasPrefix(entry.Name(), ".") {
-					t.Fatal("readonly failure retained owned staging", entry.Name())
-				}
+			if !slices.Equal(before, sourceSnapshot(t, cache)) {
+				t.Fatal("consumption changed installed inputs")
 			}
 			if err != nil {
 				requireNoResult(t, o)
-				if _, err := os.Lstat(filepath.Join(cache, "demo/1")); !os.IsNotExist(err) {
-					t.Fatal("failed copy committed package", err)
-				}
-				return
-			}
-			for path, want := range map[string]fs.FileMode{"demo/1": 0555, "demo/1/lib/cmake/demo": 0555, "demo/1/lib/cmake/demo/config.cmake": 0444, "demo/1/data": 0444} {
-				info, err := os.Stat(filepath.Join(cache, path))
-				if err != nil || info.Mode().Perm() != want {
-					t.Fatalf("copy permissions %s: %v %v, want %v", path, info, err, want)
-				}
-			}
-			if strings.Contains(readTestFile(t, filepath.Join(cache, "demo/1/lib/cmake/demo/config.cmake")), filepath.ToSlash(o.LocalRoot)) {
-				t.Fatal("readonly metadata was not relocated")
 			}
 		})
 	}

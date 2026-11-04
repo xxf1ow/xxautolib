@@ -6,14 +6,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 )
 
 type prepareOptions struct {
-	LocalRoot, RemoteRoot, WorkRoot, CacheRoot, CMakeCommand, OS, Arch, ResultPath string
-	MetadataRoot                                                                   string
-	Packages                                                                       []string
+	RemoteRoot, CacheRoot, OS, Arch, ResultPath, MetadataRoot string
+	Packages                                                  []string
 }
 
 var errMetadataRequired = errors.New("metadata snapshot required")
@@ -33,31 +31,16 @@ func prepare(o prepareOptions) (packages []preparedPackage, err error) {
 	if err := validatePlatform(o.OS, o.Arch); err != nil {
 		return nil, err
 	}
-	if o.WorkRoot == "" || o.CacheRoot == "" || o.CMakeCommand == "" || o.ResultPath == "" || len(o.Packages) == 0 {
-		return nil, fmt.Errorf("prepare requires work-root, cache-root, cmake-command, result and at least one package")
+	if o.CacheRoot == "" || o.ResultPath == "" || len(o.Packages) == 0 {
+		return nil, fmt.Errorf("prepare requires cache-root, result and at least one package")
 	}
 	cache, err := resolveLocalPath(o.CacheRoot)
 	if err != nil {
 		return nil, err
 	}
 	cache = filepath.ToSlash(cache)
-	local := ""
-	if o.LocalRoot != "" {
-		local, err = normalizeLocalSource(o.LocalRoot)
-		if err != nil {
-			return nil, err
-		}
-		if local == cache || (runtime.GOOS == "windows" && strings.EqualFold(local, cache)) {
-			return nil, fmt.Errorf("local-root and cache-root must be different physical directories: %s", cache)
-		}
-		localInfo, localErr := os.Stat(local)
-		cacheInfo, cacheErr := os.Stat(cache)
-		if localErr == nil && cacheErr == nil && os.SameFile(localInfo, cacheInfo) {
-			return nil, fmt.Errorf("local-root aliases cache-root: %s", cache)
-		}
-	}
-	if strings.ContainsAny(local+cache+o.WorkRoot, ";") {
-		return nil, fmt.Errorf("local-root, cache-root and work-root must not contain semicolons")
+	if strings.Contains(cache, ";") {
+		return nil, fmt.Errorf("cache-root must not contain semicolons")
 	}
 	requests := make([]packageRef, len(o.Packages))
 	for i, value := range o.Packages {
@@ -94,7 +77,6 @@ func prepare(o prepareOptions) (packages []preparedPackage, err error) {
 	var visit func(packageRef, []string, bool) error
 	visit = func(ref packageRef, chain []string, root bool) (visitErr error) {
 		bare := ref.Version == ""
-		remoteSelected := false
 		if bare {
 			version, err := readPackageLatest(cache, ref.Name)
 			if err != nil && !os.IsNotExist(err) {
@@ -109,29 +91,6 @@ func prepare(o prepareOptions) (packages []preparedPackage, err error) {
 					ref.Version = version
 				}
 			}
-			if ref.Version == "" && local != "" {
-				version, err := readPackageLatest(local, ref.Name)
-				if err != nil && !os.IsNotExist(err) {
-					return err
-				}
-				if err == nil {
-					id := packageIdentity{Name: ref.Name, Version: version, OS: o.OS, Arch: o.Arch}
-					found, err := packageCandidateExists(local, id)
-					if err != nil {
-						return err
-					}
-					if !found {
-						archive, _, err := selectLocalArchive(local, id)
-						if err != nil {
-							return err
-						}
-						found = archive != ""
-					}
-					if found {
-						ref.Version = version
-					}
-				}
-			}
 			if ref.Version == "" {
 				if err := requireMetadata(); err != nil {
 					return err
@@ -140,7 +99,6 @@ func prepare(o prepareOptions) (packages []preparedPackage, err error) {
 				if err != nil {
 					return err
 				}
-				remoteSelected = true
 			}
 		}
 		chain = append(append([]string{}, chain...), ref.String())
@@ -174,40 +132,14 @@ func prepare(o prepareOptions) (packages []preparedPackage, err error) {
 			return err
 		}
 		if !found {
-			installed := false
-			if !remoteSelected && local != "" {
-				installed, err = packageCandidateExists(local, id)
-				if err != nil {
-					return err
-				}
+			if err := requireMetadata(); err != nil {
+				return err
 			}
-			if installed {
-				candidate, err = stageInstalledPackage(local, cache, id, o.CMakeCommand)
-			} else {
-				archive, identity := "", packageIdentity{}
-				if !remoteSelected && local != "" {
-					archive, identity, err = selectLocalArchive(local, id)
-					if err != nil {
-						return err
-					}
-				}
-				if archive == "" {
-					if err := requireMetadata(); err != nil {
-						return err
-					}
-					var asset releaseAsset
-					asset, identity, err = metadataPackageAsset(o.MetadataRoot, remote, id)
-					if err != nil {
-						return err
-					}
-					candidate, err = stageRemotePackage(cache, asset, identity)
-				} else {
-					if err := verifyLocalDigest(archive); err != nil {
-						return err
-					}
-					candidate, err = extractPackage(archive, cache, identity)
-				}
+			asset, identity, err := metadataPackageAsset(o.MetadataRoot, remote, id)
+			if err != nil {
+				return err
 			}
+			candidate, err = stageRemotePackage(cache, asset, identity)
 			if err != nil {
 				return err
 			}

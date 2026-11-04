@@ -91,31 +91,26 @@ func TestPrepareRemote(t *testing.T) {
 }
 
 func TestPrepareSourcePriority(t *testing.T) {
-	for _, kind := range []string{"directory", "archive", "bad directory", "bad archive"} {
+	for _, kind := range []string{"directory", "bad directory"} {
 		t.Run(kind, func(t *testing.T) {
 			f := newRemotePrepareFixture(t)
 			o := f.options
 			o.Packages = []string{"queue@1.0"}
 			switch kind {
 			case "directory", "bad directory":
-				dir := versionedInstalled(t, o.LocalRoot, "queue", "1.0", "", "user content")
+				dir := versionedInstalled(t, o.CacheRoot, "queue", "1.0", "", "user content")
 				if kind == "bad directory" {
 					putTestFile(t, filepath.Join(dir, "autolib-import.cmake"), "invalid")
 				}
-			case "archive", "bad archive":
-				archive := versionedArchive(t, o.LocalRoot, "queue", "1.0", "")
-				if kind == "bad archive" {
-					putTestFile(t, archive, "invalid")
-				}
 			}
 			o.RemoteRoot, o.MetadataRoot = "invalid but unused", filepath.Join(f.root, "missing")
-			before := sourceSnapshot(t, o.LocalRoot)
+			before := sourceSnapshot(t, o.CacheRoot)
 			_, err := prepare(o)
-			if (err == nil) != (kind == "directory" || kind == "archive") {
+			if (err == nil) != (kind == "directory") {
 				t.Fatalf("priority %s: %v", kind, err)
 			}
-			if !slices.Equal(before, sourceSnapshot(t, o.LocalRoot)) {
-				t.Fatal("changed local source")
+			if !slices.Equal(before, sourceSnapshot(t, o.CacheRoot)) {
+				t.Fatal("changed installed input")
 			}
 			f.requireRequests(t, map[string]int{})
 		})
@@ -167,9 +162,8 @@ func TestPrepareRemoteFailureCleanup(t *testing.T) {
 func TestPrepareRemoteOnly(t *testing.T) {
 	f := newRemotePrepareFixture(t)
 	o := f.options
-	o.LocalRoot = ""
 	o.Packages = []string{"flann"}
-	putTestFile(t, filepath.Join(o.WorkRoot, "flann/1.0/autolib-import.cmake"), "invalid undeclared cache")
+	putTestFile(t, filepath.Join(t.TempDir(), "flann/1.0/autolib-import.cmake"), "invalid undeclared cache")
 	got, err := prepare(o)
 	if err != nil || len(got) != 2 || got[0].Name != "lz4" || got[1].Name != "flann" {
 		t.Fatalf("remote closure %+v: %v", got, err)

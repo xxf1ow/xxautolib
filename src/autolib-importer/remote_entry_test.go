@@ -111,7 +111,7 @@ func TestCMakeRemoteBootstrapMigration(t *testing.T) {
 				pkg := e.pkg(t, "demo", "1.0", "")
 				e.consumer(t, "demo@1.0", "autolib_import(TARGET consumer INTERFACE demo@1.0)\n")
 				if kind == "encoded tag" {
-					path := filepath.Join(f.source, "CMakeLists.txt")
+					path := filepath.Join(entryCache(f), "autolib.cmake")
 					putTestFile(t, path, strings.Replace(readTestFile(t, path), "/download/v1", "/download/v%31", 1))
 				}
 				if kind == "redirect" {
@@ -177,18 +177,19 @@ func TestGitHubValidationDriver(t *testing.T) {
 		{"modules only", "gitee.com", "queue;lz4", "", "queue;lz4", "queue;lz4"},
 		{"roots only", "gitee.com", "", "queue", "queue;lz4;flann", "queue"},
 		{"representative roots", "gitee.com", "queue;lz4;flann", "flann;queue", "queue;lz4;flann", "flann;queue"},
+		{"wrong runtime", "gitee.com", "", "", "queue;lz4;flann", "flann;queue"},
 		{"eigen 3.4.0", "gitee.com", "eigen@3.4.0", "eigen@3.4.0", "eigen@3.4.0", "eigen@3.4.0"},
 		{"eigen 5.0.1", "gitee.com", "eigen@5.0.1", "eigen@5.0.1", "eigen@5.0.1", "eigen@5.0.1"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
-			entry := "# fixture entry bytes\n"
+			entry := "set(_autolib_release_root \"https://" + tc.host + "/owner/repo/releases/download/v1\")\n"
 			putTestFile(t, filepath.Join(root, "src/autolib.cmake"), entry)
 			putTestFile(t, filepath.Join(root, "tests/autolib/smoke.cpp"), "// fixture smoke\n")
 			putTestFile(t, filepath.Join(root, "tests/autolib/CMakeLists.txt"), `cmake_minimum_required(VERSION 3.20)
 project(driver_fixture NONE)
 enable_testing()
-if(NOT MODULES STREQUAL EXPECTED_MODULES OR NOT ROOT_PACKAGES STREQUAL EXPECTED_ROOTS OR NOT AUTOLIB_REMOTE_ROOT MATCHES "^https://(github|gitee).com/owner/repo/releases/download/v1$")
+if(NOT MODULES STREQUAL EXPECTED_MODULES OR NOT ROOT_PACKAGES STREQUAL EXPECTED_ROOTS )
     message(FATAL_ERROR "driver lost source or selection: modules=${MODULES} roots=${ROOT_PACKAGES}")
 endif()
 if(NOT AUTOLIB_ENTRY STREQUAL "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/autolib.cmake")
@@ -202,6 +203,7 @@ endif()
 file(MAKE_DIRECTORY "${runtime}")
 file(WRITE "${CMAKE_BINARY_DIR}/prepared-state.cmake" "set(AUTOLIB_CACHE_ROOT [==[${CMAKE_CURRENT_SOURCE_DIR}/3rdparty]==])\nset(AUTOLIB_PACKAGE_DIR_flann [==[${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/flann/1.9.2]==])\nset(AUTOLIB_FLANN_RUNTIME_DIR [==[${runtime}]==])\n")
 file(WRITE "${CMAKE_BINARY_DIR}/check.cmake" "set(expected [==[${runtime}]==])\nif(WIN32)\nset(paths \"\$ENV{PATH}\")\nelse()\nset(paths \"\$ENV{LD_LIBRARY_PATH}\")\nendif()\nstring(FIND \"\${paths}\" \"\${expected}\" position)\nif(NOT position EQUAL 0)\nmessage(FATAL_ERROR \"wrong runtime path: \${paths}\")\nendif()\n")
+file(APPEND "${CMAKE_BINARY_DIR}/check.cmake" "message(\"runtime_flann=${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/flann/1.9.2/lib/libflann.so\")\n")
 add_test(NAME smoke COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_BINARY_DIR}/check.cmake")
 `)
 			cmake, err := exec.LookPath("cmake")
@@ -219,8 +221,11 @@ add_test(NAME smoke COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_BINARY_DIR}/check.cma
 			fixture := readTestFile(t, filepath.Join(root, "tests/autolib/CMakeLists.txt"))
 			fixture = strings.ReplaceAll(fixture, "EXPECTED_MODULES", "\""+tc.wantModules+"\"")
 			fixture = strings.ReplaceAll(fixture, "EXPECTED_ROOTS", "\""+tc.wantRoots+"\"")
+			if tc.name == "wrong runtime" {
+				fixture = strings.ReplaceAll(fixture, "runtime_flann=${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/flann/1.9.2/", "runtime_flann=${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/flann/1.9.2.other/")
+			}
 			putTestFile(t, filepath.Join(root, "tests/autolib/CMakeLists.txt"), fixture)
-			args := []string{"-DSOURCE_ROOT=" + filepath.ToSlash(root), "-DVALIDATION_ROOT=" + filepath.ToSlash(filepath.Join(root, "build/validation")), "-DREMOTE_ROOT=https://" + tc.host + "/owner/repo/releases/download/v1", "-DGENERATOR=" + generator}
+			args := []string{"-DSOURCE_ROOT=" + filepath.ToSlash(root), "-DVALIDATION_ROOT=" + filepath.ToSlash(filepath.Join(root, "build/validation")), "-DENTRY_URL=file://" + filepath.ToSlash(filepath.Join(root, "src/autolib.cmake")), "-DGENERATOR=" + generator}
 			if tc.modules != "" {
 				args = append(args, "-DMODULES="+tc.modules)
 			}
@@ -228,8 +233,9 @@ add_test(NAME smoke COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_BINARY_DIR}/check.cma
 				args = append(args, "-DROOT_PACKAGES="+tc.roots)
 			}
 			args = append(args, "-P", driver)
-			if out, err := exec.Command(cmake, args...).CombinedOutput(); err != nil {
-				t.Fatalf("driver: %v\n%s", err, out)
+			out, driverErr := exec.Command(cmake, args...).CombinedOutput()
+			if (driverErr == nil) != (tc.name != "wrong runtime") {
+				t.Fatalf("driver: %v\n%s", driverErr, out)
 			}
 			runs, err := filepath.Glob(filepath.Join(root, "build/validation/run-*"))
 			if err != nil || len(runs) != 1 {
@@ -238,8 +244,11 @@ add_test(NAME smoke COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_BINARY_DIR}/check.cma
 			if !strings.Contains(readTestFile(t, filepath.Join(runs[0], "test.log")), "100% tests passed") {
 				t.Fatal("driver did not run CTest")
 			}
+			if tc.name == "wrong runtime" && !strings.Contains(string(out), "Runtime did not report a library from the selected package") {
+				t.Fatalf("driver did not diagnose successful smoke with the wrong runtime: %s", out)
+			}
 			if got := readTestFile(t, filepath.Join(runs[0], "consumer/3rdparty/autolib.cmake")); got != entry {
-				t.Fatal("driver changed copied entry bytes")
+				t.Fatal("driver changed downloaded entry bytes")
 			}
 			if _, err := os.Stat(filepath.Join(root, "src/flann")); !os.IsNotExist(err) {
 				t.Fatalf("driver wrote source-adjacent cache: %v", err)
@@ -249,16 +258,16 @@ add_test(NAME smoke COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_BINARY_DIR}/check.cma
 	t.Run("public entry failure", func(t *testing.T) {
 		root := t.TempDir()
 		putTestFile(t, filepath.Join(root, "src/autolib.cmake"), readTestFile(t, "../autolib.cmake"))
+		injectEntryRemote(t, filepath.Join(root, "src/autolib.cmake"), "https://github.com/owner/repo/releases/tag/v1")
 		putTestFile(t, filepath.Join(root, "tests/autolib/smoke.cpp"), "")
 		putTestFile(t, filepath.Join(root, "tests/autolib/CMakeLists.txt"), `cmake_minimum_required(VERSION 3.20)
 project(driver_failure NONE)
-set(AUTOLIB_LOCAL_ROOT "")
 include("${AUTOLIB_ENTRY}")
 add_library(consumer INTERFACE)
 autolib_import(TARGET consumer INTERFACE flann)
 `)
 		driver, _ := filepath.Abs("../../tests/autolib/run-github.cmake")
-		out, err := exec.Command("cmake", "-DSOURCE_ROOT="+root, "-DVALIDATION_ROOT="+filepath.Join(root, "build/validation"), "-DREMOTE_ROOT=https://github.com/owner/repo/releases/tag/v1", "-P", driver).CombinedOutput()
+		out, err := exec.Command("cmake", "-DSOURCE_ROOT="+root, "-DVALIDATION_ROOT="+filepath.Join(root, "build/validation"), "-DENTRY_URL=file://"+filepath.ToSlash(filepath.Join(root, "src/autolib.cmake")), "-P", driver).CombinedOutput()
 		if err == nil || !strings.Contains(string(out), "configure failed") || !strings.Contains(string(out), "Release download root") {
 			t.Fatalf("driver did not propagate public entry failure: %v\n%s", err, out)
 		}

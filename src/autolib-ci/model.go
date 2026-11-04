@@ -30,6 +30,8 @@ type ciPlanOptions struct {
 
 type ciPlatformPlan struct {
 	ID                 string              `json:"id"`
+	RequestedRoots     []string            `json:"requested_roots"`
+	FilteredRoots      []string            `json:"filtered_roots"`
 	Roots              []string            `json:"roots"`
 	Description        moduleDescription   `json:"description"`
 	Layers             [][]string          `json:"layers"`
@@ -49,6 +51,7 @@ type ciProductionContext struct {
 }
 
 type ciRunOptions struct {
+	Repository                                                       string
 	SourceRoot, PlanFile, RunIdentityFile, Platform, Layer, WorkRoot string
 	ImporterFile, CMakeCommand, MakeProgram                          string
 	Budget                                                           int
@@ -65,6 +68,12 @@ type ciImporterResult struct {
 	Verified bool   `json:"verified"`
 }
 
+type ciEntryResult struct {
+	File     string `json:"file"`
+	SHA256   string `json:"sha256"`
+	Verified bool   `json:"verified"`
+}
+
 type ciRootResult struct {
 	Root              string `json:"root"`
 	Verified          bool   `json:"verified"`
@@ -77,6 +86,7 @@ type ciPlatformResult struct {
 	Packages []ciSlotResult   `json:"packages"`
 	Roots    []ciRootResult   `json:"roots"`
 	Importer ciImporterResult `json:"importer"`
+	Entry    ciEntryResult    `json:"entry"`
 	Complete bool             `json:"complete"`
 	Error    string           `json:"error"`
 }

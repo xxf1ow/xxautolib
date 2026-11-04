@@ -16,6 +16,8 @@ import (
 	"github.com/klauspost/compress/zstd"
 )
 
+const ciGitHubRepository = "xxf1ow/xxautolib"
+
 func testDigest(data []byte) string {
 	digest := sha256.Sum256(data)
 	return hex.EncodeToString(digest[:])

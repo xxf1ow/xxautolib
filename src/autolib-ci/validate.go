@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"debug/elf"
 	"debug/pe"
 	"errors"
@@ -17,7 +19,7 @@ import (
 
 type ciValidationOptions struct {
 	SourceRoot, InstallRoot, BuildRoot string
-	ImporterFile, CMakeCommand         string
+	CMakeCommand                       string
 	EvidenceDirectory                  string
 	Modules                            []string
 	RootPackages                       []string
@@ -27,6 +29,31 @@ type ciValidationOptions struct {
 type ciValidationResult struct {
 	Passed            bool   `json:"passed"`
 	EvidenceDirectory string `json:"evidence_directory"`
+}
+
+func verifyCIEntry(source, install string) (ciEntryResult, error) {
+	read := func(file string) ([]byte, error) {
+		info, err := os.Lstat(file)
+		if err != nil {
+			return nil, fmt.Errorf("entry %s: %w", file, err)
+		}
+		if !info.Mode().IsRegular() {
+			return nil, fmt.Errorf("entry must be a regular file: %s", file)
+		}
+		return os.ReadFile(file)
+	}
+	canonical, err := read(filepath.Join(source, "src", "autolib.cmake"))
+	if err != nil {
+		return ciEntryResult{}, err
+	}
+	installed, err := read(filepath.Join(install, "autolib.cmake"))
+	if err != nil {
+		return ciEntryResult{}, err
+	}
+	if !bytes.Equal(canonical, installed) {
+		return ciEntryResult{}, errors.New("installed entry differs from source autolib.cmake")
+	}
+	return ciEntryResult{File: "autolib.cmake", SHA256: fmt.Sprintf("%x", sha256.Sum256(installed)), Verified: true}, nil
 }
 
 func validateCIRelease(ctx context.Context, o ciValidationOptions) (ciValidationResult, error) {
@@ -52,16 +79,10 @@ func validateCIRelease(ctx context.Context, o ciValidationOptions) (ciValidation
 		"-DINSTALL_ROOT=" + roots.install,
 		"-DVALIDATION_ROOT=" + roots.build,
 		"-DEVIDENCE_DIRECTORY=" + roots.evidence,
-		"-DIMPORTER_FILE=" + o.ImporterFile,
-		"-DCMAKE_COMMAND=" + o.CMakeCommand,
-		"-DTARGET_OS=" + o.Context.OS,
-		"-DTARGET_ARCH=" + o.Context.Arch,
 		"-DGENERATOR=" + o.Context.Generator,
 		"-DGENERATOR_PLATFORM=" + o.Context.Platform,
 		"-DGENERATOR_TOOLSET=" + o.Context.Toolset,
-		"-DCONFIGURATION=" + o.Context.Configuration,
 		"-DCMAKE_MSVC_RUNTIME_LIBRARY=" + o.Context.Runtime,
-		"-DMULTI_CONFIG=" + onOff(o.Context.MultiConfig),
 		"-DMODULES=" + strings.Join(o.Modules, ";"),
 		"-DROOT_PACKAGES=" + strings.Join(o.RootPackages, ";"),
 	}
@@ -83,12 +104,17 @@ func validateCIRelease(ctx context.Context, o ciValidationOptions) (ciValidation
 	if err != nil {
 		return ciValidationResult{EvidenceDirectory: roots.evidence}, err
 	}
+	packageRoots := make([]string, 0, len(o.Modules))
+	for _, module := range o.Modules {
+		parts := strings.SplitN(module, "@", 2)
+		packageRoots = append(packageRoots, filepath.Join(roots.install, parts[0], parts[1]))
+	}
 	if o.Context.OS == "windows" {
-		if err := verifyWindowsPackageInputs(runRoot); err != nil {
+		if err := verifyWindowsPackageInputs(runRoot, packageRoots); err != nil {
 			return ciValidationResult{EvidenceDirectory: roots.evidence}, err
 		}
 	} else {
-		if err := verifyLinuxABIEvidence(runRoot, environment.Production.Linux.GlibcMax); err != nil {
+		if err := verifyLinuxABIEvidence(runRoot, packageRoots, environment.Production.Linux.GlibcMax); err != nil {
 			return ciValidationResult{EvidenceDirectory: roots.evidence}, err
 		}
 	}
@@ -155,7 +181,6 @@ func validateCIValidationPaths(o ciValidationOptions) (ciValidationRoots, error)
 		name, value string
 	}{
 		{"source root", o.SourceRoot}, {"install root", o.InstallRoot}, {"validation root", o.BuildRoot},
-		{"importer file", o.ImporterFile},
 		{"CMake command", o.CMakeCommand}, {"evidence directory", o.EvidenceDirectory},
 	}
 	for _, item := range paths {
@@ -190,7 +215,7 @@ func validateCIValidationPaths(o ciValidationOptions) (ciValidationRoots, error)
 			}
 		}
 	}
-	return ciValidationRoots{source: source, install: resolved[0], build: resolved[1], evidence: resolved[4]}, nil
+	return ciValidationRoots{source: source, install: resolved[0], build: resolved[1], evidence: resolved[3]}, nil
 }
 
 func resolveExistingPrefix(path string) (string, error) {
@@ -222,13 +247,6 @@ func requirePathWithin(root, path, label string) error {
 		return fmt.Errorf("%s must resolve inside source root", label)
 	}
 	return nil
-}
-
-func onOff(value bool) string {
-	if value {
-		return "ON"
-	}
-	return "OFF"
 }
 
 func validationRunFromOutput(output []byte) (string, error) {
@@ -285,8 +303,16 @@ func verifyImporterNoCRuntime(path string) error {
 	return nil
 }
 
-func verifyWindowsPackageInputs(root string) error {
-	packageRoot := filepath.Join(root, "consumer", "3rdparty")
+func requireCIPathInPackages(packageRoots []string, path, label string) error {
+	for _, root := range packageRoots {
+		if err := requirePathWithin(root, filepath.Clean(path), label); err == nil {
+			return nil
+		}
+	}
+	return fmt.Errorf("%s must resolve inside selected installed packages: %s", label, path)
+}
+
+func verifyWindowsPackageInputs(root string, packageRoots []string) error {
 	linkData, err := os.ReadFile(filepath.Join(root, "build", "link-inputs-Release.txt"))
 	if err != nil {
 		return fmt.Errorf("read Windows consumer package link inputs: %w", err)
@@ -297,7 +323,7 @@ func verifyWindowsPackageInputs(root string) error {
 		if input == "" {
 			continue
 		}
-		if err := requirePathWithin(packageRoot, filepath.Clean(input), "Windows consumer link input"); err != nil {
+		if err := requireCIPathInPackages(packageRoots, input, "Windows consumer link input"); err != nil {
 			return err
 		}
 	}
@@ -318,7 +344,7 @@ func verifyWindowsPackageInputs(root string) error {
 			if !strings.Contains(strings.ToLower(link), "lz4") {
 				continue
 			}
-			if err := requirePathWithin(packageRoot, filepath.Clean(link), "FLANN direct LZ4 link input"); err != nil {
+			if err := requireCIPathInPackages(packageRoots, link, "FLANN direct LZ4 link input"); err != nil {
 				return err
 			}
 			flannDirectLZ4 = true
@@ -330,8 +356,8 @@ func verifyWindowsPackageInputs(root string) error {
 	return nil
 }
 
-func verifyLinuxABIEvidence(root, glibcMax string) error {
-	required, err := collectLinuxABIVersions(root)
+func verifyLinuxABIEvidence(root string, packageRoots []string, glibcMax string) error {
+	required, err := collectLinuxABIVersions(root, packageRoots)
 	if err != nil {
 		return err
 	}
@@ -346,11 +372,10 @@ func verifyLinuxABIEvidence(root, glibcMax string) error {
 
 var abiVersionPattern = regexp.MustCompile(`(?:^|\s)\(?(GLIBC_[0-9.]+|GLIBCXX_[0-9.]+|CXXABI_[0-9.]+|GCC_[0-9.]+)\)?(?:\s|$)`)
 
-func collectLinuxABIVersions(root string) ([]string, error) {
-	packageRoot := filepath.Join(root, "consumer", "3rdparty")
+func collectLinuxABIVersions(root string, packageRoots []string) ([]string, error) {
 	consumerFiles := []string{filepath.Join(root, "build", "autolib_smoke")}
-	if info, err := os.Stat(packageRoot); err == nil && info.IsDir() {
-		err = filepath.WalkDir(packageRoot, func(path string, entry os.DirEntry, walkErr error) error {
+	for _, packageRoot := range packageRoots {
+		err := filepath.WalkDir(packageRoot, func(path string, entry os.DirEntry, walkErr error) error {
 			if walkErr != nil {
 				return walkErr
 			}

@@ -45,10 +45,14 @@ def latest_mapping(value):
     return value
 
 
-def metadata_path(asset: dict) -> str:
-    """按明确身份返回摘要相对路径；名称、平台或身份不符抛 ValueError。"""
+def metadata_path(asset: dict) -> str | None:
+    """按明确身份返回摘要路径；入口返回 None，非法身份抛 ValueError。"""
     if not isinstance(asset, dict):
         raise ValueError('asset must be an object')
+    if asset.get('kind') == 'entry':
+        if asset.get('name') != 'autolib.cmake' or 'package' in asset or 'platform' in asset:
+            raise ValueError('invalid entry asset identity')
+        return None
     if asset.get('kind') == 'importer':
         expected = IMPORTERS.get(asset.get('platform'))
         if not expected or asset.get('name') != expected:
@@ -92,10 +96,12 @@ def _object(pairs):
     return value
 
 
-def _source_run(run):
+def _source_run(run, repository):
     fields = {'repository', 'ref', 'sha', 'checkout_sha', 'run_id', 'attempt'}
     if (not isinstance(run, dict) or set(run) != fields or any(not isinstance(v, str) for v in run.values())
-            or run['repository'] != 'xxf1ow/xxautolib' or not re.fullmatch(r'[0-9a-f]{40}', run['sha'])
+            or not isinstance(repository, str)
+            or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*', repository)
+            or run['repository'] != repository or not re.fullmatch(r'[0-9a-f]{40}', run['sha'])
             or run['checkout_sha'] != run['sha']
             or any(not re.fullmatch(r'[1-9][0-9]*', run[key]) for key in ('run_id', 'attempt'))):
         raise ValueError('invalid publication source run')
@@ -122,10 +128,11 @@ def _local_file(root, value):
     return target
 
 
-def load_publication(path: Path) -> dict:
+def load_publication(path: Path, *, source_repository: str) -> dict:
     """读取清单，核对身份、安全文件路径、尺寸和 SHA256，再返回绝对资产路径。
 
     不写文件；输入缺失、重复、非法或与实际字节不符均抛 ValueError/OSError。
+    source_repository 必须来自可信运行上下文，不得从清单自身取得。
     """
     path = Path(path)
     if not stat.S_ISREG(path.lstat().st_mode):
@@ -133,7 +140,7 @@ def load_publication(path: Path) -> dict:
     document = json.loads(path.read_bytes(), object_pairs_hook=_object)
     if not isinstance(document, dict) or set(document) != {'source_run', 'assets', 'initial_latest', 'explicit_latest'}:
         raise ValueError('invalid publication fields')
-    _source_run(document['source_run'])
+    _source_run(document['source_run'], source_repository)
     latest_mapping(document['initial_latest'])
     latest_mapping(document['explicit_latest'])
     assets = document['assets']
@@ -143,14 +150,17 @@ def load_publication(path: Path) -> dict:
     names, paths, packages, metadata = set(), set(), set(), []
     for asset in assets:
         key = metadata_path(asset)
-        fields = {'kind', 'name', 'path', 'size', 'sha256', 'package' if asset['kind'] == 'library' else 'platform'}
+        fields = {'kind', 'name', 'path', 'size', 'sha256'}
+        if asset['kind'] != 'entry':
+            fields.add('package' if asset['kind'] == 'library' else 'platform')
         if (set(asset) != fields or type(asset.get('size')) is not int or asset['size'] < 0
                 or not isinstance(asset.get('sha256'), str) or not re.fullmatch(r'[0-9a-f]{64}', asset['sha256'])
                 or asset['name'] in names or asset.get('path') in paths):
             raise ValueError('invalid or duplicate publication asset')
         names.add(asset['name'])
         paths.add(asset['path'])
-        metadata.append(key)
+        if key is not None:
+            metadata.append(key)
         if asset['kind'] == 'library':
             packages.add(asset['package']['name'])
         file = _local_file(root, asset['path'])

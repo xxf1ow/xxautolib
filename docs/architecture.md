@@ -1,6 +1,6 @@
 # 架构
 
-本文记录版本化构建、安装、消费与打包的组件关系。完整约束、取舍和发布方案由[版本化包与统一产物交付设计](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md)拥有；[开发指南](development.md)和[测试指南](testing.md)说明命令及验证范围。
+本文记录版本化构建、安装、消费与打包的组件关系。[统一交付设计](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md)拥有版本与元数据契约，[自定位入口设计](agent-notes/implemented/architecture/2026-11-03-entry-delivery-and-tool-only-ci.md)拥有入口交付及来源；[开发指南](development.md)和[测试指南](testing.md)说明命令及验证范围。
 
 ## 包与版本
 
@@ -14,38 +14,29 @@
 
 ## 组件职责
 
-根 [CMakeLists.txt](../CMakeLists.txt) 和[构建入口](../src/autolib-builder/index.cmake)准备固定 Go SDK、builder 和宿主 importer，再由 CMake/ExternalProject 执行构建。模块声明、资源、补丁、依赖接线和安装机制归 builder；它也拥有安装副本的路径修正及归档机制，不认识托管平台或发布凭据。
+根 [CMakeLists.txt](../CMakeLists.txt) 和[构建入口](../src/autolib-builder/index.cmake)调用[共享工具准备](../src/autolib-builder/prepare-tools.cmake)，准备固定 Go SDK、builder、宿主 importer 和原样安装入口，再由 CMake/ExternalProject 执行构建。CI 零库模式通过同一工具准备的脚本入口执行，不调用模块生成器。模块声明、资源、补丁、依赖接线和安装机制归 builder；它也拥有安装副本的路径修正及归档机制，不认识托管平台或发布凭据。
 
-`autolib-importer` 负责包选择、精确依赖遍历、HTTPS 下载、复制或解包、校验和缓存准备，内置路径修正规则。单文件 [autolib.cmake](../src/autolib.cmake) 负责宿主 importer 引导、按需 FetchContent Git 快照及仓库检查、结果身份与闭包校验及包就绪后的 target 加载。adapter 使用已准备的依赖公共目标，不自行推断 sibling 版本目录、重新选择依赖或下载编译。
+`autolib-importer` 负责包选择、精确依赖遍历、HTTPS 下载、安全解包、校验和缓存准备，不复制独立安装来源或执行路径修正。单文件 [autolib.cmake](../src/autolib.cmake) 负责宿主 importer 引导、按需 FetchContent Git 快照及仓库检查、结果身份与闭包校验及包就绪后的 target 加载。adapter 使用已准备的依赖公共目标，不自行推断 sibling 版本目录、重新选择依赖或下载编译。
 
-`autolib-ci` 通过 builder 取得精确根及闭包，按依赖层构建、逐根消费验证并运输安装结果；两个 Eigen 版本各有独立消费者。workflow 提供平台环境、触发、权限与同目标串行，不在构建矩阵内发布 Release。
+`autolib-ci` 在选择库时通过 builder 取得精确根及闭包，保留请求、有效及过滤根，按依赖层构建、逐根消费验证，再调用同提交 builder 打包并运输最终归档；两个 Eigen 版本各有独立消费者。零库选择仍保留各平台，验证 importer 与入口后打包工具并运输，不执行库构建或消费。workflow 提供可信源码仓库、平台环境、触发、权限与同目标串行，不在构建矩阵内发布 Release。
 
 ## 构建与交付
 
-普通根入口生成版本化安装结果，包含宿主 importer、包内身份、精确依赖和包级 `package.toml`。本地编译结束即可消费，不要求打包、上传或源码树参与下游运行。实际安装失败以未完成消费描述阻止导入；复用目标仍执行消费准备，但不重新标记已冻结的依赖身份。
+普通根入口生成版本化安装结果，包含原样 `autolib.cmake`、宿主 importer、包内身份、精确依赖和包级 `package.toml`。CI 在安装验证及运输前将入口与当前构建提交的源码逐字节比对，结果记录入口 SHA256，汇总拒绝未验证或不同摘要的入口。本地编译结束即可消费，不要求打包、上传或源码树参与下游运行。实际安装失败以未完成消费描述阻止导入；复用目标仍执行消费准备，但不重新标记已冻结的依赖身份。
 
 公开二进制沿用既有 CI 的单一平台 ABI 基准和发布前验证；本地产物结构一致不代表任意工具链二进制兼容。本地自定义配置及混用远端依赖时，由使用者保持兼容；包身份和摘要校验不替代 ABI 判断，不增加 ABI 变体。
 
 本地打包读取安装中的精确身份和依赖，在副本修正生产路径并生成版本化 tar.zst、单程序 importer tar.xz 及 SHA256；不读取源码 latest 重选安装版本。只打包显式模块，调用者提供完整分发集合。原安装保持不变。
 
-独立发布核对成功构建的精确 run/attempt、原计划平台、安装验证和包级候选，调用原提交 builder 从运输副本打包。Gitee Action 只接收明确资产清单；上传 worker 返回结果，一个协调器更新成功摘要及 latest 并确认 Git push。普通发布只初始化缺失指针，显式映射可以随资产或独立更新。新库私有，用户公开后才匿名消费；附件替换不提供事务回滚。交接及失败约束由[Gitee 交付设计](agent-notes/implemented/architecture/2026-11-02-gitee-delivery-reimplementation.md)拥有。
+独立发布以 workflow 运行上下文为可信源码仓库，核对成功构建的精确 run/attempt、原计划平台、验证结果、包级候选及成品实际大小和 SHA256，原样分发 CI 已生成的归档，不编译 builder 或重新打包。全部运输入口必须与原构建 Git 提交字节一致；发布准备只在上传副本注入实际 Gitee 目标和编码 tag，每次交付各平台工具及一个入口，零库仍保留工具和入口。Gitee Action 只接收明确资产清单并核对可信来源；worker 查询远端实际内容，相同则跳过，不同先删后传，临时故障退避后从查询重试。一个协调器登记上传或核对就绪的工具和库摘要及 latest，并确认 Git push；入口也须就绪，但不写 Git 元数据。普通发布只初始化缺失指针，显式映射可以随资产或独立更新。新库私有，用户公开后才匿名消费；附件替换不提供事务回滚。成品交接由[CI 成品归档交接](agent-notes/implemented/architecture/2026-11-04-ci-packaged-artifact-handoff.md)拥有，元数据及失败约束由[Gitee 交付设计](agent-notes/implemented/architecture/2026-11-02-gitee-delivery-reimplementation.md)拥有。
 
 ## 消费与缓存
 
-`autolib.cmake` 所在目录是固定消费缓存；`AUTOLIB_LOCAL_ROOT` 默认空，空值禁用本地来源，非空时不得与缓存目录指向同一真实目录。来源首次加载后固定，不自动换源。本地用法显式关闭远端。
+入口的实际路径所在目录是唯一工具、包及下载缓存根。源码和本地安装入口的内置远端为空；发布副本带实际 Release 地址。用户变量不能覆盖来源，本地消费者直接 include 安装入口，远程消费者将发布入口放入专用可写、忽略版本控制的目录。
 
-```text
-① 入口目录已解压缓存
-  → ② 本地来源已解压安装结果
-  → ③ 本地来源归档
-  → ④ 所选远端 Release 归档
-```
+工具和包先查同根已有结果，只有必需输入不存在且内置远端非空时才下载。已有候选损坏、身份不符或校验失败直接报错，不覆盖或降级；远端包经暂存、安全解包和校验后提交到同根。完整精确闭包就绪后才加载 adapter 和公共 `autolib::<包名>` 目标，同次 configure 复用结果。
 
-只有候选不存在才继续；损坏、身份不符或校验失败直接报错。无版本请求按各来源的 latest 查找，没有 latest 或所指产物缺失就是该来源未命中；远端选定后不回头使用本地同版本。包内精确依赖逐个使用同一查找顺序，不重选 latest。
-
-②使用 `cp -a` 语义保留 Linux 包内相对软链接和权限，复制到缓存暂存区后修正生产路径，不修改原安装树；③安全解包并校验。所有来源准备成功后都在入口目录留下完整已解压包，完整闭包就绪后才加载 adapter 和公共 `autolib::<包名>` 目标。同次 configure 复用准备结果。
-
-已有缓存及其 latest 不自动更新，补充新包只获取缺失部分；用户手动清理缓存后才重新选择。精确版本请求不自动改写缓存 latest。完整缓存可离线消费，本地来源和远端都禁用时也允许缓存命中；不回退系统包或源码编译，同缓存根写入由调用方串行。
+已有缓存及其 latest 不自动更新，补充新包只获取缺失部分；用户手动清理缓存后才重新选择。精确请求不改写缓存 latest，依赖不重选 latest。完整有效工具和闭包命中时零远端操作；严格禁止缺输入时联网须使用内置地址为空的入口。不回退系统包或源码编译，同根写入由调用方串行，不自动清理既有文件。
 
 缓存 latest 仅在其指向的完整包仍存在时有效；删除目标版本目录后，该选择失效，重新按来源发现并在成功后保存新选择，不猜测其他缓存版本。包损坏仍报错，缺少依赖则只补齐已记录的精确依赖。
 

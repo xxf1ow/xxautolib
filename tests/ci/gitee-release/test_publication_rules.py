@@ -57,7 +57,7 @@ class PublicationRulesTests(unittest.TestCase):
             document = self.publication(root)
             manifest = root / 'publication.json'
             manifest.write_text(json.dumps(document), encoding='utf-8')
-            loaded = self.rules.load_publication(manifest)
+            loaded = self.rules.load_publication(manifest, source_repository='xxf1ow/xxautolib')
             self.assertEqual(Path(loaded['assets'][0]['path']), root / 'queue-1-any-any.tar.zst')
             self.assertEqual(loaded['initial_latest'], {'queue': '2'})
             self.assertEqual(len(loaded['assets']), 1)
@@ -85,7 +85,7 @@ class PublicationRulesTests(unittest.TestCase):
             for data in documents:
                 (root / 'publication.json').write_text(json.dumps(data), encoding='utf-8')
                 with self.subTest(data=data), self.assertRaises(ValueError):
-                    self.rules.load_publication(root / 'publication.json')
+                    self.rules.load_publication(root / 'publication.json', source_repository='xxf1ow/xxautolib')
 
     def test_load_empty_publication_does_not_invent_assets(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -93,7 +93,7 @@ class PublicationRulesTests(unittest.TestCase):
             data = self.publication(root)
             data.update(assets=[], initial_latest={})
             (root / 'publication.json').write_text(json.dumps(data), encoding='utf-8')
-            self.assertEqual(self.rules.load_publication(root / 'publication.json')['assets'], [])
+            self.assertEqual(self.rules.load_publication(root / 'publication.json', source_repository='xxf1ow/xxautolib')['assets'], [])
 
     def test_load_publication_rejects_linked_asset_directories(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -109,12 +109,51 @@ class PublicationRulesTests(unittest.TestCase):
                 data['assets'][0]['path'] = 'linked/queue-1-any-any.tar.zst'
                 (root / 'publication.json').write_text(json.dumps(data), encoding='utf-8')
                 with self.assertRaises(ValueError):
-                    self.rules.load_publication(root / 'publication.json')
+                    self.rules.load_publication(root / 'publication.json', source_repository='xxf1ow/xxautolib')
             finally:
                 if sys.platform == 'win32':
                     link.rmdir()
                 else:
                     link.unlink()
+
+    def test_entry_bytes_are_checked_without_git_metadata(self):
+        self.assertIsNone(self.rules.metadata_path({'kind': 'entry', 'name': 'autolib.cmake'}))
+        for fields in [{'name': 'other.cmake'}, {'platform': 'linux-x86_64'}, {'package': {}}]:
+            with self.subTest(fields=fields), self.assertRaises(ValueError):
+                self.rules.metadata_path(dict(kind='entry', name='autolib.cmake', **fields)
+                                         if 'name' not in fields else dict(kind='entry', **fields))
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            data = self.publication(root)
+            (root / 'autolib.cmake').write_bytes(b'entry')
+            entry = dict(kind='entry', name='autolib.cmake', path='autolib.cmake', size=5,
+                         sha256=hashlib.sha256(b'entry').hexdigest())
+            data['assets'].append(entry)
+            manifest = root / 'publication.json'
+            for change in [{}, {'size': 4}, {'sha256': '0' * 64}, {'platform': 'linux-x86_64'}]:
+                candidate = copy.deepcopy(data)
+                candidate['assets'][-1].update(change)
+                manifest.write_text(json.dumps(candidate), encoding='utf-8')
+                if not change:
+                    loaded = self.rules.load_publication(manifest, source_repository='xxf1ow/xxautolib')
+                    self.assertEqual(loaded['initial_latest'], {'queue': '2'})
+                    self.assertEqual(Path(loaded['assets'][-1]['path']).read_bytes(), b'entry')
+                else:
+                    with self.subTest(change=change), self.assertRaises(ValueError):
+                        self.rules.load_publication(manifest, source_repository='xxf1ow/xxautolib')
+
+    def test_manifest_source_is_bound_to_trusted_fork(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            data = self.publication(root)
+            data['source_run']['repository'] = 'fork/source'
+            manifest = root / 'publication.json'
+            manifest.write_text(json.dumps(data), encoding='utf-8')
+            self.assertEqual(self.rules.load_publication(manifest, source_repository='fork/source')['source_run'],
+                             data['source_run'])
+            for trusted in ['', 'xxf1ow/xxautolib', 'other/source']:
+                with self.subTest(trusted=trusted), self.assertRaises(ValueError):
+                    self.rules.load_publication(manifest, source_repository=trusted)
 
 
 if __name__ == '__main__':

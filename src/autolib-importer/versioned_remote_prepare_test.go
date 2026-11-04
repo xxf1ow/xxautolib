@@ -111,52 +111,42 @@ func requireNoPackageStaging(t *testing.T, cache string) {
 }
 
 func TestVersionedMetadataHandoff(t *testing.T) {
-	for _, source := range []string{"installation", "archive", "cache"} {
-		t.Run(source+" exact dependency", func(t *testing.T) {
-			f := versionedRemote(t)
-			o, cache := versionedFixture(t, "probe")
-			o.RemoteRoot = versionedDownloadRoot
-			root := o.LocalRoot
-			if source == "cache" {
-				root = cache
-			}
-			if source == "archive" {
-				versionedArchive(t, root, "probe", "1", "dep@1")
-			} else {
-				versionedInstalled(t, root, "probe", "1", "dep@1", "root")
-			}
-			versionedLatest(t, root, "probe", "1")
-			dep := f.add(t, "dep", "1", "")
-			f.add(t, "dep", "2", "")
-			putTestFile(t, o.ResultPath, "stale")
-			_, err := prepare(o)
-			if !errors.Is(err, errMetadataRequired) {
-				t.Fatalf("expected metadata handoff: %v", err)
-			}
-			requireNoResult(t, o)
-			requireNoPackageStaging(t, cache)
-			f.requireRequests(t, map[string]int{})
-			versionedRemoteRun(t, o, "", 2)
-			versionedRemoteRun(t, o, f.root, 0)
-			if got := readTestFile(t, o.ResultPath); !strings.Contains(got, "AUTOLIB_PACKAGE_VERSION_dep [[1]]") {
-				t.Fatal(got)
-			}
-			f.requireRequests(t, map[string]int{dep: 1})
-			if _, err := os.Stat(filepath.Join(cache, "dep/package.toml")); !os.IsNotExist(err) {
-				t.Fatal("dependency changed latest", err)
-			}
-		})
-	}
+	t.Run("cache exact dependency", func(t *testing.T) {
+		f := versionedRemote(t)
+		o, cache := versionedFixture(t, "probe")
+		o.RemoteRoot = versionedDownloadRoot
+		versionedInstalled(t, cache, "probe", "1", "dep@1", "root")
+		versionedLatest(t, cache, "probe", "1")
+		dep := f.add(t, "dep", "1", "")
+		f.add(t, "dep", "2", "")
+		putTestFile(t, o.ResultPath, "stale")
+		_, err := prepare(o)
+		if !errors.Is(err, errMetadataRequired) {
+			t.Fatalf("expected metadata handoff: %v", err)
+		}
+		requireNoResult(t, o)
+		requireNoPackageStaging(t, cache)
+		f.requireRequests(t, map[string]int{})
+		versionedRemoteRun(t, o, "", 2)
+		versionedRemoteRun(t, o, f.root, 0)
+		if got := readTestFile(t, o.ResultPath); !strings.Contains(got, "AUTOLIB_PACKAGE_VERSION_dep [[1]]") {
+			t.Fatal(got)
+		}
+		f.requireRequests(t, map[string]int{dep: 1})
+		if _, err := os.Stat(filepath.Join(cache, "dep/package.toml")); !os.IsNotExist(err) {
+			t.Fatal("dependency changed latest", err)
+		}
+	})
 	t.Run("local complete ignores remote and snapshot", func(t *testing.T) {
 		f := versionedRemote(t)
 		o, _ := versionedFixture(t, "probe")
 		o.RemoteRoot = "invalid but unused"
-		versionedInstalled(t, o.LocalRoot, "probe", "1", "", "local")
-		versionedLatest(t, o.LocalRoot, "probe", "1")
+		versionedInstalled(t, o.CacheRoot, "probe", "1", "", "local")
+		versionedLatest(t, o.CacheRoot, "probe", "1")
 		versionedRemoteRun(t, o, filepath.Join(f.root, "missing"), 0)
 		f.requireRequests(t, map[string]int{})
 	})
-	for _, kind := range []string{"disabled", "bad cache", "bad installation", "bad archive", "bad latest"} {
+	for _, kind := range []string{"disabled", "bad cache", "bad latest"} {
 		t.Run(kind+" is not handoff", func(t *testing.T) {
 			f := versionedRemote(t)
 			o, cache := versionedFixture(t, "probe@1")
@@ -166,13 +156,9 @@ func TestVersionedMetadataHandoff(t *testing.T) {
 				o.RemoteRoot = ""
 			case "bad cache":
 				putTestFile(t, filepath.Join(versionedInstalled(t, cache, "probe", "1", "", "keep"), "autolib-import.cmake"), "broken")
-			case "bad installation":
-				putTestFile(t, filepath.Join(versionedInstalled(t, o.LocalRoot, "probe", "1", "", "keep"), "autolib-import.cmake"), "broken")
-			case "bad archive":
-				putTestFile(t, versionedArchive(t, o.LocalRoot, "probe", "1", ""), "broken")
 			case "bad latest":
 				o.Packages = []string{"probe"}
-				putTestFile(t, filepath.Join(o.LocalRoot, "probe/package.toml"), "latest = []")
+				putTestFile(t, filepath.Join(o.CacheRoot, "probe/package.toml"), "latest = []")
 			}
 			putTestFile(t, o.ResultPath, "stale")
 			versionedRemoteRun(t, o, "", 1)
@@ -183,7 +169,7 @@ func TestVersionedMetadataHandoff(t *testing.T) {
 }
 
 func TestVersionedRemoteSelection(t *testing.T) {
-	for _, kind := range []string{"remote bare", "missing local artifact", "no local fallback", "exact old version", "deleted cache target", "cached root only missing dependency"} {
+	for _, kind := range []string{"remote bare", "stale selection", "exact old version", "deleted cache target", "cached root only missing dependency"} {
 		t.Run(kind, func(t *testing.T) {
 			f := versionedRemote(t)
 			o, cache := versionedFixture(t, "probe")
@@ -193,11 +179,8 @@ func TestVersionedRemoteSelection(t *testing.T) {
 			f.add(t, "dep", "9", "")
 			want := map[string]int{root: 1, dep: 1}
 			switch kind {
-			case "missing local artifact", "no local fallback":
-				versionedLatest(t, o.LocalRoot, "probe", "99")
-				if kind == "no local fallback" {
-					versionedInstalled(t, o.LocalRoot, "probe", "2", "", "local wrong selection")
-				}
+			case "stale selection":
+				versionedLatest(t, cache, "probe", "99")
 			case "exact old version":
 				o.Packages = []string{"probe@1"}
 				old := f.add(t, "probe", "1", "dep@1")
@@ -224,9 +207,6 @@ func TestVersionedRemoteSelection(t *testing.T) {
 			}
 			if got, err := readPackageLatest(cache, "probe"); err != nil || got != latest {
 				t.Fatalf("latest %q: %v", got, err)
-			}
-			if kind == "no local fallback" && readTestFile(t, filepath.Join(cache, "probe/2/data")) != "archive" {
-				t.Fatal("remote selection fell back to local")
 			}
 			requireNoPackageStaging(t, cache)
 		})

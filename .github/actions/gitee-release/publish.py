@@ -10,11 +10,15 @@ import shutil
 import stat
 import sys
 import tempfile
+import time
 from typing import Mapping
+import unicodedata
 
 from gitee_api import GiteeAPI, GiteeAPIError
 from metadata_repository import commit_metadata, open_repository
 from publication_rules import choose_latest, latest_mapping, load_publication, metadata_path
+
+ATTACHMENT_RETRY_DELAYS = (2, 4, 8, 16, 32, 32, 32, 32, 32, 32)
 
 
 def resolve_config(environment: Mapping[str, str]) -> dict:
@@ -27,16 +31,15 @@ def resolve_config(environment: Mapping[str, str]) -> dict:
     repository, tag = environment.get('GITEE_REPOSITORY', ''), environment.get('GITEE_RELEASE_TAG', '')
     token = environment.get('GITEE_TOKEN', '')
     if (host != 'gitee' or mode not in {'artifacts', 'latest'}
-            or not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repository)
-            or any(p in {'.', '..'} for p in repository.split('/'))
-            or not tag or any(ord(c) < 32 or ord(c) == 127 for c in tag)
+            or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*', repository)
+            or not tag or any(c.isspace() or unicodedata.category(c) == 'Cc' for c in tag)
             or not token or '\r' in token or '\n' in token):
         raise ValueError('invalid publication host, mode, repository, tag or credentials')
     input_file, latest = environment.get('PUBLISH_INPUT', ''), environment.get('PUBLISH_LATEST', '')
     if mode == 'artifacts':
         if not input_file or latest:
             raise ValueError('artifacts requires input and forbids a separate latest mapping')
-        publication = load_publication(Path(input_file))
+        publication = load_publication(Path(input_file), source_repository=environment.get('GITHUB_REPOSITORY', ''))
     else:
         if input_file or not latest:
             raise ValueError('latest requires a nonempty mapping and forbids input')
@@ -51,11 +54,11 @@ def resolve_config(environment: Mapping[str, str]) -> dict:
             'work_root': Path(tempfile.mkdtemp(prefix='autolib-publish-'))}
 
 
-def publish_one(api: GiteeAPI, release_id: int, asset: dict, target_id: int | None) -> dict:
-    """核对本次字节，确认删除唯一旧附件后上传；失败不登记摘要或回滚。
+def publish_one(api: GiteeAPI, release_id: int, asset: dict) -> dict:
+    """固定本地字节，查询并核对同名附件；相同跳过，不同先删后传。
 
-    临时快照固定实际 multipart 字节。返回 uploaded 及摘要，或不含异常正文和凭据的
-    failed/outcome；未知写入结果仍为失败。HTTP 重试只由 GiteeAPI 拥有。
+    临时故障退避后从查询重新开始，最多额外重试十次。返回 uploaded/skipped 及
+    已确认摘要，或 failed 和脱敏诊断；失败不登记本项摘要，不回滚远端附件。
     """
     name = asset['name']
     try:
@@ -71,12 +74,28 @@ def publish_one(api: GiteeAPI, release_id: int, asset: dict, target_id: int | No
                 digest = hashlib.file_digest(stream, 'sha256').hexdigest()
             if snapshot.stat().st_size != asset['size'] or digest != asset['sha256']:
                 raise ValueError('asset changed after publication preparation')
-            if target_id is not None:
-                api.delete_asset(release_id, target_id)
-            api.upload_asset(release_id, asset, snapshot)
-        return {'name': name, 'status': 'uploaded', 'metadata_path': digest_path, 'sha256': digest}
+            ready = {'name': name, 'metadata_path': digest_path, 'sha256': digest}
+            for attempt in range(len(ATTACHMENT_RETRY_DELAYS) + 1):
+                try:
+                    matches = [target for target in api.target_assets(release_id) if target['name'] == name]
+                    if (len(matches) > 1 or matches and
+                            (type(matches[0].get('id')) is not int or matches[0]['id'] <= 0)):
+                        raise GiteeAPIError('select_asset', reason='invalid_or_ambiguous_asset')
+                    if matches:
+                        if api.asset_sha256(matches[0]) == digest:
+                            return dict(ready, status='skipped')
+                        api.delete_asset(release_id, matches[0]['id'])
+                    api.upload_asset(release_id, asset, snapshot)
+                    return dict(ready, status='uploaded')
+                except GiteeAPIError as error:
+                    if not error.retryable or attempt == len(ATTACHMENT_RETRY_DELAYS):
+                        raise
+                    delay = ATTACHMENT_RETRY_DELAYS[attempt]
+                    print(json.dumps({'asset': name, 'retry': attempt + 1, 'delay_seconds': delay,
+                                      **error.diagnostic()}, sort_keys=True), file=sys.stderr)
+                    time.sleep(delay)
     except GiteeAPIError as error:
-        return {'name': name, 'status': 'failed', 'operation': error.operation, 'outcome': error.outcome}
+        return {'name': name, 'status': 'failed', **error.diagnostic()}
     except (OSError, ValueError):
         return {'name': name, 'status': 'failed', 'operation': 'local_asset', 'outcome': 'failed'}
 
@@ -84,11 +103,12 @@ def publish_one(api: GiteeAPI, release_id: int, asset: dict, target_id: int | No
 def publish_release(config: dict) -> dict:
     """使用单 Git 副本和附件池，结束后一次提交成功项及必要 latest。
 
-    部分上传失败仍提交其他成功项；push 未确认不报告 metadata_committed。
+    部分上传失败仍提交其他成功项；metadata_committed 表示本次产生新提交，
+    metadata_commit 是已确认的远端 SHA，无变化时仍返回已有 SHA。
     latest-only 不查询 Release。所有 worker 结束后关闭 API 会话。
     """
     assets = config['assets']
-    result = {'selected': len(assets), 'uploaded': 0, 'failed': 0,
+    result = {'selected': len(assets), 'uploaded': 0, 'skipped': 0, 'failed': 0,
               'metadata_committed': False, 'metadata_commit': None}
     api = GiteeAPI(config['gitee_token'], config['repository'])
     operation = 'repository'
@@ -100,45 +120,37 @@ def publish_release(config: dict) -> dict:
             release = api.target_release(config['tag'])
             if release is None:
                 release = api.create_release(config['tag'], repository['head'])
-            targets = {}
-            for target in api.target_assets(release['id']):
-                targets.setdefault(target['name'], []).append(target)
-            work = []
-            for asset in assets:
-                matches = targets.get(asset['name'], [])
-                if (len(matches) > 1 or matches and
-                        (type(matches[0].get('id')) is not int or matches[0]['id'] <= 0)):
-                    outcomes.append({'name': asset['name'], 'status': 'failed',
-                                     'operation': 'select_asset', 'outcome': 'failed'})
-                else:
-                    work.append((asset, matches[0]['id'] if matches else None))
             cpu_count = len(os.sched_getaffinity(0)) if hasattr(os, 'sched_getaffinity') else (os.cpu_count() or 1)
-            workers = min(max(1, cpu_count * 2), max(1, len(work)))
+            workers = min(max(1, cpu_count * 2), len(assets))
             operation = 'assets'
             with ThreadPoolExecutor(max_workers=workers) as pool:
-                futures = [pool.submit(publish_one, api, release['id'], asset, target) for asset, target in work]
+                futures = [pool.submit(publish_one, api, release['id'], asset) for asset in assets]
                 outcomes.extend(future.result() for future in futures)
         for item in outcomes:
             if item['status'] == 'failed':
-                print(json.dumps({'asset': item['name'], 'operation': item['operation'],
-                                  'outcome': item['outcome']}, sort_keys=True), file=sys.stderr)
-        successes = {item['name']: item for item in outcomes if item['status'] == 'uploaded'}
-        result.update(uploaded=len(successes), failed=len(assets) - len(successes))
+                diagnostic = {key: item[key] for key in
+                              ('operation', 'outcome', 'http_status', 'reason', 'exception_type') if key in item}
+                print(json.dumps({'asset': item['name'], **diagnostic}, sort_keys=True), file=sys.stderr)
+        successes = {item['name']: item for item in outcomes if item['status'] in {'uploaded', 'skipped'}}
+        result.update(uploaded=sum(item['status'] == 'uploaded' for item in successes.values()),
+                      skipped=sum(item['status'] == 'skipped' for item in successes.values()),
+                      failed=len(assets) - len(successes))
         operation = 'metadata_commit'
-        digests = {item['metadata_path']: item['sha256'] for item in successes.values()}
+        digests = {item['metadata_path']: item['sha256'] for item in successes.values()
+                   if item['metadata_path'] is not None}
         succeeded = {asset['package']['name'] for asset in assets
                      if asset['kind'] == 'library' and asset['name'] in successes}
         existing = repository['existing_latest']
         selected = choose_latest(existing, config['initial_latest'], succeeded, config['explicit_latest'])
         changes = {name: version for name, version in selected.items() if existing.get(name) != version}
+        previous = repository['head']
         result['metadata_commit'] = commit_metadata(repository, digests, changes)
-        result['metadata_committed'] = True
+        result['metadata_committed'] = result['metadata_commit'] != previous
     except (GiteeAPIError, OSError, RuntimeError, ValueError) as error:
-        diagnostic = ({'operation': error.operation, 'outcome': error.outcome}
-                      if isinstance(error, GiteeAPIError)
+        diagnostic = (error.diagnostic() if isinstance(error, GiteeAPIError)
                       else {'operation': operation, 'outcome': 'unconfirmed'})
         print(json.dumps(diagnostic, sort_keys=True), file=sys.stderr)
-        result['failed'] = len(assets) - result['uploaded']
+        result['failed'] = len(assets) - result['uploaded'] - result['skipped']
     finally:
         api.close()
     return result
@@ -159,7 +171,7 @@ def main() -> int:
             return 1
         result = publish_release(config)
         print(json.dumps(result, sort_keys=True))
-        return int(bool(result['failed']) or not result['metadata_committed'])
+        return int(bool(result['failed']) or result['metadata_commit'] is None)
     except (OSError, ValueError, RuntimeError):
         print('publication failed: input could not be read or operation was not confirmed', file=sys.stderr)
         return 1

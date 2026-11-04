@@ -2,11 +2,13 @@
 
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
+import hashlib
+from json import JSONDecodeError
 from pathlib import Path
 import re
 import threading
 import time
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote, urljoin, urlsplit
 
 import requests
 
@@ -21,11 +23,27 @@ RETRY_DELAYS = (2, 4, 8, 16, 32)
 
 
 class GiteeAPIError(RuntimeError):
-    """只携带操作、状态码和 failed/unknown 结果，不携带响应正文或凭据。"""
+    """携带状态码、固定原因及异常类型，不携带响应正文、URL 或原始异常文本。"""
 
-    def __init__(self, operation, status=None, outcome='failed'):
+    def __init__(self, operation, status=None, outcome='failed', *, reason='unspecified', exception_type=None):
         self.operation, self.status, self.outcome = operation, status, outcome
+        self.reason, self.exception_type = reason, exception_type
         super().__init__(operation + ':' + outcome)
+
+    def diagnostic(self) -> dict:
+        """返回可直接写入日志的字段；尚未收到 HTTP 状态时 http_status 为 None。"""
+        return {'operation': self.operation, 'outcome': self.outcome, 'http_status': self.status,
+                'reason': self.reason, 'exception_type': self.exception_type}
+
+    @property
+    def retryable(self) -> bool:
+        """临时网络或服务故障可重试；输入、认证、权限及校验错误不可重试。"""
+        return (self.reason in {'connection_error', 'timeout', 'incomplete_response'}
+                or self.status in {408, 429} or self.status is not None and 500 <= self.status < 600)
+
+
+class _ResponseValidationError(ValueError):
+    """仅携带内部固定校验项，不包含远端返回值。"""
 
 
 def _id(value):
@@ -76,8 +94,8 @@ class GiteeAPI:
         return self._session().request(method, url, timeout=(10, 300),
                                        allow_redirects=False, verify=True, **kwargs)
 
-    def _run(self, operation, send, expected, read, *, write=False, missing=False):
-        for attempt in range(len(RETRY_DELAYS) + 1):
+    def _run(self, operation, send, expected, read, *, write=False, missing=False, retry_delays=RETRY_DELAYS):
+        for attempt in range(len(retry_delays) + 1):
             status, retry, headers = None, False, {}
             try:
                 with send() as response:
@@ -88,17 +106,32 @@ class GiteeAPI:
                         return read(response)
                     retry = not write and status in {429, 502, 503, 504}
                     outcome = 'unknown' if write and status not in {400, 401, 403, 404, 405, 409, 422, 429} else 'failed'
-                    error = GiteeAPIError(operation, status, outcome)
-            except requests.exceptions.SSLError:
-                error = GiteeAPIError(operation, status, 'unknown' if write else 'failed')
-            except (requests.ConnectionError, requests.Timeout, requests.exceptions.ChunkedEncodingError):
+                    error = GiteeAPIError(operation, status, outcome, reason='unexpected_http_status')
+            except requests.exceptions.SSLError as cause:
+                error = GiteeAPIError(operation, status, 'unknown' if write else 'failed',
+                                      reason='tls_error', exception_type=type(cause).__name__)
+            except (requests.ConnectionError, requests.Timeout, requests.exceptions.ChunkedEncodingError) as cause:
                 retry = not write
-                error = GiteeAPIError(operation, status, 'unknown' if write else 'failed')
-            except (requests.RequestException, ValueError, TypeError, KeyError, OSError):
-                error = GiteeAPIError(operation, status, 'unknown' if write else 'failed')
-            if not retry or attempt == len(RETRY_DELAYS):
+                reason = ('timeout' if isinstance(cause, requests.Timeout) else
+                          'connection_error' if isinstance(cause, requests.ConnectionError) else 'incomplete_response')
+                error = GiteeAPIError(operation, status, 'unknown' if write else 'failed',
+                                      reason=reason, exception_type=type(cause).__name__)
+            except (requests.RequestException, ValueError, TypeError, KeyError, OSError) as cause:
+                if isinstance(cause, JSONDecodeError):
+                    reason = 'invalid_json'
+                elif isinstance(cause, _ResponseValidationError):
+                    reason = str(cause)
+                elif isinstance(cause, (ValueError, TypeError, KeyError)):
+                    reason = 'invalid_response'
+                elif isinstance(cause, requests.RequestException):
+                    reason = 'request_error'
+                else:
+                    reason = 'local_io_error'
+                error = GiteeAPIError(operation, status, 'unknown' if write else 'failed',
+                                      reason=reason, exception_type=type(cause).__name__)
+            if not retry or attempt == len(retry_delays):
                 raise error from None
-            delay = RETRY_DELAYS[attempt]
+            delay = retry_delays[attempt]
             if status == 429 and 'Retry-After' in headers:
                 try:
                     value = headers['Retry-After']
@@ -164,7 +197,7 @@ class GiteeAPI:
                           201, lambda data: self._release(data, tag), write=True)
 
     def target_assets(self, release_id: int) -> list[dict]:
-        """返回全部分页的具名附件；请求或分页结构错误抛 GiteeAPIError。"""
+        """单次读取全部分页；失败交给附件更新循环，不在 HTTP 层重试。"""
         def assets(data):
             if not isinstance(data, list) or any(not isinstance(a, dict) or not isinstance(a.get('name'), str)
                                                 or not a['name'] for a in data):
@@ -175,29 +208,73 @@ class GiteeAPI:
             current = page
             items = self._json('target_assets', lambda: self._request('GET', 'repos/' + self.repository
                                + '/releases/' + str(release_id) + '/attach_files', params={'page': current, 'per_page': 100}),
-                               200, assets)
+                               200, assets, retry_delays=())
             result.extend(items)
             if len(items) < 100:
                 return result
             page += 1
 
+    def asset_sha256(self, asset: dict) -> str:
+        """流式核对远端实际字节；只向 Gitee 发送凭据，仅跟随 HTTPS 重定向。
+
+        初始 URL 必须属于目标仓库。请求或读取失败抛 GiteeAPIError，不自行重试。
+        """
+        def download():
+            url = asset['browser_download_url']
+            if not isinstance(url, str):
+                raise ValueError('invalid asset URL')
+            initial = urlsplit(url)
+            if initial.hostname != 'gitee.com' or not initial.path.startswith('/' + self.repository + '/releases/download/'):
+                raise ValueError('invalid asset source')
+            for _ in range(6):
+                parsed = urlsplit(url)
+                if (parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password
+                        or any(c.isspace() for c in url)):
+                    raise ValueError('invalid asset URL')
+                headers = {'Authorization': 'token ' + self.token} if parsed.netloc == 'gitee.com' else {}
+                response = self._session().request('GET', url, headers=headers, timeout=(10, 300),
+                                                   allow_redirects=False, verify=True, stream=True)
+                if response.status_code not in {301, 302, 303, 307, 308}:
+                    return response
+                with response:
+                    location = response.headers.get('Location')
+                    if not location:
+                        raise ValueError('missing redirect URL')
+                    url = urljoin(url, location)
+            raise ValueError('too many redirects')
+
+        def digest(response):
+            result = hashlib.sha256()
+            for chunk in response.iter_content(1024 * 1024):
+                result.update(chunk)
+            return result.hexdigest()
+        return self._run('asset_sha256', download, 200, digest, retry_delays=())
+
     def delete_asset(self, release_id: int, asset_id: int) -> None:
-        """只在收到 204 时确认删除；不确定写入失败且不重放。"""
+        """单次删除，只在收到 204 时确认；失败交给附件更新循环。"""
         self._run('delete_asset', lambda: self._request('DELETE', 'repos/' + self.repository + '/releases/'
                   + str(release_id) + '/attach_files/' + str(asset_id)), 204, lambda response: None, write=True)
 
     def upload_asset(self, release_id: int, asset: dict, file: Path) -> dict:
         """借用无装饰器 multipart 上传；核对 ID、名称、尺寸和 HTTPS URL 后返回。"""
         def uploaded(data):
-            if (not isinstance(data, dict) or not _id(data.get('id')) or data.get('name') != asset['name']
-                    or type(data.get('size')) is not int or data['size'] != asset['size']):
-                raise ValueError('invalid uploaded asset')
+            if not isinstance(data, dict):
+                raise _ResponseValidationError('invalid_asset_response')
+            if not _id(data.get('id')):
+                raise _ResponseValidationError('invalid_asset_id')
+            if data.get('name') != asset['name']:
+                raise _ResponseValidationError('invalid_asset_name')
+            if type(data.get('size')) is not int or data['size'] != asset['size']:
+                raise _ResponseValidationError('invalid_asset_size')
             url = data.get('browser_download_url')
             if not isinstance(url, str) or any(c.isspace() for c in url):
-                raise ValueError('invalid uploaded asset URL')
-            parsed = urlsplit(url)
+                raise _ResponseValidationError('invalid_asset_url')
+            try:
+                parsed = urlsplit(url)
+            except ValueError:
+                raise _ResponseValidationError('invalid_asset_url') from None
             if parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password:
-                raise ValueError('invalid uploaded asset URL')
+                raise _ResponseValidationError('invalid_asset_url')
             return data
         return self._json('upload_asset', lambda: self.client.upload_asset_details(
             self.repo, release_id, file_name=asset['name'], file_path=str(file)), 201, uploaded, write=True)

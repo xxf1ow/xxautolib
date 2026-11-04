@@ -33,7 +33,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	flags.StringVar(&options.BuilderFile, "builder-file", "", "autolib-builder executable")
 	flags.StringVar(&output, "output", "", "plan JSON output file")
 	platforms := flags.String("platforms", "", "all or comma-separated target platforms")
-	modules := flags.String("modules", "", "comma-separated modules; blank discovers adapter-backed modules")
+	modules := flags.String("modules", "", "blank for tools only, exactly all, or comma-separated libraries")
 	if err := flags.Parse(args[1:]); err != nil {
 		return 1
 	}

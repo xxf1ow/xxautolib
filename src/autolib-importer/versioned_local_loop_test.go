@@ -81,7 +81,8 @@ install(FILES "${CMAKE_BINARY_DIR}/ProbeConfig.cmake" DESTINATION lib/cmake/Prob
 add_library(autolib::probe INTERFACE IMPORTED GLOBAL)
 target_link_libraries(autolib::probe INTERFACE fixture::probe autolib::dep)
 `)
-	install := filepath.Join(producer, "installed")
+	arch := map[string]string{"amd64": "x86_64", "arm64": "aarch64"}[runtime.GOARCH]
+	install := filepath.Join(producer, "build", "ci", "42-1", runtime.GOOS+"-"+arch, "install")
 	t.Setenv("AUTOLIB_INSTALL_ROOT", install)
 	generator := "Unix Makefiles"
 	if runtime.GOOS == "windows" {
@@ -89,7 +90,6 @@ target_link_libraries(autolib::probe INTERFACE fixture::probe autolib::dep)
 	}
 	loopCommand(t, "cmake", "-S", producer, "-B", filepath.Join(producer, "build"), "-G", generator, "-DBUILD_LIST=probe@1,dep@2")
 	loopCommand(t, "cmake", "--build", filepath.Join(producer, "build"), "--config", "Release")
-	arch := map[string]string{"amd64": "x86_64", "arm64": "aarch64"}[runtime.GOARCH]
 	toolName := "autolib-importer-" + runtime.GOOS + "-" + arch
 	builderName := "autolib-builder"
 	if runtime.GOOS == "windows" {
@@ -108,94 +108,56 @@ target_link_libraries(autolib::probe INTERFACE fixture::probe autolib::dep)
 func TestVersionedLocalLoop(t *testing.T) {
 	root := t.TempDir()
 	f := newNativeLoopFixture(t, root)
-	producer, install, release := f.producer, f.install, f.release
-	generator, arch, toolName, builderName := f.generator, f.arch, f.toolName, f.builderName
-	putTestFile(t, filepath.Join(producer, "tests/autolib/CMakeLists.txt"), strings.Replace(loopConsumerCMake, "main.cpp", "smoke.cpp", 1))
-	putTestFile(t, filepath.Join(producer, "tests/autolib/smoke.cpp"), loopConsumerSource)
-	before := sourceSnapshot(t, producer)
-	for _, source := range []string{install, release} {
-		kind := "copy"
-		if source == release {
-			kind = "archive"
-		}
-		t.Run(kind, func(t *testing.T) {
-			consumer := filepath.Join(root, kind+" consumer")
-			cache := filepath.Join(consumer, "3rdparty")
-			putTestFile(t, filepath.Join(cache, "autolib.cmake"), readTestFile(t, "../autolib.cmake"))
-			unrelated := putTestFile(t, filepath.Join(cache, "unrelated/7/marker"), "unrelated cache bytes\n")
-			unrelatedBefore := sourceSnapshot(t, filepath.Dir(filepath.Dir(unrelated)))
-			putTestFile(t, filepath.Join(consumer, "main.cpp"), loopConsumerSource)
-			putTestFile(t, filepath.Join(consumer, "CMakeLists.txt"), loopConsumerCMake)
-			consume := func(label, local string) {
-				build := filepath.Join(root, kind+" "+label)
-				loopCommand(t, "cmake", "-S", consumer, "-B", build, "-G", generator, "-DRELEASE_ROOT="+local, "-DINSTALL_ROOT="+producer)
-				loopCommand(t, "cmake", "--build", build, "--config", "Release", "--verbose")
-				out := loopCommand(t, "ctest", "--test-dir", build, "-C", "Release", "-V")
-				if !strings.Contains(out, "header_dep=1 linked_dep=1") {
-					t.Fatal("consumer did not prove the exact header and native dependency versions")
-				}
-				if runtime.GOOS != "windows" && !strings.Contains(out, "runtime_probe="+filepath.ToSlash(cache)+"/probe/1/") {
-					t.Fatal("native loader did not use probe@1 from the current cache")
-				}
-				for _, file := range []string{"imported.txt", "link-inputs-Release.txt"} {
-					inputs := readTestFile(t, filepath.Join(build, file))
-					if strings.Contains(inputs, filepath.ToSlash(producer)) || !strings.Contains(inputs, filepath.ToSlash(cache)+"/") {
-						t.Fatalf("%s leaks producer or misses the current cache: %s", file, inputs)
-					}
-				}
-			}
-			consume("first", source)
-			if !reflect.DeepEqual(before, sourceSnapshot(t, producer)) {
-				t.Fatal("consumption modified producer/tool/archive bytes, permissions or timestamps")
-			}
-			// A wrong cached dependency is valid C++ but must not pass the version oracle.
-			header := filepath.Join(cache, "dep/1/include/dep.h")
-			original := readTestFile(t, header)
-			putTestFile(t, header, strings.Replace(original, "DEP_VERSION 1", "DEP_VERSION 2", 1))
-			negativeBuild := filepath.Join(root, kind+" negative")
-			loopCommand(t, "cmake", "-S", consumer, "-B", negativeBuild, "-G", generator, "-DRELEASE_ROOT=", "-DINSTALL_ROOT="+producer)
-			loopCommand(t, "cmake", "--build", negativeBuild, "--config", "Release")
-			out, err := exec.Command("ctest", "--test-dir", negativeBuild, "-C", "Release", "-V").CombinedOutput()
-			if err == nil || !strings.Contains(string(out), "header_dep=2 linked_dep=1") {
-				t.Fatalf("wrong dependency version was not rejected by native execution: %v\n%s", err, out)
-			}
-			t.Logf("wrong-version negative rejected:\n%s", out)
-			putTestFile(t, header, original)
-			movedProducer := producer + ".hidden"
-			if err := os.Rename(producer, movedProducer); err != nil {
-				t.Fatal(err)
-			}
-			defer func() {
-				if err := os.Rename(movedProducer, producer); err != nil {
-					t.Error(err)
-				}
-			}()
-			moved := filepath.Join(root, kind+" moved consumer")
-			if err := os.Rename(consumer, moved); err != nil {
-				t.Fatal(err)
-			}
-			consumer, cache = moved, filepath.Join(moved, "3rdparty")
-			consume("offline", "")
-			if !reflect.DeepEqual(unrelatedBefore, sourceSnapshot(t, filepath.Join(cache, "unrelated"))) || !reflect.DeepEqual(before, sourceSnapshot(t, movedProducer)) {
-				t.Fatal("offline cache relocation changed unrelated cache or producer contents")
-			}
-		})
+	if readTestFile(t, filepath.Join(f.install, "autolib.cmake")) != readTestFile(t, "../autolib.cmake") {
+		t.Fatal("ordinary root did not install the source entry unchanged")
 	}
-	t.Run("local driver", func(t *testing.T) {
-		driver, err := filepath.Abs("../../tests/autolib/run-local.cmake")
-		if err != nil {
-			t.Fatal(err)
+	consumer := filepath.Join(root, "independent consumer")
+	putTestFile(t, filepath.Join(consumer, "main.cpp"), loopConsumerSource)
+	putTestFile(t, filepath.Join(consumer, "CMakeLists.txt"), loopConsumerCMake)
+	before := sourceSnapshot(t, f.install)
+	consume := func(label string) string {
+		build := filepath.Join(root, label)
+		loopCommand(t, "cmake", "-S", consumer, "-B", build, "-G", f.generator, "-DAUTOLIB_ENTRY="+filepath.Join(f.install, "autolib.cmake"))
+		loopCommand(t, "cmake", "--build", build, "--config", "Release", "--verbose")
+		out := loopCommand(t, "ctest", "--test-dir", build, "-C", "Release", "-V")
+		if !strings.Contains(out, "header_dep=1 linked_dep=1") {
+			t.Fatal("wrong native versions")
 		}
-		validation := filepath.Join(producer, "build/driver")
-		loopCommand(t, "cmake", "-DSOURCE_ROOT="+producer, "-DINSTALL_ROOT="+install, "-DVALIDATION_ROOT="+validation,
-			"-DRELEASE_DIR="+filepath.Join(validation, "release"), "-DBUILDER_FILE="+filepath.Join(producer, "build/tools", builderName),
-			"-DIMPORTER_FILE="+filepath.Join(install, toolName), "-DTARGET_OS="+runtime.GOOS, "-DTARGET_ARCH="+arch,
-			"-DGENERATOR="+generator, "-DMODULES=probe@1;dep@1", "-DROOT_PACKAGES=probe@1", "-P", driver)
-		runs, _ := filepath.Glob(filepath.Join(validation, "run-*"))
-		if len(runs) != 1 || !strings.Contains(readTestFile(t, filepath.Join(runs[0], "result.txt")), "2 CTest runs 1/1") {
-			t.Fatal("local driver did not build and run both versioned cache locations")
+		if runtime.GOOS != "windows" && !strings.Contains(out, "runtime_probe="+filepath.ToSlash(f.install)+"/probe/1/") {
+			t.Fatal("loader missed installed probe")
 		}
-	})
+		for _, file := range []string{"imported.txt", "link-inputs-Release.txt"} {
+			inputs := readTestFile(t, filepath.Join(build, file))
+			if !strings.Contains(inputs, filepath.ToSlash(f.install)+"/dep/1/") || !strings.Contains(inputs, filepath.ToSlash(f.install)+"/probe/1/") {
+				t.Fatal("wrong installed paths", inputs)
+			}
+		}
+		return build
+	}
+	consume("first")
+	consume("reuse")
+	if !reflect.DeepEqual(before, sourceSnapshot(t, f.install)) {
+		t.Fatal("direct consumption changed installation")
+	}
+	header := filepath.Join(f.install, "dep/1/include/dep.h")
+	original := readTestFile(t, header)
+	putTestFile(t, header, strings.Replace(original, "DEP_VERSION 1", "DEP_VERSION 2", 1))
+	negative := filepath.Join(root, "negative")
+	loopCommand(t, "cmake", "-S", consumer, "-B", negative, "-G", f.generator, "-DAUTOLIB_ENTRY="+filepath.Join(f.install, "autolib.cmake"))
+	loopCommand(t, "cmake", "--build", negative, "--config", "Release")
+	out, err := exec.Command("ctest", "--test-dir", negative, "-C", "Release", "-V").CombinedOutput()
+	if err == nil || !strings.Contains(string(out), "header_dep=2 linked_dep=1") {
+		t.Fatalf("wrong-version oracle: %v\\n%s", err, out)
+	}
+	t.Logf("wrong-version negative rejected:\\n%s", out)
+	putTestFile(t, header, original)
+	driver, err := filepath.Abs("../../tests/autolib/run-installed.cmake")
+	if err != nil {
+		t.Fatal(err)
+	}
+	putTestFile(t, filepath.Join(f.producer, "tests/autolib/CMakeLists.txt"), strings.Replace(loopConsumerCMake, "main.cpp", "smoke.cpp", 1))
+	putTestFile(t, filepath.Join(f.producer, "tests/autolib/smoke.cpp"), loopConsumerSource)
+	loopCommand(t, "cmake", "-DSOURCE_ROOT="+f.producer, "-DINSTALL_ROOT="+f.install, "-DVALIDATION_ROOT="+filepath.Join(f.producer, "build/driver"), "-DGENERATOR="+f.generator, "-DMODULES=probe@1;dep@1", "-DROOT_PACKAGES=probe@1", "-P", driver)
 }
 
 func loopCommand(t *testing.T, program string, args ...string) string {
@@ -228,9 +190,10 @@ const loopConsumerCMake = `cmake_minimum_required(VERSION 3.20)
 project(versioned_loop CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_BUILD_TYPE Release)
-set(AUTOLIB_LOCAL_ROOT "${RELEASE_ROOT}")
-set(AUTOLIB_REMOTE_ROOT "")
-include("${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/autolib.cmake")
+if(NOT AUTOLIB_ENTRY)
+ set(AUTOLIB_ENTRY "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/autolib.cmake")
+endif()
+include("${AUTOLIB_ENTRY}")
 add_executable(probe main.cpp)
 autolib_import(TARGET probe PRIVATE probe@1)
 target_link_libraries(probe PRIVATE ${CMAKE_DL_LIBS})
@@ -239,12 +202,8 @@ if(NOT AUTOLIB_PACKAGE_VERSION_dep STREQUAL "1" OR NOT AUTOLIB_PREPARED_PACKAGES
 endif()
 get_target_property(includes fixture::dep INTERFACE_INCLUDE_DIRECTORIES)
 get_target_property(library fixture::probe IMPORTED_LOCATION_RELEASE)
-string(FIND "${includes}\n${library}" "${INSTALL_ROOT}" producer_position)
-if(NOT producer_position EQUAL -1)
-    message(FATAL_ERROR "imported metadata retains the producer prefix")
-endif()
 file(WRITE "${CMAKE_BINARY_DIR}/imported.txt" "${includes}\n${library}\n")
-set(cache_root "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty")
+get_filename_component(cache_root "${AUTOLIB_ENTRY}" DIRECTORY)
 file(WRITE "${CMAKE_BINARY_DIR}/prepared-state.cmake" "set(AUTOLIB_CACHE_ROOT [==[${cache_root}]==])\n")
 file(WRITE "${CMAKE_BINARY_DIR}/imported-properties.txt" "${includes}\n${library}\n")
 file(GENERATE OUTPUT "${CMAKE_BINARY_DIR}/link-inputs-$<CONFIG>.txt" CONTENT "$<TARGET_FILE:fixture::probe>\n$<TARGET_FILE:fixture::dep>\n")

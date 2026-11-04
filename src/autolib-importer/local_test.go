@@ -3,7 +3,6 @@ package main
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -39,35 +38,6 @@ func TestPackageMetadata(t *testing.T) {
 				t.Fatalf("%+v %v", got, err)
 			}
 		})
-	}
-}
-
-func TestLocalSource(t *testing.T) {
-	want, err := filepath.Abs(".")
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, err := normalizeLocalSource("./folder/..")
-	if err != nil || got != filepath.ToSlash(want) {
-		t.Fatalf("%q %v", got, err)
-	}
-	for _, uri := range []string{"", "https://host/root", "http://host/root", "file:///root", "ssh://host/root"} {
-		if _, err := normalizeLocalSource(uri); err == nil {
-			t.Fatalf("accepted %q", uri)
-		}
-	}
-	if runtime.GOOS == "windows" {
-		for input, want := range map[string]string{`C:\release\folder\..`: `C:/release`, `\\host\share\folder\..`: `//host/share/`} {
-			got, err := normalizeLocalSource(input)
-			if err != nil || strings.TrimSuffix(got, "/") != strings.TrimSuffix(want, "/") {
-				t.Fatalf("%q: %q %v", input, got, err)
-			}
-		}
-	}
-	a := packageDirectory(want, packageIdentity{Name: "lz4", Version: "1.0", OS: "linux", Arch: "aarch64"})
-	c := packageDirectory(want, packageIdentity{Name: "lz4", Version: "1.0", OS: "windows", Arch: "x86_64"})
-	if a != c || a != filepath.Join(want, "lz4", "1.0") {
-		t.Fatal(a, c)
 	}
 }
 

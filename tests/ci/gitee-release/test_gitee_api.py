@@ -1,6 +1,7 @@
 """Controlled HTTP responses exercise authentication and confirmed writes."""
 
 import importlib
+import hashlib
 import json
 from pathlib import Path
 import sys
@@ -111,6 +112,63 @@ class GiteeAPITests(unittest.TestCase):
                 self.assertEqual(failure.exception.outcome, 'unknown')
             self.assertEqual(len(self.sent), 1)
 
+    def test_write_diagnostics_distinguish_http_and_transport_failures(self):
+        cases = [
+            ((503, {'message': 'fake-secret'}), 503, 'unexpected_http_status', None, 'unknown'),
+            ((403, {'message': 'fake-secret'}), 403, 'unexpected_http_status', None, 'failed'),
+            (requests.Timeout('fake-secret'), None, 'timeout', 'Timeout', 'unknown'),
+            (requests.ConnectionError('fake-secret'), None, 'connection_error', 'ConnectionError', 'unknown'),
+            (requests.exceptions.SSLError('fake-secret'), None, 'tls_error', 'SSLError', 'unknown'),
+            (requests.exceptions.ChunkedEncodingError('fake-secret'), None,
+             'incomplete_response', 'ChunkedEncodingError', 'unknown'),
+        ]
+        for reply, status, reason, exception_type, outcome in cases:
+            with self.subTest(reason=reason, status=status):
+                self.sent.clear()
+                with self.transport([reply]), self.assertRaises(self.module.GiteeAPIError) as failure:
+                    self.api.delete_asset(3, 4)
+                diagnostic = failure.exception.diagnostic()
+                self.assertEqual(diagnostic, {'operation': 'delete_asset', 'outcome': outcome,
+                                             'http_status': status, 'reason': reason,
+                                             'exception_type': exception_type})
+                self.assertEqual(len(self.sent), 1)
+                self.assertNotIn('fake-secret', json.dumps(diagnostic) + str(failure.exception))
+
+    def test_upload_diagnostics_identify_invalid_json_and_response_field(self):
+        valid = {'id': 7, 'name': 'asset', 'size': 5,
+                 'browser_download_url': 'https://example.invalid/asset'}
+        cases = [
+            (dict(valid, id=0), 'invalid_asset_id'),
+            (dict(valid, name='fake-secret'), 'invalid_asset_name'),
+            (dict(valid, size=6), 'invalid_asset_size'),
+            (dict(valid, browser_download_url='https://fake-secret@example.invalid/asset'), 'invalid_asset_url'),
+            (['fake-secret'], 'invalid_asset_response'),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            file = Path(directory) / 'asset'
+            file.write_bytes(b'bytes')
+            for data, reason in cases:
+                with self.subTest(reason=reason):
+                    self.sent.clear()
+                    with self.transport([(201, data)]), self.assertRaises(self.module.GiteeAPIError) as failure:
+                        self.api.upload_asset(3, {'name': 'asset', 'size': 5}, file)
+                    diagnostic = failure.exception.diagnostic()
+                    self.assertEqual(diagnostic['http_status'], 201)
+                    self.assertEqual(diagnostic['reason'], reason)
+                    self.assertEqual(diagnostic['outcome'], 'unknown')
+                    self.assertEqual(len(self.sent), 1)
+                    self.assertNotIn('fake-secret', json.dumps(diagnostic) + str(failure.exception))
+            response = self.response(201, None)
+            response._content = b'fake-secret: not JSON'
+            with patch('requests.sessions.Session.request', return_value=response), \
+                    self.assertRaises(self.module.GiteeAPIError) as failure:
+                self.api.upload_asset(3, {'name': 'asset', 'size': 5}, file)
+            diagnostic = failure.exception.diagnostic()
+            self.assertEqual(diagnostic['http_status'], 201)
+            self.assertEqual(diagnostic['reason'], 'invalid_json')
+            self.assertEqual(diagnostic['exception_type'], 'JSONDecodeError')
+            self.assertNotIn('fake-secret', json.dumps(diagnostic) + str(failure.exception))
+
     def test_retry_after_cannot_extend_bounded_wait(self):
         response = self.response(429, {})
         response.headers['Retry-After'] = '3600'
@@ -142,6 +200,39 @@ class GiteeAPITests(unittest.TestCase):
         self.assertIn('fixed%2Ftag', self.sent[0][1])
         self.assertEqual(self.sent[1][2]['json']['target_commitish'], 'a' * 40)
         self.assertEqual(self.sent[3][2]['params']['page'], 2)
+
+    def test_attachment_query_has_no_nested_retry(self):
+        with self.transport([(503, {})] * 6), patch('time.sleep') as clock:
+            with self.assertRaises(self.module.GiteeAPIError):
+                self.api.target_assets(3)
+        self.assertEqual(len(self.sent), 1)
+        clock.assert_not_called()
+
+    def test_asset_digest_downloads_bytes_and_drops_auth_on_cdn_redirect(self):
+        first = self.response(302, None)
+        first.headers['Location'] = 'https://cdn.example.invalid/archive'
+        last = self.response(200, None)
+        last._content = b'archive\0bytes'
+        sent = []
+        def send(method, url, **options):
+            sent.append((method, url, options))
+            return first if len(sent) == 1 else last
+        asset = {'browser_download_url': 'https://gitee.com/fixture/mirror/releases/download/fixed/archive'}
+        with patch('requests.sessions.Session.request', side_effect=send):
+            self.assertEqual(self.api.asset_sha256(asset), hashlib.sha256(b'archive\0bytes').hexdigest())
+        self.assertEqual([s[1] for s in sent], [asset['browser_download_url'], 'https://cdn.example.invalid/archive'])
+        self.assertEqual(sent[0][2]['headers']['Authorization'], 'token fake-secret')
+        self.assertNotIn('Authorization', sent[1][2]['headers'])
+        self.assertTrue(last._content_consumed)
+
+    def test_asset_digest_rejects_insecure_redirect_without_sending_credentials(self):
+        first = self.response(302, None)
+        first.headers['Location'] = 'http://gitee.com/insecure'
+        with patch('requests.sessions.Session.request', return_value=first) as send:
+            with self.assertRaises(self.module.GiteeAPIError):
+                self.api.asset_sha256({'browser_download_url':
+                    'https://gitee.com/fixture/mirror/releases/download/fixed/archive'})
+        self.assertEqual(send.call_count, 1)
 
     def test_upload_reuses_real_multipart_and_checks_response(self):
         captured = []
