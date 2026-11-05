@@ -1,25 +1,11 @@
+#[=[
+Eigen：线性代数纯头文件库，直接包含头文件。
+公共目标：autolib::eigen。
+#]=]
+
 if(TARGET autolib::eigen)
     return()
 endif()
-foreach(_autolib_eigen_target IN ITEMS Eigen3::Eigen)
-    if(TARGET ${_autolib_eigen_target})
-        message(FATAL_ERROR "AutoLib eigen cannot import existing target ${_autolib_eigen_target}; import AutoLib before other package discovery")
-    endif()
-endforeach()
-set(Eigen3_DIR "${CMAKE_CURRENT_LIST_DIR}/share/eigen3/cmake")
-if(NOT EXISTS "${Eigen3_DIR}/Eigen3Config.cmake")
-    message(FATAL_ERROR "AutoLib eigen requires package-owned ${Eigen3_DIR}/Eigen3Config.cmake")
-endif()
-get_property(_autolib_eigen_before DIRECTORY PROPERTY IMPORTED_TARGETS)
-find_package(Eigen3 REQUIRED CONFIG PATHS "${Eigen3_DIR}" NO_DEFAULT_PATH)
-get_property(_autolib_eigen_after DIRECTORY PROPERTY IMPORTED_TARGETS)
-foreach(_autolib_eigen_target IN LISTS _autolib_eigen_after)
-    if(NOT _autolib_eigen_target IN_LIST _autolib_eigen_before)
-        set_property(TARGET ${_autolib_eigen_target} PROPERTY IMPORTED_GLOBAL TRUE)
-    endif()
-endforeach()
-if(NOT TARGET Eigen3::Eigen)
-    message(FATAL_ERROR "AutoLib eigen Config must define Eigen3::Eigen")
-endif()
+
 add_library(autolib::eigen INTERFACE IMPORTED GLOBAL)
-target_link_libraries(autolib::eigen INTERFACE Eigen3::Eigen)
+target_include_directories(autolib::eigen INTERFACE "${CMAKE_CURRENT_LIST_DIR}/include")
