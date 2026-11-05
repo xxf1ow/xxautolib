@@ -1,23 +1,15 @@
+#[=[
+oneTBB：任务并行共享运行库，通过 CMake Config 导入。
+公共目标：autolib::oneTBB。
+#]=]
+
 if(TARGET autolib::oneTBB)
     return()
 endif()
-if(TARGET TBB::tbb)
-    message(FATAL_ERROR "AutoLib oneTBB cannot import existing TBB::tbb; import AutoLib before other package discovery")
-endif()
+
 set(TBB_DIR "${CMAKE_CURRENT_LIST_DIR}/lib/cmake/TBB")
-if(NOT EXISTS "${TBB_DIR}/TBBConfig.cmake")
-    message(FATAL_ERROR "AutoLib oneTBB requires package-owned ${TBB_DIR}/TBBConfig.cmake")
-endif()
-get_property(_autolib_oneTBB_before DIRECTORY PROPERTY IMPORTED_TARGETS)
-find_package(TBB REQUIRED CONFIG COMPONENTS tbb PATHS "${TBB_DIR}" NO_DEFAULT_PATH)
-get_property(_autolib_oneTBB_after DIRECTORY PROPERTY IMPORTED_TARGETS)
-foreach(_autolib_oneTBB_target IN LISTS _autolib_oneTBB_after)
-    if(NOT _autolib_oneTBB_target IN_LIST _autolib_oneTBB_before)
-        set_property(TARGET ${_autolib_oneTBB_target} PROPERTY IMPORTED_GLOBAL TRUE)
-    endif()
-endforeach()
-if(NOT TARGET TBB::tbb)
-    message(FATAL_ERROR "AutoLib oneTBB Config must define TBB::tbb")
-endif()
+find_package(TBB CONFIG REQUIRED COMPONENTS tbb)
+set_property(TARGET TBB::tbb PROPERTY IMPORTED_GLOBAL TRUE)
+
 add_library(autolib::oneTBB INTERFACE IMPORTED GLOBAL)
 target_link_libraries(autolib::oneTBB INTERFACE TBB::tbb)

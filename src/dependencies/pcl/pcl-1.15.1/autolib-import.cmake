@@ -1,43 +1,28 @@
+#[=[
+PCL：点云处理静态组件库，通过 CMake Config 导入。
+公共目标：autolib::pcl。
+#]=]
+
 if(TARGET autolib::pcl)
     return()
 endif()
-foreach(_autolib_pcl_component IN ITEMS common io filters features registration segmentation sample_consensus kdtree search surface keypoints)
-    if(TARGET pcl_${_autolib_pcl_component})
-        message(FATAL_ERROR "AutoLib pcl cannot import existing pcl_${_autolib_pcl_component}; import AutoLib before other package discovery")
-    endif()
-endforeach()
-set(_autolib_pcl_os "${AUTOLIB_OS}")
-set(_autolib_pcl_arch "${AUTOLIB_ARCH}")
-foreach(_autolib_pcl_dependency IN ITEMS lz4 flann boost eigen zlib)
-    if(NOT EXISTS "${CMAKE_CURRENT_LIST_DIR}/../${_autolib_pcl_dependency}/autolib-import.cmake")
-        message(FATAL_ERROR "AutoLib pcl requires prepared sibling package ${_autolib_pcl_dependency}")
-    endif()
-    include("${CMAKE_CURRENT_LIST_DIR}/../${_autolib_pcl_dependency}/autolib-import.cmake")
-    if(NOT AUTOLIB_PACKAGE_NAME STREQUAL _autolib_pcl_dependency OR NOT AUTOLIB_OS STREQUAL _autolib_pcl_os OR NOT AUTOLIB_ARCH STREQUAL _autolib_pcl_arch)
-        message(FATAL_ERROR "AutoLib pcl sibling ${_autolib_pcl_dependency} has mismatched package identity")
-    endif()
-endforeach()
+
 set(PCL_DIR "${CMAKE_CURRENT_LIST_DIR}/share/pcl-1.15")
 if(WIN32)
     set(PCL_DIR "${CMAKE_CURRENT_LIST_DIR}/cmake")
 endif()
-if(NOT EXISTS "${PCL_DIR}/PCLConfig.cmake")
-    message(FATAL_ERROR "AutoLib pcl requires package-owned ${PCL_DIR}/PCLConfig.cmake")
-endif()
-# PCL 的 FindFLANN 同时支持 Config 与旧布局；固定现代 Config，不让其选择系统副本。
-set(flann_DIR "${CMAKE_CURRENT_LIST_DIR}/../flann/lib/cmake/flann")
-set(FLANN_ROOT "${CMAKE_CURRENT_LIST_DIR}/../flann")
+set(flann_DIR "${AUTOLIB_PACKAGE_DIR_flann}/lib/cmake/flann")
+set(FLANN_ROOT "${AUTOLIB_PACKAGE_DIR_flann}")
+set(Eigen3_DIR "${AUTOLIB_PACKAGE_DIR_eigen}/share/eigen3/cmake")
+set(Boost_DIR "${AUTOLIB_PACKAGE_DIR_boost}/lib/cmake/Boost-${AUTOLIB_PACKAGE_VERSION_boost}")
+set(ZLIB_ROOT "${AUTOLIB_PACKAGE_DIR_zlib}")
 set(PCL_FLANN_REQUIRED_TYPE SHARED)
-get_property(_autolib_pcl_before DIRECTORY PROPERTY IMPORTED_TARGETS)
-find_package(PCL REQUIRED CONFIG
-    COMPONENTS common io filters features registration segmentation sample_consensus kdtree search surface keypoints
-    PATHS "${PCL_DIR}" NO_DEFAULT_PATH)
-get_property(_autolib_pcl_after DIRECTORY PROPERTY IMPORTED_TARGETS)
-foreach(_autolib_pcl_target IN LISTS _autolib_pcl_after)
-    if(NOT _autolib_pcl_target IN_LIST _autolib_pcl_before)
-        set_property(TARGET ${_autolib_pcl_target} PROPERTY IMPORTED_GLOBAL TRUE)
-    endif()
+find_package(PCL CONFIG REQUIRED
+    COMPONENTS common io filters features registration segmentation sample_consensus kdtree search surface keypoints)
+foreach(_autolib_pcl_target IN LISTS PCL_COMPONENTS)
+    set_property(TARGET ${_autolib_pcl_target} PROPERTY IMPORTED_GLOBAL TRUE)
 endforeach()
+
 add_library(autolib::pcl INTERFACE IMPORTED GLOBAL)
 target_include_directories(autolib::pcl INTERFACE ${PCL_INCLUDE_DIRS})
 target_link_libraries(autolib::pcl INTERFACE ${PCL_LIBRARIES} autolib::lz4 autolib::flann autolib::boost autolib::eigen autolib::zlib)

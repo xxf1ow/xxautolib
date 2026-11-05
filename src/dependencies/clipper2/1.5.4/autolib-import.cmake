@@ -1,29 +1,17 @@
+#[=[
+Clipper2：多边形布尔运算库，通过 CMake Config 导入。
+公共目标：autolib::clipper2。
+#]=]
+
 if(TARGET autolib::clipper2)
     return()
 endif()
-foreach(_autolib_clipper2_target IN ITEMS Clipper2::Clipper2 Clipper2::Clipper2Z)
-    if(TARGET ${_autolib_clipper2_target})
-        message(FATAL_ERROR "AutoLib clipper2 cannot import existing target ${_autolib_clipper2_target}; import AutoLib before other package discovery")
-    endif()
-endforeach()
+
 set(Clipper2_DIR "${CMAKE_CURRENT_LIST_DIR}/lib/cmake/clipper2")
-if(NOT EXISTS "${Clipper2_DIR}/Clipper2Config.cmake")
-    message(FATAL_ERROR "AutoLib clipper2 requires package-owned ${Clipper2_DIR}/Clipper2Config.cmake")
-endif()
-get_property(_autolib_clipper2_before DIRECTORY PROPERTY IMPORTED_TARGETS)
-find_package(Clipper2 REQUIRED CONFIG PATHS "${Clipper2_DIR}" NO_DEFAULT_PATH)
-get_property(_autolib_clipper2_after DIRECTORY PROPERTY IMPORTED_TARGETS)
-foreach(_autolib_clipper2_target IN LISTS _autolib_clipper2_after)
-    if(NOT _autolib_clipper2_target IN_LIST _autolib_clipper2_before)
-        set_property(TARGET ${_autolib_clipper2_target} PROPERTY IMPORTED_GLOBAL TRUE)
-    endif()
-endforeach()
-if(NOT TARGET Clipper2::Clipper2)
-    message(FATAL_ERROR "AutoLib clipper2 Config must define Clipper2::Clipper2")
-endif()
-if(NOT TARGET Clipper2::Clipper2Z)
-    message(FATAL_ERROR "AutoLib clipper2 Config must define Clipper2::Clipper2Z")
-endif()
+find_package(Clipper2 CONFIG REQUIRED)
+set_property(TARGET Clipper2::Clipper2 PROPERTY IMPORTED_GLOBAL TRUE)
+set_property(TARGET Clipper2::Clipper2Z PROPERTY IMPORTED_GLOBAL TRUE)
+
 add_library(autolib::clipper2 INTERFACE IMPORTED GLOBAL)
-# 默认沿用普通坐标域；需要 Z 坐标的消费者可显式选用已导入的 Clipper2::Clipper2Z。
+# 默认使用普通坐标域；Z 坐标消费者可显式链接 Clipper2::Clipper2Z。
 target_link_libraries(autolib::clipper2 INTERFACE Clipper2::Clipper2)

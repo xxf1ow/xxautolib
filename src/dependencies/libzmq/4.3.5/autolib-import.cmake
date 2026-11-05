@@ -1,28 +1,18 @@
+#[=[
+ZeroMQ：消息通信引擎，通过 CMake Config 导入。
+公共目标：autolib::libzmq。
+#]=]
+
 if(TARGET autolib::libzmq)
     return()
 endif()
-foreach(_autolib_libzmq_target IN ITEMS libzmq libzmq-static)
-    if(TARGET ${_autolib_libzmq_target})
-        message(FATAL_ERROR "AutoLib libzmq cannot import existing target ${_autolib_libzmq_target}; import AutoLib before other package discovery")
-    endif()
-endforeach()
+
 set(ZeroMQ_DIR "${CMAKE_CURRENT_LIST_DIR}/lib/cmake/ZeroMQ")
 if(WIN32)
     set(ZeroMQ_DIR "${CMAKE_CURRENT_LIST_DIR}/CMake")
 endif()
-if(NOT EXISTS "${ZeroMQ_DIR}/ZeroMQConfig.cmake")
-    message(FATAL_ERROR "AutoLib libzmq requires package-owned ${ZeroMQ_DIR}/ZeroMQConfig.cmake")
-endif()
-get_property(_autolib_libzmq_before DIRECTORY PROPERTY IMPORTED_TARGETS)
-find_package(ZeroMQ REQUIRED CONFIG PATHS "${ZeroMQ_DIR}" NO_DEFAULT_PATH)
-get_property(_autolib_libzmq_after DIRECTORY PROPERTY IMPORTED_TARGETS)
-foreach(_autolib_libzmq_target IN LISTS _autolib_libzmq_after)
-    if(NOT _autolib_libzmq_target IN_LIST _autolib_libzmq_before)
-        set_property(TARGET ${_autolib_libzmq_target} PROPERTY IMPORTED_GLOBAL TRUE)
-    endif()
-endforeach()
-if(NOT TARGET libzmq)
-    message(FATAL_ERROR "AutoLib libzmq Config must define libzmq")
-endif()
+find_package(ZeroMQ CONFIG REQUIRED)
+set_property(TARGET libzmq PROPERTY IMPORTED_GLOBAL TRUE)
+
 add_library(autolib::libzmq INTERFACE IMPORTED GLOBAL)
 target_link_libraries(autolib::libzmq INTERFACE libzmq)

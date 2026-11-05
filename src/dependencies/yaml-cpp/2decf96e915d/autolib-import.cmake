@@ -1,25 +1,15 @@
+#[=[
+yaml-cpp：YAML 解析与生成库，通过 CMake Config 导入。
+公共目标：autolib::yaml-cpp。
+#]=]
+
 if(TARGET autolib::yaml-cpp)
     return()
 endif()
-foreach(_autolib_yaml_cpp_target IN ITEMS yaml-cpp::yaml-cpp)
-    if(TARGET ${_autolib_yaml_cpp_target})
-        message(FATAL_ERROR "AutoLib yaml-cpp cannot import existing target ${_autolib_yaml_cpp_target}; import AutoLib before other package discovery")
-    endif()
-endforeach()
+
 set(yaml-cpp_DIR "${CMAKE_CURRENT_LIST_DIR}/lib/cmake/yaml-cpp")
-if(NOT EXISTS "${yaml-cpp_DIR}/yaml-cpp-config.cmake")
-    message(FATAL_ERROR "AutoLib yaml-cpp requires package-owned ${yaml-cpp_DIR}/yaml-cpp-config.cmake")
-endif()
-get_property(_autolib_yaml_cpp_before DIRECTORY PROPERTY IMPORTED_TARGETS)
-find_package(yaml-cpp REQUIRED CONFIG PATHS "${yaml-cpp_DIR}" NO_DEFAULT_PATH)
-get_property(_autolib_yaml_cpp_after DIRECTORY PROPERTY IMPORTED_TARGETS)
-foreach(_autolib_yaml_cpp_target IN LISTS _autolib_yaml_cpp_after)
-    if(NOT _autolib_yaml_cpp_target IN_LIST _autolib_yaml_cpp_before)
-        set_property(TARGET ${_autolib_yaml_cpp_target} PROPERTY IMPORTED_GLOBAL TRUE)
-    endif()
-endforeach()
-if(NOT TARGET yaml-cpp::yaml-cpp)
-    message(FATAL_ERROR "AutoLib yaml-cpp Config must define yaml-cpp::yaml-cpp")
-endif()
+find_package(yaml-cpp CONFIG REQUIRED)
+set_property(TARGET yaml-cpp::yaml-cpp PROPERTY IMPORTED_GLOBAL TRUE)
+
 add_library(autolib::yaml-cpp INTERFACE IMPORTED GLOBAL)
 target_link_libraries(autolib::yaml-cpp INTERFACE yaml-cpp::yaml-cpp)

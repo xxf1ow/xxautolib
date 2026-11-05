@@ -1,25 +1,15 @@
+#[=[
+spdlog：日志库，通过 CMake Config 导入。
+公共目标：autolib::spdlog。
+#]=]
+
 if(TARGET autolib::spdlog)
     return()
 endif()
-foreach(_autolib_spdlog_target IN ITEMS spdlog::spdlog spdlog::spdlog_header_only)
-    if(TARGET ${_autolib_spdlog_target})
-        message(FATAL_ERROR "AutoLib spdlog cannot import existing target ${_autolib_spdlog_target}; import AutoLib before other package discovery")
-    endif()
-endforeach()
+
 set(spdlog_DIR "${CMAKE_CURRENT_LIST_DIR}/lib/cmake/spdlog")
-if(NOT EXISTS "${spdlog_DIR}/spdlogConfig.cmake")
-    message(FATAL_ERROR "AutoLib spdlog requires package-owned ${spdlog_DIR}/spdlogConfig.cmake")
-endif()
-get_property(_autolib_spdlog_before DIRECTORY PROPERTY IMPORTED_TARGETS)
-find_package(spdlog REQUIRED CONFIG PATHS "${spdlog_DIR}" NO_DEFAULT_PATH)
-get_property(_autolib_spdlog_after DIRECTORY PROPERTY IMPORTED_TARGETS)
-foreach(_autolib_spdlog_target IN LISTS _autolib_spdlog_after)
-    if(NOT _autolib_spdlog_target IN_LIST _autolib_spdlog_before)
-        set_property(TARGET ${_autolib_spdlog_target} PROPERTY IMPORTED_GLOBAL TRUE)
-    endif()
-endforeach()
-if(NOT TARGET spdlog::spdlog)
-    message(FATAL_ERROR "AutoLib spdlog Config must define spdlog::spdlog")
-endif()
+find_package(spdlog CONFIG REQUIRED)
+set_property(TARGET spdlog::spdlog PROPERTY IMPORTED_GLOBAL TRUE)
+
 add_library(autolib::spdlog INTERFACE IMPORTED GLOBAL)
 target_link_libraries(autolib::spdlog INTERFACE spdlog::spdlog)

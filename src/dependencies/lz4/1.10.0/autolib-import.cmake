@@ -1,22 +1,16 @@
+#[=[
+LZ4：高速无损压缩静态库，通过 CMake Config 导入。
+公共目标：autolib::lz4。
+#]=]
+
 if(TARGET autolib::lz4)
     return()
 endif()
-foreach(_autolib_lz4_target IN ITEMS LZ4::lz4 LZ4::lz4_static)
-    if(TARGET ${_autolib_lz4_target})
-        message(FATAL_ERROR "AutoLib lz4 cannot import existing target ${_autolib_lz4_target}; call autolib_import before other package discovery and do not mix library sources")
-    endif()
-endforeach()
+
 set(lz4_DIR "${CMAKE_CURRENT_LIST_DIR}/lib/cmake/lz4")
-if(NOT EXISTS "${lz4_DIR}/lz4Config.cmake")
-    message(FATAL_ERROR "AutoLib lz4 requires package-owned ${lz4_DIR}/lz4Config.cmake")
-endif()
-find_package(lz4 REQUIRED CONFIG PATHS "${lz4_DIR}" NO_DEFAULT_PATH)
-if(NOT TARGET LZ4::lz4)
-    message(FATAL_ERROR "AutoLib lz4 Config must define LZ4::lz4")
-endif()
+find_package(lz4 CONFIG REQUIRED)
 set_property(TARGET LZ4::lz4 PROPERTY IMPORTED_GLOBAL TRUE)
-if(TARGET LZ4::lz4_static)
-    set_property(TARGET LZ4::lz4_static PROPERTY IMPORTED_GLOBAL TRUE)
-endif()
+set_property(TARGET LZ4::lz4_static PROPERTY IMPORTED_GLOBAL TRUE)
+
 add_library(autolib::lz4 INTERFACE IMPORTED GLOBAL)
 target_link_libraries(autolib::lz4 INTERFACE LZ4::lz4)
