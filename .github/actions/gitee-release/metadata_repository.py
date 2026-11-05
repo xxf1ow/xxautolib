@@ -8,6 +8,7 @@ import stat
 import subprocess
 import tempfile
 import tomllib
+from urllib.parse import quote
 
 from publication_rules import IMPORTERS, PLATFORMS, check_case, component, latest_mapping
 
@@ -19,13 +20,46 @@ README = """# xxautolib 预编译产物发布仓库
 
 ## 编译与发布
 
-源码仓库维护构建配方，并通过原生构建流程编译、安装第三方库。发布流程使用指定构建任务生成的已有安装结果，完成打包、摘要生成和上传。本发布仓库不编译第三方源码。
+源码仓库维护构建配方，并通过原生构建流程编译、安装和验证第三方库。CI 生成库和工具归档，发布流程核对后原样上传，不重新编译或打包。本发布仓库不编译第三方源码。
 
-Git 默认分支保存版本选择、独立 SHA256 摘要和仓库身份；库与工具归档通过同仓库固定 Release 分发。源码、构建配置及使用说明见 https://github.com/xxf1ow/xxautolib 。
+Git 默认分支保存版本选择、独立 SHA256 摘要和仓库身份；入口、库与工具归档通过同仓库固定 Release 分发。源码、构建配置及使用说明见 [xxautolib](https://github.com/xxf1ow/xxautolib)。
 
 ## 使用
 
-将源码仓库中的 src/autolib.cmake 放入消费工程，在 include 前将 AUTOLIB_REMOTE_ROOT 设置为本仓库固定 Release 的下载地址，再调用 autolib_import 选择包或精确版本。完整配置见源码仓库说明。
+需要 CMake 3.21+、Git、原生构建工具及兼容预编译包的 C/C++ 编译器和系统运行库；以下 FLANN 示例还需 OpenMP。在工程 `src/` 中准备源文件，使用以下 `CMakeLists.txt`：
+
+```cmake
+cmake_minimum_required(VERSION 3.21.0)
+set(CURRENT_TARGET_NAME autolib_example)
+project(${CURRENT_TARGET_NAME} LANGUAGES C CXX)
+
+add_executable(${CURRENT_TARGET_NAME})
+aux_source_directory(${CMAKE_CURRENT_SOURCE_DIR}/src CURRENT_SRC_LIST)
+target_sources(${CURRENT_TARGET_NAME} PRIVATE ${CURRENT_SRC_LIST})
+
+message(STATUS "========================= Third Party Summary ========================")
+set(AUTOLIB_URL "@AUTOLIB_URL@")
+set(AUTOLIB_PATH "${CMAKE_CURRENT_LIST_DIR}/3rdparty/autolib.cmake")
+if(NOT EXISTS ${AUTOLIB_PATH})
+    file(DOWNLOAD ${AUTOLIB_URL} ${AUTOLIB_PATH} TLS_VERIFY ON STATUS AUTOLIB_DOWNLOAD_STATUS)
+    list(GET AUTOLIB_DOWNLOAD_STATUS 0 AUTOLIB_DOWNLOAD_CODE)
+    if(NOT AUTOLIB_DOWNLOAD_CODE EQUAL 0)
+        file(REMOVE ${AUTOLIB_PATH})
+        message(FATAL_ERROR "autolib.cmake download failed: ${AUTOLIB_DOWNLOAD_STATUS}")
+    endif()
+endif()
+include(${AUTOLIB_PATH})
+autolib_import(TARGET ${CURRENT_TARGET_NAME} PRIVATE queue flann)
+message(STATUS "======================================================================")
+```
+
+入口仅在不存在时下载；失败会删除本次残留并报错。发布入口已内置本仓库的获取地址，不需要配置来源变量。仅请求 queue、flann，入口也会准备 flann 记录的精确 lz4 依赖，无需另写链接目标。
+
+`autolib.cmake` 所在的 `3rdparty/` 是工具、包及下载缓存根，应专用、可写、路径不含分号，并加入版本控制忽略规则。已有有效工具和包直接复用；只有缺失时才下载，损坏或校验失败直接报错，不自动覆盖，也不回退到源码编译。消费现成包无需 Go 或 Python。
+
+每次成功导入打印 `-- [Info] [<消费目标>] <库名> : <版本>`，包括传递依赖和缓存包；仅实际下载、解压打印过程，入口和工具获取静默。可用 `eigen@3.4.0` 指定精确版本；裸名读取 latest，缓存及 latest 不自动更新。
+
+完整有效缓存可离线复用；远程入口缺输入时仍可能尝试联网。严格离线请使用本地构建安装的入口。完整运行示例、平台及 ABI 要求见[源码仓库 README](https://github.com/xxf1ow/xxautolib#快速开始)。
 
 新建 Gitee 仓库默认为私有，发布流程不要求公开。匿名下游消费前，由仓库所有者手动将仓库改为公开；消费端不配置令牌。
 
@@ -177,7 +211,9 @@ def open_repository(config: dict, api, work_root: Path) -> dict:
             raise ValueError('unexpected service initialization tree')
         for name in allowed:
             _regular_target(path, name)
-        (path / 'README.md').write_bytes(README.encode())
+        autolib_url = ('https://gitee.com/' + config['repository'] + '/releases/download/'
+                       + quote(config['tag'], safe='-._~$&+:=@') + '/autolib.cmake')
+        (path / 'README.md').write_bytes(README.replace('@AUTOLIB_URL@', autolib_url).encode())
         (path / 'LICENSE').write_bytes((Path(__file__).resolve().parents[3] / 'LICENSE').read_bytes())
         (path / '.autolib-repository.json').write_bytes((json.dumps(IDENTITY, separators=(',', ':')) + '\n').encode())
         selected = ['README.md', 'LICENSE', '.autolib-repository.json']

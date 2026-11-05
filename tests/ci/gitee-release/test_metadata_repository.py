@@ -54,7 +54,7 @@ class MetadataRepositoryTests(unittest.TestCase):
         git(self.seed, 'config', 'user.email', 'fixture@example.invalid')
         git(self.seed, 'config', 'core.autocrlf', 'false')
         self.bare = self.root / 'remote.git'
-        self.config = {'host': 'gitee', 'repository': 'fixture/mirror', 'gitee_token': 'fake-secret'}
+        self.config = {'host': 'gitee', 'repository': 'fixture/mirror', 'tag': 'fixed', 'gitee_token': 'fake-secret'}
 
     def seed_files(self, files):
         for name, content in files.items():
@@ -78,6 +78,7 @@ class MetadataRepositoryTests(unittest.TestCase):
                 'queue/1/queue-1-any-any.tar.zst.sha256': b'a' * 64 + b'\n', **extra}
 
     def test_initialize_and_validate_repository(self):
+        self.config['tag'] = '中文/release+v1:@'
         self.seed_files({'README.md': b'server template', 'README.en.md': b'default'})
         self.make_remote()
         repo = self.open(created=True)
@@ -91,6 +92,8 @@ class MetadataRepositoryTests(unittest.TestCase):
         readme = (repo['path'] / 'README.md').read_text(encoding='utf-8')
         for text in ['https://github.com/xxf1ow/xxautolib', '编译', '发布', 'MIT', '第三方', '私有']:
             self.assertIn(text, readme)
+        self.assertIn('set(AUTOLIB_URL "https://gitee.com/fixture/mirror/releases/download/'
+                      '%E4%B8%AD%E6%96%87%2Frelease+v1:@/autolib.cmake")', readme)
         self.assertNotIn('server template', readme)
         self.assertEqual(git(self.bare, 'rev-parse', 'HEAD').decode().strip(), repo['head'])
         self.assertNotIn('fake-secret', (repo['path'] / '.git/config').read_text())

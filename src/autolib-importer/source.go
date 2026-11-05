@@ -88,16 +88,10 @@ func downloadReleaseAsset(ctx context.Context, client *http.Client, asset releas
 	}
 	defer os.Remove(f.Name())
 	hash := sha256.New()
-	var output io.Writer = io.Discard
-	if progress != nil {
-		progress.total = response.ContentLength
-		progress.report()
-		output = progress
-	}
-	_, copyErr := io.Copy(io.MultiWriter(f, hash, output), response.Body)
-	if progress != nil {
-		progress.finish()
-	}
+	progress.total = response.ContentLength
+	progress.report()
+	_, copyErr := io.Copy(io.MultiWriter(f, hash, progress), response.Body)
+	progress.finish()
 	if err := errors.Join(copyErr, f.Close()); err != nil {
 		return fmt.Errorf("download %s: %w", asset.Name, err)
 	}
