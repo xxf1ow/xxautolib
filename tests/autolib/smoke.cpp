@@ -49,7 +49,7 @@
 #include <dlfcn.h>
 #endif
 
-#if defined(AUTOLIB_TEST_OPENCV) || defined(AUTOLIB_TEST_LIBREALSENSE) || defined(AUTOLIB_TEST_ONNXRUNTIME)
+#if defined(AUTOLIB_TEST_FLANN) || defined(AUTOLIB_TEST_OPENCV) || defined(AUTOLIB_TEST_LIBREALSENSE) || defined(AUTOLIB_TEST_ONNXRUNTIME)
 namespace
 {
 bool check_runtime(const char *name, const void *address, const char *expected_root)
@@ -189,28 +189,8 @@ int main()
         || neighbor != 1 || distance != 0)
         return 8;
 
-    std::filesystem::path module_path;
-#ifdef _WIN32
-    HMODULE module = nullptr;
-    if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                           reinterpret_cast<LPCWSTR>(&flann_build_index_float), &module))
+    if (!check_runtime("flann", reinterpret_cast<const void *>(&flann_build_index_float), AUTOLIB_EXPECT_FLANN_ROOT))
         return 5;
-    wchar_t filename[32768] = {};
-    const auto length = GetModuleFileNameW(module, filename, 32768);
-    if (length == 0 || length == 32768)
-        return 6;
-    module_path = filename;
-#else
-    Dl_info module = {};
-    if (!dladdr(reinterpret_cast<void *>(&flann_build_index_float), &module) || !module.dli_fname)
-        return 5;
-    module_path = module.dli_fname;
-#endif
-    std::error_code error;
-    const auto actual_path = std::filesystem::canonical(module_path, error);
-    if (error)
-        return 7;
-    std::cout << "runtime_flann=" << actual_path.generic_u8string() << '\n';
 #endif
     return 0;
 }

@@ -8,30 +8,27 @@ set(EIGEN_VERSION "3.4.0" CACHE STRING "Eigen version to check in this independe
 # 依赖包由统一入口先准备；此夹具只验证头文件 wrapper 的依赖接线。
 add_library(autolib::boost INTERFACE IMPORTED GLOBAL)
 set(cases
-    "asio|8806a6803cde|asio.hpp"
-    "cpp-httplib|88956ccad838|cpp-httplib/httplib.h"
-    "expected|1.3.1|tl/expected.hpp"
-    "eigen|${EIGEN_VERSION}|Eigen/Eigen"
-    "queue|45db9a8b4431|queue/readerwriterqueue.h"
-    "pybind11|2.13.6|pybind11/pybind11.h"
-    "taskflow|83f90a279aaa|taskflow/taskflow.hpp"
-    "websocketpp|4dfe1be74e68|websocketpp/version.hpp"
-    "nlohmann|3.12.0|nlohmann/json.hpp"
+    "asio|8806a6803cde"
+    "cpp-httplib|88956ccad838"
+    "expected|1.3.1"
+    "eigen|${EIGEN_VERSION}"
+    "queue|45db9a8b4431"
+    "pybind11|2.13.6"
+    "taskflow|83f90a279aaa"
+    "websocketpp|4dfe1be74e68"
+    "nlohmann|3.12.0"
 )
 
 foreach(case IN LISTS cases)
     string(REPLACE "|" ";" fields "${case}")
     list(GET fields 0 name)
     list(GET fields 1 version)
-    list(GET fields 2 header)
     if(ONLY_REF AND NOT ONLY_REF STREQUAL name)
         continue()
     endif()
     string(MAKE_C_IDENTIFIER "${name}" identifier)
     set(prefix "${CMAKE_CURRENT_BINARY_DIR}/packages/${name}/${version}")
-    get_filename_component(header_directory "${prefix}/include/${header}" DIRECTORY)
-    file(MAKE_DIRECTORY "${header_directory}" "${prefix}/importer")
-    file(WRITE "${prefix}/include/${header}" "// Controlled header payload; no upstream Config is provided.\n")
+    file(MAKE_DIRECTORY "${prefix}/include" "${prefix}/importer")
     file(WRITE "${prefix}/include/probe_${identifier}.hpp" "inline int probe_${identifier}() { return 42; }\n")
     configure_file("${repository}/src/dependencies/${name}/${version}/autolib-import.cmake"
         "${prefix}/autolib-import.cmake" COPYONLY)
