@@ -3,10 +3,43 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
+
+func TestCIConfigureKeepsSelectionOutOfLogNames(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("native Unix Makefiles configure")
+	}
+	root := t.TempDir()
+	writeCIFixture(t, root, "CMakeLists.txt", "cmake_minimum_required(VERSION 3.20)\nproject(log_names NONE)\nmessage(STATUS \"Selection: ${BUILD_LIST}\")\n")
+	cmake, err := exec.LookPath("cmake")
+	if err != nil {
+		t.Fatal(err)
+	}
+	makeProgram, err := exec.LookPath("make")
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := ciRunOptions{SourceRoot: root, WorkRoot: filepath.Join(root, "work"), CMakeCommand: cmake, MakeProgram: makeProgram, Budget: 1, Layer: "prepare"}
+	c := ciProductionContext{OS: "linux", Generator: "Unix Makefiles", Configuration: "Release"}
+	modules := []string{}
+	for i := 0; i < 40; i++ {
+		modules = append(modules, fmt.Sprintf("selected-module-%02d@1.0.0", i))
+	}
+	if err := configureCIProduction(context.Background(), o, c, modules, filepath.Join(root, "install"), filepath.Join(o.WorkRoot, "logs", "prepare")); err != nil {
+		t.Fatal(err)
+	}
+	log := filepath.Join(o.WorkRoot, "logs", "prepare", "configure.log")
+	content := mustReadText(t, log)
+	if !strings.Contains(content, "-DBUILD_LIST="+strings.Join(modules, ",")) {
+		t.Fatal("configure log lost the exact module selection")
+	}
+}
 
 func TestCIRunDoesNotRequireUnusedBuilder(t *testing.T) {
 	f := transportInputFixture(t)

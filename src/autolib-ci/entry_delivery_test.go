@@ -168,6 +168,8 @@ func TestCIEntryTransport(t *testing.T) {
 
 func TestCIToolOnlyRun(t *testing.T) {
 	f := installedCIFixture(t)
+	f.options.MakeProgram = ""
+	f.options.Budget = 0
 	f.plan.RequestedModules = []string{}
 	f.plan.Publisher = ""
 	f.plan.Platforms[0].Roots = []string{}
@@ -198,6 +200,9 @@ func TestCIToolOnlyRun(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(f.options.WorkRoot, "build", "generated")); !os.IsNotExist(err) {
 		t.Fatalf("tool-only generated dependencies: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(f.options.WorkRoot, "jobserver.json")); !os.IsNotExist(err) {
+		t.Fatalf("tool-only ran the library jobserver probe: %v", err)
 	}
 	f.transport(t, true)
 }

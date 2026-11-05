@@ -80,7 +80,7 @@ func runCILayer(ctx context.Context, o ciRunOptions) (failure error) {
 		if err := os.Mkdir(install, 0755); err != nil {
 			return fmt.Errorf("prepare requires a fresh isolated installation: %w", err)
 		}
-		if err := configureCIProduction(ctx, o, production, platform.Roots, install); err != nil {
+		if err := configureCIProduction(ctx, o, production, platform.Roots, install, filepath.Join(work, "logs", "prepare")); err != nil {
 			return err
 		}
 		result.Entry, err = verifyCIEntry(source, install)
@@ -110,7 +110,7 @@ func runCILayer(ctx context.Context, o ciRunOptions) (failure error) {
 		if !errors.As(err, &exit) || exit.ExitCode() != 1 || !strings.Contains(string(output), "missing package input") {
 			return fmt.Errorf("importer smoke did not reject controlled missing package: %v\n%s", err, output)
 		}
-		if production.OS == "linux" {
+		if production.OS == "linux" && len(platform.Roots) > 0 {
 			evidence, err := probeJobserver(ctx, ciJobserverOptions{SourceRoot: source, WorkRoot: filepath.Join(work, "jobserver"), MakeProgram: o.MakeProgram, Budget: o.Budget})
 			if err != nil {
 				return err
@@ -201,7 +201,7 @@ func runCILayer(ctx context.Context, o ciRunOptions) (failure error) {
 			}
 		}
 	}
-	for _, key := range platform.Layers[index] {
+	for position, key := range platform.Layers[index] {
 		if findResult(key) != nil {
 			return fmt.Errorf("package %s was already processed", key)
 		}
@@ -214,7 +214,8 @@ func runCILayer(ctx context.Context, o ciRunOptions) (failure error) {
 				return fmt.Errorf("dependency %s is not built", dependency)
 			}
 		}
-		if err := buildCIModule(ctx, o, production, module, install); err != nil {
+		logs := filepath.Join(work, "logs", o.Layer, strconv.Itoa(position+1))
+		if err := buildCIModule(ctx, o, production, module, install, logs); err != nil {
 			return err
 		}
 		result.Packages = append(result.Packages, ciSlotResult{Slot: ciModuleSlot(module, o.Platform), Built: true})
@@ -273,10 +274,10 @@ func ciCommand(ctx context.Context, executable string, args []string, directory 
 	return nil
 }
 
-func configureCIProduction(ctx context.Context, o ciRunOptions, c ciProductionContext, modules []string, install string) error {
+func configureCIProduction(ctx context.Context, o ciRunOptions, c ciProductionContext, modules []string, install, logs string) error {
 	if len(modules) == 0 {
 		args := []string{"-DAUTOLIB_SOURCE_ROOT=" + o.SourceRoot, "-DAUTOLIB_INSTALL_ROOT=" + install, "-P", filepath.Join(o.SourceRoot, "src", "autolib-builder", "prepare-tools.cmake")}
-		return ciCommand(ctx, o.CMakeCommand, args, o.SourceRoot, nil, filepath.Join(o.WorkRoot, "logs", "prepare-tools.log"))
+		return ciCommand(ctx, o.CMakeCommand, args, o.SourceRoot, nil, filepath.Join(logs, "configure.log"))
 	}
 	build := filepath.Join(o.WorkRoot, "build")
 	args := []string{"-S", o.SourceRoot, "-B", build, "-G", c.Generator, "-DBUILD_LIST=" + strings.Join(modules, ","), "-DCMAKE_BUILD_TYPE=" + c.Configuration}
@@ -296,12 +297,12 @@ func configureCIProduction(ctx context.Context, o ciRunOptions, c ciProductionCo
 	if c.OS == "linux" {
 		environment = prependPath(environment, filepath.Dir(o.MakeProgram))
 	}
-	return ciCommand(ctx, o.CMakeCommand, args, o.SourceRoot, environment, filepath.Join(o.WorkRoot, "logs", "configure-"+strings.Join(modules, "+")+".log"))
+	return ciCommand(ctx, o.CMakeCommand, args, o.SourceRoot, environment, filepath.Join(logs, "configure.log"))
 }
 
-func buildCIModule(ctx context.Context, o ciRunOptions, c ciProductionContext, module describedModule, install string) error {
+func buildCIModule(ctx context.Context, o ciRunOptions, c ciProductionContext, module describedModule, install, logs string) error {
 	name := moduleIdentity(module)
-	if err := configureCIProduction(ctx, o, c, []string{name}, install); err != nil {
+	if err := configureCIProduction(ctx, o, c, []string{name}, install, logs); err != nil {
 		return err
 	}
 	environment := withoutEnvironment(os.Environ(), "AUTOLIB_INSTALL_ROOT", "MAKEFLAGS", "CMAKE_BUILD_PARALLEL_LEVEL")
@@ -313,7 +314,7 @@ func buildCIModule(ctx context.Context, o ciRunOptions, c ciProductionContext, m
 	if c.OS == "linux" {
 		args = append(args, "--", fmt.Sprintf("-j%d", o.Budget), "--jobserver-style=fifo")
 	}
-	return ciCommand(ctx, o.CMakeCommand, args, o.SourceRoot, environment, filepath.Join(o.WorkRoot, "logs", "build-"+name+".log"))
+	return ciCommand(ctx, o.CMakeCommand, args, o.SourceRoot, environment, filepath.Join(logs, "build.log"))
 }
 
 func sortedKeysStringMap(values map[string]string) []string {

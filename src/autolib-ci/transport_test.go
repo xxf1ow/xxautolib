@@ -36,6 +36,17 @@ func TestCIPackagedTransport(t *testing.T) {
 			t.Fatalf("%s: %v", layer, err)
 		}
 	}
+	for layer, keys := range f.plan.Platforms[0].Layers {
+		for position, key := range keys {
+			logs := filepath.Join(f.options.WorkRoot, "logs", fmt.Sprintf("layer%d", layer), fmt.Sprint(position+1))
+			if content := mustReadText(t, filepath.Join(logs, "configure.log")); !strings.Contains(content, "-DBUILD_LIST="+key) {
+				t.Fatalf("configure log for %s was overwritten: %s", key, content)
+			}
+			if content := mustReadText(t, filepath.Join(logs, "build.log")); !strings.Contains(content, "--build") {
+				t.Fatalf("build log for %s is missing its command", key)
+			}
+		}
+	}
 	var result ciPlatformResult
 	if err := decodeStrictJSONFile(filepath.Join(f.options.WorkRoot, "results", f.options.Platform+".json"), &result); err != nil {
 		t.Fatal(err)

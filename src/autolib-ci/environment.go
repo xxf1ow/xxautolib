@@ -123,9 +123,8 @@ func validateProductionEnvironment(config ciEnvironmentConfig) error {
 	if common.Configuration != "Release" {
 		return fmt.Errorf("production.common.configuration must be Release")
 	}
-	wantDefaults := map[string]string{"CMAKE_INSTALL_LIBDIR": "lib", "CMAKE_POLICY_VERSION_MINIMUM": "3.5"}
-	if !equalStringMap(common.CMakeDefaults, wantDefaults) {
-		return fmt.Errorf("production.common.cmake_defaults: expected fixed CMake defaults")
+	if len(common.CMakeDefaults) != 2 || common.CMakeDefaults["CMAKE_INSTALL_LIBDIR"] != "lib" || !versionPair.MatchString(common.CMakeDefaults["CMAKE_POLICY_VERSION_MINIMUM"]) {
+		return fmt.Errorf("production.common.cmake_defaults: expected lib installation layout and a major.minor policy minimum")
 	}
 	linux := config.Production.Linux
 	if linux.Distribution != "ubuntu-20.04" || !versionPair.MatchString(linux.GCCVersion) || !strings.HasPrefix(linux.GCCVersion, "9.") || !versionPair.MatchString(linux.GlibcMax) || compareVersion("GLIBC_"+linux.GlibcMax, "GLIBC_2.31") > 0 || linux.Generator != "Unix Makefiles" {

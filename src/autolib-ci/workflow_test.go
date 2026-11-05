@@ -120,7 +120,7 @@ func TestCITransportWorkflow(t *testing.T) {
 		checkout := t.TempDir()
 		hostWorkRoot := filepath.ToSlash(filepath.Join(t.TempDir(), "unmounted-host-work"))
 		prefix := "build/ci/42-1/linux-x86_64/"
-		expected := []string{"logs/build-lz4.log", "evidence/lz4/consumer.json", "evidence/lz4/ctest.log", "evidence/lz4/abi.txt", "jobserver.json"}
+		expected := []string{"logs/prepare/configure.log", "logs/layer0/1/configure.log", "logs/layer0/1/build.log", "evidence/lz4/consumer.json", "evidence/lz4/ctest.log", "evidence/lz4/abi.txt", "jobserver.json"}
 		for _, name := range expected {
 			file := filepath.Join(checkout, filepath.FromSlash(prefix+name))
 			if err := os.MkdirAll(filepath.Dir(file), 0755); err != nil {

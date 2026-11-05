@@ -18,9 +18,11 @@ PA_BUILD_TESTS = false
 [system_dependencies]
 apt = ["libasound2-dev"]
 
-# 上游 Windows DLL 带架构后缀，保持参考 .pc 修正时机。
+# 上游 Windows DLL 带架构后缀，安装前修正 pkg-config 链接名。
 [[platforms.windows.steps]]
 name = "fix-pkgconfig-libs"
 DEPENDEES = ["build"]
 DEPENDERS = ["install"]
-COMMAND = ["bash", "-c", "sed -i 's|-lportaudio|-lportaudio_x64|g' <BINARY_DIR>/portaudio-2.0.pc"]
+WORKING_DIRECTORY = "."
+DEPENDS = ["fix-pkgconfig.cmake"]
+COMMAND = ["cmake", "-DPC_FILE=<BINARY_DIR>/portaudio-2.0.pc", "-P", "fix-pkgconfig.cmake"]

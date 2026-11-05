@@ -87,6 +87,33 @@ func TestCIEnvironmentRejectsUnsupportedDefaults(t *testing.T) {
 	}
 }
 
+func TestCIEnvironmentUsesConfiguredPolicyMinimum(t *testing.T) {
+	document := environmentFixture(t)
+	production := document["production"].(map[string]any)
+	production["common"].(map[string]any)["cmake_defaults"] = map[string]any{"CMAKE_INSTALL_LIBDIR": "lib", "CMAKE_POLICY_VERSION_MINIMUM": "3.10"}
+	path := filepath.Join(t.TempDir(), "ci-tools.json")
+	if err := writeCIJSON(path, document); err != nil {
+		t.Fatal(err)
+	}
+	config, err := loadCIEnvironment(path)
+	if err != nil {
+		t.Fatalf("rejected configured policy minimum: %v", err)
+	}
+	context, err := ciProductionForPlatform("linux-x86_64", config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if context.CMakeDefaults["CMAKE_POLICY_VERSION_MINIMUM"] != "3.10" {
+		t.Fatalf("configured policy minimum was replaced: %v", context.CMakeDefaults)
+	}
+	for _, invalid := range []string{"", "3", "three.ten", "3.10;OTHER=1"} {
+		config.Production.Common.CMakeDefaults["CMAKE_POLICY_VERSION_MINIMUM"] = invalid
+		if err := validateCIEnvironment(config); err == nil {
+			t.Fatalf("invalid policy minimum %q was accepted", invalid)
+		}
+	}
+}
+
 func TestCIEnvironmentUsesConfiguredToolVersions(t *testing.T) {
 	document := environmentFixture(t)
 	cmake := document["cmake"].(map[string]any)
