@@ -1,6 +1,7 @@
 #[=[
 ONNX Runtime：CPU 模型推理运行库，通过 find_library 查找库文件。
 公共目标：autolib::onnxruntime；运行时需能加载随包提供的动态库。
+官方归档的 Config 引用路径与载荷不符，不使用该 Config。
 #]=]
 
 if(TARGET autolib::onnxruntime)
