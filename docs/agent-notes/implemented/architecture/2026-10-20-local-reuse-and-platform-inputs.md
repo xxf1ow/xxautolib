@@ -10,7 +10,7 @@ Status: implemented
 
 本记录拥有本地输入复用、安装 sentinel、源码子目录、平台/架构来源选择及两个模块接入的决定与限制；总体迁入约束和其他模块方向见[模块扩展与依赖接线的沿用决定](../../proposed/architecture/2026-10-20-module-expansion.md)。
 
-ONNX Runtime 1.24.4 的后续消费 adapter 由[导入适配规范设计](../../proposed/architecture/2026-11-04-package-adapter-standardization.md)提出，不改变本文的官方 CPU 归档来源、复制安装机制及既有验证结论；该提案的消费与搬迁验证不由安装成功替代。
+ONNX Runtime 1.24.4 的消费 adapter 及 Linux x86_64 消费与搬迁证据由[导入适配决定](2026-11-04-package-adapter-standardization.md)拥有，不改变本文的官方 CPU 归档来源、复制安装机制及既有验证结论；安装成功不替代其他平台的消费验证。
 
 ### 原 Python 基线验证结果
 

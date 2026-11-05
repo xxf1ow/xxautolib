@@ -30,7 +30,7 @@ cmake -P src/autolib-builder/go-sdk.cmake -- test -mod=readonly ./src/autolib-im
 
 [头文件定向工程](../tests/adapters/headers/CMakeLists.txt)覆盖重复导入和跨目录使用；受控载荷不代表真实 API。
 
-真实七包[smoke](../tests/autolib/smoke.cpp)使用 `ROOT_PACKAGES=opencv@4.14.0;librealsense@2.58.1;onnxruntime@1.24.4`、`MODULES=freetype;harfbuzz;libusb;nlohmann;lz4;opencv;librealsense;onnxruntime`。Windows 须将实际 DLL 目录加入进程 PATH。结果与未测范围见[导入适配记录](agent-notes/proposed/architecture/2026-11-04-package-adapter-standardization.md#验证结果)。
+真实七包[smoke](../tests/autolib/smoke.cpp)使用 `ROOT_PACKAGES=opencv@4.14.0;librealsense@2.58.1;onnxruntime@1.24.4`、`MODULES=freetype;harfbuzz;libusb;nlohmann;lz4;opencv;librealsense;onnxruntime`。Windows 须将实际 DLL 目录加入进程 PATH。含双版本 Eigen 的结果与未测范围见[导入适配记录](agent-notes/implemented/architecture/2026-11-04-package-adapter-standardization.md#验证结果)。
 
 ## Release 下载验证
 

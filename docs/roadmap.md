@@ -22,7 +22,7 @@
 
 待实施：增加轻量回归CI，复用现有Go测试、vet及独立发布单元测试；不持有发布凭据、不修改Release、不重编全部第三方库。完成标志是代码检查自动运行、失败可见且不触发发布；触发条件与平台范围在实施前确认。
 
-当前 31 个配方版本均具备统一格式的 adapter，五类基准与新增步骤由[模块技能参考](../.agents/skills/add-third-party-module/references/adapter-baselines.md)维护；原七个缺失包及 LZ4 已完成 109 的真实消费和打包搬迁。其余包及平台的验证范围见[导入适配记录](agent-notes/proposed/architecture/2026-11-04-package-adapter-standardization.md#验证结果)，不将文件齐全等同于全库发行通过。
+当前 31 个配方版本均具备统一格式的 adapter，五类基准与新增步骤由[模块技能参考](../.agents/skills/add-third-party-module/references/adapter-baselines.md)维护；原七个缺失包及 LZ4 已完成 109 的真实消费和打包搬迁，两个 Eigen 版本分别通过真实消费。其余包及平台的验证范围见[导入适配记录](agent-notes/implemented/architecture/2026-11-04-package-adapter-standardization.md#验证结果)，不将文件齐全等同于全库发行通过。
 
 ## 建议接入顺序
 

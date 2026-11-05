@@ -8,9 +8,9 @@ Status: implemented
 
 ## 决定
 
-librealsense 2.58.1 固定提交 `bf2778061d5dd29776e9aca8765f75852671760b`，通过普通根 CMake 入口构建安装。只选择 `BUILD_LIST=librealsense` 即准备直接依赖 `nlohmann`、`lz4` 和 `libusb`；不提供 adapter、打包、发布或公共引擎扩展。
+librealsense 2.58.1 固定提交 `bf2778061d5dd29776e9aca8765f75852671760b`，通过普通根 CMake 入口构建安装。只选择 `BUILD_LIST=librealsense` 即准备直接依赖 `nlohmann`、`lz4` 和 `libusb`；本记录拥有构建接入，不拥有消费适配、打包、发布或公共引擎扩展。
 
-librealsense、libusb、nlohmann 的后续消费适配由[导入适配规范设计](../../proposed/architecture/2026-11-04-package-adapter-standardization.md)提出；本记录继续拥有 RSUSB 构建决定和已有无相机验证，不代表该提案中的导入、链接或搬迁已实现。
+librealsense、libusb、nlohmann 的消费适配及 Linux x86_64 导入、链接和搬迁证据由[导入适配决定](2026-11-04-package-adapter-standardization.md)拥有；本记录继续拥有 RSUSB 构建决定和已有无相机验证，不替代实机取流验收。
 
 独立 `nlohmann` 模块沿用只读参考 `D:/Work/AutoLibBuilder/src/dependencies/nlohmann.cmake` 的纯头文件复制安装方式。v3.12.0 固定完整提交 `55f93686c01528224f448c19128836e7df245f72`，与 librealsense 2.58.1 自身要求的版本一致；不使用浮动分支，不执行没有实际工作的 configure/build。
 
