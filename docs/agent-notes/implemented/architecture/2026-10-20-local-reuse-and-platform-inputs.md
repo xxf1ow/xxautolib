@@ -10,6 +10,8 @@ Status: implemented
 
 本记录拥有本地输入复用、安装 sentinel、源码子目录、平台/架构来源选择及两个模块接入的决定与限制；总体迁入约束和其他模块方向见[模块扩展与依赖接线的沿用决定](../../proposed/architecture/2026-10-20-module-expansion.md)。
 
+ONNX Runtime 1.24.4 的后续消费 adapter 由[导入适配规范设计](../../proposed/architecture/2026-11-04-package-adapter-standardization.md)提出，不改变本文的官方 CPU 归档来源、复制安装机制及既有验证结论；该提案的消费与搬迁验证不由安装成功替代。
+
 ### 原 Python 基线验证结果
 
 Windows x64 与 Linux aarch64 公共全集均通过 49 项。Windows 两个真实模块完成获取、安装及产物检查，默认发现五个模块后重新 configure/build 均命中 sentinel。Windows 沿用已有 VS2022 build 的空工具集字符串，实际编译器为 MSVC 19.42（v143），没有切换缓存身份；该实机结果不代替显式工具集组合验证。

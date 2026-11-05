@@ -2,8 +2,8 @@
 name: add-third-party-module
 description: >-
   Add, migrate, integrate, standardize, or upgrade a third-party C++ module under
-  src/dependencies/{name}/{version}/module.toml in xxautolib, including source builds and copy-only
-  installations. Use even when an integration request only names the library. Do not use
+  src/dependencies/{name}/{version}/module.toml in xxautolib, including source builds, copy-only
+  installations, and package import adapters. Use even when an integration request only names the library. Do not use
   for runtime use of an installed library, pure environment or PATH troubleshooting,
   downstream CMake projects, shared build-engine or root orchestration changes, or
   packaging and release operations alone.
@@ -61,7 +61,7 @@ Git 与归档复用根 git/；本地 `.git` 存在即保留当前源码，不自
 
 ## 可选的二进制交付资格
 
-仅在任务明确包含打包或下游消费时提供同目录 `autolib-import.cmake`；本地构建无需 adapter。正文以包实际目录定位，使用目标存在性 guard，每包只建立一个 `autolib::<name>` 全局 INTERFACE IMPORTED 公共目标，统一封装所支持的上游库及声明依赖的公共目标，不保留大写兼容别名。参考 queue 的固定 include、lz4 的精确 Config、flann 的 C/C++ 封装及显式 sibling 依赖；实际使用的直接包依赖必须在模块声明中列出。不得聚合互斥静动态产物，不扫描任意 Config、不回退系统包、不在 adapter 下载或编译。
+仅在任务明确包含打包或下游消费时提供同目录 `autolib-import.cmake`；本地构建无需 adapter。新增或规范化 adapter 前，读取[adapter 规范与五类基准](references/adapter-baselines.md)，按实际安装布局选择导入方式并完成消费验证。基准使用虚构包名，不绑定真实模块，也不作为 `example/` 下的下游工程。
 
 提供 adapter 的模块由 builder 在普通安装后生成带身份及依赖头的消费文件，sentinel/stamp 复用不跳过准备；所声明依赖也必须有 adapter。没有 adapter 的独立模块照常构建。打包及 CI 复用安装中的描述，不另行生成；仅在 staging 修正生产前缀。产物布局及时序由[架构](../../../docs/architecture.md#消费与缓存)拥有，adapter 不回写解包元数据，也不为搬迁更改第三方编译方式。
 

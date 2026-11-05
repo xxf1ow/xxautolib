@@ -10,6 +10,8 @@ Status: implemented
 
 librealsense 2.58.1 固定提交 `bf2778061d5dd29776e9aca8765f75852671760b`，通过普通根 CMake 入口构建安装。只选择 `BUILD_LIST=librealsense` 即准备直接依赖 `nlohmann`、`lz4` 和 `libusb`；不提供 adapter、打包、发布或公共引擎扩展。
 
+librealsense、libusb、nlohmann 的后续消费适配由[导入适配规范设计](../../proposed/architecture/2026-11-04-package-adapter-standardization.md)提出；本记录继续拥有 RSUSB 构建决定和已有无相机验证，不代表该提案中的导入、链接或搬迁已实现。
+
 独立 `nlohmann` 模块沿用只读参考 `D:/Work/AutoLibBuilder/src/dependencies/nlohmann.cmake` 的纯头文件复制安装方式。v3.12.0 固定完整提交 `55f93686c01528224f448c19128836e7df245f72`，与 librealsense 2.58.1 自身要求的版本一致；不使用浮动分支，不执行没有实际工作的 configure/build。
 
 独立 `libusb` 模块采用 SDK 使用的 libusb-cmake v1.0.27-1，固定提交 `cec1e49eec481a6333c218726ecaba8e4f447a07`，其仓库随附 libusb 1.0.27 源码。构建静态库并开启安装，示例、测试及调试日志保持默认关闭，普通日志和 SYSTEM include 保持默认开启；Linux 保留默认 udev 后端，明确要求系统 `libudev-dev`。Windows 和 Linux 的 SDK RSUSB 路径均链接本地 libusb，Linux 补齐静态库的 udev、线程依赖，Windows 补齐上游声明的 windowsapp 系统库；不扩展平台条件依赖接口。
