@@ -16,6 +16,29 @@
 #include <Eigen/Core>
 #include <string>
 #endif
+#ifdef AUTOLIB_TEST_FREETYPE
+#include <ft2build.h>
+#include FT_FREETYPE_H
+#endif
+#ifdef AUTOLIB_TEST_HARFBUZZ
+#include <hb.h>
+#endif
+#ifdef AUTOLIB_TEST_LIBUSB
+#include <libusb.h>
+#endif
+#ifdef AUTOLIB_TEST_NLOHMANN
+#include <nlohmann/json.hpp>
+#endif
+#ifdef AUTOLIB_TEST_OPENCV
+#include <opencv2/core.hpp>
+#include <opencv2/freetype.hpp>
+#endif
+#ifdef AUTOLIB_TEST_LIBREALSENSE
+#include <librealsense2/rs.hpp>
+#endif
+#ifdef AUTOLIB_TEST_ONNXRUNTIME
+#include <onnxruntime_c_api.h>
+#endif
 #include <filesystem>
 #include <iostream>
 #include <system_error>
@@ -26,8 +49,90 @@
 #include <dlfcn.h>
 #endif
 
+#if defined(AUTOLIB_TEST_OPENCV) || defined(AUTOLIB_TEST_LIBREALSENSE) || defined(AUTOLIB_TEST_ONNXRUNTIME)
+namespace
+{
+bool check_runtime(const char *name, const void *address, const char *expected_root)
+{
+    std::filesystem::path module_path;
+#ifdef _WIN32
+    HMODULE module = nullptr;
+    if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                           reinterpret_cast<LPCWSTR>(address), &module))
+        return false;
+    wchar_t filename[32768] = {};
+    const auto length = GetModuleFileNameW(module, filename, 32768);
+    if (length == 0 || length == 32768)
+        return false;
+    module_path = filename;
+#else
+    Dl_info module = {};
+    if (!dladdr(address, &module) || !module.dli_fname)
+        return false;
+    module_path = module.dli_fname;
+#endif
+    std::error_code error;
+    const auto actual_path = std::filesystem::canonical(module_path, error);
+    if (error)
+        return false;
+    const auto root = std::filesystem::canonical(expected_root, error);
+    if (error)
+        return false;
+    std::cout << "runtime_" << name << '=' << actual_path.generic_u8string() << '\n';
+    const auto relative = actual_path.lexically_relative(root);
+    return !relative.empty() && !relative.is_absolute() && *relative.begin() != "..";
+}
+}
+#endif
+
 int main()
 {
+#ifdef AUTOLIB_TEST_FREETYPE
+    FT_Library font_library = nullptr;
+    if (FT_Init_FreeType(&font_library) != 0)
+        return 11;
+    if (FT_Done_FreeType(font_library) != 0)
+        return 12;
+#endif
+#ifdef AUTOLIB_TEST_HARFBUZZ
+    auto *buffer = hb_buffer_create();
+    const bool allocated = hb_buffer_allocation_successful(buffer);
+    hb_buffer_destroy(buffer);
+    if (!allocated)
+        return 13;
+#endif
+#ifdef AUTOLIB_TEST_LIBUSB
+    libusb_context *usb_context = nullptr;
+    if (libusb_init(&usb_context) != 0)
+        return 14;
+    libusb_exit(usb_context);
+#endif
+#ifdef AUTOLIB_TEST_NLOHMANN
+    const auto document = nlohmann::json::parse(R"({"answer":42})");
+    if (document.at("answer").get<int>() != 42)
+        return 15;
+#endif
+#ifdef AUTOLIB_TEST_OPENCV
+    const auto font = cv::freetype::createFreeType2();
+    if (font.empty() || cv::countNonZero(cv::Mat::eye(2, 2, CV_8U)) != 2)
+        return 16;
+    if (!check_runtime("opencv", reinterpret_cast<const void *>(&cv::getTickCount), AUTOLIB_EXPECT_OPENCV_ROOT))
+        return 17;
+#endif
+#ifdef AUTOLIB_TEST_LIBREALSENSE
+    rs2::config camera_config;
+    camera_config.disable_all_streams();
+    if (!check_runtime("librealsense", reinterpret_cast<const void *>(&rs2_get_api_version), AUTOLIB_EXPECT_LIBREALSENSE_ROOT))
+        return 18;
+#endif
+#ifdef AUTOLIB_TEST_ONNXRUNTIME
+    const auto *api_base = OrtGetApiBase();
+    if (!api_base || !api_base->GetApi(ORT_API_VERSION))
+        return 19;
+    std::cout << "onnxruntime_version=" << api_base->GetVersionString() << '\n';
+    if (!check_runtime("onnxruntime", reinterpret_cast<const void *>(&OrtGetApiBase), AUTOLIB_EXPECT_ONNXRUNTIME_ROOT))
+        return 20;
+#endif
 #ifdef AUTOLIB_TEST_EIGEN
 #ifdef EIGEN_PATCH_VERSION
     const auto eigen_version = std::to_string(EIGEN_MAJOR_VERSION) + "." + std::to_string(EIGEN_MINOR_VERSION) + "." + std::to_string(EIGEN_PATCH_VERSION);

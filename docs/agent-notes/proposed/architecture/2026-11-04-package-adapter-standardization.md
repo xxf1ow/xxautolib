@@ -95,3 +95,13 @@ skill 参考和入口、开发及测试文档一致，文档、Agent Note、skil
 各包的 Config、Module、静态传递依赖、可选功能及平台布局仍需逐包核对；统一格式不是纯文本替换。优先搜索并不排除命中系统库，实际链接输入是必要验证证据。
 
 补齐 adapter 会扩大后续 CI 的工作量，Linux x86_64 证据不替代 Windows、Linux aarch64、相机取流、模型推理或跨工具链 ABI 验证。真实产物不足时可能需要用户决定最小准备范围，不为完成数量而改变构建或增加通用机制。
+
+## 验证结果
+
+109 Linux x86_64（GCC 9.4、CMake 3.31.12、Make 4.4.1）在 `/home/lxx/xxautolib/build/adapter-standardization-pEUrq7gz/real/` 完成八包正常根构建：三个根为 OpenCV、RealSense、ONNX Runtime，依赖为 FreeType、HarfBuzz、libusb、nlohmann、LZ4。输入先在 Windows 获取校验，Git bundle 在隔离源码中固定提交；不修改配方、选项或上游补丁。OpenCV 的 NASM 对 `.note.gnu.property` 发出 unknown section attribute 警告，构建退出 0。
+
+HarfBuzz 8.5.0 的实际 Config 将包含目录导出为 `/harfbuzz`，使公共入口消费在 generate 阶段失败；其 `.pc` 路径正确，adapter 使用 pkg-config 并补齐 FreeType 与 Threads。ONNX Runtime Linux x64 官方归档的 Config 引用 `lib64` 和 `include/onnxruntime`，与实际 `lib`、`include` 布局不符，不能直接使用；adapter 保留显式查找。两者均未通过修改安装元数据掩盖问题。
+
+既有 `tests/autolib/run-installed.cmake` 的原安装消费 `run-c384ce5517f50a66`、builder 原生打包后独立解包的消费 `run-225572a52d6eeeb7` 各通过 1/1 CTest，运行七包真实 API。三个共享库均从相应安装根或搬迁根加载，ONNX Runtime 报告版本 1.24.4。搬迁消费者的导入属性、链接输入和真实链接命令无原安装前缀，原安装普通文件摘要核对一致。子目录首次导入后，父目录和兄弟消费者另通过 3/3。
+
+独立负样本副本移走七份新增 adapter 后，七个公共入口请求分别因所选描述不存在而失败。31/31 同目录覆盖及十九项受控发现检查不等同于真实第三方消费。两个 Eigen 版本各有 9/9 受控头文件检查，尚无本轮真实 Eigen API 消费证据；Windows x86_64、Linux aarch64、最低 CMake、模型推理和相机取流未实测。
