@@ -20,7 +20,7 @@ Fork 本仓库，将自己的 Fork 克隆到本地，从最新 `master` 创建�
 
 先检查 `src/dependencies/` 中的现有模块，避免重复接入。源码构建接入与快捷导入是两项能力：
 
-1. 创建 `src/dependencies/<name>/package.toml`，用 `latest` 指向明确版本；在 `<version>/module.toml` 填写用途、类型和同目录版本。CMake 构建参考 [lz4](src/dependencies/lz4/1.10.0/module.toml)，仅复制安装参考 [queue](src/dependencies/queue/45db9a8b443122184c1f6b9db2c57453a9da1c6bcc18a5d7cfa4da29832fafed/module.toml)。Git 固定完整提交，归档固定 SHA256；声明直接依赖及系统要求。
+1. 创建 `src/dependencies/<name>/package.toml`，用 `latest` 指向明确版本；在 `<version>/module.toml` 填写用途、类型和同目录版本。CMake 构建参考 [lz4](src/dependencies/lz4/1.10.0/module.toml)，仅复制安装参考 [queue](src/dependencies/queue/45db9a8b4431/module.toml)。Git 固定完整提交，归档固定 SHA256；声明直接依赖及系统要求。
 2. 将必要的补丁、专用脚本放在同一版本目录，只保留实际需要的构建选项。独立库通过 `depends` 复用，不在使用方重复构建；需要固定依赖时使用 `包名@版本`。
 3. 通过[根 CMake 入口](docs/development.md#准备与配置)设置 `BUILD_LIST=<name>@<version>`，检查 `<安装根>/<name>/<version>/` 及依赖闭包；裸名只选 latest，空列表发现全部版本。configure 成功不等于构建通过。
 4. 若提供快捷导入，增加同目录 `autolib-import.cmake`，仅暴露 `autolib::<name>`，封装所支持的上游目标并传递已声明的包依赖；adapter 不下载、编译或回退系统库。再完成[打包与真实消费验证](docs/testing.md#本地二进制闭环)：消费者只列根包即可链接运行，搬迁后不依赖生产路径。

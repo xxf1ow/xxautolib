@@ -18,7 +18,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 || args[0] != "prepare" {
 		return fail(fmt.Errorf("usage: autolib-importer prepare [--remote-root=<URL>] [--metadata-root=<directory>] --cache-root=<directory> --os=<target OS> --arch=<target arch> --result=<file> --package=<name[@version]> ..."))
 	}
-	o := prepareOptions{}
+	o := prepareOptions{Output: stdout}
 	flags := flag.NewFlagSet("prepare", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	for _, field := range []struct {

@@ -83,7 +83,7 @@ func TestReleaseDownload(t *testing.T) {
 			}
 			a := releaseAsset{Name: "demo", URL: testReleaseURL + "/demo", SHA256: fmt.Sprintf("%x", sha256.Sum256([]byte("payload")))}
 			file := filepath.Join(t.TempDir(), "download")
-			err := downloadReleaseAsset(context.Background(), client, a, file)
+			err := downloadReleaseAsset(context.Background(), client, a, file, nil)
 			if kind == "bad certificate" {
 				if err == nil || !strings.Contains(err.Error(), "certificate") {
 					t.Fatal("missing expected TLS rejection", err)
@@ -126,7 +126,7 @@ func TestReleaseDownloadExisting(t *testing.T) {
 	}))
 	destination := putTestFile(t, filepath.Join(t.TempDir(), "download"), "user content")
 	asset := releaseAsset{Name: "demo", URL: "https://gitee.com/owner/repo/releases/download/v1/demo", SHA256: "239f59ed55e737c77147cf55ad0c1b030b6d7ee748a7426952f9b852d5a935e5"}
-	if err := downloadReleaseAsset(context.Background(), client, asset, destination); err == nil {
+	if err := downloadReleaseAsset(context.Background(), client, asset, destination, nil); err == nil {
 		t.Fatal("overwrote existing destination")
 	}
 	if requests.Load() != 0 || readTestFile(t, destination) != "user content" {

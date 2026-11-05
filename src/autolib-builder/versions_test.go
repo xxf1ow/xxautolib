@@ -9,7 +9,7 @@ import (
 )
 
 func TestVersionReference(t *testing.T) {
-	for _, value := range []string{"3.4.0", "v1.2.0", "1.0.0+cpu", "V1", strings.Repeat("a", 40)} {
+	for _, value := range []string{"3.4.0", "v1.2.0", "1.0.0+cpu", "V1", strings.Repeat("a", 12)} {
 		t.Run(value, func(t *testing.T) {
 			if err := validatePackageVersion(value); err != nil {
 				t.Fatal(err)
@@ -49,14 +49,14 @@ func versionRecipe(t *testing.T, root, name, version string) string {
 func TestVersionCatalog(t *testing.T) {
 	t.Run("all recipes and exact selection", func(t *testing.T) {
 		root := t.TempDir()
-		for _, ref := range [][2]string{{"zlib", "1"}, {"eigen", "v1.2.0"}, {"eigen", "3.4.0"}, {"eigen", strings.Repeat("a", 40)}} {
+		for _, ref := range [][2]string{{"zlib", "1"}, {"eigen", "v1.2.0"}, {"eigen", "3.4.0"}, {"eigen", strings.Repeat("a", 12)}} {
 			versionRecipe(t, root, ref[0], ref[1])
 		}
 		putFile(t, filepath.Join(root, "src", "dependencies", "eigen", "notes", "README.md"), "not a recipe")
 		pointer := filepath.Join(root, "src", "dependencies", "eigen", "package.toml")
 		putFile(t, pointer, "latest='v1.2.0'\n")
 		got, err := discoverModuleRefs(root)
-		want := []moduleRef{{"eigen", "3.4.0"}, {"eigen", strings.Repeat("a", 40)}, {"eigen", "v1.2.0"}, {"zlib", "1"}}
+		want := []moduleRef{{"eigen", "3.4.0"}, {"eigen", strings.Repeat("a", 12)}, {"eigen", "v1.2.0"}, {"zlib", "1"}}
 		if err != nil || !reflect.DeepEqual(got, want) {
 			t.Fatalf("catalog: got %+v, %v; want %+v", got, err, want)
 		}

@@ -20,7 +20,7 @@ func TestVersionedPackageIdentity(t *testing.T) {
 			{"eigen", packageRef{Name: "eigen"}},
 			{"eigen@5.0.1", packageRef{Name: "eigen", Version: "5.0.1"}},
 			{"eigen@v1.0+build-2", packageRef{Name: "eigen", Version: "v1.0+build-2"}},
-			{"eigen@0123456789abcdef0123456789abcdef01234567", packageRef{Name: "eigen", Version: "0123456789abcdef0123456789abcdef01234567"}},
+			{"eigen@0123456789ab", packageRef{Name: "eigen", Version: "0123456789ab"}},
 		} {
 			got, err := parsePackageRef(tc.value)
 			if err != nil || got != tc.want || got.String() != tc.value {
@@ -84,7 +84,7 @@ func TestVersionedPackageIdentity(t *testing.T) {
 
 func TestVersionedLocalCatalog(t *testing.T) {
 	t.Run("version validation", func(t *testing.T) {
-		for _, version := range []string{"5.0.1", "v1", "V1", "1.0+build-2", "0123456789abcdef0123456789abcdef01234567"} {
+		for _, version := range []string{"5.0.1", "v1", "V1", "1.0+build-2", "0123456789ab"} {
 			if err := validatePackageVersion(version); err != nil {
 				t.Fatal(err)
 			}
@@ -101,7 +101,7 @@ func TestVersionedLocalCatalog(t *testing.T) {
 		if _, err := readPackageLatest(root, "eigen"); !os.IsNotExist(err) {
 			t.Fatalf("missing latest is not absence: %v", err)
 		}
-		for _, version := range []string{"3.4.0", "0123456789abcdef0123456789abcdef01234567", "V1"} {
+		for _, version := range []string{"3.4.0", "0123456789ab", "V1"} {
 			putTestFile(t, filepath.Join(root, "eigen", "package.toml"), "latest = \""+version+"\"\n")
 			got, err := readPackageLatest(root, "eigen")
 			if err != nil || got != version {

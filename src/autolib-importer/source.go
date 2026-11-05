@@ -65,7 +65,7 @@ func releaseGET(ctx context.Context, configured *http.Client, address string) (*
 	return response, nil
 }
 
-func downloadReleaseAsset(ctx context.Context, client *http.Client, asset releaseAsset, destination string) error {
+func downloadReleaseAsset(ctx context.Context, client *http.Client, asset releaseAsset, destination string, progress *downloadProgress) error {
 	if len(asset.SHA256) != 64 || strings.ToLower(asset.SHA256) != asset.SHA256 {
 		return fmt.Errorf("asset %s: expected lowercase SHA256", asset.Name)
 	}
@@ -88,7 +88,16 @@ func downloadReleaseAsset(ctx context.Context, client *http.Client, asset releas
 	}
 	defer os.Remove(f.Name())
 	hash := sha256.New()
-	_, copyErr := io.Copy(io.MultiWriter(f, hash), response.Body)
+	var output io.Writer = io.Discard
+	if progress != nil {
+		progress.total = response.ContentLength
+		progress.report()
+		output = progress
+	}
+	_, copyErr := io.Copy(io.MultiWriter(f, hash, output), response.Body)
+	if progress != nil {
+		progress.finish()
+	}
 	if err := errors.Join(copyErr, f.Close()); err != nil {
 		return fmt.Errorf("download %s: %w", asset.Name, err)
 	}

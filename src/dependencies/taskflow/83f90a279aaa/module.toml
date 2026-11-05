@@ -1,6 +1,6 @@
 # taskflow：任务并行框架，仅安装头文件。
 name = "taskflow"
-version = "83f90a279aaab33fd4ce1deed00ca07819cbc8f8"
+version = "83f90a279aaa"
 type = "copy"
 platform_independent = true
 sentinel = "include/taskflow/taskflow.hpp"
