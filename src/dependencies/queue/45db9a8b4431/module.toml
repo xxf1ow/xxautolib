@@ -1,6 +1,6 @@
 # queue：组合 SPSC 与 MPMC 队列，仅安装头文件。
 name = "queue"
-version = "45db9a8b443122184c1f6b9db2c57453a9da1c6bcc18a5d7cfa4da29832fafed"
+version = "45db9a8b4431"
 type = "copy" # 无主来源；两个上游作为附属资源，合并安装到 include/queue，不生成 CMake/pkg-config 包或运行库。
 platform_independent = true
 sentinel = "include/queue/readerwriterqueue.h"

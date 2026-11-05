@@ -22,9 +22,9 @@ description: >-
 - CMake 源码构建：参考 [zlib](../../../src/dependencies/zlib/1.3.1/module.toml) 的固定 Git 来源、库特定 cache 与文件补丁。
 - 源码子目录：参考 [lz4](../../../src/dependencies/lz4/1.10.0/module.toml) 的 `[cmake] SOURCE_SUBDIR`；路径相对来源根，不改变补丁根。
 - 归档源码构建：参考 [FreeType](../../../src/dependencies/freetype/2.13.2/module.toml) 的多 URL、SHA256 与统一下载名。
-- 仅复制安装：参考 [queue](../../../src/dependencies/queue/45db9a8b443122184c1f6b9db2c57453a9da1c6bcc18a5d7cfa4da29832fafed/module.toml) 的独立附属资源与明确文件清单；头文件或已解压预编译输入使用 `copy`，不执行虚假的 configure/build。
+- 仅复制安装：参考 [queue](../../../src/dependencies/queue/45db9a8b4431/module.toml) 的独立附属资源与明确文件清单；头文件或已解压预编译输入使用 `copy`，不执行虚假的 configure/build。
 - 平台预编译包：参考 [onnxruntime](../../../src/dependencies/onnxruntime/1.24.4/module.toml) 的平台/架构来源和完整目录复制。
-- 独立库依赖：参考 [flann](../../../src/dependencies/flann/f9caaf609d8b8cb2b7104a85cf59eb92c275a25d/module.toml) 的 `depends` 与 lz4 安装查找元数据；只请求叶子即可构建依赖闭包。
+- 独立库依赖：参考 [flann](../../../src/dependencies/flann/f9caaf609d8b/module.toml) 的 `depends` 与 lz4 安装查找元数据；只请求叶子即可构建依赖闭包。
 - 复杂资源：参考 [opencv](../../../src/dependencies/opencv/4.14.0/module.toml) 的 `<RESOURCE_SOURCE_DIR:opencv_contrib>`、资源补丁与平台包布局；[harfbuzz](../../../src/dependencies/harfbuzz/8.5.0/module.toml) 展示 FreeType 依赖接线。当前功能已验证无需本仓库注入 Python；新库若实际需要解释器，先按证据确认要求，不自动恢复解释器引用。
 
 每个包目录只定义一个对外包，版本目录各有一份配方。独立库用 `depends` 声明直接依赖，不在使用方重复构建，也不用资源伪装独立库。附属输入仍归消费模块，不强制拆成公开模块；尚未实现的模块扩展按[总体约束](../../../docs/agent-notes/proposed/architecture/2026-10-20-module-expansion.md)另行确认。

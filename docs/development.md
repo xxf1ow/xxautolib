@@ -56,6 +56,8 @@ Git 主来源复用 `git/<包名>/<版本>/`，资源复用 `git/_resources/<包
 
 已有目录核对五行包头和导入文件，adapter 检查其所需文件，不逐文件散列；内容校验不认证来源，工具及包内 CMake 必须可信。缓存包和 latest 不自动追随远端，精确请求不改 latest；删除缓存 latest 指向的版本目录后，裸名请求重新发现远端选择，不更新无关缓存。刷新前保护修改，只处理入口缓存的 `<包名>/<版本>/`，不删共享依赖；损坏包不是缺包，必须明确处理而非自动重选。FLANN 的包依赖仅 lz4，OpenMP、C++ ABI 和系统运行库由消费环境满足。
 
+每次成功导入都打印 `-- [Info] [<消费目标>] <库名> : <版本>`，包含传递依赖、缓存包和重复调用，单次调用内去重。仅实际下载和解压打印进度及成功消息；缓存复用、入口和工具获取不打印过程。进度模式及短版本规则见[统一交付设计](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md#包导入消息)。
+
 ## CI 开发与运行
 
 [手动流水线](../.github/workflows/build-platform.yml)接受当前源码仓库的普通分支、拒绝 tag，检出事件提交；workflow 将 `GITHUB_REPOSITORY` 作为可信仓库传给运行、运输和汇总校验，支持 fork。平台默认 all。

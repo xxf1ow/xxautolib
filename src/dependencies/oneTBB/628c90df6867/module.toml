@@ -1,7 +1,7 @@
 # oneTBB：任务并行运行库，构建共享库、内存分配器及其代理。
 name = "oneTBB"
 type = "cmake"
-version = "628c90df6867d1c56563b6dc14d554e910a48770"
+version = "628c90df6867"
 package_name = "TBB"
 config_dir = "lib/cmake/TBB"
 sentinel = "include/tbb/tbb.h"

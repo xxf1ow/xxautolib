@@ -257,7 +257,7 @@ func representativeFixture(t *testing.T, packages string) *entryFixture {
 	t.Helper()
 	f := newEntryFixture(t, false, "")
 	for _, name := range []string{"queue", "lz4", "flann"} {
-		version := map[string]string{"queue": "45db9a8b443122184c1f6b9db2c57453a9da1c6bcc18a5d7cfa4da29832fafed", "lz4": "1.10.0", "flann": "f9caaf609d8b8cb2b7104a85cf59eb92c275a25d"}[name]
+		version := map[string]string{"queue": "45db9a8b4431", "lz4": "1.10.0", "flann": "f9caaf609d8b"}[name]
 		adapter, err := os.ReadFile(filepath.Join("../dependencies", name, version, "autolib-import.cmake"))
 		if err != nil {
 			t.Fatal(err)

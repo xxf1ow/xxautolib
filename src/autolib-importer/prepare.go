@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +13,7 @@ import (
 type prepareOptions struct {
 	RemoteRoot, CacheRoot, OS, Arch, ResultPath, MetadataRoot string
 	Packages                                                  []string
+	Output                                                    io.Writer
 }
 
 var errMetadataRequired = errors.New("metadata snapshot required")
@@ -139,7 +141,7 @@ func prepare(o prepareOptions) (packages []preparedPackage, err error) {
 			if err != nil {
 				return err
 			}
-			candidate, err = stageRemotePackage(cache, asset, identity)
+			candidate, err = stageRemotePackage(cache, asset, identity, o.Output)
 			if err != nil {
 				return err
 			}
@@ -191,17 +193,24 @@ func prepare(o prepareOptions) (packages []preparedPackage, err error) {
 	return packages, nil
 }
 
-func stageRemotePackage(cache string, asset releaseAsset, id packageIdentity) (candidate string, err error) {
+func stageRemotePackage(cache string, asset releaseAsset, id packageIdentity, output io.Writer) (candidate string, err error) {
 	work, err := os.MkdirTemp(cache, ".remote-")
 	if err != nil {
 		return "", err
 	}
 	defer func() { err = errors.Join(err, removePackageStaging(work)) }()
 	archive := filepath.Join(work, asset.Name)
-	if err := downloadReleaseAsset(context.Background(), nil, asset, archive); err != nil {
+	progress := newDownloadProgress(output, id.Name+"@"+id.Version)
+	if err := downloadReleaseAsset(context.Background(), nil, asset, archive, progress); err != nil {
 		return "", err
 	}
-	return extractPackage(archive, cache, id)
+	fmt.Fprintf(progress.output, "-- [AutoLib] Download complete: %s\n", progress.ref)
+	fmt.Fprintf(progress.output, "-- [AutoLib] Extracting %s: ...\n", progress.ref)
+	candidate, err = extractPackage(archive, cache, id)
+	if err == nil {
+		fmt.Fprintf(progress.output, "-- [AutoLib] Extraction complete: %s\n", progress.ref)
+	}
+	return candidate, err
 }
 
 func commitPreparedPackage(staged, directory string) error {

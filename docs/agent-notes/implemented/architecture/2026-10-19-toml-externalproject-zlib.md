@@ -211,7 +211,7 @@ queue 是无主来源的 header-only 聚合模块，获取两个固定资源并�
 
 资源固定为 readerwriterqueue 提交 `6867b56452352acf077fccd5f6cc7e3a8cfde0fb` 和 concurrentqueue 提交 `683b9e31ea15eb69f1b81cc1defc7850d5f20b71`。这两个值经只读上游 refs 查询核对，不在实际构建时重新解析 master。
 
-带中文维护注释的来源和安装清单由 [queue/module.toml](../../../../src/dependencies/queue/45db9a8b443122184c1f6b9db2c57453a9da1c6bcc18a5d7cfa4da29832fafed/module.toml)拥有。两个资源版本彼此独立，不增加统一上游版本号；包版本显式标识资源组合，安装清单保留各组头文件的同目录 include 关系。
+带中文维护注释的来源和安装清单由 [queue/module.toml](../../../../src/dependencies/queue/45db9a8b4431/module.toml)拥有。两个资源版本彼此独立，不增加统一上游版本号；包版本显式标识资源组合，安装清单保留各组头文件的同目录 include 关系。
 
 queue 目标完成意味着两个资源均已准备好且所有映射文件安装完成；不能只创建一个没有正确依赖的聚合目标。内部 smoke 验证仅使用安装前缀的 include 路径，覆盖两组头文件的编译及简单入队、出队结果；检查六个文件齐全，不扩展为上游队列并发正确性或性能测试。
 

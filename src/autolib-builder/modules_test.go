@@ -164,7 +164,7 @@ BUILD_opencv_signal WITH_GSTREAMER WITH_PROTOBUF`) {
 			check(cv.Cache["OPENCV_EXTRA_MODULES_PATH"], "<RESOURCE_SOURCE_DIR:opencv_contrib>/modules")
 			check(cv.Patches[0].Resource, "opencv_contrib")
 			check(flann.Depends, []string{"lz4@1.10.0"})
-			check(flann.Version, "f9caaf609d8b8cb2b7104a85cf59eb92c275a25d")
+			check(flann.Version, "f9caaf609d8b")
 			check(flann.Source.GitTag, "f9caaf609d8b8cb2b7104a85cf59eb92c275a25d")
 			check(flann.ConfigDir, "lib/cmake/flann")
 			check(flann.PkgconfigDir, "lib/pkgconfig")
@@ -197,13 +197,13 @@ func TestVersionedRealDeclarations(t *testing.T) {
 		t.Fatal(err)
 	}
 	versions := map[string]string{
-		"asio": "8806a6803cde7054c3049d3666d3ec36786568c5", "boost": "1.87.0", "clipper2": "1.5.4",
-		"cpp-httplib": "88956ccad8386f883f7d49ded46e6b0bb198c804", "eigen": "3.4.0", "expected": "1.3.1",
-		"flann": "f9caaf609d8b8cb2b7104a85cf59eb92c275a25d", "freetype": "2.13.2", "gtest": "1.17.0", "harfbuzz": "8.5.0",
-		"imgui": "065f9e02695c4eab92dab548f0c37f5297fc7a63", "librealsense": "2.58.1", "libusb": "1.0.27", "libzmq": "4.3.5", "lz4": "1.10.0",
-		"nativefiledialog-extended": "3cd252a8f7ca32419b1ca235c2990ba6a0ecba7c", "nlohmann": "3.12.0", "oneTBB": "628c90df6867d1c56563b6dc14d554e910a48770", "onnxruntime": "1.24.4", "opencv": "4.14.0",
-		"pcl": "pcl-1.15.1", "portaudio": "v190700_20210406", "pybind11": "2.13.6", "queue": "45db9a8b443122184c1f6b9db2c57453a9da1c6bcc18a5d7cfa4da29832fafed",
-		"sdl3": "3.2.30", "spdlog": "1.17.0", "taskflow": "83f90a279aaab33fd4ce1deed00ca07819cbc8f8", "websocketpp": "4dfe1be74e684acca19ac1cf96cce0df9eac2a2d", "yaml-cpp": "2decf96e915d2b0c26c68c1659665789dfef2633", "zlib": "1.3.1",
+		"asio": "8806a6803cde", "boost": "1.87.0", "clipper2": "1.5.4",
+		"cpp-httplib": "88956ccad838", "eigen": "3.4.0", "expected": "1.3.1",
+		"flann": "f9caaf609d8b", "freetype": "2.13.2", "gtest": "1.17.0", "harfbuzz": "8.5.0",
+		"imgui": "065f9e02695c", "librealsense": "2.58.1", "libusb": "1.0.27", "libzmq": "4.3.5", "lz4": "1.10.0",
+		"nativefiledialog-extended": "3cd252a8f7ca", "nlohmann": "3.12.0", "oneTBB": "628c90df6867", "onnxruntime": "1.24.4", "opencv": "4.14.0",
+		"pcl": "pcl-1.15.1", "portaudio": "v190700_20210406", "pybind11": "2.13.6", "queue": "45db9a8b4431",
+		"sdl3": "3.2.30", "spdlog": "1.17.0", "taskflow": "83f90a279aaa", "websocketpp": "4dfe1be74e68", "yaml-cpp": "2decf96e915d", "zlib": "1.3.1",
 	}
 	for _, slot := range []struct{ system, arch string }{{"Windows", "x86_64"}, {"Linux", "x86_64"}, {"Linux", "aarch64"}} {
 		t.Run(slot.system+"/"+slot.arch, func(t *testing.T) {
@@ -231,7 +231,7 @@ func TestVersionedRealDeclarations(t *testing.T) {
 				t.Fatal("missing explicit Eigen 5.0.1")
 			}
 			pcl := byRef["pcl@pcl-1.15.1"]
-			if !reflect.DeepEqual(pcl.Depends, []string{"lz4@1.10.0", "flann@f9caaf609d8b8cb2b7104a85cf59eb92c275a25d", "boost@1.87.0", "eigen@3.4.0", "zlib@1.3.1"}) {
+			if !reflect.DeepEqual(pcl.Depends, []string{"lz4@1.10.0", "flann@f9caaf609d8b", "boost@1.87.0", "eigen@3.4.0", "zlib@1.3.1"}) {
 				t.Fatal(pcl.Depends)
 			}
 			for _, m := range modules {

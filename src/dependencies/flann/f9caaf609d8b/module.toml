@@ -1,7 +1,7 @@
 # FLANN：近似最近邻搜索库，构建并安装 C/C++ 库；压缩依赖复用本仓库 lz4。
 name = "flann"
 type = "cmake"
-version = "f9caaf609d8b8cb2b7104a85cf59eb92c275a25d" # 固定提交而非 release tag；升级时重新验证 lz4 探测及安装布局。
+version = "f9caaf609d8b" # 固定提交而非 release tag；升级时重新验证 lz4 探测及安装布局。
 depends = ["lz4"]
 config_dir = "lib/cmake/flann"
 pkgconfig_dir = "lib/pkgconfig"
