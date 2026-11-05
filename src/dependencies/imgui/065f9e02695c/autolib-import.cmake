@@ -1,19 +1,14 @@
+#[=[
+ImGui：包含 SDL3/OpenGL3 后端的即时图形界面静态库，通过 find_library 导入。
+公共目标：autolib::imgui。
+#]=]
+
 if(TARGET autolib::imgui)
     return()
 endif()
-set(_autolib_imgui_os "${AUTOLIB_OS}")
-set(_autolib_imgui_arch "${AUTOLIB_ARCH}")
-if(NOT EXISTS "${CMAKE_CURRENT_LIST_DIR}/../sdl3/autolib-import.cmake")
-    message(FATAL_ERROR "AutoLib imgui requires prepared sibling package sdl3")
-endif()
-include("${CMAKE_CURRENT_LIST_DIR}/../sdl3/autolib-import.cmake")
-if(NOT AUTOLIB_PACKAGE_NAME STREQUAL "sdl3" OR NOT AUTOLIB_OS STREQUAL _autolib_imgui_os OR NOT AUTOLIB_ARCH STREQUAL _autolib_imgui_arch)
-    message(FATAL_ERROR "AutoLib imgui sibling sdl3 has mismatched package identity")
-endif()
-set(_autolib_imgui_library "${CMAKE_CURRENT_LIST_DIR}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}imgui${CMAKE_STATIC_LIBRARY_SUFFIX}")
-if(NOT EXISTS "${_autolib_imgui_library}" OR NOT EXISTS "${CMAKE_CURRENT_LIST_DIR}/include/ImGui/imgui.h")
-    message(FATAL_ERROR "AutoLib imgui requires package-owned headers and static library")
-endif()
+
+find_library(_autolib_imgui_library NAMES imgui HINTS "${CMAKE_CURRENT_LIST_DIR}/lib" REQUIRED)
+
 add_library(autolib::imgui INTERFACE IMPORTED GLOBAL)
 target_include_directories(autolib::imgui INTERFACE "${CMAKE_CURRENT_LIST_DIR}/include" "${CMAKE_CURRENT_LIST_DIR}/include/ImGui")
 target_link_libraries(autolib::imgui INTERFACE "${_autolib_imgui_library}" autolib::sdl3)

@@ -1,6 +1,6 @@
 # 开发
 
-先准备 Git、CMake（3.20+）和 C/C++ 编译器，通过根入口构建安装。Go SDK 和固定模块自动准备；FLANN、OpenCV 需要 pkg-config，FLANN 使用 OpenMP，FFmpeg 按机器环境探测。builder 和普通 Go 测试不需要 Python 或 uv；发布及其整链夹具需要 Python 3.12，技能校验器自行准备环境。
+先准备 Git、CMake（3.20+）和 C/C++ 编译器，通过根入口构建安装。Go SDK 和固定模块自动准备；FLANN、HarfBuzz 消费和 OpenCV 构建需要 pkg-config，FLANN 使用 OpenMP，FFmpeg 按机器环境探测。builder 和普通 Go 测试不需要 Python 或 uv；发布及其整链夹具需要 Python 3.12，技能校验器自行准备环境。
 
 ## 准备与配置
 
@@ -22,7 +22,7 @@ cmake --build build --config Release
 
 引擎为 CMake 子项目提供 policy 下限 `3.5`、PIC `ON`、C++ 标准 `17` 的兜底值，通过原生 `CMAKE_ARGS` 传入，不向父级 cache 写默认值；不依赖 preset、IDE 设置或环境变量。根 configure 的 `-D` 或 toolchain 中已定义的值可覆盖兜底值，模块显式 cache 优先于父级值；修改公共值后重新 configure/build。已有 cache 条目保留为父级输入，不自动删除。policy 下限不降低上游较高声明，旧声明被提高后的兼容性仍须实际验证。IDE 可沿用已有编译器和配置。
 
-默认发现全部配方版本，安装到 `3rdparty/<包名>/<版本>/`。`BUILD_LIST` 用逗号分隔 `包名@版本`；裸名只读包级 `package.toml` 的 `latest`，不排序或改写版本。依赖闭包自动补齐，librealsense 不提供 adapter。裸名 eigen 选 3.4.0，显式可选 5.0.1；PCL 固定依赖 `eigen@3.4.0`。根 BUILD_LIST 不传入 OpenCV。configure 输出工具链、安装目录与模块摘要，build 执行获取和安装。
+默认发现全部配方版本，安装到 `3rdparty/<包名>/<版本>/`。`BUILD_LIST` 用逗号分隔 `包名@版本`；裸名只读包级 `package.toml` 的 `latest`，不排序或改写版本。依赖闭包自动补齐。裸名 eigen 选 3.4.0，显式可选 5.0.1；PCL 固定依赖 `eigen@3.4.0`。根 BUILD_LIST 不传入 OpenCV。configure 输出工具链、安装目录与模块摘要，build 执行获取和安装。
 
 公共入口仅为 Go 子进程设置项目 SDK、缓存、`GOENV=off`、`GOWORK=off`、`GOTOOLCHAIN=local` 和 `CGO_ENABLED=0`，不修改全局环境或用户 Go 配置。只读模块模式分别编译宿主 builder 和 importer，宿主不随 C++ 目标架构改变；go.mod 固定依赖、go.sum 校验内容。每份工作副本统一用 build，不跨平台混用产物。子项目固定 Release，沿用父生成器、平台、完整工具集和 instance；父显式 CRT 原值传递，未指定时 MSVC Release 使用 `/MD`，静态库不自动改为 `/MT`。
 
@@ -42,6 +42,8 @@ Git 主来源复用 `git/<包名>/<版本>/`，资源复用 `git/_resources/<包
 
 下游通过绝对路径直接 include 安装根的 `autolib.cmake`，再调用 `autolib_import(TARGET app PRIVATE queue flann)`，不复制入口或包到另一缓存。所需精确闭包完整时消费不联网；缺工具或包时，本地入口明确失败。Windows importer 为 `autolib-importer-windows-x86_64.exe`，Linux 按宿主架构命名且须可执行。没有 adapter 的模块不能快捷导入。
 
+现有配方均有 adapter；新增或修改按[五类基准与编写步骤](../.agents/skills/add-third-party-module/references/adapter-baselines.md)核对安装并完成[消费验证](testing.md#adapter-定向验证)，文件齐全不代表各包各平台均已实测。
+
 实际安装前，消费文件被置为未完成；安装失败后不能仅靠残留 sentinel 补齐。保护需要的数据，再按上节移走受影响安装目录和原生构建状态，重新完成真实安装；不删除其他包。已完成安装的精确依赖被冻结，reuse 不能把它重标为源码 latest。adapter 正文更新通过普通根重新 configure/build 的复用目标刷新，不手改已安装描述。
 
 本地需要分发时使用 `builder package`；CI 在验证后显式调用同一命令，不按 CI 环境改变 builder 行为。CI 工具准备见[CI 验证](testing.md#ci-验证)。
@@ -54,7 +56,7 @@ Git 主来源复用 `git/<包名>/<版本>/`，资源复用 `git/_resources/<包
 
 远程使用者先将已发布的单个 `autolib.cmake` 下载到专用可写目录，例如不纳入版本控制的 `3rdparty/`，再 include 并调用 `autolib_import`。入口下载 URL 可为 HTTP(S) 或 `file://`；下载文件不会携带原目录的工具或包，入口也不根据下载 URL 推导来源。远端工具和包沿用 Git 元数据、SHA256 和安全解包校验；完整缓存可离线复用，缺输入时远程入口仍可能尝试联网。严格禁止联网须使用内置地址为空的入口，不提供离线开关。同根写入由调用方串行，目录中的既有文件不会自动清理。
 
-已有目录核对五行包头和导入文件，adapter 检查其所需文件，不逐文件散列；内容校验不认证来源，工具及包内 CMake 必须可信。缓存包和 latest 不自动追随远端，精确请求不改 latest；删除缓存 latest 指向的版本目录后，裸名请求重新发现远端选择，不更新无关缓存。刷新前保护修改，只处理入口缓存的 `<包名>/<版本>/`，不删共享依赖；损坏包不是缺包，必须明确处理而非自动重选。FLANN 的包依赖仅 lz4，OpenMP、C++ ABI 和系统运行库由消费环境满足。
+已有目录核对五行包头和导入文件，adapter 使用标准发现命令或直接暴露头文件，不预检查完整载荷或逐文件散列；内容校验不认证来源，工具及包内 CMake 必须可信。缓存包和 latest 不自动追随远端，精确请求不改 latest；删除缓存 latest 指向的版本目录后，裸名请求重新发现远端选择，不更新无关缓存。刷新前保护修改，只处理入口缓存的 `<包名>/<版本>/`，不删共享依赖；损坏包不是缺包，必须明确处理而非自动重选。FLANN 的包依赖仅 lz4，OpenMP、C++ ABI 和系统运行库由消费环境满足。
 
 每次成功导入都打印 `-- [Info] [<消费目标>] <库名> : <版本>`，包含传递依赖、缓存包和重复调用，单次调用内去重。仅实际下载和解压打印进度及成功消息；缓存复用、入口和工具获取不打印过程。进度模式及短版本规则见[统一交付设计](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md#包导入消息)。
 

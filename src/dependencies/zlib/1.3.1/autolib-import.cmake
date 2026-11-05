@@ -1,22 +1,16 @@
+#[=[
+zlib：通用无损压缩库，通过 CMake FindZLIB Module 导入。
+公共目标：autolib::zlib。
+#]=]
+
 if(TARGET autolib::zlib)
     return()
 endif()
-if(TARGET ZLIB::ZLIB)
-    message(FATAL_ERROR "AutoLib zlib cannot import existing ZLIB::ZLIB; import AutoLib before other package discovery")
-endif()
-set(ZLIB_INCLUDE_DIR "${CMAKE_CURRENT_LIST_DIR}/include")
-if(WIN32)
-    set(ZLIB_LIBRARY "${CMAKE_CURRENT_LIST_DIR}/lib/zlibstatic.lib")
-else()
-    set(ZLIB_LIBRARY "${CMAKE_CURRENT_LIST_DIR}/lib/libz.a")
-endif()
-if(NOT EXISTS "${ZLIB_INCLUDE_DIR}/zlib.h" OR NOT EXISTS "${ZLIB_LIBRARY}")
-    message(FATAL_ERROR "AutoLib zlib requires package-owned headers and static library")
-endif()
-# 固定 FindZLIB 的输入，避免 Boost 的 find_dependency 选到系统同名库。
-set(ZLIB_LIBRARY_RELEASE "${ZLIB_LIBRARY}")
-set(ZLIB_LIBRARY_DEBUG "${ZLIB_LIBRARY}")
-find_package(ZLIB REQUIRED MODULE)
+
+set(ZLIB_ROOT "${CMAKE_CURRENT_LIST_DIR}")
+find_package(ZLIB MODULE REQUIRED)
+
 set_property(TARGET ZLIB::ZLIB PROPERTY IMPORTED_GLOBAL TRUE)
+
 add_library(autolib::zlib INTERFACE IMPORTED GLOBAL)
 target_link_libraries(autolib::zlib INTERFACE ZLIB::ZLIB)

@@ -26,6 +26,12 @@ cmake -P src/autolib-builder/go-sdk.cmake -- test -mod=readonly ./src/autolib-im
 
 `MODULES` 选择 smoke 集合，`ROOT_PACKAGES` 选择首次导入根，均接受精确引用。Eigen 3.4.0 与 5.0.1 使用独立消费者，不在同次 configure 混用。VALIDATION_ROOT 必须位于 SOURCE_ROOT 的 build 内；可选 EVIDENCE_DIRECTORY 也须位于该 build 内，缺省使用 VALIDATION_ROOT。driver 在 evidence 下生成唯一运行目录，保存 configure/build/CTest 日志；CI 指定的目录位于 workflow 诊断收集范围内。driver 不编译三方源码，不修改原安装。
 
+### Adapter 定向验证
+
+[头文件定向工程](../tests/adapters/headers/CMakeLists.txt)覆盖重复导入和跨目录使用；受控载荷不代表真实 API。
+
+真实七包[smoke](../tests/autolib/smoke.cpp)使用 `ROOT_PACKAGES=opencv@4.14.0;librealsense@2.58.1;onnxruntime@1.24.4`、`MODULES=freetype;harfbuzz;libusb;nlohmann;lz4;opencv;librealsense;onnxruntime`。Windows 须将实际 DLL 目录加入进程 PATH。含双版本 Eigen 的结果与未测范围见[导入适配记录](agent-notes/implemented/architecture/2026-11-04-package-adapter-standardization.md#验证结果)。
+
 ## Release 下载验证
 
 [远端原生闭环](../src/autolib-importer/versioned_remote_loop_test.go)复用真实轻量库。Gitee 子例经生产 CI transport 打包运输，再从 `prepare_publication` 返回清单取得实际入口和资产，验证非上游仓库与编码 tag 的工具及库 URL；GitHub 保留消费协议。空缓存引导后真实链接运行，完整缓存和损坏已有候选均零远端操作；错误身份及损坏候选在 adapter 前拒绝。关闭受控 Git/HTTPS、迁移完整缓存后仍链接运行，原输入及无关缓存不变。证据及缺口由[自定位入口记录](agent-notes/implemented/architecture/2026-11-03-entry-delivery-and-tool-only-ci.md#验证)拥有。
@@ -90,4 +96,4 @@ lz4 从根入口真实构建安装，检查公开头文件、Windows `lib/lz4.li
 
 FLANN、HarfBuzz、OpenCV 在 Windows x64/v143、Linux aarch64 完成真实构建；Go 入口另以全新状态、禁止 Python 探测验证 FreeType→HarfBuzz→OpenCV，两端 OpenCV smoke 各 1/1。显式依赖的 cache、pkg-config 与链接输入、FFmpeg/KleidiCV 状态及系统传递依赖见[验证记录](agent-notes/implemented/architecture/2026-10-20-flann-opencv-dependencies.md#验证结果)。
 
-测试不验证上游算法、并发、性能或模型推理；不强制每库专用工程。除 CI 代表集外，Linux x86_64 仅验证声明选择；v142 仅验证参数保留，仍缺实机验收。
+测试不验证上游算法、并发、性能或模型推理；不强制每库专用工程。Linux x86_64 的实际消费范围见上文 adapter 定向验证，其余模块不由声明选择推定通过；v142 仅验证参数保留，仍缺实机验收。

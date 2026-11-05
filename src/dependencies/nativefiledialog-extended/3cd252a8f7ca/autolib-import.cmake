@@ -1,25 +1,15 @@
+#[=[
+Native File Dialog：原生文件对话框库，通过 CMake Config 导入。
+公共目标：autolib::nativefiledialog-extended。
+#]=]
+
 if(TARGET autolib::nativefiledialog-extended)
     return()
 endif()
-foreach(_autolib_nativefiledialog_extended_target IN ITEMS nfd::nfd)
-    if(TARGET ${_autolib_nativefiledialog_extended_target})
-        message(FATAL_ERROR "AutoLib nativefiledialog-extended cannot import existing target ${_autolib_nativefiledialog_extended_target}; import AutoLib before other package discovery")
-    endif()
-endforeach()
+
 set(nfd_DIR "${CMAKE_CURRENT_LIST_DIR}/lib/cmake/nfd")
-if(NOT EXISTS "${nfd_DIR}/nfd-config.cmake")
-    message(FATAL_ERROR "AutoLib nativefiledialog-extended requires package-owned ${nfd_DIR}/nfd-config.cmake")
-endif()
-get_property(_autolib_nativefiledialog_extended_before DIRECTORY PROPERTY IMPORTED_TARGETS)
-find_package(nfd REQUIRED CONFIG PATHS "${nfd_DIR}" NO_DEFAULT_PATH)
-get_property(_autolib_nativefiledialog_extended_after DIRECTORY PROPERTY IMPORTED_TARGETS)
-foreach(_autolib_nativefiledialog_extended_target IN LISTS _autolib_nativefiledialog_extended_after)
-    if(NOT _autolib_nativefiledialog_extended_target IN_LIST _autolib_nativefiledialog_extended_before)
-        set_property(TARGET ${_autolib_nativefiledialog_extended_target} PROPERTY IMPORTED_GLOBAL TRUE)
-    endif()
-endforeach()
-if(NOT TARGET nfd::nfd)
-    message(FATAL_ERROR "AutoLib nativefiledialog-extended Config must define nfd::nfd")
-endif()
+find_package(nfd CONFIG REQUIRED)
+set_property(TARGET nfd::nfd PROPERTY IMPORTED_GLOBAL TRUE)
+
 add_library(autolib::nativefiledialog-extended INTERFACE IMPORTED GLOBAL)
 target_link_libraries(autolib::nativefiledialog-extended INTERFACE nfd::nfd)

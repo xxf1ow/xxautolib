@@ -10,6 +10,8 @@ Status: proposed
 
 参考仓库为 `D:/Work/AutoLibBuilder`。沿用[模块扩展约束](2026-10-20-module-expansion.md)，迁移模块声明、必要补丁、专用文件及导入适配，不修改参考仓库，不重构根 CMake。公共引擎仅将通用包的 queue 专用资格检查改为按声明复制映射核对实际载荷，不增加逐库白名单或新配置字段。
 
+当前配方的 adapter 格式统一、七份缺失补齐及实际消费与搬迁证据由[导入适配决定](../../implemented/architecture/2026-11-04-package-adapter-standardization.md)拥有，不改变本记录的迁移配置、既有验证结论或 sherpa-onnx 暂停安排，也不将 ONNX Runtime adapter 解释为升级其版本。
+
 ### 范围与阶段
 
 首批一次迁入 16 库：asio、clipper2、cpp-httplib、eigen、expected、gtest、libzmq、nativefiledialog-extended、portaudio、pybind11、sdl3、spdlog、taskflow、websocketpp、yaml-cpp、boost。

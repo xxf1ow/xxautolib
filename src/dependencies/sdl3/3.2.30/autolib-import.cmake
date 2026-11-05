@@ -1,28 +1,18 @@
+#[=[
+SDL3：跨平台多媒体静态库，通过 CMake Config 导入。
+公共目标：autolib::sdl3。
+#]=]
+
 if(TARGET autolib::sdl3)
     return()
 endif()
-foreach(_autolib_sdl3_target IN ITEMS SDL3::SDL3-static SDL3::Headers)
-    if(TARGET ${_autolib_sdl3_target})
-        message(FATAL_ERROR "AutoLib sdl3 cannot import existing target ${_autolib_sdl3_target}; import AutoLib before other package discovery")
-    endif()
-endforeach()
+
 set(SDL3_DIR "${CMAKE_CURRENT_LIST_DIR}/lib/cmake/SDL3")
 if(WIN32)
     set(SDL3_DIR "${CMAKE_CURRENT_LIST_DIR}/cmake")
 endif()
-if(NOT EXISTS "${SDL3_DIR}/SDL3Config.cmake")
-    message(FATAL_ERROR "AutoLib sdl3 requires package-owned ${SDL3_DIR}/SDL3Config.cmake")
-endif()
-get_property(_autolib_sdl3_before DIRECTORY PROPERTY IMPORTED_TARGETS)
-find_package(SDL3 REQUIRED CONFIG PATHS "${SDL3_DIR}" NO_DEFAULT_PATH)
-get_property(_autolib_sdl3_after DIRECTORY PROPERTY IMPORTED_TARGETS)
-foreach(_autolib_sdl3_target IN LISTS _autolib_sdl3_after)
-    if(NOT _autolib_sdl3_target IN_LIST _autolib_sdl3_before)
-        set_property(TARGET ${_autolib_sdl3_target} PROPERTY IMPORTED_GLOBAL TRUE)
-    endif()
-endforeach()
-if(NOT TARGET SDL3::SDL3-static)
-    message(FATAL_ERROR "AutoLib sdl3 Config must define SDL3::SDL3-static")
-endif()
+find_package(SDL3 CONFIG REQUIRED)
+set_property(TARGET SDL3::SDL3-static PROPERTY IMPORTED_GLOBAL TRUE)
+
 add_library(autolib::sdl3 INTERFACE IMPORTED GLOBAL)
 target_link_libraries(autolib::sdl3 INTERFACE SDL3::SDL3-static)

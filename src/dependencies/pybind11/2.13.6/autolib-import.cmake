@@ -1,8 +1,11 @@
+#[=[
+pybind11：Python/C++ 绑定头文件库，直接包含头文件。
+公共目标：autolib::pybind11。
+#]=]
+
 if(TARGET autolib::pybind11)
     return()
 endif()
-if(NOT EXISTS "${CMAKE_CURRENT_LIST_DIR}/include/pybind11/pybind11.h")
-    message(FATAL_ERROR "AutoLib pybind11 requires package-owned include/pybind11/pybind11.h")
-endif()
+
 add_library(autolib::pybind11 INTERFACE IMPORTED GLOBAL)
 target_include_directories(autolib::pybind11 INTERFACE "${CMAKE_CURRENT_LIST_DIR}/include")

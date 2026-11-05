@@ -1,23 +1,16 @@
+#[=[
+FLANN：近似最近邻搜索库，通过 CMake Config 导入。
+公共目标：autolib::flann。
+#]=]
+
 if(TARGET autolib::flann)
     return()
 endif()
-foreach(_autolib_flann_target IN ITEMS flann::flann_cpp flann::flann)
-    if(TARGET ${_autolib_flann_target})
-        message(FATAL_ERROR "AutoLib flann cannot import existing target ${_autolib_flann_target}; call autolib_import before other package discovery and do not mix library sources")
-    endif()
-endforeach()
-if(NOT TARGET autolib::lz4 OR NOT AUTOLIB_PACKAGE_DIR_lz4 OR NOT AUTOLIB_PACKAGE_VERSION_lz4)
-    message(FATAL_ERROR "AutoLib flann requires the prepared exact lz4 dependency; use autolib_import to prepare and load the dependency closure")
-endif()
+
 set(flann_DIR "${CMAKE_CURRENT_LIST_DIR}/lib/cmake/flann")
-if(NOT EXISTS "${flann_DIR}/flann-config.cmake")
-    message(FATAL_ERROR "AutoLib flann requires package-owned ${flann_DIR}/flann-config.cmake")
-endif()
-find_package(flann REQUIRED CONFIG PATHS "${flann_DIR}" NO_DEFAULT_PATH)
-if(NOT TARGET flann::flann_cpp OR NOT TARGET flann::flann)
-    message(FATAL_ERROR "AutoLib flann Config must define flann::flann_cpp and flann::flann")
-endif()
+find_package(flann CONFIG REQUIRED)
 set_property(TARGET flann::flann_cpp PROPERTY IMPORTED_GLOBAL TRUE)
 set_property(TARGET flann::flann PROPERTY IMPORTED_GLOBAL TRUE)
+
 add_library(autolib::flann INTERFACE IMPORTED GLOBAL)
 target_link_libraries(autolib::flann INTERFACE flann::flann_cpp flann::flann autolib::lz4)
