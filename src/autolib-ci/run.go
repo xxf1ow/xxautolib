@@ -7,9 +7,11 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -41,6 +43,19 @@ func runCILayer(ctx context.Context, o ciRunOptions) (failure error) {
 	production, err := ciProductionForPlatform(o.Platform, environment)
 	if err != nil {
 		return err
+	}
+	if production.OS == "darwin" && o.Budget == 0 {
+		output, err := exec.CommandContext(ctx, "sysctl", "-n", "hw.logicalcpu").Output()
+		if err != nil {
+			return fmt.Errorf("query Darwin CPU budget: %w", err)
+		}
+		o.Budget, err = strconv.Atoi(strings.TrimSpace(string(output)))
+		if err != nil {
+			return fmt.Errorf("parse Darwin CPU budget: %w", err)
+		}
+		if o.Budget < 1 {
+			o.Budget = 1
+		}
 	}
 	if err := validateCIProductionIdentity(production, environment); err != nil {
 		return err
@@ -110,8 +125,8 @@ func runCILayer(ctx context.Context, o ciRunOptions) (failure error) {
 		if !errors.As(err, &exit) || exit.ExitCode() != 1 || !strings.Contains(string(output), "missing package input") {
 			return fmt.Errorf("importer smoke did not reject controlled missing package: %v\n%s", err, output)
 		}
-		if production.OS == "linux" && len(platform.Roots) > 0 {
-			evidence, err := probeJobserver(ctx, ciJobserverOptions{SourceRoot: source, WorkRoot: filepath.Join(work, "jobserver"), MakeProgram: o.MakeProgram, Budget: o.Budget})
+		if (production.OS == "linux" || production.OS == "darwin") && len(platform.Roots) > 0 {
+			evidence, err := probeJobserver(ctx, ciJobserverOptions{SourceRoot: source, WorkRoot: filepath.Join(work, "jobserver"), MakeProgram: o.MakeProgram, CMakeCommand: o.CMakeCommand, Budget: o.Budget})
 			if err != nil {
 				return err
 			}
@@ -179,7 +194,7 @@ func runCILayer(ctx context.Context, o ciRunOptions) (failure error) {
 			if err := visit(root); err != nil {
 				return err
 			}
-			evidence, err := validateCIRelease(ctx, ciValidationOptions{SourceRoot: source, InstallRoot: install, BuildRoot: work, CMakeCommand: o.CMakeCommand, EvidenceDirectory: filepath.Join(work, "evidence", root), Modules: closure, RootPackages: []string{root}, Context: production})
+			evidence, err := validateCIRelease(ctx, ciValidationOptions{SourceRoot: source, InstallRoot: install, BuildRoot: work, CMakeCommand: o.CMakeCommand, EvidenceDirectory: filepath.Join(work, "evidence", root), Modules: closure, RootPackages: []string{root}, Context: production, MakeProgram: o.MakeProgram})
 			if err != nil {
 				return err
 			}
@@ -236,10 +251,28 @@ func ciProductionForPlatform(platform string, config ciEnvironmentConfig) (ciPro
 	if err != nil {
 		return ciProductionContext{}, err
 	}
-	c := ciProductionContext{OS: strings.ToLower(osName), Arch: arch, Configuration: config.Production.Common.Configuration, CMakeDefaults: config.Production.Common.CMakeDefaults}
+	c := ciProductionContext{OS: strings.ToLower(osName), Arch: arch, Configuration: config.Production.Common.Configuration, CMakeDefaults: maps.Clone(config.Production.Common.CMakeDefaults)}
 	if c.OS == "windows" {
 		w := config.Production.Windows
 		c.Generator, c.Platform, c.Toolset, c.Runtime, c.MultiConfig = w.Generator, w.Platform, w.Toolset, w.Runtime, true
+	} else if c.OS == "darwin" {
+		if runtime.GOOS != "darwin" || runtime.GOARCH != "arm64" {
+			return ciProductionContext{}, fmt.Errorf("Darwin CI requires native darwin-arm64 host")
+		}
+		c.Generator = config.Production.Darwin.Generator
+		c.CMakeDefaults["CMAKE_OSX_ARCHITECTURES"] = config.Production.Darwin.Architectures
+		c.CMakeDefaults["CMAKE_OSX_DEPLOYMENT_TARGET"] = config.Production.Darwin.DeploymentTarget
+		for key, args := range map[string][]string{"CMAKE_C_COMPILER": {"--find", "clang"}, "CMAKE_CXX_COMPILER": {"--find", "clang++"}, "CMAKE_OSX_SYSROOT": {"--sdk", "macosx", "--show-sdk-path"}} {
+			output, err := exec.Command("xcrun", args...).Output()
+			if err != nil {
+				return ciProductionContext{}, fmt.Errorf("resolve Darwin %s: %w", key, err)
+			}
+			value := strings.TrimSpace(string(output))
+			if !filepath.IsAbs(value) {
+				return ciProductionContext{}, fmt.Errorf("Darwin %s must be absolute", key)
+			}
+			c.CMakeDefaults[key] = value
+		}
 	} else {
 		c.Generator = config.Production.Linux.Generator
 	}
@@ -285,7 +318,7 @@ func configureCIProduction(ctx context.Context, o ciRunOptions, c ciProductionCo
 		args = append(args, "-A", c.Platform, "-T", c.Toolset, "-DCMAKE_MSVC_RUNTIME_LIBRARY="+c.Runtime)
 	} else {
 		if o.Budget < 1 || o.MakeProgram == "" {
-			return errors.New("Linux build requires Make program and positive budget")
+			return errors.New("Unix Makefiles build requires Make program and positive budget")
 		}
 		args = append(args, "-DCMAKE_MAKE_PROGRAM="+o.MakeProgram)
 	}
@@ -294,7 +327,7 @@ func configureCIProduction(ctx context.Context, o ciRunOptions, c ciProductionCo
 	}
 	environment := withoutEnvironment(os.Environ(), "AUTOLIB_INSTALL_ROOT", "MAKEFLAGS", "CMAKE_BUILD_PARALLEL_LEVEL")
 	environment = append(environment, "AUTOLIB_INSTALL_ROOT="+install)
-	if c.OS == "linux" {
+	if c.OS == "linux" || c.OS == "darwin" {
 		environment = prependPath(environment, filepath.Dir(o.MakeProgram))
 	}
 	return ciCommand(ctx, o.CMakeCommand, args, o.SourceRoot, environment, filepath.Join(logs, "configure.log"))
@@ -307,11 +340,11 @@ func buildCIModule(ctx context.Context, o ciRunOptions, c ciProductionContext, m
 	}
 	environment := withoutEnvironment(os.Environ(), "AUTOLIB_INSTALL_ROOT", "MAKEFLAGS", "CMAKE_BUILD_PARALLEL_LEVEL")
 	environment = append(environment, "AUTOLIB_INSTALL_ROOT="+install)
-	if c.OS == "linux" {
+	if c.OS == "linux" || c.OS == "darwin" {
 		environment = prependPath(environment, filepath.Dir(o.MakeProgram))
 	}
 	args := []string{"--build", filepath.Join(o.WorkRoot, "build"), "--config", c.Configuration, "--target", module.Target, "--verbose"}
-	if c.OS == "linux" {
+	if c.OS == "linux" || c.OS == "darwin" {
 		args = append(args, "--", fmt.Sprintf("-j%d", o.Budget), "--jobserver-style=fifo")
 	}
 	return ciCommand(ctx, o.CMakeCommand, args, o.SourceRoot, environment, filepath.Join(logs, "build.log"))
@@ -337,7 +370,7 @@ func runCIRun(args []string, stdout, stderr io.Writer) int {
 	}{{"repository", &o.Repository}, {"source-root", &o.SourceRoot}, {"plan", &o.PlanFile}, {"run-identity", &o.RunIdentityFile}, {"platform", &o.Platform}, {"layer", &o.Layer}, {"work-root", &o.WorkRoot}, {"importer-file", &o.ImporterFile}, {"cmake-command", &o.CMakeCommand}, {"make-program", &o.MakeProgram}} {
 		flags.StringVar(item.value, item.key, "", item.key)
 	}
-	flags.IntVar(&o.Budget, "budget", 0, "Linux Make worker budget")
+	flags.IntVar(&o.Budget, "budget", 0, "Native Make worker budget")
 	if err := flags.Parse(args); err != nil {
 		return 1
 	}

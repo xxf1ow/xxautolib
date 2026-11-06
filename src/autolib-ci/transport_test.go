@@ -471,8 +471,8 @@ func transportInputFixture(t *testing.T) installedFixture {
 
 func installedCIFixture(t *testing.T) installedFixture {
 	t.Helper()
-	if runtime.GOOS != "linux" {
-		t.Skip("Linux native fixture; Windows production identity retained by owning tests")
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+		t.Skip("requires native Unix Makefiles fixture")
 	}
 	repository, err := filepath.Abs("../..")
 	if err != nil {
@@ -485,7 +485,7 @@ func installedCIFixture(t *testing.T) installedFixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.RemoveAll(root) })
-	for _, file := range []string{"CMakeLists.txt", "go.mod", "go.sum", ".github/ci-tools.json", "src/autolib.cmake", "tests/autolib/run-installed.cmake", "tests/ci/jobserver/Makefile", "tests/ci/jobserver/child.mk"} {
+	for _, file := range []string{"CMakeLists.txt", "go.mod", "go.sum", ".github/ci-tools.json", "src/autolib.cmake", "tests/autolib/run-installed.cmake", "tests/ci/jobserver/Makefile", "tests/ci/jobserver/child.mk", "tests/ci/jobserver/worker.cmake"} {
 		data, err := os.ReadFile(filepath.Join(repository, file))
 		if err != nil {
 			t.Fatal(err)
@@ -546,6 +546,7 @@ elseif(ROOT_PACKAGES STREQUAL "eigen@5")
   target_compile_definitions(autolib_smoke PRIVATE EXPECTED_EIGEN=5)
 endif()
 file(WRITE "${CMAKE_BINARY_DIR}/prepared-state.cmake" "")
+file(WRITE "${CMAKE_BINARY_DIR}/link-inputs-Release.txt" "")
 add_test(NAME exact_consumer COMMAND autolib_smoke)
 `)
 	writeCIFixture(t, root, "tests/autolib/smoke.cpp", `#include <cstdio>
@@ -562,7 +563,7 @@ int main() {
 }
 `)
 	identity := transportIdentity(t, root)
-	platform := "linux-" + map[string]string{"amd64": "x86_64", "arm64": "aarch64"}[runtime.GOARCH]
+	platform := runtime.GOOS + "-" + map[string]string{"amd64": "x86_64", "arm64": "aarch64"}[runtime.GOARCH]
 	builder := filepath.Join(root, "tools", "builder")
 	command := exec.Command("cmake", "-P", filepath.Join(repository, "src/autolib-builder/go-sdk.cmake"), "--", "build", "-mod=readonly", "-trimpath", "-o", builder, "./src/autolib-builder")
 	command.Dir = repository

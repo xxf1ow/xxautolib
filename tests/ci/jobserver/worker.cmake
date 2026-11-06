@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 3.20)
+string(TIMESTAMP now "%s%f" UTC)
+file(APPEND "${LOG}" "start ${now}\n")
+execute_process(COMMAND "${CMAKE_COMMAND}" -E sleep 0.2 COMMAND_ERROR_IS_FATAL ANY)
+string(TIMESTAMP now "%s%f" UTC)
+file(APPEND "${LOG}" "end ${now}\n")

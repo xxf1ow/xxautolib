@@ -40,6 +40,11 @@ type ciEnvironmentConfig struct {
 			GlibcMax     string `json:"glibc_max"`
 			Generator    string `json:"generator"`
 		} `json:"linux"`
+		Darwin struct {
+			Generator        string `json:"generator"`
+			Architectures    string `json:"architectures"`
+			DeploymentTarget string `json:"deployment_target"`
+		} `json:"darwin"`
 		Windows struct {
 			Generator string `json:"generator"`
 			Platform  string `json:"platform"`
@@ -129,6 +134,10 @@ func validateProductionEnvironment(config ciEnvironmentConfig) error {
 	linux := config.Production.Linux
 	if linux.Distribution != "ubuntu-20.04" || !versionPair.MatchString(linux.GCCVersion) || !strings.HasPrefix(linux.GCCVersion, "9.") || !versionPair.MatchString(linux.GlibcMax) || compareVersion("GLIBC_"+linux.GlibcMax, "GLIBC_2.31") > 0 || linux.Generator != "Unix Makefiles" {
 		return fmt.Errorf("production.linux: expected supported Ubuntu, GCC, glibc, and generator values")
+	}
+	darwin := config.Production.Darwin
+	if darwin.Generator != "Unix Makefiles" || darwin.Architectures != "arm64" || darwin.DeploymentTarget != "15.0" {
+		return fmt.Errorf("production.darwin: requires Unix Makefiles, arm64 and deployment target 15.0")
 	}
 	windows := config.Production.Windows
 	if windows.Generator != "Visual Studio 17 2022" || windows.Platform != "x64" || windows.Toolset != "v143,host=x64" || windows.Runtime != "MultiThreadedDLL" {

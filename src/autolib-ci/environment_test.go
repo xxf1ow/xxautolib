@@ -65,6 +65,7 @@ func TestCIEnvironmentRejectsMissingProductionFields(t *testing.T) {
 	for _, field := range []struct{ section, name string }{
 		{"common", "configuration"}, {"common", "cmake_defaults"},
 		{"linux", "distribution"}, {"linux", "gcc_version"}, {"linux", "glibc_max"}, {"linux", "generator"},
+		{"darwin", "generator"}, {"darwin", "architectures"}, {"darwin", "deployment_target"},
 		{"windows", "generator"}, {"windows", "platform"}, {"windows", "toolset"}, {"windows", "runtime"},
 	} {
 		t.Run(field.section+"/"+field.name, func(t *testing.T) {
@@ -178,6 +179,7 @@ func environmentFixture(t *testing.T) map[string]any {
 		"linux": map[string]any{
 			"distribution": "ubuntu-20.04", "gcc_version": "9.4", "glibc_max": "2.31", "generator": "Unix Makefiles",
 		},
+		"darwin": map[string]any{"generator": "Unix Makefiles", "architectures": "arm64", "deployment_target": "15.0"},
 		"windows": map[string]any{
 			"generator": "Visual Studio 17 2022", "platform": "x64", "toolset": "v143,host=x64", "runtime": "MultiThreadedDLL",
 		},

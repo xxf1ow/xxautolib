@@ -49,6 +49,11 @@
       "glibc_max": "2.31",
       "generator": "Unix Makefiles"
     },
+    "darwin": {
+      "generator": "Unix Makefiles",
+      "architectures": "arm64",
+      "deployment_target": "15.0"
+    },
     "windows": {
       "generator": "Visual Studio 17 2022",
       "platform": "x64",

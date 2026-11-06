@@ -56,9 +56,10 @@ func TestFIFOJobserver(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if evidence.Budget != budget || evidence.Peak > budget {
+		if evidence.Budget != budget || evidence.Peak > budget || (budget == 1 && evidence.Peak != 1) {
 			t.Fatalf("budget exceeded: %+v", evidence)
 		}
+		t.Logf("native GNU Make FIFO: %+v", evidence)
 		if len(evidence.Warnings) != 0 {
 			t.Fatalf("jobserver was not diagnosed as healthy: %+v", evidence)
 		}

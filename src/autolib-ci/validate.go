@@ -19,7 +19,7 @@ import (
 
 type ciValidationOptions struct {
 	SourceRoot, InstallRoot, BuildRoot string
-	CMakeCommand                       string
+	CMakeCommand, MakeProgram          string
 	EvidenceDirectory                  string
 	Modules                            []string
 	RootPackages                       []string
@@ -86,6 +86,9 @@ func validateCIRelease(ctx context.Context, o ciValidationOptions) (ciValidation
 		"-DMODULES=" + strings.Join(o.Modules, ";"),
 		"-DROOT_PACKAGES=" + strings.Join(o.RootPackages, ";"),
 	}
+	if o.MakeProgram != "" {
+		args = append(args, "-DCMAKE_MAKE_PROGRAM="+o.MakeProgram)
+	}
 	defaultNames := make([]string, 0, len(o.Context.CMakeDefaults))
 	for name := range o.Context.CMakeDefaults {
 		defaultNames = append(defaultNames, name)
@@ -111,6 +114,10 @@ func validateCIRelease(ctx context.Context, o ciValidationOptions) (ciValidation
 	}
 	if o.Context.OS == "windows" {
 		if err := verifyWindowsPackageInputs(runRoot, packageRoots); err != nil {
+			return ciValidationResult{EvidenceDirectory: roots.evidence}, err
+		}
+	} else if o.Context.OS == "darwin" {
+		if err := verifyDarwinPackageInputs(runRoot, packageRoots, environment.Production.Darwin.DeploymentTarget); err != nil {
 			return ciValidationResult{EvidenceDirectory: roots.evidence}, err
 		}
 	} else {
@@ -144,7 +151,15 @@ func validateCIProductionIdentity(c ciProductionContext, environment ciEnvironme
 	if c.Configuration != common.Configuration {
 		return fmt.Errorf("CI consumer configuration %q does not match production configuration %q", c.Configuration, common.Configuration)
 	}
-	if !equalStringMap(c.CMakeDefaults, common.CMakeDefaults) {
+	expected := common.CMakeDefaults
+	if c.OS == "darwin" {
+		native, err := ciProductionForPlatform("darwin-aarch64", environment)
+		if err != nil {
+			return err
+		}
+		expected = native.CMakeDefaults
+	}
+	if !equalStringMap(c.CMakeDefaults, expected) {
 		return errors.New("CI consumer CMake defaults do not match the production configuration")
 	}
 	switch c.OS {
@@ -155,6 +170,10 @@ func validateCIProductionIdentity(c ciProductionContext, environment ciEnvironme
 		}
 		if runtime.GOOS != "windows" || runtime.GOARCH != "amd64" {
 			return fmt.Errorf("Windows CI consumer must run natively on windows-x86_64, got %s-%s", runtime.GOOS, runtime.GOARCH)
+		}
+	case "darwin":
+		if c.Arch != "aarch64" || c.Generator != environment.Production.Darwin.Generator || c.Platform != "" || c.Toolset != "" || c.Runtime != "" || c.MultiConfig {
+			return errors.New("Darwin CI consumer requires native ARM64 Unix Makefiles")
 		}
 	case "linux":
 		linux := environment.Production.Linux
@@ -260,6 +279,9 @@ func validationRunFromOutput(output []byte) (string, error) {
 }
 
 func verifyImporterNoCRuntime(path string) error {
+	if runtime.GOOS == "darwin" {
+		return validateDarwinBinary(path, "15.0", true)
+	}
 	if runtime.GOOS == "windows" {
 		file, err := pe.Open(path)
 		if err != nil {

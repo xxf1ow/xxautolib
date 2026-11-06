@@ -19,7 +19,7 @@ func planCI(ctx context.Context, o ciPlanOptions) (ciPlan, error) {
 	if platformSelection != nil && strings.TrimSpace(*platformSelection) == "all" {
 		platformSelection = nil
 	}
-	platforms, err := ciList(platformSelection, ciPlatforms, ciPlatforms, "platform")
+	platforms, err := ciList(platformSelection, ciPlatforms, append(slices.Clone(ciPlatforms), "darwin-aarch64"), "platform")
 	if err != nil {
 		return ciPlan{}, err
 	}
@@ -78,7 +78,7 @@ func planCI(ctx context.Context, o ciPlanOptions) (ciPlan, error) {
 			}
 		}
 	}
-	for _, preferred := range []string{"linux-x86_64", "linux-aarch64", "windows-x86_64"} {
+	for _, preferred := range []string{"linux-x86_64", "linux-aarch64", "windows-x86_64", "darwin-aarch64"} {
 		for _, platform := range plan.Platforms {
 			if platform.ID != preferred {
 				continue
@@ -208,6 +208,8 @@ func ciTarget(platform string) (string, string, error) {
 		return "Windows", "x86_64", nil
 	case "linux-x86_64":
 		return "Linux", "x86_64", nil
+	case "darwin-aarch64":
+		return "Darwin", "aarch64", nil
 	case "linux-aarch64":
 		return "Linux", "aarch64", nil
 	default:
