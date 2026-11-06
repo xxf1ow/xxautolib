@@ -50,6 +50,9 @@ elif name == 'cmake':
         assert args[-1] == './src/autolib-ci', args
         Path(args[args.index('-o') + 1]).write_text('built autolib-ci')
 elif name == 'configure':
+    if os.environ.get('FIXTURE_CONFIGURE_FAILURE'):
+        Path('config.log').write_text('fixture linker diagnostic: library not found\n')
+        sys.exit(77)
     assert os.environ['CC'] == str(root / 'bin/clang')
     assert os.environ['CXX'] == str(root / 'bin/clang++')
     prefix = next(arg.removeprefix('--prefix=') for arg in args if arg.startswith('--prefix='))
@@ -170,6 +173,15 @@ class DarwinPreparationTests(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertEqual(result.stdout, '')
                 self.assertIn('version', result.stderr.lower())
+
+    def test_configure_failure_retains_linker_diagnostic(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            result, events = self.execute(root, self.fixture(root), [{'id': 'darwin-aarch64', 'roots': ['lz4@1.10.0']}], FIXTURE_CONFIGURE_FAILURE='1')
+            self.assertEqual(result.returncode, 77)
+            self.assertEqual(result.stdout, '')
+            self.assertIn('fixture linker diagnostic: library not found', result.stderr)
+            self.assertNotIn('bootstrap-make', [name for name, _ in events])
 
 
 if __name__ == '__main__':
