@@ -16,13 +16,21 @@ jobs:
   validate:
     runs-on: macos-15
     timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        root:
+          - queue@45db9a8b4431
+          - lz4@1.10.0
+          - eigen@3.4.0
+          - eigen@5.0.1
     defaults:
       run:
         shell: bash
     env:
       PLATFORM: darwin-aarch64
-      SELECTED_MODULES: queue@45db9a8b4431,lz4@1.10.0
-      WORK_ROOT: ${{ github.workspace }}/build/ci/${{ github.run_id }}-${{ github.run_attempt }}/darwin-aarch64
+      SELECTED_MODULES: ${{ matrix.root }}
+      WORK_ROOT: ${{ github.workspace }}/build/ci/${{ github.run_id }}-${{ github.run_attempt }}/darwin-aarch64/${{ matrix.root }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -96,29 +104,29 @@ jobs:
       - name: Retain packaged artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: ci-package-${{ github.run_id }}-${{ github.run_attempt }}-darwin-aarch64
-          path: build/ci/${{ github.run_id }}-${{ github.run_attempt }}/darwin-aarch64/transport.tar
+          name: ci-package-${{ github.run_id }}-${{ github.run_attempt }}-darwin-aarch64-${{ matrix.root }}
+          path: build/ci/${{ github.run_id }}-${{ github.run_attempt }}/darwin-aarch64/${{ matrix.root }}/transport.tar
           if-no-files-found: error
       - name: Retain platform result
         if: ${{ always() && !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
-          name: ci-result-${{ github.run_id }}-${{ github.run_attempt }}-darwin-aarch64
+          name: ci-result-${{ github.run_id }}-${{ github.run_attempt }}-darwin-aarch64-${{ matrix.root }}
           path: ${{ env.WORK_ROOT }}/results/*.json
           if-no-files-found: warn
       - name: Retain diagnostics
         if: ${{ always() && !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
-          name: ci-evidence-${{ github.run_id }}-${{ github.run_attempt }}-darwin-aarch64
+          name: ci-evidence-${{ github.run_id }}-${{ github.run_attempt }}-darwin-aarch64-${{ matrix.root }}
           path: |
             build/ci-input/*.json
             ${{ env.WORK_ROOT }}/runner.log
             ${{ env.WORK_ROOT }}/environment.log
-            build/ci/${{ github.run_id }}-${{ github.run_attempt }}/darwin-aarch64/logs/
-            build/ci/${{ github.run_id }}-${{ github.run_attempt }}/darwin-aarch64/evidence/**/*.json
-            build/ci/${{ github.run_id }}-${{ github.run_attempt }}/darwin-aarch64/evidence/**/*.log
-            build/ci/${{ github.run_id }}-${{ github.run_attempt }}/darwin-aarch64/evidence/**/*.txt
-            build/ci/${{ github.run_id }}-${{ github.run_attempt }}/darwin-aarch64/jobserver.json
+            build/ci/${{ github.run_id }}-${{ github.run_attempt }}/darwin-aarch64/${{ matrix.root }}/logs/
+            build/ci/${{ github.run_id }}-${{ github.run_attempt }}/darwin-aarch64/${{ matrix.root }}/evidence/**/*.json
+            build/ci/${{ github.run_id }}-${{ github.run_attempt }}/darwin-aarch64/${{ matrix.root }}/evidence/**/*.log
+            build/ci/${{ github.run_id }}-${{ github.run_attempt }}/darwin-aarch64/${{ matrix.root }}/evidence/**/*.txt
+            build/ci/${{ github.run_id }}-${{ github.run_attempt }}/darwin-aarch64/${{ matrix.root }}/jobserver.json
           if-no-files-found: warn
 
