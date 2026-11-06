@@ -17,6 +17,38 @@ DRIVER = ROOT / "tests/autolib/run-eigen-portability.cmake"
 
 
 class EigenPortabilityTests(unittest.TestCase):
+    def test_container_jobs_use_container_workspace_and_verify_checkout(self):
+        workflow = (ROOT / ".github/workflows/validate-eigen-portability.yml").read_text()
+        for name in ("produce", "linux-pcl"):
+            with self.subTest(job=name), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary).resolve()
+                tools = root / "bin"
+                tools.mkdir()
+                apt = tools / "apt-get"
+                apt.write_text("#!/bin/sh\nexit 0\n")
+                apt.chmod(0o755)
+                subprocess.run(["git", "init", "-q", str(root)], check=True)
+                subprocess.run(["git", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+                                "commit", "--allow-empty", "-qm", "fixture"], cwd=root, check=True)
+                sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
+                env = dict(os.environ, PATH=str(tools) + os.pathsep + os.environ["PATH"],
+                           WORK_ROOT="/host-only/workspace/build/ci/123-2/linux-x86_64",
+                           GITHUB_WORKSPACE=str(root), GITHUB_ENV=str(root / "github-env"),
+                           GITHUB_RUN_ID="123", GITHUB_RUN_ATTEMPT="2", PLATFORM="linux-x86_64",
+                           GITHUB_SHA=sha, GITHUB_REPOSITORY="fixture/repo", GITHUB_REF="refs/heads/task")
+                native = job(workflow, name)
+                boot = subprocess.run(["/bin/bash", "-euc", step_script(native, "Bootstrap container")],
+                                      env=env, cwd=root, text=True, capture_output=True)
+                self.assertEqual(boot.returncode, 0, boot.stderr)
+                self.assertTrue((root / "github-env").is_file(), "container work root was not exported")
+                self.assertIn(f"WORK_ROOT={root}/build/ci/123-2/linux-x86_64", (root / "github-env").read_text())
+                env.update(GIT_TEST_ASSUME_DIFFERENT_OWNER="1", GIT_CONFIG_GLOBAL=str(root / "empty-global"),
+                           GIT_CONFIG_NOSYSTEM="1")
+                identity = subprocess.run([os.sys.executable, "-c", step_script(native, "Record source identity")],
+                                          env=env, cwd=root, text=True, capture_output=True)
+                self.assertEqual(identity.returncode, 0, identity.stderr)
+                self.assertEqual(json.loads((root / "build/ci-input/run.json").read_text())["checkout_sha"], sha)
+
     def test_windows_and_darwin_consumers_use_linux_archives_in_both_locations(self):
         workflow = ROOT / ".github/workflows/validate-eigen-portability.yml"
         for name, platform, kind in (("windows", "windows-x86_64", "eigen"),

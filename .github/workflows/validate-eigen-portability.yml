@@ -84,6 +84,7 @@ jobs:
         run: |
           apt-get update
           apt-get install -y --no-install-recommends ca-certificates curl git jq python3
+          printf 'WORK_ROOT=%s/build/ci/%s-%s/%s\n' "$GITHUB_WORKSPACE" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$PLATFORM" >> "$GITHUB_ENV"
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
@@ -100,7 +101,7 @@ jobs:
         run: |
           import json, os, subprocess
           from pathlib import Path
-          checkout=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+          checkout=subprocess.check_output(['git','-c',f'safe.directory={Path.cwd().resolve()}','rev-parse','HEAD'],text=True).strip()
           if checkout!=os.environ['GITHUB_SHA']:raise SystemExit('Checkout does not match source SHA')
           p=Path('build/ci-input/run.json');p.parent.mkdir(parents=True,exist_ok=True)
           p.write_text(json.dumps(dict(repository=os.environ['GITHUB_REPOSITORY'],ref=os.environ['GITHUB_REF'],sha=os.environ['GITHUB_SHA'],checkout_sha=checkout,run_id=os.environ['GITHUB_RUN_ID'],attempt=os.environ['GITHUB_RUN_ATTEMPT'])))
@@ -224,7 +225,7 @@ jobs:
         run: |
           import json, os, subprocess
           from pathlib import Path
-          checkout=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+          checkout=subprocess.check_output(['git','-c',f'safe.directory={Path.cwd().resolve()}','rev-parse','HEAD'],text=True).strip()
           if checkout!=os.environ['GITHUB_SHA']:raise SystemExit('Checkout does not match source SHA')
           p=Path('build/ci-input/run.json');p.parent.mkdir(parents=True,exist_ok=True)
           p.write_text(json.dumps(dict(repository=os.environ['GITHUB_REPOSITORY'],ref=os.environ['GITHUB_REF'],sha=os.environ['GITHUB_SHA'],checkout_sha=checkout,run_id=os.environ['GITHUB_RUN_ID'],attempt=os.environ['GITHUB_RUN_ATTEMPT'])))
@@ -348,7 +349,7 @@ jobs:
         run: |
           import json, os, subprocess
           from pathlib import Path
-          checkout=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+          checkout=subprocess.check_output(['git','-c',f'safe.directory={Path.cwd().resolve()}','rev-parse','HEAD'],text=True).strip()
           if checkout!=os.environ['GITHUB_SHA']:raise SystemExit('Checkout does not match source SHA')
           p=Path('build/ci-input/run.json');p.parent.mkdir(parents=True,exist_ok=True)
           p.write_text(json.dumps(dict(repository=os.environ['GITHUB_REPOSITORY'],ref=os.environ['GITHUB_REF'],sha=os.environ['GITHUB_SHA'],checkout_sha=checkout,run_id=os.environ['GITHUB_RUN_ID'],attempt=os.environ['GITHUB_RUN_ATTEMPT'])))
@@ -436,6 +437,7 @@ jobs:
         run: |
           apt-get update
           apt-get install -y --no-install-recommends ca-certificates curl git jq python3
+          printf 'WORK_ROOT=%s/build/ci/%s-%s/%s\n' "$GITHUB_WORKSPACE" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$PLATFORM" >> "$GITHUB_ENV"
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
@@ -456,7 +458,7 @@ jobs:
         run: |
           import json, os, subprocess
           from pathlib import Path
-          checkout=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+          checkout=subprocess.check_output(['git','-c',f'safe.directory={Path.cwd().resolve()}','rev-parse','HEAD'],text=True).strip()
           if checkout!=os.environ['GITHUB_SHA']:raise SystemExit('Checkout does not match source SHA')
           p=Path('build/ci-input/run.json');p.parent.mkdir(parents=True,exist_ok=True)
           p.write_text(json.dumps(dict(repository=os.environ['GITHUB_REPOSITORY'],ref=os.environ['GITHUB_REF'],sha=os.environ['GITHUB_SHA'],checkout_sha=checkout,run_id=os.environ['GITHUB_RUN_ID'],attempt=os.environ['GITHUB_RUN_ATTEMPT'])))
