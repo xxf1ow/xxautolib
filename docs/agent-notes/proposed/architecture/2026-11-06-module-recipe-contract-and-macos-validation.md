@@ -281,6 +281,8 @@ Homebrew 依赖可改变可选功能探测、动态链接及最低运行要求�
 
 `tests/autolib/run-installed.cmake` 对两个独立 Eigen 消费者及 queue/lz4 组合，在原安装和复制搬迁安装各执行一次 configure/build/CTest，六次均为 1/1 通过，Eigen 分别报告 3.4.0、5.0.1。搬迁组运行时隐藏本任务原安装根，结束后还原。生产、增量 Eigen 重建及消费日志分别为任务根下 `production.log`、`eigen-rebuild.log`、`consumption.log`，逐消费者证据位于 `consumers/install/`、`consumers/relocated/`。
 
+独立总审查在 `05ad429..e54dbac` 发现一项平台过滤顺序缺陷：仅在 Windows 覆盖声明复制映射的 copy 包，会提前阻断 Darwin 自动发现。`TestPlatformSelectionCopyMappings` 先复现失败，再将非空映射完整性限制为有效目标检查；Windows 映射读取、支持目标缺映射拒绝及未选分支坏字段拒绝均通过。受影响的字段、过滤、describe 与全配方检查六项通过，未重跑未失效的真实库消费。审查无其他已证实 Critical/Minor；托管环境、跨平台同归档、PCL/example 和 PowerShell 执行仍为下节缺口。
+
 ### 尚未覆盖
 
 本阶段没有推送、远端 Actions、发布或合并。上述本机证据不证明 macOS 15 实际运行，也不证明全部 31 配方已支持 Darwin。完整逐版本 macos-15 结果、必要系统库和补丁、同一 Linux Eigen 归档跨 Windows/macOS 的摘要与消费、PCL 组合及 example 实机导入留待第二阶段；硬件和图形功能按实际条件单列。失败候选的具名阻断与重新尝试条件届时写入本节，不能以平台过滤或 CI 成功代替。

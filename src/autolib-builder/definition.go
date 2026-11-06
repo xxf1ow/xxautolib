@@ -615,7 +615,7 @@ func readDefinition(path, systemName, architecture string, requireTarget bool) (
 		d.Patches = append(d.Patches, patchDefinition{File: filepath.Clean(file), Resource: r})
 	}
 	copies, ok := optional(m, "copy", []any{}).([]any)
-	if !ok || (d.Kind == "copy" && len(copies) == 0) {
+	if !ok || (requireTarget && d.Kind == "copy" && len(copies) == 0) {
 		return nil, fmt.Errorf("copy: expected nonempty installation mappings for copy modules")
 	}
 	if d.Kind == "cmake" && len(copies) > 0 {

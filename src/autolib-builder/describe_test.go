@@ -354,3 +354,45 @@ func TestDescribeCISelection(t *testing.T) {
 		}
 	})
 }
+
+func TestPlatformSelectionCopyMappings(t *testing.T) {
+	root := t.TempDir()
+	describeRootInputs(t, root)
+	path := definitionFile(t, root, "windows-copy", "copy", `package_platforms=['windows-x86_64']
+[platforms.windows-x86_64.source]
+GIT_REPOSITORY='unused'
+GIT_TAG='0123456789012345678901234567890123456789'
+[[platforms.windows-x86_64.copy]]
+files=['header.h']
+destination='include'
+`)
+	definitionFile(t, root, "native", "cmake", "package_platforms=['darwin-aarch64']\n"+testSource)
+	got, err := describeSelection(root, "Darwin", "arm64", nil, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(got.Roots, []string{"native@1.0"}) || len(got.FilteredRoots) != 1 || got.FilteredRoots[0].Code != "unsupported_platform" || got.FilteredRoots[0].Root != "windows-copy@1.0" {
+		t.Fatalf("discovery: %+v", got)
+	}
+	if _, err := loadModuleClosure(root, []string{"windows-copy"}, "Darwin", "arm64"); err == nil || !strings.Contains(err.Error(), "unsupported platform") || strings.Contains(err.Error(), "installation mappings") {
+		t.Fatalf("explicit request must report platform before mapping requirements: %v", err)
+	}
+	selected, err := loadDefinition(path, "Windows", "x86_64")
+	if err != nil || len(selected.Copies) != 1 || selected.Source == nil {
+		t.Fatalf("Windows mappings: %+v %v", selected, err)
+	}
+	t.Run("missing supported mappings still fail", func(t *testing.T) {
+		r := t.TempDir()
+		describeRootInputs(t, r)
+		definitionFile(t, r, "broken", "copy", "package_platforms=['darwin-aarch64']\n"+testSource)
+		if _, err := describeSelection(r, "Darwin", "arm64", nil, true); err == nil || !strings.Contains(err.Error(), "installation mappings") {
+			t.Fatalf("accepted missing effective copy: %v", err)
+		}
+	})
+	t.Run("invalid unselected syntax still fails", func(t *testing.T) {
+		putFile(t, path, readFile(t, path)+"unknown=true\n")
+		if _, err := describeSelection(root, "Darwin", "arm64", nil, true); err == nil || !strings.Contains(err.Error(), "unknown field") {
+			t.Fatalf("accepted invalid unselected mapping: %v", err)
+		}
+	})
+}
