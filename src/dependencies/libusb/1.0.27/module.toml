@@ -2,6 +2,7 @@
 name = "libusb"
 type = "cmake"
 version = "1.0.27"
+supported_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
 sentinel = "include/libusb-1.0/libusb.h"
 
 [source]

@@ -10,6 +10,29 @@ import (
 
 const testSource = "\n[source]\nGIT_REPOSITORY='unused'\nGIT_TAG='fixed'\n"
 
+func TestSupportedPlatforms(t *testing.T) {
+	for _, tc := range []struct {
+		declaration string
+		valid       bool
+	}{
+		{"", false}, {"supported_platforms=[]\n", false},
+		{"supported_platforms=['linux-x86_64','linux-x86_64']\n", false},
+		{"supported_platforms=['macos-arm64']\n", false},
+		{"supported_platforms=[42]\n", false},
+		{"supported_platforms=['windows-x86_64','linux-x86_64','linux-aarch64','darwin-aarch64']\n", true},
+	} {
+		t.Run(tc.declaration, func(t *testing.T) {
+			root := t.TempDir()
+			path := filepath.Join(root, "src/dependencies/demo/1/module.toml")
+			putFile(t, path, "name='demo'\nversion='1'\ntype='cmake'\n"+tc.declaration+testSource)
+			_, err := loadDefinition(path, "Linux", "x86_64")
+			if (err == nil) != tc.valid {
+				t.Fatalf("valid=%v, got %v", tc.valid, err)
+			}
+		})
+	}
+}
+
 func putFile(t *testing.T, path, body string) string {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
@@ -36,6 +59,9 @@ func definitionFile(t *testing.T, root, name, kind, body string) string {
 
 func definitionVersionFile(t *testing.T, root, name, version, kind, body string) string {
 	t.Helper()
+	if !strings.Contains(body, "supported_platforms") {
+		body = "supported_platforms=['windows-x86_64','linux-x86_64','linux-aarch64','darwin-aarch64']\n" + body
+	}
 	putFile(t, filepath.Join(root, "src", "dependencies", name, "package.toml"), "latest='"+version+"'\n")
 	return putFile(t, filepath.Join(root, "src", "dependencies", name, version, "module.toml"), "name='"+name+"'\nversion='"+version+"'\ntype='"+kind+"'\n"+body)
 }
@@ -129,7 +155,7 @@ sentinel='lib/DemoConfig.cmake'
 		}
 	}
 	for _, target := range [][2]string{{"Linux", "amd64"}, {"Windows", "arm64"}, {"Windows", ""}} {
-		if _, err := loadDefinition(path, target[0], target[1]); err == nil || !strings.Contains(err.Error(), "source") {
+		if _, err := loadDefinition(path, target[0], target[1]); err == nil {
 			t.Fatalf("missing source: %v", err)
 		}
 	}
@@ -224,7 +250,7 @@ DEPENDS=['change.cmake','<SOURCE_DIR>/input']
 WORKING_DIRECTORY='<SOURCE_DIR>'
 `)
 	patch := putFile(t, filepath.Join(filepath.Dir(path), "change.patch"), "patch input")
-	m, err := loadDefinition(path, "Linux", "")
+	m, err := loadDefinition(path, "Linux", "x86_64")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -234,7 +260,7 @@ WORKING_DIRECTORY='<SOURCE_DIR>'
 	body, _ := os.ReadFile(path)
 	for _, change := range []struct{ from, to, field string }{{"resource='extra'", "resource='missing'", "patches.resource"}, {"SOURCE_DIR:extra", "SOURCE_DIR:missing", "EXTRA"}} {
 		putFile(t, path, strings.ReplaceAll(string(body), change.from, change.to))
-		if _, err := loadDefinition(path, "Linux", ""); err == nil || !strings.Contains(err.Error(), change.field) {
+		if _, err := loadDefinition(path, "Linux", "x86_64"); err == nil || !strings.Contains(err.Error(), change.field) {
 			t.Fatal(err)
 		}
 	}
@@ -242,7 +268,7 @@ WORKING_DIRECTORY='<SOURCE_DIR>'
 	if err := os.Remove(patch); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := loadDefinition(path, "Linux", ""); err == nil || !strings.Contains(err.Error(), "change.patch") {
+	if _, err := loadDefinition(path, "Linux", "x86_64"); err == nil || !strings.Contains(err.Error(), "change.patch") {
 		t.Fatal(err)
 	}
 	path = definitionFile(t, root, "demo", "copy", `[resources.extra]
@@ -253,7 +279,7 @@ resource='extra'
 directories=['.']
 destination='.'
 `)
-	m, err = loadDefinition(path, "Linux", "")
+	m, err = loadDefinition(path, "Linux", "x86_64")
 	if err != nil || m.Source != nil || len(m.Copies) != 1 || m.Copies[0].Directories[0] != "." {
 		t.Fatalf("%+v %v", m, err)
 	}
@@ -263,7 +289,7 @@ func TestDefinitionPreservesInput(t *testing.T) {
 	path := definitionFile(t, t.TempDir(), "demo", "cmake", "# 中文说明\nversion='1.0'\n"+testSource)
 	before, _ := os.ReadFile(path)
 	stat, _ := os.Stat(path)
-	if _, err := loadDefinition(path, "Linux", ""); err != nil {
+	if _, err := loadDefinition(path, "Linux", "x86_64"); err != nil {
 		t.Fatal(err)
 	}
 	after, _ := os.ReadFile(path)

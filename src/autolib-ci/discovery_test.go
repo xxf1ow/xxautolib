@@ -41,6 +41,9 @@ func discoveryModule(t *testing.T, root, name string, adapter bool, depends stri
 
 func discoveryVersion(t *testing.T, root, name, version string, adapter bool, depends string) {
 	t.Helper()
+	if !strings.Contains(depends, "supported_platforms") {
+		depends = "supported_platforms=['windows-x86_64','linux-x86_64','linux-aarch64','darwin-aarch64']\n" + depends
+	}
 	declaration := "name='" + name + "'\nversion='" + version + "'\ntype='cmake'\n" + depends + "\n[source]\nGIT_REPOSITORY='fixture'\nGIT_TAG='fixed'\n"
 	writeCIFixture(t, root, "src/dependencies/"+name+"/package.toml", "latest='"+version+"'\n")
 	writeCIFixture(t, root, "src/dependencies/"+name+"/"+version+"/module.toml", declaration)

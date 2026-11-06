@@ -46,19 +46,21 @@ func planCI(ctx context.Context, o ciPlanOptions) (ciPlan, error) {
 		if err != nil {
 			return ciPlan{}, err
 		}
-		description := moduleDescription{SystemName: systemName, Architecture: architecture, Roots: []string{}, Modules: []describedModule{}, GoModuleFiles: []string{}, BuilderFiles: []string{}}
+		description := moduleDescription{SystemName: systemName, Architecture: architecture, Roots: []string{}, RequestedRoots: []string{}, FilteredRoots: []filteredRoot{}, Modules: []describedModule{}, GoModuleFiles: []string{}, BuilderFiles: []string{}}
 		if !toolOnly {
 			description, err = readModuleDescription(ctx, o.BuilderFile, o.SourceRoot, systemName, architecture, selected)
 			if err != nil {
 				return ciPlan{}, fmt.Errorf("platform %s: %w", platform, err)
 			}
 		}
-		requested := slices.Clone(description.Roots)
-		modules, roots, err := effectiveCIModules(o.SourceRoot, description.Modules, description.Roots)
+		requested := slices.Clone(description.RequestedRoots)
+		modules, roots, adapterReasons, err := effectiveCIModules(o.SourceRoot, description.Modules, description.Roots)
 		if err != nil {
 			return ciPlan{}, fmt.Errorf("platform %s: %w", platform, err)
 		}
 		description.Modules, description.Roots = modules, roots
+		reasons := append(slices.Clone(description.FilteredRoots), adapterReasons...)
+		description.FilteredRoots = reasons
 		filtered := []string{}
 		for _, root := range requested {
 			if !slices.Contains(roots, root) {
@@ -69,7 +71,7 @@ func planCI(ctx context.Context, o ciPlanOptions) (ciPlan, error) {
 		if err != nil {
 			return ciPlan{}, err
 		}
-		plan.Platforms = append(plan.Platforms, ciPlatformPlan{ID: platform, RequestedRoots: requested, FilteredRoots: filtered, Roots: roots, Description: description, Layers: layers, SystemDependencies: ciSystemDependencies(description.Modules)})
+		plan.Platforms = append(plan.Platforms, ciPlatformPlan{ID: platform, RequestedRoots: requested, FilteredRoots: filtered, FilterReasons: reasons, Roots: roots, Description: description, Layers: layers, SystemDependencies: ciSystemDependencies(description.Modules)})
 		for _, root := range roots {
 			if !slices.Contains(plan.RequestedModules, root) {
 				plan.RequestedModules = append(plan.RequestedModules, root)
@@ -116,7 +118,7 @@ func readableCIAdapter(file string) (bool, error) {
 
 func moduleIdentity(module describedModule) string { return module.Name + "@" + module.Version }
 
-func effectiveCIModules(root string, modules []describedModule, requested []string) ([]describedModule, []string, error) {
+func effectiveCIModules(root string, modules []describedModule, requested []string) ([]describedModule, []string, []filteredRoot, error) {
 	byName := map[string]describedModule{}
 	eligible := map[string]bool{}
 	for _, module := range modules {
@@ -125,26 +127,27 @@ func effectiveCIModules(root string, modules []describedModule, requested []stri
 		if module.AdapterFile != "" {
 			ok, err := readableCIAdapter(filepath.Join(root, filepath.FromSlash(module.AdapterFile)))
 			if err != nil {
-				return nil, nil, err
+				return nil, nil, nil, err
 			}
 			eligible[identity] = ok
 		}
 	}
 	// Validate the complete described graph before excluding ineligible roots.
 	if _, err := ciLayers(modules); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	var qualifies func(string) bool
-	qualifies = func(name string) bool {
+	var blocked func(string, []string) []string
+	blocked = func(name string, chain []string) []string {
+		chain = append(slices.Clone(chain), name)
 		if !eligible[name] {
-			return false
+			return chain
 		}
 		for _, dependency := range byName[name].Depends {
-			if !qualifies(dependency) {
-				return false
+			if reason := blocked(dependency, chain); reason != nil {
+				return reason
 			}
 		}
-		return true
+		return nil
 	}
 	keep := map[string]bool{}
 	var add func(string)
@@ -158,8 +161,11 @@ func effectiveCIModules(root string, modules []describedModule, requested []stri
 		}
 	}
 	roots := []string{}
+	reasons := []filteredRoot{}
 	for _, name := range requested {
-		if qualifies(name) {
+		if chain := blocked(name, nil); chain != nil {
+			reasons = append(reasons, filteredRoot{name, "missing_adapter", chain})
+		} else {
 			roots = append(roots, name)
 			add(name)
 		}
@@ -170,7 +176,7 @@ func effectiveCIModules(root string, modules []describedModule, requested []stri
 			result = append(result, module)
 		}
 	}
-	return result, roots, nil
+	return result, roots, reasons, nil
 }
 
 func ciList(value *string, fallback, allowed []string, label string) ([]string, error) {

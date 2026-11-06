@@ -2,6 +2,7 @@
 name = "boost"
 type = "cmake"
 version = "1.87.0"
+supported_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
 depends = ["zlib"]
 sentinel = "lib/cmake/Boost-1.87.0/BoostConfig.cmake"
 config_dir = "lib/cmake/Boost-1.87.0"

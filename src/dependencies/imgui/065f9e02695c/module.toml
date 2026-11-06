@@ -2,6 +2,7 @@
 name = "imgui"
 type = "cmake"
 version = "065f9e02695c"
+supported_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
 depends = ["sdl3"]
 sentinel = "include/ImGui/imgui.h"
 

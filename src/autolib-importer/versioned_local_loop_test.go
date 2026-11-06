@@ -177,6 +177,7 @@ func loopModule(t *testing.T, producer, name, version, dependency, upstream, ada
 	loopCommand(t, "git", "-C", upstream, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "commit", "-m", "fixture")
 	sha := strings.TrimSpace(loopCommand(t, "git", "-C", upstream, "rev-parse", "HEAD"))
 	body := fmt.Sprintf("name=%q\nversion=%q\ntype='cmake'\nconfig_dir='lib/cmake/%s'\n", name, version, map[string]string{"dep": "Dep", "probe": "Probe"}[name])
+	body += "supported_platforms=['windows-x86_64','linux-x86_64','linux-aarch64','darwin-aarch64']\n"
 	if dependency != "" {
 		body += fmt.Sprintf("depends=[%q]\n", dependency)
 	}

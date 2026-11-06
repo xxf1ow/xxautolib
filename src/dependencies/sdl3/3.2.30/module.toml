@@ -2,6 +2,7 @@
 name = "sdl3"
 type = "cmake"
 version = "3.2.30"
+supported_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
 sentinel = "include/SDL3/SDL.h"
 config_dir = "lib/cmake/SDL3"
 package_name = "SDL3"

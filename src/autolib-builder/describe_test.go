@@ -3,12 +3,95 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
 	"testing"
 )
+
+func TestPlatformSelection(t *testing.T) {
+	root := t.TempDir()
+	describeRootInputs(t, root)
+	for _, item := range []struct{ name, extra, platforms string }{
+		{"shared", "", "'linux-x86_64','darwin-aarch64'"},
+		{"good", "depends=['shared']\n", "'linux-x86_64','darwin-aarch64'"},
+		{"bad", "depends=['shared','blocked']\n", "'darwin-aarch64'"},
+		{"blocked", "", "'linux-x86_64'"},
+	} {
+		definitionFile(t, root, item.name, "cmake", "supported_platforms=["+item.platforms+"]\n"+item.extra+testSource)
+	}
+	got, err := describeSelection(root, "Darwin", "arm64", []string{"bad", "good", "blocked"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(got.Roots, []string{"good@1.0"}) || len(got.Modules) != 2 || got.Modules[0].Name != "shared" {
+		t.Fatalf("effective closure: %+v", got)
+	}
+	data, _ := json.Marshal(got)
+	var wire struct {
+		Requested []string `json:"requested_roots"`
+		Filtered  []struct {
+			Root, Code string
+			Chain      []string
+		} `json:"filtered_roots"`
+	}
+	if err := json.Unmarshal(data, &wire); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(wire.Requested, []string{"bad@1.0", "good@1.0", "blocked@1.0"}) || len(wire.Filtered) != 2 || wire.Filtered[0].Code != "unsupported_dependency_platform" || !slices.Equal(wire.Filtered[0].Chain, []string{"bad@1.0", "blocked@1.0"}) || wire.Filtered[1].Code != "unsupported_platform" {
+		t.Fatalf("filter reasons: %s", data)
+	}
+	if _, err := loadModuleClosure(root, []string{"bad"}, "Darwin", "arm64"); err == nil || !strings.Contains(err.Error(), "bad@1.0 -> blocked@1.0") {
+		t.Fatalf("explicit unsupported request: %v", err)
+	}
+	build := filepath.Join(root, "build-explicit")
+	if err := generate(buildContext{SourceRoot: root, BuildRoot: build, SystemName: "Darwin", Architecture: "arm64"}, []string{"bad"}); err == nil {
+		t.Fatal("explicit generation accepted unsupported dependency")
+	}
+	if _, err := os.Stat(filepath.Join(build, "generated")); !os.IsNotExist(err) {
+		t.Fatalf("unsupported request generated build targets: %v", err)
+	}
+	all, err := loadModuleClosure(root, nil, "Darwin", "arm64")
+	if err != nil || len(all) != 2 {
+		t.Fatalf("discovery must filter: %v, %v", all, err)
+	}
+	for _, kind := range []string{"missing dependency", "cycle", "bad TOML", "version conflict", "unknown root"} {
+		t.Run(kind, func(t *testing.T) {
+			r := t.TempDir()
+			describeRootInputs(t, r)
+			body := "supported_platforms=['linux-x86_64']\n"
+			request := "broken"
+			switch kind {
+			case "missing dependency":
+				body += "depends=['absent']\n"
+			case "cycle":
+				body += "depends=['broken']\n"
+			case "bad TOML":
+				body += "unknown=true\n"
+			case "version conflict":
+				body += "depends=['dep@1','dep@2']\n"
+				for _, v := range []string{"1", "2"} {
+					definitionVersionFile(t, r, "dep", v, "cmake", "supported_platforms=['linux-x86_64']\n"+testSource)
+				}
+			case "unknown root":
+				request = "absent"
+			}
+			definitionFile(t, r, "broken", "cmake", body+testSource)
+			if _, err := describeSelection(r, "Darwin", "arm64", []string{request}, false); err == nil {
+				t.Fatal("invalid graph was swallowed as unsupported")
+			}
+		})
+	}
+	t.Run("real ONNX missing Darwin source", func(t *testing.T) {
+		repository, _ := filepath.Abs(filepath.Join("..", ".."))
+		got, err := describeSelection(repository, "Darwin", "arm64", []string{"onnxruntime", "queue", "lz4"}, false)
+		if err != nil || !slices.Equal(got.Roots, []string{"queue@45db9a8b4431", "lz4@1.10.0"}) {
+			t.Fatalf("platform must precede source requirements: %+v %v", got, err)
+		}
+	})
+}
 
 func TestDescribeParity(t *testing.T) {
 	f := newFixture(t)

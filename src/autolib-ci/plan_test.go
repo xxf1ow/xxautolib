@@ -11,6 +11,64 @@ import (
 	"testing"
 )
 
+func TestCIPlatformFiltering(t *testing.T) {
+	builder := discoveryBuilder(t)
+	root := discoveryRoot(t)
+	for _, item := range []struct {
+		name, extra string
+		adapter     bool
+	}{
+		{"shared", "", true}, {"good", "depends=['shared']\n", true},
+		{"blocked", "supported_platforms=['windows-x86_64']\n", true},
+		{"bad", "depends=['shared','blocked']\n", true}, {"local", "", false},
+	} {
+		extra := item.extra
+		if !strings.Contains(extra, "supported_platforms") {
+			extra = "supported_platforms=['linux-x86_64']\n" + extra
+		}
+		discoveryModule(t, root, item.name, item.adapter, extra)
+	}
+	for _, selection := range []string{"blocked,good,local,bad", "blocked,bad", "all"} {
+		plan, err := planCI(context.Background(), ciPlanOptions{SourceRoot: root, BuilderFile: builder, Platforms: stringPointer("linux-x86_64"), Modules: &selection})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(plan.Platforms) != 1 {
+			t.Fatalf("lost selected platform: %+v", plan)
+		}
+		p := plan.Platforms[0]
+		if selection == "blocked,bad" {
+			if len(p.Roots) != 0 || len(p.Layers) != 0 || len(p.FilteredRoots) != 2 {
+				t.Fatalf("zero-library plan: %+v", p)
+			}
+			continue
+		}
+		if !reflect.DeepEqual(p.Layers, [][]string{{"shared@1.0"}, {"good@1.0"}}) || len(p.FilteredRoots) != 3 {
+			t.Fatalf("closure/filtering: %+v", p)
+		}
+		data, _ := json.Marshal(p)
+		var wire struct {
+			Reasons []struct {
+				Root, Code string
+				Chain      []string
+			} `json:"filter_reasons"`
+		}
+		if err := json.Unmarshal(data, &wire); err != nil {
+			t.Fatal(err)
+		}
+		reasons := map[string]string{}
+		for _, reason := range wire.Reasons {
+			reasons[reason.Root] = reason.Code
+			if reason.Root == "bad@1.0" && !reflect.DeepEqual(reason.Chain, []string{"bad@1.0", "blocked@1.0"}) {
+				t.Fatal(reason)
+			}
+		}
+		if reasons["bad@1.0"] != "unsupported_dependency_platform" || reasons["blocked@1.0"] != "unsupported_platform" || reasons["local@1.0"] != "missing_adapter" {
+			t.Fatalf("missing reasons: %s", data)
+		}
+	}
+}
+
 func TestCIPlanInputs(t *testing.T) {
 	root := fakePlanRoot(t)
 	builder, err := os.Executable()

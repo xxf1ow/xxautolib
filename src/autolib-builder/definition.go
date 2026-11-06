@@ -317,6 +317,11 @@ func optional(m map[string]any, key string, fallback any) any {
 }
 
 func loadDefinition(path, systemName, architecture string) (definition *moduleDefinition, err error) {
+	return readDefinition(path, systemName, architecture, true)
+}
+
+// requireTarget 仅控制当前平台输入的完整性；所有声明的语法均须有效。
+func readDefinition(path, systemName, architecture string, requireTarget bool) (definition *moduleDefinition, err error) {
 	path, err = filepath.Abs(path)
 	if err != nil {
 		return nil, err
@@ -334,11 +339,28 @@ func loadDefinition(path, systemName, architecture string) (definition *moduleDe
 	if err = toml.Unmarshal(content, &raw); err != nil {
 		return nil, err
 	}
-	m, err := table(raw, "module", "name", "type", "version", "source", "resources", "cmake", "patches", "steps", "copy", "platforms", "sentinel", "depends", "config_dir", "pkgconfig_dir", "package_name", "platform_independent", "system_dependencies")
+	m, err := table(raw, "module", "name", "type", "version", "source", "resources", "cmake", "patches", "steps", "copy", "platforms", "sentinel", "depends", "config_dir", "pkgconfig_dir", "package_name", "platform_independent", "system_dependencies", "supported_platforms")
 	if err != nil {
 		return nil, err
 	}
 	d := &moduleDefinition{Path: path}
+	if d.SupportedPlatforms, err = stringArray(m["supported_platforms"], "supported_platforms"); err != nil {
+		return nil, err
+	}
+	if len(d.SupportedPlatforms) == 0 {
+		return nil, fmt.Errorf("supported_platforms: expected at least one platform")
+	}
+	seenPlatforms := map[string]bool{}
+	for _, platform := range d.SupportedPlatforms {
+		if !slices.Contains(recipePlatforms, platform) || seenPlatforms[platform] {
+			return nil, fmt.Errorf("supported_platforms: unknown or duplicate platform %q", platform)
+		}
+		seenPlatforms[platform] = true
+	}
+	platformID, err := buildPlatform(systemName, architecture)
+	if err != nil {
+		return nil, err
+	}
 	d.SystemDependencies = map[string][]string{}
 	if value, ok := m["system_dependencies"]; ok {
 		dependencies, err := table(value, "system_dependencies", "apt", "choco")
@@ -423,6 +445,10 @@ func loadDefinition(path, systemName, architecture string) (definition *moduleDe
 	if d.Source, d.Resources, err = sources(m, "module"); err != nil {
 		return nil, err
 	}
+	declaredResources := map[string]bool{}
+	for resource := range d.Resources {
+		declaredResources[resource] = true
+	}
 	if d.Cache, d.SourceSubdir, err = parseCache(optional(m, "cmake", map[string]any{}), "cmake", true); err != nil {
 		return nil, err
 	}
@@ -432,7 +458,7 @@ func loadDefinition(path, systemName, architecture string) (definition *moduleDe
 	if d.Steps, err = parseSteps(optional(m, "steps", []any{}), filepath.Dir(path), "steps"); err != nil {
 		return nil, err
 	}
-	platforms, err := table(optional(m, "platforms", map[string]any{}), "platforms", "windows", "linux")
+	platforms, err := table(optional(m, "platforms", map[string]any{}), "platforms", "windows", "linux", "darwin")
 	if err != nil {
 		return nil, err
 	}
@@ -458,7 +484,10 @@ func loadDefinition(path, systemName, architecture string) (definition *moduleDe
 		if err != nil {
 			return nil, err
 		}
-		selected := map[string]string{"Windows": "windows", "Linux": "linux"}[systemName] == platform
+		for resource := range resources {
+			declaredResources[resource] = true
+		}
+		selected := map[string]string{"Windows": "windows", "Linux": "linux", "Darwin": "darwin"}[systemName] == platform
 		merge := func(primary *sourceDefinition, resources map[string]sourceDefinition) {
 			if primary != nil {
 				d.Source = primary
@@ -489,6 +518,9 @@ func loadDefinition(path, systemName, architecture string) (definition *moduleDe
 			if err != nil {
 				return nil, err
 			}
+			for resource := range resources {
+				declaredResources[resource] = true
+			}
 			if selected && normalizeArchitecture(architecture) == arch {
 				merge(primary, resources)
 			}
@@ -498,7 +530,10 @@ func loadDefinition(path, systemName, architecture string) (definition *moduleDe
 	d.PkgconfigDir = selectedMetadata["pkgconfig_dir"]
 	d.PackageName = selectedMetadata["package_name"]
 	d.Sentinel = selectedMetadata["sentinel"]
-	if d.Kind == "cmake" && d.Source == nil {
+	if requireTarget && !slices.Contains(d.SupportedPlatforms, platformID) {
+		return nil, fmt.Errorf("%s@%s: unsupported platform %s", d.Name, d.Version, platformID)
+	}
+	if requireTarget && d.Kind == "cmake" && d.Source == nil {
 		return nil, fmt.Errorf("source: no primary source for %s/%s", systemName, architecture)
 	}
 	for _, key := range sortedKeys(d.Cache) {
@@ -511,7 +546,8 @@ func loadDefinition(path, systemName, architecture string) (definition *moduleDe
 		}
 		for _, value := range texts {
 			for _, match := range resourceReference.FindAllStringSubmatch(value, -1) {
-				if _, ok := d.Resources[match[1]]; !ok {
+				_, selected := d.Resources[match[1]]
+				if requireTarget && !selected || !requireTarget && !declaredResources[match[1]] {
 					return nil, fmt.Errorf("cmake.cache.%s: unknown resource %q", key, match[1])
 				}
 			}
@@ -534,7 +570,8 @@ func loadDefinition(path, systemName, architecture string) (definition *moduleDe
 			return "", nil
 		}
 		s, ok := v.(string)
-		if _, found := d.Resources[s]; !ok || !found {
+		_, selected := d.Resources[s]
+		if !ok || requireTarget && !selected || !requireTarget && !declaredResources[s] {
 			return "", fmt.Errorf("%s.resource: unknown resource %v", where, v)
 		}
 		return s, nil
@@ -577,7 +614,7 @@ func loadDefinition(path, systemName, architecture string) (definition *moduleDe
 		if err != nil {
 			return nil, err
 		}
-		if r == "" && d.Source == nil {
+		if requireTarget && r == "" && d.Source == nil {
 			return nil, fmt.Errorf("copy: mapping requires a source or resource")
 		}
 		_, files := c["files"]

@@ -2,6 +2,7 @@
 name = "freetype"
 type = "cmake"
 version = "2.13.2"
+supported_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
 sentinel = "include/freetype2/ft2build.h"
 config_dir = "lib/cmake/freetype"
 pkgconfig_dir = "lib/pkgconfig"

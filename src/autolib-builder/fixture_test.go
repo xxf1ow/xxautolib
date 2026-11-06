@@ -45,7 +45,7 @@ func newFixture(t *testing.T) *fixture {
 	})
 	// MSBuild 对系统临时目录禁用部分增量行为；与原 fixture 一样放在 build/tests。
 	root := filepath.Join(directory, "中文 fixture")
-	f := &fixture{t: t, root: root, context: buildContext{SourceRoot: root, BuildRoot: filepath.Join(root, "build"), SystemName: "Linux", Generator: "Unix Makefiles", CMakeCommand: cmake, GitExecutable: git}}
+	f := &fixture{t: t, root: root, context: buildContext{SourceRoot: root, BuildRoot: filepath.Join(root, "build"), SystemName: "Linux", Architecture: "x86_64", Generator: "Unix Makefiles", CMakeCommand: cmake, GitExecutable: git}}
 	if runtime.GOOS == "windows" {
 		f.context.SystemName = "Windows"
 		f.context.Generator = "Visual Studio 17 2022"

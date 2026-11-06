@@ -2,6 +2,7 @@
 name = "lz4"
 type = "cmake"
 version = "1.10.0"
+supported_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64','darwin-aarch64']
 sentinel = "include/lz4.h"
 config_dir = "lib/cmake/lz4"
 pkgconfig_dir = "lib/pkgconfig"

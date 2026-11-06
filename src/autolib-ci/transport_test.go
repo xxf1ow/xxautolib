@@ -516,7 +516,7 @@ func installedCIFixture(t *testing.T) installedFixture {
 	t.Setenv("GOSUMDB", "off")
 	for _, item := range []struct{ name, version, depends string }{{"dep", "1", ""}, {"queue", "1", ""}, {"eigen", "3", "dep@1"}, {"eigen", "5", "dep@1"}} {
 		name, version := item.name, item.version
-		recipe := "name='" + name + "'\nversion='" + version + "'\ntype='copy'\nplatform_independent=true\n"
+		recipe := "name='" + name + "'\nversion='" + version + "'\ntype='copy'\nplatform_independent=true\nsupported_platforms=['windows-x86_64','linux-x86_64','linux-aarch64','darwin-aarch64']\n"
 		if item.depends != "" {
 			recipe += "depends=['" + item.depends + "']\n"
 		}

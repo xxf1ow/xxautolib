@@ -504,7 +504,7 @@ func TestVersionedReconfigure(t *testing.T) {
 			f.mustEntry("-DBUILD_LIST=" + selection)
 			f.build()
 			time.Sleep(1100 * time.Millisecond)
-			putFile(t, filepath.Join(f.root, "src/dependencies/demo/2/module.toml"), "name='demo'\nversion='2'\ntype='copy'\n"+body)
+			putFile(t, filepath.Join(f.root, "src/dependencies/demo/2/module.toml"), "name='demo'\nversion='2'\ntype='copy'\nsupported_platforms=['windows-x86_64','linux-x86_64','linux-aarch64','darwin-aarch64']\n"+body)
 			if out := f.build(); !strings.Contains(out, "Building Summary") {
 				t.Fatal("new version did not reconfigure", out)
 			}

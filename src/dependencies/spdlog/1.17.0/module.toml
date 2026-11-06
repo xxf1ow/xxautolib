@@ -2,6 +2,7 @@
 name = "spdlog"
 type = "cmake"
 version = "1.17.0"
+supported_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
 sentinel = "lib/cmake/spdlog/spdlogConfig.cmake"
 config_dir = "lib/cmake/spdlog"
 pkgconfig_dir = "lib/pkgconfig"

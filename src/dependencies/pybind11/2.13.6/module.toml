@@ -2,6 +2,7 @@
 name = "pybind11"
 type = "cmake"
 version = "2.13.6"
+supported_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
 sentinel = "include/pybind11/pybind11.h"
 config_dir = "share/cmake/pybind11"
 
