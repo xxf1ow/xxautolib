@@ -2,6 +2,7 @@
 name = "oneTBB"
 type = "cmake"
 version = "628c90df6867"
+supported_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
 package_name = "TBB"
 config_dir = "lib/cmake/TBB"
 sentinel = "include/tbb/tbb.h"

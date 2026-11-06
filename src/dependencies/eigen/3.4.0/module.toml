@@ -2,6 +2,7 @@
 name = "eigen"
 type = "cmake"
 version = "3.4.0"
+supported_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
 sentinel = "include/Eigen/Eigen"
 config_dir = "share/eigen3/cmake"
 package_name = "Eigen3"

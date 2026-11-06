@@ -3,12 +3,20 @@ package main
 import "encoding/json"
 
 type moduleDescription struct {
-	SystemName    string            `json:"system_name"`
-	Architecture  string            `json:"architecture"`
-	Roots         []string          `json:"roots"`
-	Modules       []describedModule `json:"modules"`
-	GoModuleFiles []string          `json:"go_module_files"`
-	BuilderFiles  []string          `json:"builder_files"`
+	SystemName     string            `json:"system_name"`
+	Architecture   string            `json:"architecture"`
+	Roots          []string          `json:"roots"`
+	RequestedRoots []string          `json:"requested_roots"`
+	FilteredRoots  []filteredRoot    `json:"filtered_roots"`
+	Modules        []describedModule `json:"modules"`
+	GoModuleFiles  []string          `json:"go_module_files"`
+	BuilderFiles   []string          `json:"builder_files"`
+}
+
+type filteredRoot struct {
+	Root  string   `json:"root"`
+	Code  string   `json:"code"`
+	Chain []string `json:"chain"`
 }
 
 type describedModule struct {

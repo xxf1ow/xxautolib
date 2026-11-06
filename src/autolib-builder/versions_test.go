@@ -43,7 +43,7 @@ func TestVersionReference(t *testing.T) {
 
 func versionRecipe(t *testing.T, root, name, version string) string {
 	t.Helper()
-	return putFile(t, filepath.Join(root, "src", "dependencies", name, version, "module.toml"), "name='"+name+"'\nversion='"+version+"'\ntype='cmake'\n"+testSource)
+	return putFile(t, filepath.Join(root, "src", "dependencies", name, version, "module.toml"), "name='"+name+"'\nversion='"+version+"'\ntype='cmake'\nsupported_platforms=['windows-x86_64','linux-x86_64','linux-aarch64','darwin-aarch64']\n"+testSource)
 }
 
 func TestVersionCatalog(t *testing.T) {

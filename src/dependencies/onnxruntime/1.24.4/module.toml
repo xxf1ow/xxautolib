@@ -2,6 +2,7 @@
 name = "onnxruntime"
 type = "copy"
 version = "1.24.4" # 升级时同步核对三种目标归档、SHA256 和安装内容；按平台与架构选择，不回退到其他架构。
+supported_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
 sentinel = "include/onnxruntime_c_api.h"
 
 [[copy]] # 保留头文件、库、运行文件、版本和许可证；仅解压后复制，不执行源码配置或构建。

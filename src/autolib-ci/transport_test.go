@@ -136,6 +136,19 @@ func TestCISelectedPlatformCompletion(t *testing.T) {
 		t.Fatalf("verified selected platform must not require Release upload: %v", err)
 	}
 	all, _, complete := finalizeFixture()
+	darwin := all.Platforms[0]
+	darwin.ID = "darwin-aarch64"
+	all.Platforms = append(all.Platforms, darwin)
+	darwinResult := complete[0]
+	darwinResult.Platform = "darwin-aarch64"
+	darwinResult.Importer.File = "autolib-importer-darwin-aarch64"
+	complete = append(complete, darwinResult)
+	if err := finalizeCI(all, ciGitHubRepository, identity, complete); err != nil {
+		t.Fatalf("four selected platforms must complete: %v", err)
+	}
+	if err := finalizeCI(all, ciGitHubRepository, identity, complete[:3]); err == nil {
+		t.Fatal("missing Darwin result accepted")
+	}
 	for _, change := range []string{"missing", "duplicate", "attempt", "sha"} {
 		t.Run(change, func(t *testing.T) {
 			items := append([]ciPlatformResult{}, complete...)
@@ -471,8 +484,8 @@ func transportInputFixture(t *testing.T) installedFixture {
 
 func installedCIFixture(t *testing.T) installedFixture {
 	t.Helper()
-	if runtime.GOOS != "linux" {
-		t.Skip("Linux native fixture; Windows production identity retained by owning tests")
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+		t.Skip("requires native Unix Makefiles fixture")
 	}
 	repository, err := filepath.Abs("../..")
 	if err != nil {
@@ -485,7 +498,7 @@ func installedCIFixture(t *testing.T) installedFixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.RemoveAll(root) })
-	for _, file := range []string{"CMakeLists.txt", "go.mod", "go.sum", ".github/ci-tools.json", "src/autolib.cmake", "tests/autolib/run-installed.cmake", "tests/ci/jobserver/Makefile", "tests/ci/jobserver/child.mk"} {
+	for _, file := range []string{"CMakeLists.txt", "go.mod", "go.sum", ".github/ci-tools.json", "src/autolib.cmake", "tests/autolib/run-installed.cmake", "tests/ci/jobserver/Makefile", "tests/ci/jobserver/child.mk", "tests/ci/jobserver/worker.cmake"} {
 		data, err := os.ReadFile(filepath.Join(repository, file))
 		if err != nil {
 			t.Fatal(err)
@@ -516,7 +529,7 @@ func installedCIFixture(t *testing.T) installedFixture {
 	t.Setenv("GOSUMDB", "off")
 	for _, item := range []struct{ name, version, depends string }{{"dep", "1", ""}, {"queue", "1", ""}, {"eigen", "3", "dep@1"}, {"eigen", "5", "dep@1"}} {
 		name, version := item.name, item.version
-		recipe := "name='" + name + "'\nversion='" + version + "'\ntype='copy'\nplatform_independent=true\n"
+		recipe := "name='" + name + "'\nversion='" + version + "'\ntype='copy'\nplatform_independent=true\nsupported_platforms=['windows-x86_64','linux-x86_64','linux-aarch64','darwin-aarch64']\n"
 		if item.depends != "" {
 			recipe += "depends=['" + item.depends + "']\n"
 		}
@@ -546,6 +559,7 @@ elseif(ROOT_PACKAGES STREQUAL "eigen@5")
   target_compile_definitions(autolib_smoke PRIVATE EXPECTED_EIGEN=5)
 endif()
 file(WRITE "${CMAKE_BINARY_DIR}/prepared-state.cmake" "")
+file(WRITE "${CMAKE_BINARY_DIR}/link-inputs-Release.txt" "")
 add_test(NAME exact_consumer COMMAND autolib_smoke)
 `)
 	writeCIFixture(t, root, "tests/autolib/smoke.cpp", `#include <cstdio>
@@ -562,7 +576,7 @@ int main() {
 }
 `)
 	identity := transportIdentity(t, root)
-	platform := "linux-" + map[string]string{"amd64": "x86_64", "arm64": "aarch64"}[runtime.GOARCH]
+	platform := runtime.GOOS + "-" + map[string]string{"amd64": "x86_64", "arm64": "aarch64"}[runtime.GOARCH]
 	builder := filepath.Join(root, "tools", "builder")
 	command := exec.Command("cmake", "-P", filepath.Join(repository, "src/autolib-builder/go-sdk.cmake"), "--", "build", "-mod=readonly", "-trimpath", "-o", builder, "./src/autolib-builder")
 	command.Dir = repository

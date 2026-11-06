@@ -95,9 +95,6 @@ func testIdentityHeader(name, osName, arch string, dependencies ...string) strin
 
 func testPlatform() (string, string) {
 	platformOS := runtime.GOOS
-	if platformOS == "darwin" {
-		platformOS = "linux"
-	}
 	platformArch := map[string]string{"amd64": "x86_64", "arm64": "aarch64"}[runtime.GOARCH]
 	return platformOS, platformArch
 }

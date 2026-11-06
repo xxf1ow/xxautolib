@@ -8,6 +8,56 @@ import (
 	"testing"
 )
 
+func TestCIEnvironmentDarwinAsset(t *testing.T) {
+	document := environmentFixture(t)
+	assets := document["cmake"].(map[string]any)["assets"].([]any)
+	var darwin map[string]any
+	for _, item := range assets {
+		asset := item.(map[string]any)
+		if asset["platform"] == "darwin-aarch64" {
+			darwin = asset
+		}
+	}
+	if darwin == nil {
+		t.Fatal("Darwin asset missing from configured native platforms")
+	}
+	if len(assets) != 4 || darwin["filename"] != "cmake-3.31.12-macos-universal.tar.gz" || darwin["sha256"] != "799af7fd545db9bf1b9cfe72f8095880e727a2d4e0df0e3dffc3bc7b95c2d3b0" {
+		t.Fatalf("native assets: %v", assets)
+	}
+	if err := loadEnvironmentDocument(t, document); err != nil {
+		t.Fatal(err)
+	}
+	for _, mutation := range []string{"missing", "duplicate", "filename", "url", "sha256"} {
+		t.Run(mutation, func(t *testing.T) {
+			doc := environmentFixture(t)
+			cmake := doc["cmake"].(map[string]any)
+			items := cmake["assets"].([]any)
+			for i, item := range items {
+				asset := item.(map[string]any)
+				if asset["platform"] != "darwin-aarch64" {
+					continue
+				}
+				switch mutation {
+				case "missing":
+					cmake["assets"] = append(items[:i], items[i+1:]...)
+				case "duplicate":
+					cmake["assets"] = append(items, item)
+				case "filename":
+					asset["filename"] = "cmake-3.31.12-macos-x86_64.tar.gz"
+				case "url":
+					asset["url"] = "https://example.invalid/cmake.tar.gz"
+				case "sha256":
+					asset["sha256"] = ""
+				}
+				break
+			}
+			if err := loadEnvironmentDocument(t, doc); err == nil {
+				t.Fatal("invalid Darwin asset accepted")
+			}
+		})
+	}
+}
+
 func TestCIEnvironmentConfig(t *testing.T) {
 	root, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
@@ -20,7 +70,7 @@ func TestCIEnvironmentConfig(t *testing.T) {
 	if !strings.HasPrefix(config.Ubuntu.Image, "ubuntu:20.04@sha256:") || len(config.Ubuntu.PlatformDigests) != 2 {
 		t.Fatalf("Ubuntu index or architecture coverage: %+v", config.Ubuntu)
 	}
-	if config.Make.Version == "" || config.CMake.Version == "" || len(config.CMake.Assets) != 3 {
+	if config.Make.Version == "" || config.CMake.Version == "" || len(config.CMake.Assets) != 4 {
 		t.Fatalf("tool versions/assets: make=%+v cmake=%+v", config.Make, config.CMake)
 	}
 	if err := validateCIEnvironment(config); err != nil {
@@ -65,6 +115,7 @@ func TestCIEnvironmentRejectsMissingProductionFields(t *testing.T) {
 	for _, field := range []struct{ section, name string }{
 		{"common", "configuration"}, {"common", "cmake_defaults"},
 		{"linux", "distribution"}, {"linux", "gcc_version"}, {"linux", "glibc_max"}, {"linux", "generator"},
+		{"darwin", "generator"}, {"darwin", "architectures"}, {"darwin", "deployment_target"},
 		{"windows", "generator"}, {"windows", "platform"}, {"windows", "toolset"}, {"windows", "runtime"},
 	} {
 		t.Run(field.section+"/"+field.name, func(t *testing.T) {
@@ -195,6 +246,7 @@ func environmentFixture(t *testing.T) map[string]any {
 		"linux": map[string]any{
 			"distribution": "ubuntu-20.04", "gcc_version": "10.5", "glibc_max": "2.31", "generator": "Unix Makefiles",
 		},
+		"darwin": map[string]any{"generator": "Unix Makefiles", "architectures": "arm64", "deployment_target": "15.0"},
 		"windows": map[string]any{
 			"generator": "Visual Studio 17 2022", "platform": "x64", "toolset": "v143,host=x64", "runtime": "MultiThreadedDLL",
 		},

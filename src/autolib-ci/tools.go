@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"os/exec"
 	"path"
 	"path/filepath"
@@ -56,7 +57,7 @@ func validateModuleDescription(description moduleDescription, systemName, archit
 	if description.SystemName != systemName || description.Architecture != architecture {
 		return fmt.Errorf("builder described %s/%s, requested %s/%s", description.SystemName, description.Architecture, systemName, architecture)
 	}
-	if description.Roots == nil || description.Modules == nil || description.GoModuleFiles == nil || description.BuilderFiles == nil {
+	if description.Roots == nil || description.RequestedRoots == nil || description.FilteredRoots == nil || description.Modules == nil || description.GoModuleFiles == nil || description.BuilderFiles == nil {
 		return fmt.Errorf("builder describe output is missing required arrays")
 	}
 	byName := make(map[string]describedModule, len(description.Modules))
@@ -86,16 +87,58 @@ func validateModuleDescription(description moduleDescription, systemName, archit
 		}
 		rootSet[root] = true
 	}
+	requestedSet := map[string]bool{}
+	validReference := func(value string) bool {
+		name, version, found := strings.Cut(value, "@")
+		return found && ciModuleName.MatchString(name) && ciModuleName.MatchString(version)
+	}
+	for _, root := range description.RequestedRoots {
+		if !validReference(root) || requestedSet[root] {
+			return fmt.Errorf("builder describe output has invalid requested root %q", root)
+		}
+		requestedSet[root] = true
+	}
+	for root := range rootSet {
+		if !requestedSet[root] {
+			return fmt.Errorf("effective root %s was not requested", root)
+		}
+	}
+	partition := maps.Clone(rootSet)
+	for _, reason := range description.FilteredRoots {
+		if !requestedSet[reason.Root] || partition[reason.Root] || len(reason.Chain) == 0 || reason.Chain[0] != reason.Root ||
+			(reason.Code != "unsupported_platform" && reason.Code != "unsupported_dependency_platform") ||
+			(reason.Code == "unsupported_platform" && len(reason.Chain) != 1) || (reason.Code == "unsupported_dependency_platform" && len(reason.Chain) < 2) {
+			return fmt.Errorf("builder describe output has invalid platform filter for %q", reason.Root)
+		}
+		seen := map[string]bool{}
+		for _, ref := range reason.Chain {
+			if !validReference(ref) || seen[ref] {
+				return fmt.Errorf("invalid filter dependency chain for %s", reason.Root)
+			}
+			seen[ref] = true
+		}
+		partition[reason.Root] = true
+	}
+	if len(partition) != len(requestedSet) {
+		return fmt.Errorf("builder describe output omits a requested root result")
+	}
 	for _, request := range requested {
 		found := false
-		for _, root := range description.Roots {
-			if request == root || request == byName[root].Name {
+		for _, root := range description.RequestedRoots {
+			if request == root || request == strings.SplitN(root, "@", 2)[0] {
 				found = true
 				break
 			}
 		}
 		if !found {
 			return fmt.Errorf("builder describe output is missing requested module %q", request)
+		}
+	}
+	if len(requested) > 0 {
+		for root := range requestedSet {
+			if !slices.Contains(requested, root) && !slices.Contains(requested, strings.SplitN(root, "@", 2)[0]) {
+				return fmt.Errorf("builder described unrequested root %s", root)
+			}
 		}
 	}
 	reachable := map[string]bool{}

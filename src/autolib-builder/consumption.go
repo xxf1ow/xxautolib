@@ -100,7 +100,7 @@ func prepareConsumption(o consumptionOptions) error {
 	if err := validatePackagePlatform(o.OS, o.Arch); err != nil {
 		return err
 	}
-	system := map[string]string{"windows": "Windows", "linux": "Linux"}[o.OS]
+	system := map[string]string{"windows": "Windows", "linux": "Linux", "darwin": "Darwin"}[o.OS]
 	module, err := loadDefinition(filepath.Join(o.SourceRoot, "src/dependencies", ref.Name, ref.Version, "module.toml"), system, o.Arch)
 	if err != nil {
 		return err

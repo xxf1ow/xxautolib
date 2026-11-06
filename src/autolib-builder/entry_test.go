@@ -1,6 +1,7 @@
 package main
 
 import (
+	"debug/macho"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -10,6 +11,34 @@ import (
 	"testing"
 	"time"
 )
+
+func TestEntryDarwinTools(t *testing.T) {
+	if runtime.GOOS != "darwin" || runtime.GOARCH != "arm64" {
+		t.Skip("requires native Darwin ARM64")
+	}
+	f := newEntryFixture(t)
+	putFile(t, filepath.Join(f.root, "src/autolib.cmake"), readFile(t, "../autolib.cmake"))
+	install := filepath.Join(f.root, "tools install")
+	f.must(f.context.CMakeCommand, "-DAUTOLIB_SOURCE_ROOT="+f.root, "-DAUTOLIB_INSTALL_ROOT="+install, "-P", filepath.Join(f.root, "src/autolib-builder/prepare-tools.cmake"))
+	tool := filepath.Join(install, "autolib-importer-darwin-aarch64")
+	binary, err := macho.Open(tool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer binary.Close()
+	if binary.Cpu != macho.CpuArm64 {
+		t.Fatalf("importer CPU = %v", binary.Cpu)
+	}
+	_, stderr, err := f.command(tool)
+	if err == nil || !strings.Contains(stderr, "usage: autolib-importer") {
+		t.Fatalf("native importer did not execute: %v %s", err, stderr)
+	}
+	requireFile(t, filepath.Join(install, "autolib.cmake"), readFile(t, "../autolib.cmake"))
+	version := f.must(goExecutable(), "version")
+	if strings.TrimSpace(version) != "go version go1.27.3 darwin/arm64" {
+		t.Fatal(version)
+	}
+}
 
 func managedGoRoot(f *fixture) string {
 	return filepath.Join(f.root, ".tools", "go", "sdk", runtime.Version(), runtime.GOOS+"-"+runtime.GOARCH, "go")
@@ -58,6 +87,9 @@ execute_process(COMMAND ${managed_environment} "${managed_go}" env -json GOROOT 
 		if f.context.Platform != "" {
 			args = append(args, "-A", f.context.Platform, "-T", f.context.Toolset)
 		}
+		for key, value := range f.context.CMakeDefaults {
+			args = append(args, "-D"+key+"="+value)
+		}
 		f.must(args...)
 		var environment map[string]string
 		if err := json.Unmarshal([]byte(readFile(t, filepath.Join(build, "go-environment.json"))), &environment); err != nil {
@@ -92,7 +124,7 @@ func newEntryFixture(t *testing.T) *fixture {
 	}
 	t.Setenv("GOPROXY", "off")
 	t.Setenv("GOSUMDB", "off")
-	for _, file := range []string{"CMakeLists.txt", "go.mod", "go.sum"} {
+	for _, file := range []string{"CMakeLists.txt", "go.mod", "go.sum", "src/autolib.cmake"} {
 		data, err := os.ReadFile(filepath.Join("..", "..", file))
 		if err != nil {
 			t.Fatal(err)
@@ -133,6 +165,11 @@ func newEntryFixture(t *testing.T) *fixture {
 		}
 	}
 	seedManagedGo(f)
+	if runtime.GOOS == "darwin" {
+		f.context.SystemName = "Darwin"
+		f.context.Architecture = "aarch64"
+		f.context.CMakeDefaults = darwinTestDefaults(f)
+	}
 	return f
 }
 
@@ -159,7 +196,25 @@ func TestEntryInstalledImporter(t *testing.T) {
 			}
 			f.mustEntry("-DBUILD_LIST=demo")
 			tool := installedImporter(root)
-			if output, err := exec.Command(goExecutable(), "tool", "nm", tool).CombinedOutput(); err == nil || !strings.Contains(string(output), "no symbol") {
+			if runtime.GOOS == "darwin" {
+				binary, err := macho.Open(tool)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, section := range binary.Sections {
+					if section.Seg == "__DWARF" {
+						t.Error("installed importer retains DWARF")
+					}
+				}
+				if binary.Symtab != nil {
+					for _, symbol := range binary.Symtab.Syms {
+						if strings.Contains(symbol.Name, "main.main") {
+							t.Error("installed importer retains local Go symbols")
+						}
+					}
+				}
+				binary.Close()
+			} else if output, err := exec.Command(goExecutable(), "tool", "nm", tool).CombinedOutput(); err == nil || !strings.Contains(string(output), "no symbol") {
 				t.Fatalf("installed importer retains symbols: nm exit=%v", err)
 			}
 			stat, err := os.Stat(tool)
@@ -241,6 +296,9 @@ func (f *fixture) entry(args ...string) (string, error) {
 	command := []string{f.context.CMakeCommand, "-S", f.root, "-B", f.context.BuildRoot, "-G", f.context.Generator}
 	if f.context.Platform != "" {
 		command = append(command, "-A", f.context.Platform, "-T", f.context.Toolset)
+	}
+	for key, value := range f.context.CMakeDefaults {
+		command = append(command, "-D"+key+"="+value)
 	}
 	out, stderr, err := f.command(append(command, args...)...)
 	return out + stderr, err
@@ -475,7 +533,7 @@ func TestVersionedReconfigure(t *testing.T) {
 			f.mustEntry("-DBUILD_LIST=" + selection)
 			f.build()
 			time.Sleep(1100 * time.Millisecond)
-			putFile(t, filepath.Join(f.root, "src/dependencies/demo/2/module.toml"), "name='demo'\nversion='2'\ntype='copy'\n"+body)
+			putFile(t, filepath.Join(f.root, "src/dependencies/demo/2/module.toml"), "name='demo'\nversion='2'\ntype='copy'\nsupported_platforms=['windows-x86_64','linux-x86_64','linux-aarch64','darwin-aarch64']\n"+body)
 			if out := f.build(); !strings.Contains(out, "Building Summary") {
 				t.Fatal("new version did not reconfigure", out)
 			}

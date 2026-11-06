@@ -2,6 +2,7 @@
 name = "harfbuzz"
 type = "cmake"
 version = "8.5.0"
+supported_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
 depends = ["freetype"]
 pkgconfig_dir = "lib/pkgconfig"
 sentinel = "include/harfbuzz/hb.h"

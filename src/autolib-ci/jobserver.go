@@ -12,8 +12,8 @@ import (
 )
 
 type ciJobserverOptions struct {
-	SourceRoot, MakeProgram, WorkRoot string
-	Budget                            int
+	SourceRoot, MakeProgram, WorkRoot, CMakeCommand string
+	Budget                                          int
 }
 
 type ciJobserverEvidence struct {
@@ -43,7 +43,7 @@ func probeJobserver(ctx context.Context, o ciJobserverOptions) (ciJobserverEvide
 		return ciJobserverEvidence{}, err
 	}
 	fixture := filepath.Join(o.SourceRoot, "tests", "ci", "jobserver")
-	for _, file := range []string{"Makefile", "child.mk"} {
+	for _, file := range []string{"Makefile", "child.mk", "worker.cmake"} {
 		data, err := os.ReadFile(filepath.Join(fixture, file))
 		if err != nil {
 			return ciJobserverEvidence{}, err
@@ -56,7 +56,14 @@ func probeJobserver(ctx context.Context, o ciJobserverOptions) (ciJobserverEvide
 	if err := os.WriteFile(events, nil, 0644); err != nil {
 		return ciJobserverEvidence{}, fmt.Errorf("clear jobserver events: %w", err)
 	}
-	cmd := exec.CommandContext(ctx, makeProgram, fmt.Sprintf("-j%d", o.Budget), "--jobserver-style=fifo", "--no-print-directory", "-f", "Makefile", "LOG="+events)
+	cmake := o.CMakeCommand
+	if cmake == "" {
+		cmake, err = exec.LookPath("cmake")
+		if err != nil {
+			return ciJobserverEvidence{}, err
+		}
+	}
+	cmd := exec.CommandContext(ctx, makeProgram, fmt.Sprintf("-j%d", o.Budget), "--jobserver-style=fifo", "--no-print-directory", "-f", "Makefile", "LOG="+events, "CMAKE_COMMAND="+cmake)
 	cmd.Dir = o.WorkRoot
 	cmd.Env = prependPath(withoutEnvironment(os.Environ(), "MAKEFLAGS", "CMAKE_BUILD_PARALLEL_LEVEL"), filepath.Dir(makeProgram))
 	output, commandErr := cmd.CombinedOutput()

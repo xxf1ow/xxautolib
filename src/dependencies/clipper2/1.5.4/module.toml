@@ -2,6 +2,7 @@
 name = "clipper2"
 type = "cmake"
 version = "1.5.4"
+supported_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
 sentinel = "lib/cmake/clipper2/Clipper2Config.cmake"
 config_dir = "lib/cmake/clipper2"
 package_name = "Clipper2"

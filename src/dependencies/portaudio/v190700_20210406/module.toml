@@ -2,6 +2,7 @@
 name = "portaudio"
 type = "cmake"
 version = "v190700_20210406"
+supported_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
 sentinel = "lib/cmake/portaudio/portaudioConfig.cmake"
 config_dir = "lib/cmake/portaudio"
 pkgconfig_dir = "lib/pkgconfig"

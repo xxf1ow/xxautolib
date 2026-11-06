@@ -363,6 +363,72 @@ class PreparationTests(unittest.TestCase):
             raise AssertionError('preparation must not execute a builder: ' + repr(command))
         return run
 
+    def darwin_selection(self, platforms, empty=False, filtered=False):
+        selected = self.selection(platforms)
+        selected['plan']['publisher'] = platforms[0] if not empty else ''
+        for native in selected['plan']['platforms']:
+            modules = [] if empty else [module('queue', '1.0', True), module('lz4', '1.10.0')]
+            if native['id'].startswith('linux') and not empty:
+                modules.append(module('realsense', '2.58.1'))
+            roots = [item['name'] + '@' + item['version'] for item in modules]
+            native.update(description=dict(modules=modules), roots=roots, layers=[roots] if roots else [],
+                          requested_roots=roots + (['librealsense@2.58.1'] if filtered else []),
+                          filtered_roots=['librealsense@2.58.1'] if filtered else [])
+        return selected
+
+    def test_darwin_and_four_platform_delivery(self):
+        for platforms, empty, filtered in ((['darwin-aarch64'], False, False),
+                                            (PLATFORMS + ['darwin-aarch64'], False, False),
+                                            (['darwin-aarch64'], True, False),
+                                            (['darwin-aarch64'], True, True)):
+            with self.subTest(platforms=platforms, empty=empty, filtered=filtered):
+                case = self.root / str(len(list(self.root.iterdir())))
+                case.mkdir()
+                previous, self.root = self.root, case
+                selected = self.darwin_selection(platforms, empty, filtered)
+                inputs = self.inputs(selected)
+                self.root = previous
+                with patch.object(self.api.subprocess, 'run', side_effect=self.git_reader([])):
+                    manifest = self.prepare(selected, inputs, case, case / 'build/output')
+                assets = json.loads(manifest.read_text())['assets']
+                names = [asset['name'] for asset in assets]
+                expected = {'autolib.cmake'} | {tool(p) + '.tar.xz' for p in platforms}
+                if not empty:
+                    expected |= {'queue-1.0-any-any.tar.zst'} | {'lz4-1.10.0-' + p + '.tar.zst' for p in platforms}
+                    expected |= {'realsense-2.58.1-' + p + '.tar.zst' for p in platforms if p.startswith('linux')}
+                self.assertEqual(set(names), expected)
+                self.assertEqual(len(names), len(expected))
+                for asset in assets:
+                    self.assertEqual(hashlib.sha256((manifest.parent / asset['path']).read_bytes()).hexdigest(), asset['sha256'])
+
+    def test_darwin_delivery_rejects_incomplete_or_mixed_inputs(self):
+        changes = [
+            lambda t, r, f: f.pop(t['assets'][1]['path']),
+            lambda t, r, f: t['assets'].append(copy.deepcopy(t['assets'][0])),
+            lambda t, r, f: f.update({'assets/lz4-1.10.0-darwin-x86_64.tar.zst': b'extra'}),
+            lambda t, r, f: f.update({'assets/lz4-1.10.0-unknown-aarch64.tar.zst': b'extra'}),
+            lambda t, r, f: t['run'].update(run_id='43'),
+            lambda t, r, f: t['run'].update(attempt='1'),
+            lambda t, r, f: t.update(platform='linux-aarch64'),
+            lambda t, r, f: t['assets'][1].update(sha256='0' * 64),
+        ]
+        for index, change in enumerate(changes):
+            with self.subTest(index=index):
+                case = self.root / str(index)
+                case.mkdir()
+                previous, self.root = self.root, case
+                selected = self.darwin_selection(['darwin-aarch64'])
+                inputs = self.inputs(selected, change)
+                self.root = previous
+                with patch.object(self.api.subprocess, 'run', side_effect=self.git_reader([])), self.assertRaises((ValueError, FileNotFoundError)):
+                    self.prepare(selected, inputs, case, case / 'build/output')
+                self.assertFalse(list(case.rglob('publication.json')))
+        selected = self.darwin_selection(PLATFORMS + ['darwin-aarch64'])
+        inputs = self.inputs(selected)
+        shutil.rmtree(inputs / 'ci-package-42-2-darwin-aarch64')
+        with patch.object(self.api.subprocess, 'run', side_effect=self.git_reader([])), self.assertRaises((ValueError, FileNotFoundError)):
+            self.prepare(selected, inputs, self.root, self.root / 'build/missing-output')
+
     def test_prepared_archive_bytes_are_stable_without_builder(self):
         selection = self.selection()
         inputs = self.inputs(selection)

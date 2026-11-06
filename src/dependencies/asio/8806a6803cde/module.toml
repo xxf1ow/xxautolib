@@ -1,6 +1,7 @@
 # asio：跨平台异步 I/O，仅复制上游头文件。
 name = "asio"
 version = "8806a6803cde"
+supported_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
 type = "copy"
 platform_independent = true
 sentinel = "include/asio.hpp"

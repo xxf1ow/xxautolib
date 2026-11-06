@@ -17,7 +17,11 @@ type nativeLoopFixture struct {
 
 func newNativeLoopFixture(t *testing.T, root string) nativeLoopFixture {
 	t.Helper()
-	producer := filepath.Join(root, "producer 中文")
+	canonicalRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	producer := filepath.Join(canonicalRoot, "producer 中文")
 	for _, file := range []string{"CMakeLists.txt", "go.mod", "go.sum"} {
 		putTestFile(t, filepath.Join(producer, file), readTestFile(t, filepath.Join("../..", file)))
 	}
@@ -140,6 +144,10 @@ func TestVersionedLocalLoop(t *testing.T) {
 		t.Fatal("direct consumption changed installation")
 	}
 	header := filepath.Join(f.install, "dep/1/include/dep.h")
+	originalInfo, err := os.Stat(header)
+	if err != nil {
+		t.Fatal(err)
+	}
 	original := readTestFile(t, header)
 	putTestFile(t, header, strings.Replace(original, "DEP_VERSION 1", "DEP_VERSION 2", 1))
 	negative := filepath.Join(root, "negative")
@@ -151,17 +159,52 @@ func TestVersionedLocalLoop(t *testing.T) {
 	}
 	t.Logf("wrong-version negative rejected:\\n%s", out)
 	putTestFile(t, header, original)
+	if err := os.Chtimes(header, originalInfo.ModTime(), originalInfo.ModTime()); err != nil {
+		t.Fatal(err)
+	}
+	// Move only the produced archives and canonical entry into a new consumption root.
+	originalInstall := f.install
+	relocated := filepath.Join(filepath.Dir(f.producer), "relocated 中文")
+	if err := os.MkdirAll(relocated, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for _, asset := range []string{f.toolName + ".tar.xz", "dep-1-" + runtime.GOOS + "-" + f.arch + ".tar.zst", "probe-1-" + runtime.GOOS + "-" + f.arch + ".tar.zst"} {
+		cmd := exec.Command("cmake", "-E", "tar", "xf", filepath.Join(f.release, asset))
+		cmd.Dir = relocated
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("extract: %v %s", err, out)
+		}
+	}
+	putTestFile(t, filepath.Join(relocated, "autolib.cmake"), readTestFile(t, filepath.Join(originalInstall, "autolib.cmake")))
+	for _, name := range []string{"probe", "dep"} {
+		putTestFile(t, filepath.Join(relocated, name, "package.toml"), readTestFile(t, filepath.Join(f.release, name, "package.toml")))
+	}
+	f.install = relocated
+	consume("relocated-build")
+	if !reflect.DeepEqual(before, sourceSnapshot(t, originalInstall)) {
+		t.Fatal("relocation changed production install")
+	}
 	driver, err := filepath.Abs("../../tests/autolib/run-installed.cmake")
 	if err != nil {
 		t.Fatal(err)
 	}
 	putTestFile(t, filepath.Join(f.producer, "tests/autolib/CMakeLists.txt"), strings.Replace(loopConsumerCMake, "main.cpp", "smoke.cpp", 1))
 	putTestFile(t, filepath.Join(f.producer, "tests/autolib/smoke.cpp"), loopConsumerSource)
-	loopCommand(t, "cmake", "-DSOURCE_ROOT="+f.producer, "-DINSTALL_ROOT="+f.install, "-DVALIDATION_ROOT="+filepath.Join(f.producer, "build/driver"), "-DGENERATOR="+f.generator, "-DMODULES=probe@1;dep@1", "-DROOT_PACKAGES=probe@1", "-P", driver)
+	driverArgs := []string{"-DSOURCE_ROOT=" + f.producer, "-DINSTALL_ROOT=" + f.install, "-DVALIDATION_ROOT=" + filepath.Join(f.producer, "build/driver"), "-DGENERATOR=" + f.generator, "-DMODULES=probe@1;dep@1", "-DROOT_PACKAGES=probe@1"}
+	driverArgs = append(driverArgs, nativeLoopCMakeArgs(t)...)
+	loopCommand(t, "cmake", append(driverArgs, "-P", driver)...)
 }
 
 func loopCommand(t *testing.T, program string, args ...string) string {
 	t.Helper()
+	if filepath.Base(program) == "cmake" {
+		for _, arg := range args {
+			if arg == "-S" {
+				args = append(args, nativeLoopCMakeArgs(t)...)
+				break
+			}
+		}
+	}
 	out, err := exec.Command(program, args...).CombinedOutput()
 	t.Logf("%s %q\n%s", program, args, out)
 	if err != nil {
@@ -177,6 +220,7 @@ func loopModule(t *testing.T, producer, name, version, dependency, upstream, ada
 	loopCommand(t, "git", "-C", upstream, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "commit", "-m", "fixture")
 	sha := strings.TrimSpace(loopCommand(t, "git", "-C", upstream, "rev-parse", "HEAD"))
 	body := fmt.Sprintf("name=%q\nversion=%q\ntype='cmake'\nconfig_dir='lib/cmake/%s'\n", name, version, map[string]string{"dep": "Dep", "probe": "Probe"}[name])
+	body += "supported_platforms=['windows-x86_64','linux-x86_64','linux-aarch64','darwin-aarch64']\n"
 	if dependency != "" {
 		body += fmt.Sprintf("depends=[%q]\n", dependency)
 	}
@@ -188,6 +232,11 @@ func loopModule(t *testing.T, producer, name, version, dependency, upstream, ada
 
 const loopConsumerCMake = `cmake_minimum_required(VERSION 3.20)
 project(versioned_loop CXX)
+if(APPLE)
+ if(NOT CMAKE_OSX_ARCHITECTURES STREQUAL "arm64" OR NOT CMAKE_OSX_DEPLOYMENT_TARGET STREQUAL "15.0" OR NOT CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang" OR NOT IS_ABSOLUTE "${CMAKE_OSX_SYSROOT}" OR NOT IS_ABSOLUTE "${CMAKE_C_COMPILER}" OR NOT IS_ABSOLUTE "${CMAKE_MAKE_PROGRAM}")
+  message(FATAL_ERROR "consumer lost Apple native parameters")
+ endif()
+endif()
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_BUILD_TYPE Release)
 if(NOT AUTOLIB_ENTRY)
@@ -195,6 +244,7 @@ if(NOT AUTOLIB_ENTRY)
 endif()
 include("${AUTOLIB_ENTRY}")
 add_executable(probe main.cpp)
+autolib_import(TARGET probe PRIVATE probe@1)
 autolib_import(TARGET probe PRIVATE probe@1)
 target_link_libraries(probe PRIVATE ${CMAKE_DL_LIBS})
 if(NOT AUTOLIB_PACKAGE_VERSION_dep STREQUAL "1" OR NOT AUTOLIB_PREPARED_PACKAGES STREQUAL "dep;probe")

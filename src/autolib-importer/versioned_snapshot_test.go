@@ -52,6 +52,16 @@ func snapshotRepository(t *testing.T, tc metadataRepositoryCase) string {
 		putTestFile(t, filepath.Join(root, filepath.FromSlash(path)), content)
 	}
 	snapshotGit(t, root, "add", ".")
+	if tc.Name == "case-collision" {
+		for path, content := range tc.Files {
+			if path == ".autolib-repository.json" {
+				continue
+			}
+			blob := putTestFile(t, filepath.Join(t.TempDir(), "blob"), content)
+			hash := snapshotGit(t, root, "hash-object", "-w", blob)
+			snapshotGit(t, root, "update-index", "--add", "--cacheinfo", "100644,"+hash+","+path)
+		}
+	}
 	for path, target := range tc.Symlinks {
 		blob := putTestFile(t, filepath.Join(t.TempDir(), "link-target"), target)
 		hash := snapshotGit(t, root, "hash-object", "-w", blob)

@@ -12,12 +12,14 @@ import (
 )
 
 type moduleDescription struct {
-	SystemName    string            `json:"system_name"`
-	Architecture  string            `json:"architecture"`
-	Roots         []string          `json:"roots"`
-	Modules       []describedModule `json:"modules"`
-	GoModuleFiles []string          `json:"go_module_files"`
-	BuilderFiles  []string          `json:"builder_files"`
+	SystemName     string            `json:"system_name"`
+	Architecture   string            `json:"architecture"`
+	Roots          []string          `json:"roots"`
+	RequestedRoots []string          `json:"requested_roots"`
+	FilteredRoots  []filteredRoot    `json:"filtered_roots"`
+	Modules        []describedModule `json:"modules"`
+	GoModuleFiles  []string          `json:"go_module_files"`
+	BuilderFiles   []string          `json:"builder_files"`
 }
 
 type describedModule struct {
@@ -41,11 +43,8 @@ func describeSelection(sourceRoot, systemName, architecture string, requests []s
 	if strings.TrimSpace(sourceRoot) == "" {
 		return result, fmt.Errorf("describe: source root is required")
 	}
-	if systemName != "Linux" && systemName != "Windows" {
-		return result, fmt.Errorf("describe: unsupported system name %q", systemName)
-	}
-	if result.Architecture != "x86_64" && result.Architecture != "aarch64" {
-		return result, fmt.Errorf("describe: unsupported architecture %q", architecture)
+	if _, err := buildPlatform(systemName, result.Architecture); err != nil {
+		return result, err
 	}
 	if discover && len(requests) != 0 {
 		return result, fmt.Errorf("describe: --discover and --module are mutually exclusive")
@@ -61,36 +60,12 @@ func describeSelection(sourceRoot, systemName, architecture string, requests []s
 	if err != nil {
 		return result, fmt.Errorf("source root: %w", err)
 	}
-	if discover {
-		refs, err := discoverModuleRefs(root)
-		if err != nil {
-			return result, err
-		}
-		for _, ref := range refs {
-			result.Roots = append(result.Roots, ref.String())
-		}
-	} else {
-		for _, request := range requests {
-			ref, err := parseModuleRef(request)
-			if err != nil {
-				return result, err
-			}
-			ref, err = resolveModuleRef(root, ref)
-			if err != nil {
-				return result, err
-			}
-			if !slices.Contains(result.Roots, ref.String()) {
-				result.Roots = append(result.Roots, ref.String())
-			}
-		}
+	selection, err := selectModuleClosure(root, requests, systemName, result.Architecture, discover)
+	if err != nil {
+		return result, err
 	}
-	definitions := []*moduleDefinition{}
-	if len(result.Roots) != 0 {
-		definitions, err = loadModuleClosure(root, result.Roots, systemName, result.Architecture)
-		if err != nil {
-			return result, err
-		}
-	}
+	result.RequestedRoots, result.Roots, result.FilteredRoots = selection.RequestedRoots, selection.Roots, selection.FilteredRoots
+	definitions := selection.Modules
 	for _, definition := range definitions {
 		module, err := describeModule(root, definition)
 		if err != nil {

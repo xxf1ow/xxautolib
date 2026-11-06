@@ -252,6 +252,20 @@ func renderModule(module *moduleDefinition, context buildContext, dependencies [
 		for key, value := range context.CMakeDefaults {
 			cache[key] = value
 		}
+		if context.SystemName == "Darwin" {
+			if normalizeArchitecture(context.Architecture) != "aarch64" {
+				return "", fmt.Errorf("Darwin native build requires aarch64")
+			}
+			for _, key := range []string{"CMAKE_OSX_ARCHITECTURES", "CMAKE_OSX_DEPLOYMENT_TARGET", "CMAKE_OSX_SYSROOT", "CMAKE_C_COMPILER", "CMAKE_CXX_COMPILER"} {
+				value := context.CMakeDefaults[key]
+				if value == "" || (key == "CMAKE_OSX_ARCHITECTURES" && value != "arm64") || (key == "CMAKE_OSX_DEPLOYMENT_TARGET" && value != "15.0") {
+					return "", fmt.Errorf("Darwin native build: invalid %s=%q", key, value)
+				}
+				if override, ok := module.Cache[key]; ok && strings.Join(cacheStrings(override), ";") != value {
+					return "", fmt.Errorf("%s: Darwin native build: conflicting %s", module.Path, key)
+				}
+			}
+		}
 		for key, value := range module.Cache {
 			cache[key] = value
 		}

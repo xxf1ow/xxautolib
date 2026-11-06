@@ -16,6 +16,12 @@
     "checksums_url": "https://github.com/Kitware/CMake/releases/download/v3.31.12/cmake-3.31.12-SHA-256.txt",
     "assets": [
       {
+        "platform": "darwin-aarch64",
+        "filename": "cmake-3.31.12-macos-universal.tar.gz",
+        "url": "https://github.com/Kitware/CMake/releases/download/v3.31.12/cmake-3.31.12-macos-universal.tar.gz",
+        "sha256": "799af7fd545db9bf1b9cfe72f8095880e727a2d4e0df0e3dffc3bc7b95c2d3b0"
+      },
+      {
         "platform": "linux-aarch64",
         "filename": "cmake-3.31.12-linux-aarch64.tar.gz",
         "url": "https://github.com/Kitware/CMake/releases/download/v3.31.12/cmake-3.31.12-linux-aarch64.tar.gz",
@@ -48,6 +54,11 @@
       "gcc_version": "10.5",
       "glibc_max": "2.31",
       "generator": "Unix Makefiles"
+    },
+    "darwin": {
+      "generator": "Unix Makefiles",
+      "architectures": "arm64",
+      "deployment_target": "15.0"
     },
     "windows": {
       "generator": "Visual Studio 17 2022",

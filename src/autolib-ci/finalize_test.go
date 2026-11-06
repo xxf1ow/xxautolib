@@ -102,6 +102,7 @@ func TestCIRunCLI(t *testing.T) {
 	plan, identity, results := finalizeFixture()
 	plan.Platforms[0].RequestedRoots = []string{"queue@1", "local@1"}
 	plan.Platforms[0].FilteredRoots = []string{"local@1"}
+	plan.Platforms[0].Description.FilteredRoots = []filteredRoot{{Root: "local@1", Code: "missing_adapter", Chain: []string{"local@1"}}}
 	root := t.TempDir()
 	for name, value := range map[string]any{"plan.json": plan, "run.json": identity, "results/linux.json": results[0], "results/windows.json": results[1], "results/arm.json": results[2]} {
 		file := filepath.Join(root, name)
@@ -117,5 +118,8 @@ func TestCIRunCLI(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "requested_roots=[queue@1 local@1] roots=[queue@1] filtered_roots=[local@1]") {
 		t.Fatalf("selection summary lost filtering facts: %s", &out)
+	}
+	if strings.Count(out.String(), "linux-x86_64: filtered local@1: missing_adapter (local@1)\n") != 1 {
+		t.Fatalf("selection summary lost or repeated the filter reason: %s", &out)
 	}
 }

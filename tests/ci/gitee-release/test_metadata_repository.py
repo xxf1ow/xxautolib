@@ -165,6 +165,27 @@ class MetadataRepositoryTests(unittest.TestCase):
         self.assertEqual(git(self.bare, 'show', 'HEAD:queue/package.toml'), b'latest = "2"\n')
         self.assertEqual(self.module.commit_metadata(repo, {}, {}), head)
 
+    def test_darwin_digest_preserves_existing_metadata(self):
+        files = self.legitimate(**{
+            'lz4/package.toml': b'latest = "1.9.4"\n',
+            'lz4/1.10.0/lz4-1.10.0-linux-x86_64.tar.zst.sha256': b'b' * 64 + b'\n',
+            'lz4/1.10.0/lz4-1.10.0-linux-aarch64.tar.zst.sha256': b'c' * 64 + b'\n',
+            'lz4/1.10.0/lz4-1.10.0-windows-x86_64.tar.zst.sha256': b'd' * 64 + b'\n',
+        })
+        self.seed_files(files)
+        self.make_remote()
+        repo = self.open()
+        paths = ['lz4/1.10.0/lz4-1.10.0-darwin-aarch64.tar.zst.sha256',
+                 'autolib-importer/autolib-importer-darwin-aarch64.tar.xz.sha256']
+        self.module.commit_metadata(repo, {name: 'e' * 64 for name in paths}, {})
+        for name, content in files.items():
+            self.assertEqual(git(self.bare, 'show', 'HEAD:' + name), content)
+        for name in paths:
+            self.assertEqual(git(self.bare, 'show', 'HEAD:' + name), b'e' * 64 + b'\n')
+        with patch('metadata_repository._repository_url', return_value=str(self.bare)):
+            reopened = self.module.open_repository(self.config, RepositoryAPI(False), self.root / 'again')
+        self.assertEqual(reopened['existing_latest']['lz4'], '1.9.4')
+
     def test_push_failure_never_returns_or_records_confirmed_head(self):
         self.seed_files(self.legitimate())
         self.make_remote()

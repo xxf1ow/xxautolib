@@ -22,6 +22,7 @@ type moduleDefinition struct {
 	PlatformIndependent                                          bool
 	Sentinel, SourceSubdir, ConfigDir, PkgconfigDir, PackageName string
 	Depends                                                      []string
+	SupportedPlatforms                                           []string
 	SystemDependencies                                           map[string][]string
 	Source                                                       *sourceDefinition
 	Resources                                                    map[string]sourceDefinition

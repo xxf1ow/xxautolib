@@ -2,6 +2,7 @@
 name = "flann"
 type = "cmake"
 version = "f9caaf609d8b" # 固定提交而非 release tag；升级时重新验证 lz4 探测及安装布局。
+supported_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
 depends = ["lz4"]
 config_dir = "lib/cmake/flann"
 pkgconfig_dir = "lib/pkgconfig"

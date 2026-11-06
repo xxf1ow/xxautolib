@@ -2,6 +2,7 @@
 name = "opencv"
 type = "cmake"
 version = "4.14.0"
+supported_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
 depends = ["freetype", "harfbuzz"]
 package_name = "OpenCV"
 config_dir = "lib/cmake/opencv4"

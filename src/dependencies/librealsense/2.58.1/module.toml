@@ -2,6 +2,7 @@
 name = "librealsense"
 type = "cmake"
 version = "2.58.1"
+supported_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
 sentinel = "include/librealsense2/rs.hpp"
 depends = ["nlohmann", "lz4", "libusb"]
 config_dir = "lib/cmake/realsense2"

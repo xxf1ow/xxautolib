@@ -2,6 +2,7 @@
 name = "pcl"
 type = "cmake"
 version = "pcl-1.15.1"
+supported_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
 depends = ["lz4", "flann", "boost", "eigen@3.4.0", "zlib"]
 package_name = "PCL"
 config_dir = "share/pcl-1.15"

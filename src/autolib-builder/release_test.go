@@ -383,3 +383,35 @@ func TestPackageCLI(t *testing.T) {
 		}
 	}
 }
+
+func TestDarwinPackageIdentity(t *testing.T) {
+	o := releaseFixture(t)
+	o.OS, o.Arch, o.HostOS, o.HostArch = "darwin", "aarch64", "darwin", "aarch64"
+	putInstalledRelease(t, o.InstallRoot, "lz4", "1.10.0", "darwin", "aarch64", "")
+	putInstalledRelease(t, o.InstallRoot, "queue", "45db9a8b4431", "any", "any", "")
+	o.Modules = []string{"lz4@1.10.0", "queue@45db9a8b4431"}
+	before := releaseSnapshot(t, o.InstallRoot)
+	if err := packageRelease(o); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"autolib-importer-darwin-aarch64.tar.xz", "lz4-1.10.0-darwin-aarch64.tar.zst", "queue-45db9a8b4431-any-any.tar.zst"} {
+		requireReleaseDigest(t, filepath.Join(o.OutputRoot, name))
+	}
+	if !reflect.DeepEqual(before, releaseSnapshot(t, o.InstallRoot)) {
+		t.Fatal("package mutated installation")
+	}
+	o.Arch = "x86_64"
+	if err := packageRelease(o); err == nil {
+		t.Fatal("Intel Darwin accepted")
+	}
+	f := newFixture(t)
+	f.context.SystemName = "Darwin"
+	f.context.Architecture = "aarch64"
+	definitionFile(t, f.root, "unsupported", "copy", "supported_platforms=['linux-aarch64']\nplatform_independent=true\n"+testSource+"\n[[copy]]\nfiles=['x.h']\ndestination='include'\n")
+	if err := generate(f.context, []string{"unsupported"}); err == nil {
+		t.Fatal("platform independent bypassed support")
+	}
+	if _, err := os.Stat(filepath.Join(f.context.BuildRoot, "generated")); !os.IsNotExist(err) {
+		t.Fatal("generated unsupported target")
+	}
+}

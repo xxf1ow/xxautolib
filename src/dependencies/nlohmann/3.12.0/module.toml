@@ -2,6 +2,7 @@
 name = "nlohmann"
 type = "copy"
 version = "3.12.0"
+supported_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
 platform_independent = true
 sentinel = "include/nlohmann/json.hpp"
 

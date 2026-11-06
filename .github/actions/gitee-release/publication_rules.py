@@ -7,7 +7,7 @@ import re
 import stat
 
 
-PLATFORMS = {'windows-x86_64', 'linux-x86_64', 'linux-aarch64'}
+PLATFORMS = {'windows-x86_64', 'linux-x86_64', 'linux-aarch64', 'darwin-aarch64'}
 IMPORTERS = {platform: 'autolib-importer-' + platform + ('.exe' if platform.startswith('windows-') else '') + '.tar.xz'
              for platform in PLATFORMS}
 

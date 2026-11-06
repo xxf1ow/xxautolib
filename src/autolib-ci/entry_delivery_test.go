@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -181,6 +182,14 @@ func TestCIToolOnlyRun(t *testing.T) {
 	}
 	// An empty library selection must not enter the library consumer driver.
 	writeCIFixture(t, f.options.SourceRoot, "tests/autolib/run-installed.cmake", "message(FATAL_ERROR \"tool-only invoked library verification\")\n")
+	if runtime.GOOS == "darwin" {
+		bin := t.TempDir()
+		writeCIFixture(t, bin, "sysctl", "#!/bin/sh\nexit 91\n")
+		if err := os.Chmod(filepath.Join(bin, "sysctl"), 0755); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	}
 	for _, layer := range []string{"prepare", "verify"} {
 		f.options.Layer = layer
 		if err := runCILayer(context.Background(), f.options); err != nil {
