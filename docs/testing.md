@@ -44,15 +44,17 @@ cmake -P src/autolib-builder/go-sdk.cmake -- test -mod=readonly ./src/autolib-im
 
 ## CI 验证
 
-Darwin 定向检查使用 `cmake -P src/autolib-builder/go-sdk.cmake -- test -mod=readonly ./src/autolib-ci -run 'TestCIDarwin' -count=1 -v`，PATH 前置固定 CMake/Make。实机 queue/lz4 的生产、直接及搬迁消费、Mach-O 与 FIFO 证据和未测项见[Darwin 验证](agent-notes/proposed/architecture/2026-11-05-darwin-aarch64-native-build-and-ci.md#第一阶段验证证据)；本机通过不代表 macos-15 CI 已通过。
+Darwin 实机 queue/lz4 的生产、直接及搬迁消费、Mach-O 与 FIFO 证据和未测项见[Darwin 验证](agent-notes/proposed/architecture/2026-11-05-darwin-aarch64-native-build-and-ci.md#第一阶段验证证据)；本机通过不代表 macos-15 CI 已通过。Go 定向检查的 PATH 前置固定 CMake/Make。
 
-[CI 测试](../src/autolib-ci/main_test.go)覆盖精确计划、独立根验证、原生 builder 打包、成品摘要与数量、运输安全及所选平台完整性；workflow 定向测试核对事件条件、参数与接线。本地 fixture 和 workflow 片段执行不模拟完整 Actions，不替代三平台真实验收。109的工具构建命令：
+Darwin 工具准备及 workflow 的受控检查分别执行 `python3.12 -B -m unittest discover -s tests/ci -p test_darwin_preparation.py -v`、`python3.12 -B -m unittest discover -s tests/ci -p test_darwin_workflow.py -v`。四平台选择、精确成品与元数据的增量证据见[第二阶段本地验证](agent-notes/proposed/architecture/2026-11-05-darwin-aarch64-native-build-and-ci.md#第二阶段本地验证)。不要求补跑 Linux 实机；原样 example 依赖未支持 Darwin 的 FLANN，未作为本轮验收输入。
+
+[CI 测试](../src/autolib-ci/main_test.go)覆盖精确计划、独立根验证、原生 builder 打包、成品摘要与数量、运输安全及所选平台完整性；workflow 定向测试核对事件条件、参数与接线。本地 fixture 和 workflow 片段执行不替代真实 Actions 验收。109的工具构建命令：
 
 ```text
 cmake -P src/autolib-builder/go-sdk.cmake -- build -mod=readonly -trimpath -o build/tools/autolib-ci ./src/autolib-ci
 ```
 
-脚本回归：`python -B -m unittest discover -s tests/ci -p 'test_*.py'`。系统工具使用替身；DLL路径在Linux注入Windows分支，不替代Windows真实加载验证。
+脚本回归按修改选择文件。系统工具使用替身；DLL路径在Linux注入Windows分支，不替代Windows真实加载验证。
 
 queue、lz4、flann 的历史三平台供给、逐槽消费、双搬迁及凭据写入，连同 ABI、FIFO、平台跳过项和运行依据，由[CI 验证记录](agent-notes/implemented/architecture/2026-10-20-ci-system.md#真实运行)和[每轮重建与空 label 发布](agent-notes/implemented/simplification/2026-10-24-ci-rebuild-without-production-cache.md)拥有；本地回归不替代新策略的真实远端验收，下载消费另按上节。
 

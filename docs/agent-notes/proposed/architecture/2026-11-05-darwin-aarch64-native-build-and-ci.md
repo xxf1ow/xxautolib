@@ -161,6 +161,16 @@ lz4 静态库为 arm64，五个机器码成员的 minos 均为 15.0。两个消�
 
 `TestVersionedMetadataAsset/version-case-collision` 因本机文件系统不能同时存放 `V1`/`v1` 而跳过；Git 树大小写冲突用显式 index 输入验证通过，核心 Darwin 工具、生产和消费用例没有跳过。109 不可用期间，必要的共享逻辑定向回归在本机执行，Linux 执行证据仍缺失。未执行其他真实库、全量 Go suite/vet、最低 CMake、macos-15 runner 或 15.0 原版系统验证。本机新 SDK 的 minos 证据只证明目标要求与本机执行结果，不能替代 15.x 运行验收。
 
+## 第二阶段本地验证
+
+四平台默认/all、单选 Darwin、异构有效集合、publisher 优先级及固定资产校验的 Go 定向集合共 14 项顶层测试通过。Darwin 工具准备脚本的 4 项测试执行真实 Bash 3.2、tar 和 SHA256 校验，覆盖空库、过滤后零库、含空格目录、宿主拒绝、坏摘要和错误版本；外部下载与工具编译使用受控替身，不计为 macos-15 环境准备通过。
+
+成品及发布规则的 9 项 Python 定向测试通过，覆盖 Darwin 单选、四平台异构集合、any-any 唯一交付、空库工具与入口、缺失/额外资产、错 run/attempt/platform 和坏摘要。元数据检查只使用临时本地 Git 库，验证已有三平台摘要、latest 及无关文件保全，没有访问真实 Gitee。真实轻量原生打包运输及四平台 finalize 的 4 项 Go 顶层测试通过，无跳过。
+
+workflow 的 5 项测试执行实际 jq 选择表达式和 job shell，验证仅 Darwin 及 all 的选择、工具 JSON 到 step 输出、prepare/layers/verify/transport 参数、空库无 layer、失败停止及 finalize 收集条件；工具专用默认输入和单一 Gitee 发布入口两项直接回归通过。生产 job 固定 macos-15，按同次 run/attempt 保存环境、构建、Mach-O 及 jobserver 证据。本地 Bash 进程替换测试需在允许 /dev/fd 的环境执行。
+
+第一阶段已验收的生产、直接和搬迁消费证据继续有效，本阶段未重复真实库构建、Linux 实机、全量 Go suite/vet 或最低 CMake。原样 `example/` 依赖 queue/flann 并下载远端入口，FLANN 未声明 Darwin 支持，没有本地运行该项目；公共入口的 queue/lz4 消费由既有 driver 验证。macos-15 远端运行尚未执行，本记录保持 proposed；本地协议及接线测试不证明远端验收或 Gitee 发布通过。
+
 ## 风险
 
 必填白名单会改变现有配方的校验条件，所有受影响的自有配方、测试输入及文档必须在同一阶段同步更新。白名单表达维护者支持决定，不自动证明上游在对应平台可用；新增真实支持仍需足够的正常构建及消费证据。

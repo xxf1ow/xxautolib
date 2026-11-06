@@ -97,7 +97,7 @@ CI 验证后生成库和工具归档，独立发布流程将成品分发到 [Git
 
 ## 支持范围
 
-支持 Windows x86_64、Linux x86_64、Linux aarch64；不提供 macOS 发行物或通用交叉编译环境。源码构建与预编译发布是不同能力，包的实际供给范围以 Release 资产为准。queue、lz4、flann 的完整消费示例见上文；OpenCV、Boost、PCL 等复杂模块通过相同构建体系管理来源与依赖，不要求全部库都作为二进制发行物。各库迁入及验收状态见[路线图](docs/roadmap.md#模块迁移候选)。
+支持 Windows x86_64、Linux x86_64/aarch64 和 macOS 15+（Apple Silicon）。Darwin 首轮仅 queue/lz4，流水线固定 macos-15、Apple Clang、arm64/15.0，不提供 Intel 或交叉编译包。构建与发布支持不同，实际供给以 Release 资产为准。原样 example 依赖未支持 Darwin 的 FLANN，尚未验证；queue/lz4 公共入口证据见[测试指南](docs/testing.md#ci-验证)，各库状态见[路线图](docs/roadmap.md#模块迁移候选)。
 
 编译器、CRT、glibc、C++ ABI 及 OpenMP 必须兼容，使用者负责本地产物的兼容性；importer 不安装系统运行库或判定 ABI。Windows需提供实际DLL搜索路径。版本化本地闭环的平台及最低 CMake 缺口见[测试指南](docs/testing.md)。没有版本范围求解、工具链变体或整套发行快照。
 

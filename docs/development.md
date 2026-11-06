@@ -77,7 +77,7 @@ Git 主来源复用 `git/<包名>/<版本>/`，资源复用 `git/_resources/<包
 
 ## CI 开发与运行
 
-[手动流水线](../.github/workflows/build-platform.yml)接受当前源码仓库的普通分支、拒绝 tag，检出事件提交；workflow 将 `GITHUB_REPOSITORY` 作为可信仓库传给运行、运输和汇总校验，支持 fork。默认/all 仍为 Windows x86_64、Linux x86_64/aarch64；显式 Darwin 仅执行器支持，workflow 尚未接入。
+[手动流水线](../.github/workflows/build-platform.yml)接受当前源码仓库的普通分支、拒绝 tag，检出事件提交；workflow 将 `GITHUB_REPOSITORY` 作为可信仓库传给运行、运输和汇总校验，支持 fork。默认/all 为 Windows x86_64、Linux x86_64/aarch64、darwin-aarch64，也可单选。Darwin 固定 macos-15，核对 15.x/arm64；[准备脚本](../.github/scripts/prepare-darwin.sh)在任务目录校验并准备 CMake 3.31.12 和私有 Go，有效库才编译 Make 4.4.1。生产与消费沿用普通根入口及上述 Apple 参数。
 
 模块未提供或空字符串只准备 importer 和入口，原始输入严格等于 `all` 才发现全部合资格配方版本，也可选择 `eigen@3.4.0,eigen@5.0.1,queue,lz4,flann`。纯空白、混合或变形的 `all` 及单独 importer 选择均拒绝。缺自身或传递依赖 adapter 的根按资格过滤；计划与汇总分别展示请求根、有效根和过滤根，过滤不算警告或失败。
 
