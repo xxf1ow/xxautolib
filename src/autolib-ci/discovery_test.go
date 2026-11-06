@@ -41,10 +41,10 @@ func discoveryModule(t *testing.T, root, name string, adapter bool, depends stri
 
 func discoveryVersion(t *testing.T, root, name, version string, adapter bool, depends string) {
 	t.Helper()
-	if !strings.Contains(depends, "supported_platforms") {
-		depends = "supported_platforms=['windows-x86_64','linux-x86_64','linux-aarch64','darwin-aarch64']\n" + depends
+	if !strings.Contains(depends, "package_platforms") {
+		depends = "package_platforms=['windows-x86_64','linux-x86_64','linux-aarch64','darwin-aarch64']\n" + depends
 	}
-	declaration := "name='" + name + "'\nversion='" + version + "'\ntype='cmake'\n" + depends + "\n[source]\nGIT_REPOSITORY='fixture'\nGIT_TAG='fixed'\n"
+	declaration := "type='cmake'\n" + depends + "\n[source]\nGIT_REPOSITORY='fixture'\nGIT_TAG='fixed'\n"
 	writeCIFixture(t, root, "src/dependencies/"+name+"/package.toml", "latest='"+version+"'\n")
 	writeCIFixture(t, root, "src/dependencies/"+name+"/"+version+"/module.toml", declaration)
 	if adapter {
@@ -120,7 +120,7 @@ func TestCIDiscoveryFiltering(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(file, append([]byte("platform_independent=true\n"), data...), 0644); err != nil {
+		if err := os.WriteFile(file, []byte(strings.Replace(string(data), "package_platforms=['windows-x86_64','linux-x86_64','linux-aarch64','darwin-aarch64']", "package_platforms=['any-any']", 1)), 0644); err != nil {
 			t.Fatal(err)
 		}
 		plan, err := planCI(context.Background(), ciPlanOptions{SourceRoot: root, BuilderFile: builder, Modules: stringPointer("all")})
@@ -140,12 +140,12 @@ func TestCIDiscoveryFiltering(t *testing.T) {
 		t.Run("selection="+selection, func(t *testing.T) {
 			root := discoveryRoot(t)
 			discoveryModule(t, root, "shared", true, "")
-			discoveryModule(t, root, "fresh", true, "depends=['shared']\n")
-			discoveryModule(t, root, "independent", true, "depends=['shared']\n")
+			discoveryModule(t, root, "fresh", true, "depends=['shared@1.0']\n")
+			discoveryModule(t, root, "independent", true, "depends=['shared@1.0']\n")
 			discoveryModule(t, root, "local", false, "")
-			discoveryModule(t, root, "middle", true, "depends=['local','orphan']\n")
+			discoveryModule(t, root, "middle", true, "depends=['local@1.0','orphan@1.0']\n")
 			discoveryModule(t, root, "orphan", true, "")
-			discoveryModule(t, root, "blocked", true, "depends=['middle']\n")
+			discoveryModule(t, root, "blocked", true, "depends=['middle@1.0']\n")
 			plan, err := planCI(context.Background(), ciPlanOptions{SourceRoot: root, BuilderFile: builder, Platforms: stringPointer("linux-x86_64"), Modules: &selection})
 			if err != nil {
 				t.Fatal(err)

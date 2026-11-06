@@ -20,15 +20,15 @@ type filteredRoot struct {
 }
 
 type describedModule struct {
-	Name                string              `json:"name"`
-	Version             string              `json:"version"`
-	Target              string              `json:"target"`
-	Depends             []string            `json:"depends"`
-	PlatformIndependent bool                `json:"platform_independent"`
-	SystemDependencies  map[string][]string `json:"system_dependencies"`
-	Configuration       json.RawMessage     `json:"configuration"`
-	InputFiles          []string            `json:"input_files"`
-	AdapterFile         string              `json:"adapter_file"`
+	Name               string              `json:"name"`
+	Version            string              `json:"version"`
+	Target             string              `json:"target"`
+	Depends            []string            `json:"depends"`
+	PackagePlatform    string              `json:"package_platform"`
+	SystemDependencies map[string][]string `json:"system_dependencies"`
+	Configuration      json.RawMessage     `json:"configuration"`
+	InputFiles         []string            `json:"input_files"`
+	AdapterFile        string              `json:"adapter_file"`
 }
 
 type ciPlanOptions struct {

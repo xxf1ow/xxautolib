@@ -1,8 +1,6 @@
 # portaudio：跨平台音频 I/O，安装参考默认静动态库及配置。
-name = "portaudio"
 type = "cmake"
-version = "v190700_20210406"
-supported_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
+package_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
 sentinel = "lib/cmake/portaudio/portaudioConfig.cmake"
 config_dir = "lib/cmake/portaudio"
 pkgconfig_dir = "lib/pkgconfig"
@@ -20,7 +18,7 @@ PA_BUILD_TESTS = false
 apt = ["libasound2-dev"]
 
 # 上游 Windows DLL 带架构后缀，安装前修正 pkg-config 链接名。
-[[platforms.windows.steps]]
+[[platforms.windows-x86_64.steps]]
 name = "fix-pkgconfig-libs"
 DEPENDEES = ["build"]
 DEPENDERS = ["install"]

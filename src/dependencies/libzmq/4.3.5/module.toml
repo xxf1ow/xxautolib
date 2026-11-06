@@ -1,8 +1,6 @@
 # libzmq：ZeroMQ 消息引擎，保留上游默认静动态产物。
-name = "libzmq"
 type = "cmake"
-version = "4.3.5"
-supported_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
+package_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
 sentinel = "include/zmq.h"
 config_dir = "lib/cmake/ZeroMQ"
 package_name = "ZeroMQ"
@@ -11,5 +9,5 @@ package_name = "ZeroMQ"
 GIT_REPOSITORY = "https://github.com/zeromq/libzmq.git"
 GIT_TAG = "622fc6dde99ee172ebaa9c8628d85a7a1995a21d"
 
-[platforms.windows]
+[platforms.windows-x86_64]
 config_dir = "CMake"

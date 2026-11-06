@@ -34,8 +34,8 @@ def packaged_inputs(source, installed, builder, plan, identity):
     if work != expected or installed.name != 'install':
         raise AssertionError('native installation must use the CI work root')
     packages = [dict(slot=dict(name=m['name'], version=m['version'],
-                              os='any' if m['platform_independent'] else system,
-                              arch='any' if m['platform_independent'] else platform.split('-', 1)[1]),
+                              os='any' if (m['package_platform'] == 'any-any') else system,
+                              arch='any' if (m['package_platform'] == 'any-any') else platform.split('-', 1)[1]),
                      built=True, verified=True) for m in plan['platforms'][0]['description']['modules']]
     result = dict(run=identity, platform=platform, complete=True, error='', packages=packages,
                   roots=[dict(root=r, verified=True) for r in plan['platforms'][0]['roots']],
@@ -82,7 +82,7 @@ def prepare_native_fixture(source, installed, builder, system, arch):
         '-c', 'commit.gpgsign=false', 'commit', '-m', 'native publication fixture')
     sha = run('git', '-C', source, 'rev-parse', 'HEAD')
     description = json.loads(run(builder, 'describe', '--source-root=' + str(source),
-                                 '--system-name=' + {'linux': 'Linux', 'windows': 'Windows'}[system],
+                                 '--system-name=' + {'linux': 'Linux', 'windows': 'Windows', 'darwin': 'Darwin'}[system],
                                  '--architecture=' + arch, '--module=probe@1', '--module=dep@2'))
     platform = system + '-' + arch
     roots = ['probe@1', 'dep@2']

@@ -83,7 +83,7 @@ func planCI(ctx context.Context, o ciPlanOptions) (ciPlan, error) {
 				continue
 			}
 			for _, module := range platform.Description.Modules {
-				if module.PlatformIndependent {
+				if module.PackagePlatform == "any-any" {
 					plan.Publisher = preferred
 					return plan, nil
 				}

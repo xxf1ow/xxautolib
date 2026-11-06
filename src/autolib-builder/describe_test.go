@@ -16,11 +16,11 @@ func TestPlatformSelection(t *testing.T) {
 	describeRootInputs(t, root)
 	for _, item := range []struct{ name, extra, platforms string }{
 		{"shared", "", "'linux-x86_64','darwin-aarch64'"},
-		{"good", "depends=['shared']\n", "'linux-x86_64','darwin-aarch64'"},
-		{"bad", "depends=['shared','blocked']\n", "'darwin-aarch64'"},
+		{"good", "depends=['shared@1.0']\n", "'linux-x86_64','darwin-aarch64'"},
+		{"bad", "depends=['shared@1.0','blocked@1.0']\n", "'darwin-aarch64'"},
 		{"blocked", "", "'linux-x86_64'"},
 	} {
-		definitionFile(t, root, item.name, "cmake", "supported_platforms=["+item.platforms+"]\n"+item.extra+testSource)
+		definitionFile(t, root, item.name, "cmake", "package_platforms=["+item.platforms+"]\n"+item.extra+testSource)
 	}
 	got, err := describeSelection(root, "Darwin", "arm64", []string{"bad", "good", "blocked"}, false)
 	if err != nil {
@@ -61,19 +61,19 @@ func TestPlatformSelection(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			r := t.TempDir()
 			describeRootInputs(t, r)
-			body := "supported_platforms=['linux-x86_64']\n"
+			body := "package_platforms=['linux-x86_64']\n"
 			request := "broken"
 			switch kind {
 			case "missing dependency":
-				body += "depends=['absent']\n"
+				body += "depends=['absent@1.0']\n"
 			case "cycle":
-				body += "depends=['broken']\n"
+				body += "depends=['broken@1.0']\n"
 			case "bad TOML":
 				body += "unknown=true\n"
 			case "version conflict":
 				body += "depends=['dep@1','dep@2']\n"
 				for _, v := range []string{"1", "2"} {
-					definitionVersionFile(t, r, "dep", v, "cmake", "supported_platforms=['linux-x86_64']\n"+testSource)
+					definitionVersionFile(t, r, "dep", v, "cmake", "package_platforms=['linux-x86_64']\n"+testSource)
 				}
 			case "unknown root":
 				request = "absent"
@@ -97,7 +97,7 @@ func TestDescribeParity(t *testing.T) {
 	f := newFixture(t)
 	describeRootInputs(t, f.root)
 	definitionFile(t, f.root, "lz4", "cmake", testSource)
-	definitionFile(t, f.root, "flann", "cmake", "depends=['lz4']\n[system_dependencies]\napt=['pkg-config']\n"+testSource)
+	definitionFile(t, f.root, "flann", "cmake", "depends=['lz4@1.0']\n[system_dependencies]\napt=['pkg-config']\n"+testSource)
 	got, err := describeModules(f.root, "Linux", "x86_64", []string{"flann"})
 	if err != nil {
 		t.Fatal(err)
@@ -114,7 +114,7 @@ func TestDescribeParity(t *testing.T) {
 	other := f.root + "-other"
 	describeRootInputs(t, other)
 	definitionFile(t, other, "lz4", "cmake", testSource)
-	definitionFile(t, other, "flann", "cmake", "depends=['lz4']\n[system_dependencies]\napt=['pkg-config']\n"+testSource)
+	definitionFile(t, other, "flann", "cmake", "depends=['lz4@1.0']\n[system_dependencies]\napt=['pkg-config']\n"+testSource)
 	first, err := json.Marshal(got)
 	if err != nil {
 		t.Fatal(err)
@@ -139,7 +139,7 @@ func TestDescribeInputs(t *testing.T) {
 	putFile(t, filepath.Join(moduleDir, "fix.patch"), "patch\n")
 	putFile(t, filepath.Join(moduleDir, "run.cmake"), "step input\n")
 	body := "version='1.0'\nconfig_dir='config/linux'\n" + testSource + "[resources.assets]\nGIT_REPOSITORY='assets'\nGIT_TAG='fixed'\n[cmake.cache]\nVALUE='selected'\n" +
-		"[platforms.linux.cmake.cache]\nPLATFORM='linux'\n[[steps]]\nname='prepare'\nCOMMAND=['cmake','-P','run.cmake']\nDEPENDS=['run.cmake','<RESOURCE_SOURCE_DIR:assets>/run.cmake']\nWORKING_DIRECTORY='<RESOURCE_SOURCE_DIR:assets>'\n[[patches]]\nfile='fix.patch'\n[[copy]]\nfiles=['plain.h']\ndestination='include'\n"
+		"[platforms.linux-x86_64.cmake.cache]\nPLATFORM='linux'\n[[steps]]\nname='prepare'\nCOMMAND=['cmake','-P','run.cmake']\nDEPENDS=['run.cmake','<RESOURCE_SOURCE_DIR:assets>/run.cmake']\nWORKING_DIRECTORY='<RESOURCE_SOURCE_DIR:assets>'\n[[patches]]\nfile='fix.patch'\n[[copy]]\nfiles=['plain.h']\ndestination='include'\n"
 	definitionFile(t, f.root, "plain", "copy", body)
 	putFile(t, filepath.Join(moduleDir, "autolib-import.cmake"), "# adapter\n")
 	description, err := describeModules(f.root, "Linux", "x86_64", []string{"plain"})
@@ -215,8 +215,8 @@ func TestDescribeCLI(t *testing.T) {
 	f := newFixture(t)
 	describeRootInputs(t, f.root)
 	definitionFile(t, f.root, "plain", "cmake", testSource)
-	definitionFile(t, f.root, "cycle-a", "cmake", "depends=['cycle-b']\n"+testSource)
-	definitionFile(t, f.root, "cycle-b", "cmake", "depends=['cycle-a']\n"+testSource)
+	definitionFile(t, f.root, "cycle-a", "cmake", "depends=['cycle-b@1.0']\n"+testSource)
+	definitionFile(t, f.root, "cycle-b", "cmake", "depends=['cycle-a@1.0']\n"+testSource)
 	definitionFile(t, f.root, "invalid", "cmake", "unknown=true\n"+testSource)
 	var stdout, stderr bytes.Buffer
 	args := []string{"describe", "--source-root", f.root, "--system-name", "Linux", "--architecture", "x86_64", "--module", "plain"}
@@ -272,7 +272,7 @@ func TestDescribeCISelection(t *testing.T) {
 	definitionVersionFile(t, root, "eigen", "3.4.0", "copy", testSource+"[[copy]]\nfiles=['Eigen']\ndestination='include'\n")
 	definitionFile(t, root, "old", "cmake", "depends=['eigen@3.4.0']\n"+testSource)
 	definitionFile(t, root, "new", "cmake", "depends=['eigen@5.0.1']\n"+testSource)
-	definitionFile(t, root, "conflict", "cmake", "depends=['old','new']\n"+testSource)
+	definitionFile(t, root, "conflict", "cmake", "depends=['old@1.0','new@1.0']\n"+testSource)
 	// Discovery includes every recipe, so keep the intentionally invalid root explicit.
 	for _, tc := range []struct {
 		name      string

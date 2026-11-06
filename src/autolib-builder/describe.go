@@ -23,15 +23,15 @@ type moduleDescription struct {
 }
 
 type describedModule struct {
-	Name                string              `json:"name"`
-	Version             string              `json:"version"`
-	Target              string              `json:"target"`
-	Depends             []string            `json:"depends"`
-	PlatformIndependent bool                `json:"platform_independent"`
-	SystemDependencies  map[string][]string `json:"system_dependencies"`
-	Configuration       json.RawMessage     `json:"configuration"`
-	InputFiles          []string            `json:"input_files"`
-	AdapterFile         string              `json:"adapter_file"`
+	Name               string              `json:"name"`
+	Version            string              `json:"version"`
+	Target             string              `json:"target"`
+	Depends            []string            `json:"depends"`
+	PackagePlatform    string              `json:"package_platform"`
+	SystemDependencies map[string][]string `json:"system_dependencies"`
+	Configuration      json.RawMessage     `json:"configuration"`
+	InputFiles         []string            `json:"input_files"`
+	AdapterFile        string              `json:"adapter_file"`
 }
 
 func describeModules(sourceRoot, systemName, architecture string, names []string) (moduleDescription, error) {
@@ -67,7 +67,7 @@ func describeSelection(sourceRoot, systemName, architecture string, requests []s
 	result.RequestedRoots, result.Roots, result.FilteredRoots = selection.RequestedRoots, selection.Roots, selection.FilteredRoots
 	definitions := selection.Modules
 	for _, definition := range definitions {
-		module, err := describeModule(root, definition)
+		module, err := describeModule(root, definition, strings.ToLower(systemName)+"-"+result.Architecture)
 		if err != nil {
 			return result, err
 		}
@@ -97,8 +97,11 @@ func describeSelection(sourceRoot, systemName, architecture string, requests []s
 	return result, nil
 }
 
-func describeModule(root string, definition *moduleDefinition) (describedModule, error) {
-	result := describedModule{Name: definition.Name, Version: definition.Version, Target: moduleTarget(moduleRef{definition.Name, definition.Version}), Depends: slices.Clone(definition.Depends), PlatformIndependent: definition.PlatformIndependent, SystemDependencies: map[string][]string{}, InputFiles: []string{}}
+func describeModule(root string, definition *moduleDefinition, platform string) (describedModule, error) {
+	result := describedModule{Name: definition.Name, Version: definition.Version, Target: moduleTarget(moduleRef{definition.Name, definition.Version}), Depends: slices.Clone(definition.Depends), PackagePlatform: platform, SystemDependencies: map[string][]string{}, InputFiles: []string{}}
+	if slices.Contains(definition.PackagePlatforms, "any-any") {
+		result.PackagePlatform = "any-any"
+	}
 	if result.Depends == nil {
 		result.Depends = []string{}
 	}

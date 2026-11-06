@@ -11,7 +11,7 @@ import (
 func TestGenerationWrites(t *testing.T) {
 	f := newEntryFixture(t)
 	dep := definitionFile(t, f.root, "dep", "cmake", testSource+"[cmake.cache]\nVALUE='one'\n")
-	definitionFile(t, f.root, "leaf", "cmake", "depends=['dep']\n"+testSource)
+	definitionFile(t, f.root, "leaf", "cmake", "depends=['dep@1.0']\n"+testSource)
 	definitionFile(t, f.root, "unused", "cmake", testSource)
 	if err := generate(f.context, []string{"leaf"}); err != nil {
 		t.Fatal(err)
@@ -154,9 +154,9 @@ func TestModuleClosureErrors(t *testing.T) {
 	for _, tc := range []struct{ left, right, chain string }{{"missing", "", "left@1.0 -> missing"}, {"left", "", "left@1.0 -> left@1.0"}, {"right", "left", "left@1.0 -> right@1.0 -> left@1.0"}} {
 		t.Run(tc.chain, func(t *testing.T) {
 			root := t.TempDir()
-			definitionFile(t, root, "left", "cmake", "depends=['"+tc.left+"']\n"+testSource)
+			definitionFile(t, root, "left", "cmake", "depends=['"+tc.left+"@1.0']\n"+testSource)
 			if tc.right != "" {
-				definitionFile(t, root, "right", "cmake", "depends=['"+tc.right+"']\n"+testSource)
+				definitionFile(t, root, "right", "cmake", "depends=['"+tc.right+"@1.0']\n"+testSource)
 			}
 			_, err := loadModuleClosure(root, []string{"left"}, "Linux", "amd64")
 			if err == nil || !strings.Contains(err.Error(), tc.chain) || !strings.Contains(err.Error(), "module.toml") || !strings.Contains(err.Error(), root) {
@@ -164,7 +164,7 @@ func TestModuleClosureErrors(t *testing.T) {
 			}
 		})
 	}
-	if _, err := loadModuleClosure(t.TempDir(), []string{"../escape"}, "Linux", ""); err == nil || !strings.Contains(err.Error(), "module reference") {
+	if _, err := loadModuleClosure(t.TempDir(), []string{"../escape"}, "Linux", "amd64"); err == nil || !strings.Contains(err.Error(), "module reference") {
 		t.Fatal(err)
 	}
 }

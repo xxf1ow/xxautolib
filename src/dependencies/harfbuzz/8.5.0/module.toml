@@ -1,9 +1,7 @@
 # HarfBuzz：文本整形引擎，构建并安装库，供 OpenCV freetype 使用。
-name = "harfbuzz"
 type = "cmake"
-version = "8.5.0"
-supported_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
-depends = ["freetype"]
+package_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
+depends = ["freetype@2.13.2"]
 pkgconfig_dir = "lib/pkgconfig"
 sentinel = "include/harfbuzz/hb.h"
 

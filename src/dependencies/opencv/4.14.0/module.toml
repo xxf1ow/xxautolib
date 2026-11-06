@@ -1,9 +1,7 @@
 # OpenCV：图像处理与计算机视觉库，构建含 contrib 和文字绘制的 world 库。
-name = "opencv"
 type = "cmake"
-version = "4.14.0"
-supported_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
-depends = ["freetype", "harfbuzz"]
+package_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
+depends = ["freetype@2.13.2", "harfbuzz@8.5.0"]
 package_name = "OpenCV"
 config_dir = "lib/cmake/opencv4"
 sentinel = "lib/cmake/opencv4/OpenCVConfig.cmake"
@@ -22,7 +20,7 @@ DOWNLOAD_NAME = "opencv_contrib-4.14.0.zip"
 file = "freetype-pkgconfig.patch"  # freetype2/harfbuzz 经 pkg-config 探测；PKG_CONFIG_PATH 由直接依赖接线提供。
 resource = "opencv_contrib"        # 在 contrib 上完成补丁后，主库才能配置，避免 freetype 因依赖未检出而被禁用。
 
-[platforms.windows]
+[platforms.windows-x86_64]
 config_dir = "." # 上游 Windows 原生布局：根配置负责选择 x64/vc17 下的实际库。
 sentinel = "OpenCVConfig.cmake"
 

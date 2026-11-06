@@ -1,8 +1,6 @@
 # FreeType：加载并光栅化 TrueType/OpenType 等字体，构建并安装静态字体引擎。
-name = "freetype"
 type = "cmake"
-version = "2.13.2"
-supported_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
+package_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
 sentinel = "include/freetype2/ft2build.h"
 config_dir = "lib/cmake/freetype"
 pkgconfig_dir = "lib/pkgconfig"

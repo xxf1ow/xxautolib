@@ -39,7 +39,7 @@ func validatePackagePlatform(system, arch string) error {
 }
 
 func packagePlatform(m *moduleDefinition, system, arch string) (string, string) {
-	if m.PlatformIndependent {
+	if slices.Contains(m.PackagePlatforms, "any-any") {
 		return "any", "any"
 	}
 	return system, arch

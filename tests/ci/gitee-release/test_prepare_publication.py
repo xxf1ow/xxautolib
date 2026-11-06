@@ -38,7 +38,7 @@ def load_module():
 
 def module(name, version, universal=False):
     return dict(name=name, version=version, target='fixture_' + name + version,
-                depends=[], platform_independent=universal)
+                depends=[], package_platform='any-any' if universal else 'linux-x86_64')
 
 
 def plan(platforms):
@@ -46,7 +46,7 @@ def plan(platforms):
                module('queue', '1.0')]
     return dict(platforms=[dict(id=p, requested_roots=['eigen@3.4.0', 'eigen@5.0.1', 'queue@1.0'],
                                filtered_roots=[], roots=['eigen@3.4.0', 'eigen@5.0.1', 'queue@1.0'],
-                               description=dict(modules=modules),
+                               description=dict(modules=[dict(m, package_platform='any-any' if m['package_platform'] == 'any-any' else p) for m in modules]),
                                layers=[['eigen@3.4.0', 'eigen@5.0.1', 'queue@1.0']])
                            for p in platforms], requested_modules=[], publisher=platforms[0] if platforms else '')
 
@@ -72,7 +72,7 @@ def make_transport(path, selected_plan, platform, mutate=None, extra=(), identit
     os_name, arch = platform.split('-', 1)
     native_plan = next(p for p in selected_plan['platforms'] if p['id'] == platform)
     for item in native_plan['description']['modules']:
-        universal = item['platform_independent']
+        universal = item['package_platform'] == 'any-any'
         packages.append(dict(name=item['name'], version=item['version'],
                              os='any' if universal else os_name,
                              arch='any' if universal else arch, dependencies=[],
@@ -371,7 +371,7 @@ class PreparationTests(unittest.TestCase):
             if native['id'].startswith('linux') and not empty:
                 modules.append(module('realsense', '2.58.1'))
             roots = [item['name'] + '@' + item['version'] for item in modules]
-            native.update(description=dict(modules=modules), roots=roots, layers=[roots] if roots else [],
+            native.update(description=dict(modules=[dict(m, package_platform='any-any' if m['package_platform'] == 'any-any' else native['id']) for m in modules]), roots=roots, layers=[roots] if roots else [],
                           requested_roots=roots + (['librealsense@2.58.1'] if filtered else []),
                           filtered_roots=['librealsense@2.58.1'] if filtered else [])
         return selected

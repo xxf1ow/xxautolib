@@ -87,7 +87,7 @@ func TestPackageArchiveChecksum(t *testing.T) {
 func stageFixture(t *testing.T, name string) stageOptions {
 	t.Helper()
 	f := newFixture(t)
-	definitionFile(t, f.root, name, "cmake", "depends=['lz4']\n"+testSource)
+	definitionFile(t, f.root, name, "cmake", "depends=['lz4@1.0']\n"+testSource)
 	putFile(t, filepath.Join(f.root, "3rdparty", name, "1.0/include/input.h"), "unchanged installation\n")
 	putFile(t, filepath.Join(f.root, "3rdparty", name, "1.0/autolib-import.cmake"), "set(AUTOLIB_PACKAGE_NAME \""+name+"\")\nset(AUTOLIB_PACKAGE_VERSION \"1.0\")\nset(AUTOLIB_OS \"windows\")\nset(AUTOLIB_ARCH \"x86_64\")\nset(AUTOLIB_DEPENDENCIES \"leaf@1\")\n# adapter 正文\n")
 	script, err := os.ReadFile("../autolib-importer/fixup-metadata.cmake")

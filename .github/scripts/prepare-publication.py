@@ -116,7 +116,7 @@ def _planned_platforms(plan):
     _require(isinstance(plan, dict) and isinstance(plan.get('platforms'), list), 'invalid CI plan')
     platforms = [p['id'] for p in plan['platforms']]
     _require(len(platforms) == len(set(platforms)) and set(platforms) <= PLATFORMS, 'invalid or duplicate planned platforms')
-    universal = any(m['platform_independent'] for p in plan['platforms'] for m in p['description']['modules'])
+    universal = any(m['package_platform'] == 'any-any' for p in plan['platforms'] for m in p['description']['modules'])
     _require(plan.get('publisher') in platforms if universal else plan.get('publisher', '') == '', 'invalid any-any publisher')
     return platforms
 
@@ -235,8 +235,8 @@ def _validate_transport(root, transport, selected, platform, source_entry):
     system, arch = platform['id'].split('-', 1)
     for module in platform['description']['modules']:
         name, version = _component(module['name']), _component(module['version'])
-        universal = module['platform_independent']
-        _require(type(universal) is bool and module['target'], 'invalid planned module')
+        universal = module['package_platform'] == 'any-any'
+        _require(module['package_platform'] in ('any-any', platform['id']) and module['target'], 'invalid planned module')
         expected.append(dict(name=name, version=version, os='any' if universal else system,
                              arch='any' if universal else arch, dependencies=module['depends'] or [],
                              publish=not universal or plan['publisher'] == platform['id']))

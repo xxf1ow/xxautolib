@@ -14,7 +14,7 @@ func finalizeFixture() (ciPlan, ciRunIdentity, []ciPlatformResult) {
 	plan := ciPlan{Publisher: "linux-x86_64", RequestedModules: []string{"queue@1"}}
 	results := []ciPlatformResult{}
 	for _, platform := range []string{"linux-x86_64", "windows-x86_64", "linux-aarch64"} {
-		plan.Platforms = append(plan.Platforms, ciPlatformPlan{ID: platform, Roots: []string{"queue@1"}, Description: moduleDescription{Modules: []describedModule{{Name: "queue", Version: "1", Target: "fixture-queue", PlatformIndependent: true}}}})
+		plan.Platforms = append(plan.Platforms, ciPlatformPlan{ID: platform, Roots: []string{"queue@1"}, Description: moduleDescription{Modules: []describedModule{{Name: "queue", Version: "1", Target: "fixture-queue", PackagePlatform: "any-any"}}}})
 		results = append(results, ciPlatformResult{Run: identity, Platform: platform, Complete: true, Importer: ciImporterResult{File: ciImporterExecutable(platform), Verified: true}, Entry: ciEntryResult{File: "autolib.cmake", SHA256: strings.Repeat("c", 64), Verified: true}, Packages: []ciSlotResult{{Slot: ciSlot{Name: "queue", Version: "1", OS: "any", Arch: "any"}, Built: true, Verified: true}}, Roots: []ciRootResult{{Root: "queue@1", Verified: true}}})
 	}
 	return plan, identity, results

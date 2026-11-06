@@ -67,6 +67,9 @@ func validateModuleDescription(description moduleDescription, systemName, archit
 		if module.Name == "" || module.Version == "" || module.Target == "" || module.Depends == nil || module.SystemDependencies == nil || len(module.Configuration) == 0 || configurationErr != nil || configuration == nil || module.InputFiles == nil {
 			return fmt.Errorf("builder describe output has incomplete module description %q", module.Name)
 		}
+		if module.PackagePlatform != "any-any" && module.PackagePlatform != strings.ToLower(systemName)+"-"+architecture {
+			return fmt.Errorf("builder describe output has invalid package platform %q for %s", module.PackagePlatform, module.Name)
+		}
 		identity := moduleIdentity(module)
 		if _, exists := byName[identity]; exists {
 			return fmt.Errorf("builder describe output repeats module %q", identity)

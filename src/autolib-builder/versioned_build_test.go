@@ -23,6 +23,7 @@ func TestVersionedInstallCoexistence(t *testing.T) {
 		putFile(t, filepath.Join(f.root, "src/dependencies/eigen", version, "autolib-import.cmake"), "# fixture adapter\n")
 	}
 	putFile(t, filepath.Join(f.root, "src/dependencies/eigen/package.toml"), "latest='9.9.9'\n")
+	putFile(t, filepath.Join(f.root, "src/dependencies/eigen/9.9.9/module.toml"), "type='cmake'\npackage_platforms=['any-any']\n"+testSource)
 	sentinel := putFile(t, filepath.Join(installRoot, "eigen/0.1/include/eigen-version.h"), "unrelated installed version\n")
 	shared := f.repository("shared", map[string]string{"CMakeLists.txt": `cmake_minimum_required(VERSION 3.20)
 project(shared NONE)
@@ -144,11 +145,13 @@ install(FILES "${CMAKE_BINARY_DIR}/paths" DESTINATION .)
 
 func TestVersionedConsumptionFreeze(t *testing.T) {
 	f := newEntryFixture(t)
-	f.context.Architecture = "x86_64"
+	if f.context.SystemName != "Darwin" {
+		f.context.Architecture = "x86_64"
+	}
 	source := f.repository("leaf", map[string]string{"leaf.h": "leaf"})
 	f.definitionVersion("eigen", "3.4.0", "cmake", testSource)
 	f.definitionVersion("eigen", "5.0.1", "cmake", testSource)
-	f.definitionVersion("leaf", "1", "copy", "depends=['eigen','eigen@3.4.0']\n[source]\n"+source+"[[copy]]\nfiles=['leaf.h']\ndestination='include'\n")
+	f.definitionVersion("leaf", "1", "copy", "depends=['eigen@3.4.0']\n[source]\n"+source+"[[copy]]\nfiles=['leaf.h']\ndestination='include'\n")
 	putFile(t, filepath.Join(f.root, "src/dependencies/eigen/package.toml"), "latest='3.4.0'\n")
 	for _, ref := range []string{"eigen/3.4.0", "eigen/5.0.1", "leaf/1"} {
 		putFile(t, filepath.Join(f.root, "src/dependencies", ref, "autolib-import.cmake"), "# adapter\n")
@@ -159,7 +162,7 @@ func TestVersionedConsumptionFreeze(t *testing.T) {
 	}
 	f.context.BuilderFile = filepath.Join(f.root, "builder")
 	f.must(goExecutable(), "build", "-o", f.context.BuilderFile, ".")
-	putFile(t, filepath.Join(f.root, "3rdparty/eigen/3.4.0/autolib-import.cmake"), "set(AUTOLIB_PACKAGE_NAME \"eigen\")\nset(AUTOLIB_PACKAGE_VERSION \"3.4.0\")\nset(AUTOLIB_OS \""+strings.ToLower(f.context.SystemName)+"\")\nset(AUTOLIB_ARCH \"x86_64\")\nset(AUTOLIB_DEPENDENCIES \"\")\n# adapter\n")
+	putFile(t, filepath.Join(f.root, "3rdparty/eigen/3.4.0/autolib-import.cmake"), "set(AUTOLIB_PACKAGE_NAME \"eigen\")\nset(AUTOLIB_PACKAGE_VERSION \"3.4.0\")\nset(AUTOLIB_OS \""+strings.ToLower(f.context.SystemName)+"\")\nset(AUTOLIB_ARCH \""+normalizeArchitecture(f.context.Architecture)+"\")\nset(AUTOLIB_DEPENDENCIES \"\")\n# adapter\n")
 	modules[0].Sentinel = "autolib-import.cmake"
 	f.project(modules, "")
 	putFile(t, filepath.Join(f.root, "src/dependencies/eigen/package.toml"), "latest='5.0.1'\n")
@@ -181,7 +184,7 @@ func TestVersionedConsumptionFreeze(t *testing.T) {
 	}
 	dep := filepath.Join(f.root, "3rdparty/eigen/3.4.0/autolib-import.cmake")
 	putFile(t, filepath.Join(f.root, "3rdparty/eigen/5.0.1/autolib-import.cmake"), strings.Replace(readFile(t, dep), "\"3.4.0\"", "\"5.0.1\"", 1))
-	baseArgs := []string{f.context.BuilderFile, "prepare-consumption", "--source-root=" + f.root, "--install-root=" + filepath.Join(f.root, "3rdparty"), "--name=leaf", "--version=1", "--os=" + strings.ToLower(f.context.SystemName), "--arch=x86_64"}
+	baseArgs := []string{f.context.BuilderFile, "prepare-consumption", "--source-root=" + f.root, "--install-root=" + filepath.Join(f.root, "3rdparty"), "--name=leaf", "--version=1", "--os=" + strings.ToLower(f.context.SystemName), "--arch=" + normalizeArchitecture(f.context.Architecture)}
 	for _, tc := range []struct {
 		name         string
 		dependencies []string
@@ -220,7 +223,7 @@ func TestVersionedConsumptionFreeze(t *testing.T) {
 func TestVersionedUniversalSource(t *testing.T) {
 	f := newFixture(t)
 	for _, version := range []string{"1", "2"} {
-		f.definitionVersion("headers", version, "copy", "platform_independent=true\n"+testSource+"[[copy]]\nfiles=['input.h']\ndestination='include'\n")
+		f.definitionVersion("headers", version, "copy", "package_platforms=['any-any']\n"+testSource+"[[copy]]\nfiles=['input.h']\ndestination='include'\n")
 		putFile(t, filepath.Join(f.root, "src/dependencies/headers", version, "autolib-import.cmake"), "# adapter\n")
 		putFile(t, filepath.Join(f.root, "git/headers", version, "input.h"), version)
 		output := putFile(t, filepath.Join(f.root, "3rdparty/headers", version, "include/input.h"), version)
@@ -241,7 +244,9 @@ func TestVersionedUniversalSource(t *testing.T) {
 
 func TestVersionedConsumptionReuseIdentity(t *testing.T) {
 	f := newEntryFixture(t)
-	f.context.Architecture = "x86_64"
+	if f.context.SystemName != "Darwin" {
+		f.context.Architecture = "x86_64"
+	}
 	f.context.BuilderFile = filepath.Join(f.root, "builder")
 	f.must(goExecutable(), "build", "-o", f.context.BuilderFile, ".")
 	for _, version := range []string{"1", "2"} {
@@ -256,7 +261,7 @@ file(WRITE "${CMAKE_BINARY_DIR}/payload" "${dependency}")
 install(FILES "${CMAKE_BINARY_DIR}/payload" DESTINATION .)
 `})
 	for _, version := range []string{"1", "2"} {
-		f.definitionVersion("leaf", version, "cmake", "depends=['dep']\nsentinel='payload'\n[source]\n"+source)
+		f.definitionVersion("leaf", version, "cmake", "depends=['dep@"+version+"']\nsentinel='payload'\n[source]\n"+source)
 	}
 	adapter := putFile(t, filepath.Join(f.root, "src/dependencies/leaf/1/autolib-import.cmake"), "# original adapter\n")
 	depLatest := putFile(t, filepath.Join(f.root, "src/dependencies/dep/package.toml"), "latest='1'\n")
@@ -271,6 +276,8 @@ install(FILES "${CMAKE_BINARY_DIR}/payload" DESTINATION .)
 	before := readFile(t, output)
 	requireFile(t, filepath.Join(f.root, "3rdparty/leaf/1/payload"), "dependency 1")
 	putFile(t, depLatest, "latest='2'\n")
+	leafRecipe := filepath.Join(f.root, "src/dependencies/leaf/1/module.toml")
+	putFile(t, leafRecipe, strings.Replace(readFile(t, leafRecipe), "dep@1", "dep@2", 1))
 	putFile(t, leafLatest, "latest='2'\n")
 	putFile(t, adapter, "# changed adapter\n")
 	if err := generate(f.context, []string{"leaf@1"}); err != nil {
@@ -326,21 +333,25 @@ func TestVersionedClosureFreeze(t *testing.T) {
 	root := t.TempDir()
 	definitionVersionFile(t, root, "eigen", "3.4.0", "cmake", testSource)
 	definitionVersionFile(t, root, "eigen", "5.0.1", "cmake", testSource)
-	definitionVersionFile(t, root, "app", "1", "cmake", "depends=['eigen','eigen@3.4.0']\n"+testSource)
+	definitionVersionFile(t, root, "app", "1", "cmake", "depends=['eigen@3.4.0']\n"+testSource)
 	metadata := filepath.Join(root, "src", "dependencies", "eigen", "package.toml")
 	putFile(t, metadata, "latest='3.4.0'\n")
 	modules, err := loadModuleClosure(root, []string{"app"}, "Linux", "x86_64")
 	if err != nil || len(modules) != 2 || !reflect.DeepEqual(modules[1].Depends, []string{"eigen@3.4.0"}) {
-		t.Fatalf("bare dependencies must freeze and deduplicate to current latest: %+v, %v", modules, err)
+		t.Fatalf("pinned dependencies must retain their declared version: %+v, %v", modules, err)
 	}
 	putFile(t, metadata, "latest='5.0.1'\n")
+	modules, err = loadModuleClosure(root, []string{"app"}, "Linux", "x86_64")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !reflect.DeepEqual(modules[1].Depends, []string{"eigen@3.4.0"}) {
 		t.Fatal("a resolved dependency changed after latest changed")
 	}
-	definitionVersionFile(t, root, "app", "1", "cmake", "depends=['eigen']\n"+testSource)
+	definitionVersionFile(t, root, "app", "1", "cmake", "depends=['eigen@5.0.1']\n"+testSource)
 	modules, err = loadModuleClosure(root, []string{"app"}, "Linux", "x86_64")
 	if err != nil || !reflect.DeepEqual(modules[len(modules)-1].Depends, []string{"eigen@5.0.1"}) {
-		t.Fatalf("new resolutions must read current latest: %+v, %v", modules, err)
+		t.Fatalf("an explicit dependency update must select the new version: %+v, %v", modules, err)
 	}
 	modules, err = loadModuleClosure(root, nil, "Linux", "x86_64")
 	if err != nil || len(modules) != 3 {
@@ -354,7 +365,7 @@ func TestVersionedDescribe(t *testing.T) {
 		root := t.TempDir()
 		describeRootInputs(t, root)
 		definitionVersionFile(t, root, "eigen", "3.4.0", "cmake", testSource)
-		definitionVersionFile(t, root, "app", "1", "cmake", "depends=['eigen']\n"+testSource)
+		definitionVersionFile(t, root, "app", "1", "cmake", "depends=['eigen@3.4.0']\n"+testSource)
 		putFile(t, filepath.Join(root, "src/dependencies/app/1/autolib-import.cmake"), "# adapter\n")
 		var stdout, stderr bytes.Buffer
 		code := run([]string{"describe", "--source-root", root, "--system-name", "Linux", "--architecture", "x86_64", "--module", "app@1"}, &stdout, &stderr)

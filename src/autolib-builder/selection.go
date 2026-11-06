@@ -112,7 +112,7 @@ func selectModuleClosure(sourceRoot string, requests []string, systemName, archi
 				module.Depends = unique(depends)
 				definitions[key] = module
 			}
-			if blocked == nil && !slices.Contains(module.SupportedPlatforms, platform) {
+			if blocked == nil && !slices.Contains(module.PackagePlatforms, "any-any") && !slices.Contains(module.PackagePlatforms, platform) {
 				blocked = chain
 			}
 			stack = append(stack, key)

@@ -1,9 +1,6 @@
 # expected：expected 返回值类型，仅安装头文件。
-name = "expected"
 type = "copy"
-version = "1.3.1"
-supported_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
-platform_independent = true
+package_platforms = ['any-any']
 sentinel = "include/tl/expected.hpp"
 
 [source] # 固定迁移基线；升级时同步核对布局及导出接口。

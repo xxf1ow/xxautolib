@@ -197,7 +197,7 @@ func prepareConsumption(o consumptionOptions) error {
 			return fmt.Errorf("package %s: dependency %s identity does not match %s/%s", o.Name, dependency, o.OS, o.Arch)
 		}
 	}
-	if module.PlatformIndependent {
+	if slices.Contains(module.PackagePlatforms, "any-any") {
 		if err := validateSourceVersionPaths(module, o.SourceRoot); err != nil {
 			return err
 		}

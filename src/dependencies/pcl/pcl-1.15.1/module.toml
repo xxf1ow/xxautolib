@@ -1,9 +1,7 @@
 # PCL：点云处理库，安装静态组件并复用本仓库共享 FLANN 与基础依赖。
-name = "pcl"
 type = "cmake"
-version = "pcl-1.15.1"
-supported_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
-depends = ["lz4", "flann", "boost", "eigen@3.4.0", "zlib"]
+package_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
+depends = ["lz4@1.10.0", "flann@f9caaf609d8b", "boost@1.87.0", "eigen@3.4.0", "zlib@1.3.1"]
 package_name = "PCL"
 config_dir = "share/pcl-1.15"
 sentinel = "share/pcl-1.15/PCLConfig.cmake"
@@ -12,7 +10,7 @@ sentinel = "share/pcl-1.15/PCLConfig.cmake"
 GIT_REPOSITORY = "https://github.com/PointCloudLibrary/pcl.git"
 GIT_TAG = "3346843ea6b97697a1577293aa9cdf236b5c7ffb"
 
-[platforms.windows] # 上游原生 Windows 与 Unix 安装布局不同。
+[platforms.windows-x86_64] # 上游原生 Windows 与 Unix 安装布局不同。
 config_dir = "cmake"
 sentinel = "cmake/PCLConfig.cmake"
 

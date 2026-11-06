@@ -42,7 +42,7 @@ func TestConsumptionPreparation(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	consumptionModule(f, "demo", "depends=['zlib','lz4','zlib']\n")
+	consumptionModule(f, "demo", "depends=['zlib@1.0','lz4@1.0','zlib@1.0']\n")
 	if err := consumptionCommand(f, "demo", "reuse"); err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +57,7 @@ func TestConsumptionPreparation(t *testing.T) {
 	if !before.ModTime().Equal(after.ModTime()) {
 		t.Fatal("unchanged preparation rewrote metadata")
 	}
-	definitionFile(t, f.root, "demo", "cmake", "depends=['zlib','zlib','lz4']\n"+testSource)
+	definitionFile(t, f.root, "demo", "cmake", "depends=['zlib@1.0','zlib@1.0','lz4@1.0']\n"+testSource)
 	if err := consumptionCommand(f, "demo", "reuse"); err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +92,7 @@ func TestConsumptionPreparation(t *testing.T) {
 	if _, err := os.Stat(f.installed("sourceonly", "autolib-import.cmake")); !os.IsNotExist(err) {
 		t.Fatalf("source-only module got metadata: %v", err)
 	}
-	consumptionModule(f, "needs-sourceonly", "depends=['sourceonly']\n")
+	consumptionModule(f, "needs-sourceonly", "depends=['sourceonly@1.0']\n")
 	if err := consumptionCommand(f, "needs-sourceonly", "reuse"); err == nil || !strings.Contains(err.Error(), "sourceonly") {
 		t.Fatalf("did not reject unconsumable dependency: %v", err)
 	}
@@ -106,11 +106,11 @@ func TestConsumptionReuseDependencyOrder(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	adapter := consumptionModule(f, "demo", "depends=['zlib','lz4']\n")
+	adapter := consumptionModule(f, "demo", "depends=['zlib@1.0','lz4@1.0']\n")
 	if err := consumptionCommand(f, "demo", "reuse"); err != nil {
 		t.Fatal(err)
 	}
-	definitionFile(t, f.root, "demo", "cmake", "depends=['lz4','zlib']\n"+testSource)
+	definitionFile(t, f.root, "demo", "cmake", "depends=['lz4@1.0','zlib@1.0']\n"+testSource)
 	putFile(t, adapter, "# refreshed adapter\n")
 	if err := consumptionCommand(f, "demo", "reuse"); err != nil {
 		t.Fatal(err)
@@ -130,7 +130,7 @@ func consumptionEntryFixture(t *testing.T, sentinel bool) *fixture {
 		checks := ""
 		depends := ""
 		if name == "app" {
-			depends = "depends=['dep']\n"
+			depends = "depends=['dep@1.0']\n"
 			checks = `file(READ "${CMAKE_INSTALL_PREFIX}/../../dep/1.0/autolib-import.cmake" dependency)
 if(NOT dependency MATCHES "AUTOLIB_PACKAGE_NAME")
     message(FATAL_ERROR "dependency consumption is not ready")
@@ -165,7 +165,7 @@ file(APPEND "${CMAKE_INSTALL_PREFIX}/install-count" "installed\n")
 
 func TestConsumptionPreparationUniversal(t *testing.T) {
 	f := newFixture(t)
-	f.definition("queue", "copy", "platform_independent=true\n[resources.readerwriterqueue]\nGIT_REPOSITORY='fixture'\nGIT_TAG='fixed'\n[resources.concurrentqueue]\nGIT_REPOSITORY='fixture'\nGIT_TAG='fixed'\n[[copy]]\nresource='readerwriterqueue'\nfiles=['atomicops.h','readerwriterqueue.h','readerwritercircularbuffer.h']\ndestination='include/queue'\n[[copy]]\nresource='concurrentqueue'\nfiles=['concurrentqueue.h','lightweightsemaphore.h','blockingconcurrentqueue.h']\ndestination='include/queue'\n")
+	f.definition("queue", "copy", "package_platforms=['any-any']\n[resources.readerwriterqueue]\nGIT_REPOSITORY='fixture'\nGIT_TAG='fixed'\n[resources.concurrentqueue]\nGIT_REPOSITORY='fixture'\nGIT_TAG='fixed'\n[[copy]]\nresource='readerwriterqueue'\nfiles=['atomicops.h','readerwriterqueue.h','readerwritercircularbuffer.h']\ndestination='include/queue'\n[[copy]]\nresource='concurrentqueue'\nfiles=['concurrentqueue.h','lightweightsemaphore.h','blockingconcurrentqueue.h']\ndestination='include/queue'\n")
 	putFile(t, filepath.Join(f.root, "src/dependencies/queue/1.0/autolib-import.cmake"), "# queue adapter\n")
 	for _, entry := range [][2]string{{"atomicops.h", "readerwriterqueue"}, {"readerwriterqueue.h", "readerwriterqueue"}, {"readerwritercircularbuffer.h", "readerwriterqueue"}, {"concurrentqueue.h", "concurrentqueue"}, {"lightweightsemaphore.h", "concurrentqueue"}, {"blockingconcurrentqueue.h", "concurrentqueue"}} {
 		putFile(t, filepath.Join(f.root, "git/_resources/queue/1.0", entry[1], entry[0]), entry[0])

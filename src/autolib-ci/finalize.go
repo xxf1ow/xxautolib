@@ -14,7 +14,7 @@ import (
 
 func ciModuleSlot(module describedModule, platform string) ciSlot {
 	osName, arch, _ := ciTarget(platform)
-	if module.PlatformIndependent {
+	if module.PackagePlatform == "any-any" {
 		return ciSlot{Name: module.Name, Version: module.Version, OS: "any", Arch: "any"}
 	}
 	return ciSlot{Name: module.Name, Version: module.Version, OS: strings.ToLower(osName), Arch: arch}

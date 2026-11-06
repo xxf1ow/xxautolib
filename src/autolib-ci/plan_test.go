@@ -18,13 +18,13 @@ func TestCIPlatformFiltering(t *testing.T) {
 		name, extra string
 		adapter     bool
 	}{
-		{"shared", "", true}, {"good", "depends=['shared']\n", true},
-		{"blocked", "supported_platforms=['windows-x86_64']\n", true},
-		{"bad", "depends=['shared','blocked']\n", true}, {"local", "", false},
+		{"shared", "", true}, {"good", "depends=['shared@1.0']\n", true},
+		{"blocked", "package_platforms=['windows-x86_64']\n", true},
+		{"bad", "depends=['shared@1.0','blocked@1.0']\n", true}, {"local", "", false},
 	} {
 		extra := item.extra
-		if !strings.Contains(extra, "supported_platforms") {
-			extra = "supported_platforms=['linux-x86_64']\n" + extra
+		if !strings.Contains(extra, "package_platforms") {
+			extra = "package_platforms=['linux-x86_64']\n" + extra
 		}
 		discoveryModule(t, root, item.name, item.adapter, extra)
 	}
@@ -307,14 +307,14 @@ func fakePlanRoot(t *testing.T) string {
 func TestCIVersionedPlan(t *testing.T) {
 	builder := discoveryBuilder(t)
 	root := discoveryRoot(t)
-	discoveryVersion(t, root, "eigen", "3.4.0", true, "platform_independent=true\n")
-	discoveryVersion(t, root, "eigen", "5.0.1", true, "platform_independent=true\n")
+	discoveryVersion(t, root, "eigen", "3.4.0", true, "package_platforms=['any-any']\n")
+	discoveryVersion(t, root, "eigen", "5.0.1", true, "package_platforms=['any-any']\n")
 	discoveryModule(t, root, "shared", true, "")
-	discoveryModule(t, root, "left", true, "depends=['shared','eigen@3.4.0']\n")
-	discoveryModule(t, root, "right", true, "depends=['shared','eigen@5.0.1']\n")
+	discoveryModule(t, root, "left", true, "depends=['shared@1.0','eigen@3.4.0']\n")
+	discoveryModule(t, root, "right", true, "depends=['shared@1.0','eigen@5.0.1']\n")
 	discoveryModule(t, root, "local", false, "")
-	discoveryModule(t, root, "middle", true, "depends=['local']\n")
-	discoveryModule(t, root, "blocked", true, "depends=['middle']\n")
+	discoveryModule(t, root, "middle", true, "depends=['local@1.0']\n")
+	discoveryModule(t, root, "blocked", true, "depends=['middle@1.0']\n")
 	for _, tc := range []struct {
 		name, modules string
 		wantRoots     []string

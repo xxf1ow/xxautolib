@@ -206,30 +206,12 @@ func resolveModuleRef(sourceRoot string, request moduleRef) (moduleRef, error) {
 	if _, err := versionDirectories(directory); err != nil {
 		return moduleRef{}, err
 	}
+	latest, err := packageLatest(directory)
+	if err != nil {
+		return moduleRef{}, err
+	}
 	if request.Version == "" {
-		path := filepath.Join(directory, "package.toml")
-		if err := exactEntry(directory, "package.toml", false); err != nil {
-			return moduleRef{}, err
-		}
-		content, err := os.ReadFile(path)
-		if err != nil {
-			return moduleRef{}, err
-		}
-		var raw map[string]any
-		if err := toml.Unmarshal(content, &raw); err != nil {
-			return moduleRef{}, fmt.Errorf("%s: %w", path, err)
-		}
-		metadata, err := table(raw, path, "latest")
-		if err != nil {
-			return moduleRef{}, err
-		}
-		request.Version, err = text(metadata["latest"], path+".latest")
-		if err != nil {
-			return moduleRef{}, err
-		}
-		if err := validatePackageVersion(request.Version); err != nil {
-			return moduleRef{}, fmt.Errorf("%s.latest: %w", path, err)
-		}
+		request.Version = latest
 	}
 	if err := exactEntry(directory, request.Version, true); err != nil {
 		return moduleRef{}, err
@@ -238,4 +220,37 @@ func resolveModuleRef(sourceRoot string, request moduleRef) (moduleRef, error) {
 		return moduleRef{}, err
 	}
 	return request, nil
+}
+
+func packageLatest(directory string) (string, error) {
+	path := filepath.Join(directory, "package.toml")
+	if err := exactEntry(directory, "package.toml", false); err != nil {
+		return "", err
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	var raw map[string]any
+	if err := toml.Unmarshal(content, &raw); err != nil {
+		return "", fmt.Errorf("%s: %w", path, err)
+	}
+	metadata, err := table(raw, path, "latest")
+	if err != nil {
+		return "", err
+	}
+	latest, err := text(metadata["latest"], path+".latest")
+	if err != nil {
+		return "", err
+	}
+	if err := validatePackageVersion(latest); err != nil {
+		return "", err
+	}
+	if err := exactEntry(directory, latest, true); err != nil {
+		return "", err
+	}
+	if err := exactEntry(filepath.Join(directory, latest), "module.toml", false); err != nil {
+		return "", err
+	}
+	return latest, nil
 }

@@ -60,10 +60,10 @@ func init() {
 		fmt.Fprint(os.Stdout, `{"system_name":"Windows","architecture":"x86_64","roots":[],"modules":[],"go_module_files":[],"builder_files":[],"requested_roots":[],"filtered_roots":[]}`)
 		os.Exit(0)
 	case "missing-dependency":
-		fmt.Fprint(os.Stdout, `{"system_name":"Linux","architecture":"x86_64","roots":["flann@1.0"],"modules":[{"name":"flann","version":"1.0","target":"fixture-flann","depends":["lz4@1.0"],"platform_independent":false,"system_dependencies":{},"configuration":{},"input_files":[],"adapter_file":""}],"go_module_files":[],"builder_files":[],"requested_roots":["flann@1.0"],"filtered_roots":[]}`)
+		fmt.Fprint(os.Stdout, `{"system_name":"Linux","architecture":"x86_64","roots":["flann@1.0"],"modules":[{"name":"flann","version":"1.0","target":"fixture-flann","depends":["lz4@1.0"],"package_platform":"linux-x86_64","system_dependencies":{},"configuration":{},"input_files":[],"adapter_file":""}],"go_module_files":[],"builder_files":[],"requested_roots":["flann@1.0"],"filtered_roots":[]}`)
 		os.Exit(0)
 	case "extra-module":
-		fmt.Fprint(os.Stdout, `{"system_name":"Linux","architecture":"x86_64","roots":["lz4@1.0"],"modules":[{"name":"lz4","version":"1.0","target":"fixture-lz4","depends":[],"platform_independent":false,"system_dependencies":{},"configuration":{},"input_files":[],"adapter_file":""},{"name":"queue","version":"1.0","target":"fixture-queue","depends":[],"platform_independent":true,"system_dependencies":{},"configuration":{},"input_files":[],"adapter_file":""}],"go_module_files":[],"builder_files":[],"requested_roots":["lz4@1.0"],"filtered_roots":[]}`)
+		fmt.Fprint(os.Stdout, `{"system_name":"Linux","architecture":"x86_64","roots":["lz4@1.0"],"modules":[{"name":"lz4","version":"1.0","target":"fixture-lz4","depends":[],"package_platform":"linux-x86_64","system_dependencies":{},"configuration":{},"input_files":[],"adapter_file":""},{"name":"queue","version":"1.0","target":"fixture-queue","depends":[],"package_platform":"any-any","system_dependencies":{},"configuration":{},"input_files":[],"adapter_file":""}],"go_module_files":[],"builder_files":[],"requested_roots":["lz4@1.0"],"filtered_roots":[]}`)
 		os.Exit(0)
 	case "valid":
 		var systemName, architecture string
@@ -92,7 +92,7 @@ func init() {
 				add("lz4")
 				depends = []string{"lz4@1.0"}
 			}
-			byName[name] = describedModule{Name: name, Version: "1.0", Target: "fixture-" + name, Depends: depends, PlatformIndependent: name == "queue", SystemDependencies: map[string][]string{"apt": {}, "choco": {}}, Configuration: []byte(`{}`), InputFiles: []string{}, AdapterFile: "src/dependencies/" + name + "/autolib-import.cmake"}
+			byName[name] = describedModule{Name: name, Version: "1.0", Target: "fixture-" + name, Depends: depends, PackagePlatform: map[bool]string{true: "any-any", false: strings.ToLower(systemName) + "-" + architecture}[name == "queue"], SystemDependencies: map[string][]string{"apt": {}, "choco": {}}, Configuration: []byte(`{}`), InputFiles: []string{}, AdapterFile: "src/dependencies/" + name + "/autolib-import.cmake"}
 		}
 		for _, name := range requested {
 			add(name)

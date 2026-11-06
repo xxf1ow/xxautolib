@@ -43,7 +43,7 @@ func TestVersionReference(t *testing.T) {
 
 func versionRecipe(t *testing.T, root, name, version string) string {
 	t.Helper()
-	return putFile(t, filepath.Join(root, "src", "dependencies", name, version, "module.toml"), "name='"+name+"'\nversion='"+version+"'\ntype='cmake'\nsupported_platforms=['windows-x86_64','linux-x86_64','linux-aarch64','darwin-aarch64']\n"+testSource)
+	return putFile(t, filepath.Join(root, "src", "dependencies", name, version, "module.toml"), "type='cmake'\npackage_platforms=['windows-x86_64','linux-x86_64','linux-aarch64','darwin-aarch64']\n"+testSource)
 }
 
 func TestVersionCatalog(t *testing.T) {
@@ -79,8 +79,8 @@ func TestVersionCatalog(t *testing.T) {
 			if _, err := resolveModuleRef(root, moduleRef{Name: "eigen"}); err == nil {
 				t.Errorf("accepted package metadata %q", body)
 			}
-			if got, err := resolveModuleRef(root, moduleRef{"eigen", "3.4.0"}); err != nil || got != (moduleRef{"eigen", "3.4.0"}) {
-				t.Fatalf("exact request read latest: %+v, %v", got, err)
+			if _, err := resolveModuleRef(root, moduleRef{"eigen", "3.4.0"}); err == nil {
+				t.Fatal("exact request accepted invalid package metadata")
 			}
 			if _, err := discoverModuleRefs(root); err != nil {
 				t.Fatalf("discovery resolved unused latest: %v", err)
@@ -133,16 +133,17 @@ func TestVersionCatalog(t *testing.T) {
 func TestVersionPathIdentity(t *testing.T) {
 	root := t.TempDir()
 	path := versionRecipe(t, root, "demo", "v1")
+	putFile(t, filepath.Join(root, "src/dependencies/demo/package.toml"), "latest='v1'\n")
 	body := readFile(t, path)
-	putFile(t, path, strings.Replace(body, "type='cmake'", "type='cmake'\ndepends=['eigen@3.4.0','zlib','eigen@3.4.0']", 1))
+	putFile(t, path, strings.Replace(body, "type='cmake'", "type='cmake'\ndepends=['eigen@3.4.0','zlib@1.0']", 1))
 	got, err := loadDefinition(path, "Linux", "x86_64")
-	if err != nil || got.Name != "demo" || got.Version != "v1" || !reflect.DeepEqual(got.Depends, []string{"eigen@3.4.0", "zlib"}) {
+	if err != nil || got.Name != "demo" || got.Version != "v1" || !reflect.DeepEqual(got.Depends, []string{"eigen@3.4.0", "zlib@1.0"}) {
 		t.Fatalf("valid versioned recipe: %+v, %v", got, err)
 	}
 	for _, tc := range []struct{ name, body string }{
-		{"name mismatch", strings.Replace(body, "name='demo'", "name='other'", 1)},
-		{"version mismatch", strings.Replace(body, "version='v1'", "version='V1'", 1)},
-		{"missing version", strings.Replace(body, "version='v1'\n", "", 1)},
+		{"name mismatch", "name='other'\n" + body},
+		{"version mismatch", "version='V1'\n" + body},
+
 		{"invalid dependency", strings.Replace(body, "type='cmake'", "type='cmake'\ndepends=['eigen@']", 1)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

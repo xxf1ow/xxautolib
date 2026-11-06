@@ -92,7 +92,7 @@ func writeCITransport(ctx context.Context, o ciRunOptions, output string) error 
 	packages := map[string]bool{}
 	for _, module := range platform.Description.Modules {
 		slot := ciModuleSlot(module, o.Platform)
-		publish := !module.PlatformIndependent || plan.Publisher == o.Platform
+		publish := module.PackagePlatform != "any-any" || plan.Publisher == o.Platform
 		manifest.Packages = append(manifest.Packages, ciTransportPackage{Name: slot.Name, Version: slot.Version, OS: slot.OS, Arch: slot.Arch, Dependencies: module.Depends, Publish: publish})
 		if publish {
 			modules = append(modules, moduleIdentity(module))
