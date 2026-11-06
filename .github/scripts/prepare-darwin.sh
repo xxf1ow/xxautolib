@@ -59,6 +59,9 @@ if [[ "$has_libraries" == true ]]; then
   tar -xzf "$make_archive" -C "$tools/src"
   make_source="$tools/src/make-$make_version"
   bootstrap_make=$(xcrun --find make)
+  SDKROOT=$(xcrun --sdk macosx --show-sdk-path)
+  export SDKROOT
+  printf 'Make SDKROOT=%s\n' "$SDKROOT"
   (cd "$make_source" && ./configure --prefix="$tools") || {
     status=$?
     cat "$make_source/config.log" >&2

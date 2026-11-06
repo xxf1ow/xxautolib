@@ -33,6 +33,8 @@ elif name == 'sysctl':
 elif name == 'xcrun':
     if args == ['--show-sdk-version']:
         print('15.5')
+    elif args == ['--sdk', 'macosx', '--show-sdk-path']:
+        print(root / 'selected SDK')
     else:
         assert args[:1] == ['--find'], args
         print(root / 'bin' / ('bootstrap-make' if args[1] == 'make' else args[1]))
@@ -50,6 +52,9 @@ elif name == 'cmake':
         assert args[-1] == './src/autolib-ci', args
         Path(args[args.index('-o') + 1]).write_text('built autolib-ci')
 elif name == 'configure':
+    if os.environ.get('FIXTURE_REQUIRE_SDK') and os.environ.get('SDKROOT') != str(root / 'selected SDK'):
+        Path('config.log').write_text("ld: library 'System' not found\n")
+        sys.exit(77)
     if os.environ.get('FIXTURE_CONFIGURE_FAILURE'):
         Path('config.log').write_text('fixture linker diagnostic: library not found\n')
         sys.exit(77)
@@ -58,6 +63,8 @@ elif name == 'configure':
     prefix = next(arg.removeprefix('--prefix=') for arg in args if arg.startswith('--prefix='))
     Path('prefix').write_text(prefix)
 elif name == 'bootstrap-make':
+    if os.environ.get('FIXTURE_REQUIRE_SDK'):
+        assert os.environ['SDKROOT'] == str(root / 'selected SDK')
     assert args[:1] == ['-C'], args
     if args[-1] == 'install':
         prefix = Path(Path(args[1], 'prefix').read_text())
@@ -182,6 +189,13 @@ class DarwinPreparationTests(unittest.TestCase):
             self.assertEqual(result.stdout, '')
             self.assertIn('fixture linker diagnostic: library not found', result.stderr)
             self.assertNotIn('bootstrap-make', [name for name, _ in events])
+
+    def test_make_uses_selected_macos_sdk(self):
+        with tempfile.TemporaryDirectory(prefix='darwin SDK ') as temporary:
+            root = Path(temporary)
+            result, _ = self.execute(root, self.fixture(root), [{'id': 'darwin-aarch64', 'roots': ['lz4@1.10.0']}], FIXTURE_REQUIRE_SDK='1', SDKROOT='/wrong/inherited/SDK')
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue(Path(json.loads(result.stdout)['make_program']).is_file())
 
 
 if __name__ == '__main__':
