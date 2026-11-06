@@ -1,11 +1,13 @@
 package main
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"testing/fstest"
 )
 
 func TestVersionReference(t *testing.T) {
@@ -162,5 +164,31 @@ func TestVersionPathIdentity(t *testing.T) {
 		if _, err := loadDefinition(wrong, "Linux", "x86_64"); err == nil {
 			t.Errorf("accepted wrong recipe path %s", wrong)
 		}
+	}
+}
+
+func TestCatalogCaseCollisions(t *testing.T) {
+	for _, tc := range []struct {
+		names    []string
+		conflict bool
+	}{
+		{[]string{"demo", "Demo"}, true},
+		{[]string{"V1", "v1"}, true},
+		{[]string{"oneTBB", "queue"}, false},
+	} {
+		t.Run(strings.Join(tc.names, "/"), func(t *testing.T) {
+			entries := fstest.MapFS{}
+			for _, n := range tc.names {
+				entries[n+"/module.toml"] = &fstest.MapFile{Data: []byte("recipe")}
+			}
+			dirs, err := fs.ReadDir(entries, ".")
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = validateCatalogCase(dirs, "catalog")
+			if (err != nil) != tc.conflict {
+				t.Fatalf("conflict=%v: %v", tc.conflict, err)
+			}
+		})
 	}
 }

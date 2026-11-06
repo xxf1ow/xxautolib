@@ -90,19 +90,16 @@ func versionDirectories(directory string) ([]os.DirEntry, error) {
 	if err != nil {
 		return nil, err
 	}
-	seen := map[string]string{}
+	if err := validateCatalogCase(entries, directory); err != nil {
+		return nil, err
+	}
 	var versions []os.DirEntry
 	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
+		if entry.IsDir() {
+			versions = append(versions, entry)
 		}
-		key := strings.ToLower(entry.Name())
-		if previous, ok := seen[key]; ok {
-			return nil, fmt.Errorf("%s: case-colliding version directories %q and %q", directory, previous, entry.Name())
-		}
-		seen[key] = entry.Name()
-		versions = append(versions, entry)
 	}
+
 	return versions, nil
 }
 
@@ -147,6 +144,9 @@ func discoverModuleRefs(sourceRoot string) ([]moduleRef, error) {
 	dependencies := filepath.Join(sourceRoot, "src", "dependencies")
 	packages, err := os.ReadDir(dependencies)
 	if err != nil {
+		return nil, err
+	}
+	if err := validateCatalogCase(packages, dependencies); err != nil {
 		return nil, err
 	}
 	refs := []moduleRef{}
@@ -253,4 +253,20 @@ func packageLatest(directory string) (string, error) {
 		return "", err
 	}
 	return latest, nil
+}
+
+// 包和版本目录共用大小写规则，避免生成无法在其他目标上区分的身份。
+func validateCatalogCase(entries []os.DirEntry, directory string) error {
+	seen := map[string]string{}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		key := strings.ToLower(entry.Name())
+		if previous, ok := seen[key]; ok {
+			return fmt.Errorf("%s: case-colliding directories %q and %q", directory, previous, entry.Name())
+		}
+		seen[key] = entry.Name()
+	}
+	return nil
 }
