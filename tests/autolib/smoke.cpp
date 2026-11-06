@@ -185,10 +185,10 @@ int main()
     cloud->push_back(pcl::PointXYZ(2, 2, 2));
     pcl::search::KdTree<pcl::PointXYZ> tree;
     tree.setInputCloud(cloud);
-    std::vector<int> neighbors(1);
-    std::vector<float> distances(1);
-    if (tree.nearestKSearch((*cloud)[1], 1, neighbors, distances) != 1
-        || neighbors[0] != 1 || distances[0] != 0)
+    std::vector<int> pcl_neighbors(1);
+    std::vector<float> pcl_distances(1);
+    if (tree.nearestKSearch((*cloud)[1], 1, pcl_neighbors, pcl_distances) != 1
+        || pcl_neighbors[0] != 1 || pcl_distances[0] != 0)
         return 46;
 #endif
 #ifdef AUTOLIB_TEST_ASIO

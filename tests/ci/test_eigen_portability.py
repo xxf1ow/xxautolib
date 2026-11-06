@@ -17,6 +17,46 @@ DRIVER = ROOT / "tests/autolib/run-eigen-portability.cmake"
 
 
 class EigenPortabilityTests(unittest.TestCase):
+    def test_plan_can_pin_a_successful_producer_for_pcl_only(self):
+        workflow = (ROOT / ".github/workflows/validate-eigen-portability.yml").read_text()
+        for reuse in (False, True):
+            with self.subTest(reuse=reuse), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                tools = root / "build/tools"
+                tools.mkdir(parents=True)
+                fake = root / "bin"
+                fake.mkdir()
+                cmake = fake / "cmake"
+                cmake.write_text("#!/bin/sh\nexit 0\n")
+                cmake.chmod(0o755)
+                cli = tools / "autolib-ci"
+                cli.write_text("#!" + os.sys.executable + "\n" +
+                    "import json,sys\nfrom pathlib import Path\n" +
+                    "args=dict(zip(sys.argv[2::2],sys.argv[3::2]))\n" +
+                    "roots=args['--modules'].split(',')\n" +
+                    "Path(args['--output']).write_text(json.dumps({'platforms':[{'roots':roots,'filtered_roots':[]}]}))\n")
+                cli.chmod(0o755)
+                config = root / ".github/ci-tools.json"
+                config.parent.mkdir()
+                config.write_text('{"ubuntu":{"image":"fixed-image"}}')
+                env = dict(os.environ, PATH=str(fake) + os.pathsep + os.environ["PATH"],
+                           GITHUB_WORKSPACE=str(root), GITHUB_OUTPUT=str(root / "outputs"),
+                           GITHUB_RUN_ID="456", GITHUB_RUN_ATTEMPT="2", GITHUB_SHA="b" * 40,
+                           EIGEN_PRODUCER_RUN="123" if reuse else "",
+                           EIGEN_PRODUCER_ARTIFACT="linux-eigen-123-1", EIGEN_PRODUCER_SHA="a" * 40)
+                result = subprocess.run(["/bin/bash", "-euc", step_script(job(workflow, "plan"), "Plan exact native inputs")],
+                                        env=env, cwd=root, text=True, capture_output=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                outputs = dict(line.split("=", 1) for line in (root / "outputs").read_text().splitlines())
+                self.assertEqual(outputs["reuse"], str(reuse).lower())
+                self.assertEqual(outputs["producer_run"], "123" if reuse else "456")
+                self.assertEqual(outputs["producer_sha"], ("a" if reuse else "b") * 40)
+                self.assertEqual(json.loads(outputs["windows_kinds"]), ["pcl"] if reuse else ["eigen", "pcl"])
+                if reuse:
+                    self.assertEqual(outputs["producer_artifact"], "linux-eigen-123-1")
+        for name in ("windows", "darwin", "linux-pcl"):
+            self.assertIn("run-id: ${{ needs.plan.outputs.producer_run }}", job(workflow, name))
+
     def test_container_jobs_use_container_workspace_and_verify_checkout(self):
         workflow = (ROOT / ".github/workflows/validate-eigen-portability.yml").read_text()
         for name in ("produce", "linux-pcl"):
@@ -75,7 +115,8 @@ class EigenPortabilityTests(unittest.TestCase):
                     manifest[version] = dict(filename=archive.name, sha256=hashlib.sha256(archive.read_bytes()).hexdigest())
                 (raw / "manifest.json").write_text(json.dumps(manifest))
                 identity = dict(repository="fixture/repo", sha="abc", run_id="123", attempt="1")
-                (raw / "producer.json").write_text(json.dumps(identity))
+                producer_identity = dict(identity, sha="producer-before-consumer-fix" if kind == "pcl" else identity["sha"])
+                (raw / "producer.json").write_text(json.dumps(producer_identity))
                 (root / "build/ci-input").mkdir()
                 (root / "build/ci-input/run.json").write_text(json.dumps(identity))
                 native = root / "build/native"
@@ -121,11 +162,14 @@ file(WRITE "${VALIDATION_ROOT}/checked.txt" "${payload}")
                 script = step_script(job(workflow.read_text(), name), "Consume original Linux archives")
                 env = dict(os.environ, GITHUB_WORKSPACE=str(root), WORK_ROOT=str(native), PLATFORM=platform,
                            VALIDATION_KIND=kind, CMAKE_COMMAND=shutil.which("cmake"), GENERATOR="Unix Makefiles",
-                           CC="unused-fixture-compiler", CXX="unused-fixture-compiler")
+                           CC="unused-fixture-compiler", CXX="unused-fixture-compiler",
+                           EXPECTED_PRODUCER_SHA=producer_identity["sha"])
                 result = subprocess.run([os.sys.executable, "-c", script], env=env, cwd=root, text=True, capture_output=True)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 runs = list((root / f"build/portability/{platform}/{kind}").glob("run-*"))
                 self.assertEqual(len(runs), 1)
+                self.assertEqual(json.loads((runs[0] / "producer.json").read_text()), producer_identity)
+                self.assertEqual(json.loads((runs[0] / "consumer.json").read_text()), identity)
                 for location in ("initial", "relocated"):
                     for version in (("3.4.0",) if kind == "pcl" else ("3.4.0", "5.0.1")):
                         self.assertEqual((runs[0] / f"consumers/{location}/{version}/checked.txt").read_text(),
@@ -146,7 +190,7 @@ file(WRITE "${VALIDATION_ROOT}/checked.txt" "${payload}")
         self.check_preflight("pcl", "Missing Eigen portability input")
 
     def test_producer_source_identity_must_match_consumer(self):
-        self.check_preflight("identity", "Eigen identities must use the same repository and source SHA")
+        self.check_preflight("identity", "Eigen producer must match the expected repository and source SHA")
 
     def check_preflight(self, scenario, expected):
         with tempfile.TemporaryDirectory() as temporary:

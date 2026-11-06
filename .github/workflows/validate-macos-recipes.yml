@@ -5,21 +5,10 @@ on:
     branches:
       - task/darwin-aarch64-native-ci
     paths:
-      - .github/workflows/validate-macos-recipes.yml
-      - .github/scripts/prepare-darwin.sh
-      - .github/ci-tools.json
       - src/dependencies/librealsense/**
       - src/dependencies/libusb/**
       - src/dependencies/lz4/**
       - src/dependencies/nlohmann/**
-      - src/autolib-builder/**
-      - src/autolib-ci/**
-      - src/autolib-importer/**
-      - src/internal/packagemetadata/**
-      - src/autolib.cmake
-      - tests/autolib/run-installed.cmake
-      - tests/autolib/CMakeLists.txt
-      - tests/autolib/smoke.cpp
 
 permissions:
   contents: read

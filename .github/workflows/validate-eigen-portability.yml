@@ -28,6 +28,12 @@ on:
 
 permissions:
   contents: read
+  actions: read
+
+env:
+  EIGEN_PRODUCER_RUN: '42264057220'
+  EIGEN_PRODUCER_ARTIFACT: linux-eigen-42264057220-1
+  EIGEN_PRODUCER_SHA: d8ffda6a51e0a427a8ddec6fd508ff61c564625c
 
 concurrency:
   group: ${{ github.repository }}-eigen-portability-${{ github.ref }}
@@ -39,6 +45,11 @@ jobs:
     outputs:
       artifact: ${{ steps.plan.outputs.artifact }}
       linux_image: ${{ steps.plan.outputs.linux_image }}
+      reuse: ${{ steps.plan.outputs.reuse }}
+      producer_run: ${{ steps.plan.outputs.producer_run }}
+      producer_artifact: ${{ steps.plan.outputs.producer_artifact }}
+      producer_sha: ${{ steps.plan.outputs.producer_sha }}
+      windows_kinds: ${{ steps.plan.outputs.windows_kinds }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -58,6 +69,12 @@ jobs:
           jq -e 'all(.platforms[]; .roots==["pcl@pcl-1.15.1"] and (.filtered_roots|length)==0)' build/ci-input/pcl.json
           echo "artifact=eigen-plan-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
           echo "linux_image=$(jq -r '.ubuntu.image' .github/ci-tools.json)" >> "$GITHUB_OUTPUT"
+          if [[ -n "$EIGEN_PRODUCER_RUN" ]]; then
+            [[ "$EIGEN_PRODUCER_RUN" =~ ^[0-9]+$ && "$EIGEN_PRODUCER_SHA" =~ ^[0-9a-f]{40}$ && -n "$EIGEN_PRODUCER_ARTIFACT" ]]
+            printf 'reuse=true\nproducer_run=%s\nproducer_artifact=%s\nproducer_sha=%s\nwindows_kinds=["pcl"]\n' "$EIGEN_PRODUCER_RUN" "$EIGEN_PRODUCER_ARTIFACT" "$EIGEN_PRODUCER_SHA" >> "$GITHUB_OUTPUT"
+          else
+            printf 'reuse=false\nproducer_run=%s\nproducer_sha=%s\nwindows_kinds=["eigen","pcl"]\n' "$GITHUB_RUN_ID" "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.plan.outputs.artifact }}
@@ -66,6 +83,7 @@ jobs:
 
   produce:
     needs: plan
+    if: needs.plan.outputs.reuse != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     container:
@@ -191,17 +209,19 @@ jobs:
 
   windows:
     needs: [plan, produce]
+    if: ${{ always() && needs.plan.result == 'success' && (needs.plan.outputs.reuse == 'true' || needs.produce.result == 'success') }}
     runs-on: windows-2022
     timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
-        kind: [eigen, pcl]
+        kind: ${{ fromJSON(needs.plan.outputs.windows_kinds) }}
     defaults:
       run:
         shell: pwsh
     env:
       PLATFORM: windows-x86_64
+      EXPECTED_PRODUCER_SHA: ${{ needs.plan.outputs.producer_sha }}
       VALIDATION_KIND: ${{ matrix.kind }}
       WORK_ROOT: ${{ github.workspace }}/build/ci/${{ github.run_id }}-${{ github.run_attempt }}/windows-x86_64
     steps:
@@ -215,7 +235,9 @@ jobs:
           path: build/ci-input
       - uses: actions/download-artifact@v8
         with:
-          name: ${{ needs.produce.outputs.artifact }}
+          name: ${{ needs.plan.outputs.reuse == 'true' && needs.plan.outputs.producer_artifact || needs.produce.outputs.artifact }}
+          run-id: ${{ needs.plan.outputs.producer_run }}
+          github-token: ${{ github.token }}
           path: build/linux-eigen
       - name: Bind native plan
         run: |
@@ -250,7 +272,7 @@ jobs:
           root=Path(os.environ['GITHUB_WORKSPACE']).resolve();install=Path(os.environ['WORK_ROOT'])/'install';raw=root/'build/linux-eigen'
           manifest=json.loads((raw/'manifest.json').read_text());item=manifest['3.4.0'];archive=raw/item['filename']
           producer=json.loads((raw/'producer.json').read_text())
-          if producer['repository']!=os.environ['GITHUB_REPOSITORY'] or producer['sha']!=os.environ['GITHUB_SHA']:raise SystemExit('Linux Eigen source identity mismatch')
+          if producer['repository']!=os.environ['GITHUB_REPOSITORY'] or producer['sha']!=os.environ['EXPECTED_PRODUCER_SHA']:raise SystemExit('Linux Eigen source identity mismatch')
           if hashlib.sha256(archive.read_bytes()).hexdigest()!=item['sha256']:raise SystemExit('Linux Eigen SHA256 mismatch')
           install.mkdir(parents=True,exist_ok=True)
           subprocess.run([os.environ['CMAKE_COMMAND'],'-E','tar','xf',str(archive)],cwd=install,check=True)
@@ -289,6 +311,7 @@ jobs:
           for version,label in [('3.4.0','340'),('5.0.1','501')]:
               item=manifest[version]
               args += [f'-DEIGEN_{label}_ARCHIVE={raw/item["filename"]}',f'-DEIGEN_{label}_SHA256={item["sha256"]}']
+          args.append(f'-DEXPECTED_PRODUCER_SHA={os.environ["EXPECTED_PRODUCER_SHA"]}')
           if os.environ.get('VALIDATION_KIND')=='pcl':args.append('-DPCL_VERSION=pcl-1.15.1')
           for key in ['CMAKE_MAKE_PROGRAM','CMAKE_C_COMPILER','CMAKE_CXX_COMPILER','CMAKE_OSX_ARCHITECTURES','CMAKE_OSX_DEPLOYMENT_TARGET','CMAKE_OSX_SYSROOT','GENERATOR_PLATFORM','GENERATOR_TOOLSET','CMAKE_MSVC_RUNTIME_LIBRARY']:
               if os.environ.get(key):args.append(f'-D{key}={os.environ[key]}')
@@ -315,6 +338,7 @@ jobs:
 
   darwin:
     needs: [plan, produce]
+    if: ${{ needs.plan.outputs.reuse != 'true' && needs.produce.result == 'success' }}
     runs-on: macos-15
     timeout-minutes: 120
     defaults:
@@ -322,6 +346,7 @@ jobs:
         shell: bash
     env:
       PLATFORM: darwin-aarch64
+      EXPECTED_PRODUCER_SHA: ${{ needs.plan.outputs.producer_sha }}
       VALIDATION_KIND: eigen
       WORK_ROOT: ${{ github.workspace }}/build/ci/${{ github.run_id }}-${{ github.run_attempt }}/darwin-aarch64
     steps:
@@ -335,7 +360,9 @@ jobs:
           path: build/ci-input
       - uses: actions/download-artifact@v8
         with:
-          name: ${{ needs.produce.outputs.artifact }}
+          name: ${{ needs.plan.outputs.reuse == 'true' && needs.plan.outputs.producer_artifact || needs.produce.outputs.artifact }}
+          run-id: ${{ needs.plan.outputs.producer_run }}
+          github-token: ${{ github.token }}
           path: build/linux-eigen
       - name: Require native macOS 15
         run: |
@@ -385,6 +412,7 @@ jobs:
           for version,label in [('3.4.0','340'),('5.0.1','501')]:
               item=manifest[version]
               args += [f'-DEIGEN_{label}_ARCHIVE={raw/item["filename"]}',f'-DEIGEN_{label}_SHA256={item["sha256"]}']
+          args.append(f'-DEXPECTED_PRODUCER_SHA={os.environ["EXPECTED_PRODUCER_SHA"]}')
           if os.environ.get('VALIDATION_KIND')=='pcl':args.append('-DPCL_VERSION=pcl-1.15.1')
           os.environ['CMAKE_C_COMPILER']=os.environ['CC'];os.environ['CMAKE_CXX_COMPILER']=os.environ['CXX']
           for key in ['CMAKE_MAKE_PROGRAM','CMAKE_C_COMPILER','CMAKE_CXX_COMPILER','CMAKE_OSX_ARCHITECTURES','CMAKE_OSX_DEPLOYMENT_TARGET','CMAKE_OSX_SYSROOT','GENERATOR_PLATFORM','GENERATOR_TOOLSET','CMAKE_MSVC_RUNTIME_LIBRARY']:
@@ -412,6 +440,7 @@ jobs:
 
   linux-pcl:
     needs: [plan, produce]
+    if: ${{ always() && needs.plan.result == 'success' && (needs.plan.outputs.reuse == 'true' || needs.produce.result == 'success') }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     strategy:
@@ -430,6 +459,7 @@ jobs:
     env:
       LC_ALL: C.UTF-8
       PLATFORM: ${{ matrix.platform }}
+      EXPECTED_PRODUCER_SHA: ${{ needs.plan.outputs.producer_sha }}
       VALIDATION_KIND: pcl
       WORK_ROOT: ${{ github.workspace }}/build/ci/${{ github.run_id }}-${{ github.run_attempt }}/${{ matrix.platform }}
     steps:
@@ -448,7 +478,9 @@ jobs:
           path: build/ci-input
       - uses: actions/download-artifact@v8
         with:
-          name: ${{ needs.produce.outputs.artifact }}
+          name: ${{ needs.plan.outputs.reuse == 'true' && needs.plan.outputs.producer_artifact || needs.produce.outputs.artifact }}
+          run-id: ${{ needs.plan.outputs.producer_run }}
+          github-token: ${{ github.token }}
           path: build/linux-eigen
       - name: Bind PCL plan
         run: |
@@ -487,7 +519,7 @@ jobs:
           root=Path(os.environ['GITHUB_WORKSPACE']).resolve();install=Path(os.environ['WORK_ROOT'])/'install';raw=root/'build/linux-eigen'
           manifest=json.loads((raw/'manifest.json').read_text());item=manifest['3.4.0'];archive=raw/item['filename']
           producer=json.loads((raw/'producer.json').read_text())
-          if producer['repository']!=os.environ['GITHUB_REPOSITORY'] or producer['sha']!=os.environ['GITHUB_SHA']:raise SystemExit('Linux Eigen source identity mismatch')
+          if producer['repository']!=os.environ['GITHUB_REPOSITORY'] or producer['sha']!=os.environ['EXPECTED_PRODUCER_SHA']:raise SystemExit('Linux Eigen source identity mismatch')
           if hashlib.sha256(archive.read_bytes()).hexdigest()!=item['sha256']:raise SystemExit('Linux Eigen SHA256 mismatch')
           install.mkdir(parents=True,exist_ok=True)
           subprocess.run([os.environ['CMAKE_COMMAND'],'-E','tar','xf',str(archive)],cwd=install,check=True)
@@ -527,6 +559,7 @@ jobs:
           for version,label in [('3.4.0','340'),('5.0.1','501')]:
               item=manifest[version]
               args += [f'-DEIGEN_{label}_ARCHIVE={raw/item["filename"]}',f'-DEIGEN_{label}_SHA256={item["sha256"]}']
+          args.append(f'-DEXPECTED_PRODUCER_SHA={os.environ["EXPECTED_PRODUCER_SHA"]}')
           if os.environ.get('VALIDATION_KIND')=='pcl':args.append('-DPCL_VERSION=pcl-1.15.1')
           for key in ['CMAKE_MAKE_PROGRAM','CMAKE_C_COMPILER','CMAKE_CXX_COMPILER','CMAKE_OSX_ARCHITECTURES','CMAKE_OSX_DEPLOYMENT_TARGET','CMAKE_OSX_SYSROOT','GENERATOR_PLATFORM','GENERATOR_TOOLSET','CMAKE_MSVC_RUNTIME_LIBRARY']:
               if os.environ.get(key):args.append(f'-D{key}={os.environ[key]}')
