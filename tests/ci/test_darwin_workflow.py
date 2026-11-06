@@ -65,13 +65,15 @@ class DarwinWorkflowTests(unittest.TestCase):
         records = []
         with tempfile.TemporaryDirectory(prefix='isolated recipes ') as temporary:
             for index, selected in enumerate(roots[:2]):
-                root = Path(temporary) / str(index)
-                root.mkdir()
-                replacements = {'github.workspace': str(root), 'github.run_id': '123',
+                workspace = Path(temporary) / str(index)
+                root = workspace / selected
+                root.mkdir(parents=True)
+                replacements = {'github.workspace': str(workspace), 'github.run_id': '123',
                                 'github.run_attempt': '2', 'matrix.root': selected}
                 def expand(value):
                     return re.sub(r'\$\{\{ ([\w.]+) \}\}', lambda m: replacements[m[1]], value)
                 work = Path(expand(work_template))
+                self.assertEqual(work, root / 'build/ci/123-2/darwin-aarch64')
                 work.mkdir(parents=True)
                 (work / 'results').mkdir()
                 (work / 'results/darwin-aarch64.json').write_text('{}')
@@ -93,7 +95,7 @@ class DarwinWorkflowTests(unittest.TestCase):
                 cli.chmod(0o755)
                 env = dict(os.environ, PATH=str(tools) + os.pathsep + os.environ['PATH'],
                            WORK_ROOT=str(work), SELECTED_MODULES=selected, PLATFORM='darwin-aarch64',
-                           GITHUB_WORKSPACE=str(root), GITHUB_REPOSITORY='fixture/repo', GITHUB_REF='refs/heads/task',
+                           GITHUB_WORKSPACE=str(workspace), SOURCE_ROOT=str(root), GITHUB_REPOSITORY='fixture/repo', GITHUB_REF='refs/heads/task',
                            GITHUB_SHA='abc', GITHUB_RUN_ID='123', GITHUB_RUN_ATTEMPT='2')
                 script = step_script(native, 'Plan recipe validation') + '\n' + step_script(native, 'Require all requested roots')
                 result = subprocess.run(['/bin/bash', '-euc', script], cwd=root, env=env, capture_output=True, text=True)
@@ -110,7 +112,7 @@ class DarwinWorkflowTests(unittest.TestCase):
                 records.append((work / 'result', [expand(t) for t in artifact_templates]))
             self.assertEqual([p.read_text().strip() for p, _ in records], roots[:2])
             self.assertTrue(set(records[0][1]).isdisjoint(records[1][1]))
-            self.assertNotEqual(records[0][0].parent.name, records[1][0].parent.name)
+            self.assertNotEqual(records[0][0].parent, records[1][0].parent)
 
     def test_recipe_roots_must_survive_filtering(self):
         source = (ROOT / '.github/workflows/validate-macos-recipes.yml').read_text()
