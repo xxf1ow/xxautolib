@@ -20,12 +20,13 @@ jobs:
       fail-fast: false
       matrix:
         root:
-          - taskflow@83f90a279aaa
-          - libusb@1.0.27
-          - pybind11@2.13.6
-          - boost@1.87.0
+          - eigen@3.4.0
+          - portaudio@v190700_20210406
+          - libzmq@4.3.5
+          - onnxruntime@1.24.4
           - flann@f9caaf609d8b
           - imgui@065f9e02695c
+          - librealsense@2.58.1
     defaults:
       run:
         shell: bash

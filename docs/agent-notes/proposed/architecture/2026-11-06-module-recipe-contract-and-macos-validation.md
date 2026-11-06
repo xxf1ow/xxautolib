@@ -291,6 +291,10 @@ runner 预装的 Homebrew 库可能改变可选功能探测、动态链接及最
 
 HarfBuzz 8.5.0、OpenCV 4.14.0 的 Darwin 验收随此依赖链暂缓，尚无独立构建结论。重试需要先明确 FreeType/HarfBuzz 的无环构建方式、其余第三方依赖的仓库配方和功能要求，并批准相应依赖声明；本轮不实施这些后续方案。
 
+`boost@1.87.0` 在源码 `d07d8c06dc930ac2cb897e22bdf4e6df87579749` 的 [macOS 15 验收 run 42257137133，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42257137133/job/128027205076) 完成静态构建及消费 API 检查，但 Mach-O 拒绝 Homebrew zstd 1.5.7 的 `libzstd.1.dylib`。实际 Boost::iostreams 元数据同时依赖 SDK bzip2、liblzma，zlib 则正确使用仓库 1.3.1。仓库缺少 zstd、bzip2 和 xz/liblzma 配方；不关闭压缩功能、不使用系统版本，暂缓该版本 Darwin 交付并撤回临时声明。重新试验需要先批准并建立这些仓库依赖及接线。
+
+WebSocket++ 4dfe1be74e68、PCL pcl-1.15.1 的 Darwin 验收因 Boost 闭包缺失暂缓，尚无这两个根的独立构建结论；WebSocket++ 保持 any-any 载荷身份，其目标资格继续由 Boost 依赖过滤。PCL 在原有三个平台的 Linux Eigen 归档组合验收仍属于本阶段范围。
+
 ### 第一阶段未覆盖的范围
 
 第一阶段没有推送、远端 Actions、发布或合并。上述本机证据不证明 macOS 15 实际运行，也不证明全部 31 配方已支持 Darwin。完整逐版本 macos-15 结果、必要系统库和补丁、同一 Linux Eigen 归档跨 Windows/macOS 的摘要与消费、PCL 组合及 example 实机导入留待第二阶段；硬件和图形功能按实际条件单列。失败候选的具名阻断与重新尝试条件届时写入本节，不能以平台过滤或 CI 成功代替。
