@@ -295,6 +295,54 @@ HarfBuzz 8.5.0、OpenCV 4.14.0 的 Darwin 验收随此依赖链暂缓，尚无�
 
 WebSocket++ 4dfe1be74e68、PCL pcl-1.15.1 的 Darwin 验收因 Boost 闭包缺失暂缓，尚无这两个根的独立构建结论；WebSocket++ 保持 any-any 载荷身份，其目标资格继续由 Boost 依赖过滤。PCL 在原有三个平台的 Linux Eigen 归档组合验收仍属于本阶段范围。
 
+`libzmq@4.3.5` 在源码 `c8eec1ec11a8464cd8af03a9dd953bcb35740eec` 的 [macOS 15 验收 run 42260213354，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42260213354/job/128037859553) 完成构建及进程内消息收发，但 Mach-O 检查拒绝 `/opt/homebrew/opt/gnutls/lib/libgnutls.30.dylib`。导出的静态、动态目标都依赖 Homebrew GnuTLS，仓库没有对应配方。保留功能并撤回临时 Darwin 声明；重试需要先批准并建立仓库 GnuTLS 及其必要依赖。
+
+`flann@f9caaf609d8b` 在同一源码的 [macOS 15 验收 run 42260213354，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42260213354/job/128037859606) 使用仓库 lz4 完成构建安装，但配置明确报告 `OpenMP NOT found`，未满足配方 `USE_OPENMP=true` 的既定要求；实际消费还因裸 install name `libflann_cpp.1.9.dylib` 无法加载而失败。仓库没有 Apple Clang 所需的 OpenMP 运行库，不能用 Homebrew libomp、关闭 OpenMP 或替换编译器绕过。因此撤回临时 Darwin 声明；重试需要先解决仓库 OpenMP 依赖及 Mach-O install name/rpath，再验证实际运行和搬迁。PCL 的 Darwin 闭包同时受此影响。
+
+原样 `example/` 的隔离 driver 已有缺输入及数据保护检查，但本轮 macos-15 未完成真实导入、编译和运行：其 FLANN 依赖尚未合格。这是阶段验收缺口，不能以其他库的 smoke 通过代替。
+
+`librealsense@2.58.1` 在 [macOS 15 验收 run 42260213354，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42260213354/job/128037859866) 编译到最终共享库链接，因静态 libusb 的 `SecTaskCreateFromSelf`、`SecTaskCopyValueForEntitlement` 未解析失败。包级本地依赖补丁补齐与 libusb 固定上游相同的 Foundation、IOKit、Security Framework；本机使用实际仓库 libusb 的链接及 API probe 先失败后通过。托管重试尚未完成，不计为成功；无相机环境不能验证取流。
+
+### macOS 逐版本快照
+
+以下成功表示该版本完成 macos-15 构建或复制安装、Config/adapter 导入、真实 API smoke、打包摘要核对和归档搬迁消费。归档摘要指 transport 中的原始 `.tar.zst`；直接与搬迁的 CTest 均通过。三个 run 的 attempt 均为 1，源码分别为 `03d5f5afd5c080f5bd5106bc4083906b68a2318d`（[42251612424](https://github.com/xxf1ow/xxautolib/actions/runs/42251612424)）、`d07d8c06dc930ac2cb897e22bdf4e6df87579749`（[42257137133](https://github.com/xxf1ow/xxautolib/actions/runs/42257137133)）和 `c8eec1ec11a8464cd8af03a9dd953bcb35740eec`（[42260213354](https://github.com/xxf1ow/xxautolib/actions/runs/42260213354)）。
+
+| 精确版本 | 结论与证据 run | 原始归档 SHA256 |
+|---|---|---|
+| `asio@8806a6803cde` | 通过 / 42251612424 | `331bb64fdb8973a4efba04a2bfbfaf005e6aaf06384c02f6eeaf2a965e05d827` |
+| `boost@1.87.0` | 暂缓 / 42257137133 / 压缩依赖缺失 | — |
+| `clipper2@1.5.4` | 通过 / 42251612424 | `a295b1c3cba844db372056be276391010d43611bfa2dc4c25e64fe0fb0932f19` |
+| `cpp-httplib@88956ccad838` | 通过 / 42251612424 | `6a132b0d77acc8f4e0336baebbfd0dcb90291bbe8096eef870647cbda361a056` |
+| `eigen@3.4.0` | 通过 / 42260213354 | `d596afb529434130ff3c2e22ff5f406ca10e70b59d841e72987b548a9bc58170` |
+| `eigen@5.0.1` | 通过 / 42251612424 | `b964eadcd30e8b241f02dfb8625d830acc29a2990c1f3bb092a34504654ae1b3` |
+| `expected@1.3.1` | 通过 / 42251612424 | `71abad84a720aa862e0d91ebf4f098e89d37ac952716a6da60327933efcac7a7` |
+| `flann@f9caaf609d8b` | 暂缓 / 42260213354 / OpenMP 缺失、动态库加载失败 | — |
+| `freetype@2.13.2` | 暂缓 / 42251612424 / 字体依赖闭包及循环 | — |
+| `gtest@1.17.0` | 通过 / 42251612424 | `86b965d2374257f1c96838b7cfbd332329074f8b01c70535f8af13f2bac851bd` |
+| `harfbuzz@8.5.0` | 依赖闭包暂缓 / FreeType | — |
+| `imgui@065f9e02695c` | 通过 / 42260213354 | `af8f3931f11087e7d357db90b295ab0351db7c50e1ccdde1d18c56357a79f453` |
+| `librealsense@2.58.1` | 待修复重试 / 42260213354 | — |
+| `libusb@1.0.27` | 通过 / 42257137133 | `0b131d2c44727f966e1edacc6b209b05a2a5c8714cd8b115fe0db6dcf5e7998a` |
+| `libzmq@4.3.5` | 暂缓 / 42260213354 / GnuTLS 缺失 | — |
+| `lz4@1.10.0` | 通过 / 42251612424 | `b32d744bf837353f66d2f9f580bf69edf091c73f70354910db4a21a8df8beeb2` |
+| `nativefiledialog-extended@3cd252a8f7ca` | 通过 / 42251612424 | `efcadeb69ce4b804423ca60f6ef32e2420a9f43ae66f9d0977c38db8afeb439c` |
+| `nlohmann@3.12.0` | 通过 / 42251612424 | `4f24dc13816ab35c303143a92e21ea171647de043f2929695cfc5578347752a8` |
+| `oneTBB@628c90df6867` | 通过 / 42251612424 | `61abcbc72be90bd3486d5ed114291993c874cd1b83e6e604e3884a0b3ca272de` |
+| `onnxruntime@1.24.4` | 通过 / 42260213354 | `1a328c640b48bb5005cfbeb25adfe332b2f0bb4cb0be750f7f968fa561165030` |
+| `opencv@4.14.0` | 依赖闭包暂缓 / FreeType/HarfBuzz | — |
+| `pcl@pcl-1.15.1` | 依赖闭包暂缓 / Boost/FLANN | — |
+| `portaudio@v190700_20210406` | 通过 / 42260213354 | `ec0c7881e25626dd4711dff243307cd724c84484f7954f93478da33e1c782c95` |
+| `pybind11@2.13.6` | 通过 / 42257137133 | `eb4dbd606cdd9d4c88c48b593e544efd48c9fb0607d752676dfea82ee326859c` |
+| `queue@45db9a8b4431` | 通过 / 42251612424 | `e7d91ecb0a6645dd99eea04b0a181d9d0930722c495dd216bd3c88ffd512a7d5` |
+| `sdl3@3.2.30` | 通过 / 42251612424 | `116658d320c223d459df7ae2525933c8c6c8cf13a02418c57239def33d226097` |
+| `spdlog@1.17.0` | 通过 / 42251612424 | `edfe516678412688dc90415a7a1ba6ce14aeced1e51e87cebe0505d8c24b1153` |
+| `taskflow@83f90a279aaa` | 通过 / 42257137133 | `370cb340dc92a5d1b8c50d3f86fb49f2a3f1292c1d08e0ebf2b94dc3b7d1529d` |
+| `websocketpp@4dfe1be74e68` | 依赖闭包暂缓 / Boost | — |
+| `yaml-cpp@2decf96e915d` | 通过 / 42251612424 | `61674b68034ae2a917e4622841fd59954ab25a64f6dc35f93f4f3acabdb723c3` |
+| `zlib@1.3.1` | 通过 / 42251612424 | `f5d86230d8abb59f97fff177dd351df89261ffaccef5957ead480e0c33bc05a1` |
+
+功能覆盖限于 smoke 实际调用：PortAudio 查询运行环境，未验音频设备；SDL3 验证内存 surface，未验图形会话、HID/USB 和按名加载 `libusb-1.0.dylib` 的可选路径；ImGui 创建上下文并生成帧数据，未验窗口显示；Native File Dialog 未调用交互对话框；libusb 未验真实 USB 设备；ONNX Runtime 创建并释放 CPU 环境，未验模型推理。上述设备及后端路径不计入通过范围，SDL 可选动态后端的依赖来源仍需后续实机核对。pybind11 的通过包含编译绑定扩展并由匹配 Python 实际调用。
+
 ### 第一阶段未覆盖的范围
 
 第一阶段没有推送、远端 Actions、发布或合并。上述本机证据不证明 macOS 15 实际运行，也不证明全部 31 配方已支持 Darwin。完整逐版本 macos-15 结果、必要系统库和补丁、同一 Linux Eigen 归档跨 Windows/macOS 的摘要与消费、PCL 组合及 example 实机导入留待第二阶段；硬件和图形功能按实际条件单列。失败候选的具名阻断与重新尝试条件届时写入本节，不能以平台过滤或 CI 成功代替。

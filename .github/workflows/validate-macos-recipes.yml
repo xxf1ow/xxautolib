@@ -4,6 +4,22 @@ on:
   push:
     branches:
       - task/darwin-aarch64-native-ci
+    paths:
+      - .github/workflows/validate-macos-recipes.yml
+      - .github/scripts/prepare-darwin.sh
+      - .github/ci-tools.json
+      - src/dependencies/librealsense/**
+      - src/dependencies/libusb/**
+      - src/dependencies/lz4/**
+      - src/dependencies/nlohmann/**
+      - src/autolib-builder/**
+      - src/autolib-ci/**
+      - src/autolib-importer/**
+      - src/internal/packagemetadata/**
+      - src/autolib.cmake
+      - tests/autolib/run-installed.cmake
+      - tests/autolib/CMakeLists.txt
+      - tests/autolib/smoke.cpp
 
 permissions:
   contents: read
@@ -20,12 +36,6 @@ jobs:
       fail-fast: false
       matrix:
         root:
-          - eigen@3.4.0
-          - portaudio@v190700_20210406
-          - libzmq@4.3.5
-          - onnxruntime@1.24.4
-          - flann@f9caaf609d8b
-          - imgui@065f9e02695c
           - librealsense@2.58.1
     defaults:
       run:
