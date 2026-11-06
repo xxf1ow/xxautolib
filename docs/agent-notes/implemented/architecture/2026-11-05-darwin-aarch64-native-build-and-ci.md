@@ -36,6 +36,8 @@ CI 使用 `Unix Makefiles` 和仓库已固定的 GNU Make 4.4.1，同一平台�
 
 ### 每个配方版本显式声明平台资格
 
+单一平台产物声明、通用包资格及全包验收的替代提案见[统一模块配方字段与 macOS 全包验收](../../proposed/architecture/2026-11-06-module-recipe-contract-and-macos-validation.md)。
+
 每个 `src/dependencies/<name>/<version>/module.toml` 使用必填、非空、无重复项的字符串数组 `supported_platforms`，允许四个规范值：`windows-x86_64`、`linux-x86_64`、`linux-aarch64`、`darwin-aarch64`。未知值、缺失字段、空数组和非字符串项均属于坏声明；不将缺失解释为全平台支持，也不从平台覆盖表、源码存在或头文件属性推断支持。
 
 声明的所有者是对应版本配方。builder 统一解释平台资格，普通构建与 CI 复用这项判断；CI 不维护按包名列出的排除表。`[platforms.darwin]` 沿用现有平台覆盖的合并规则，仅在确有 macOS 来源或参数差异时声明。`platform_independent=true` 仍只决定交付为 `any-any`，不免除平台资格检查。

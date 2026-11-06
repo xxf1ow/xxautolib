@@ -14,6 +14,8 @@ zlib 和 queue 能验证本地基础流水线，但不能代表 URL 归档、预
 
 FLANN、HarfBuzz 与 OpenCV 4.14.0 已验证的依赖声明、安装查找位置及资源修改由[依赖与复杂资源决定](../../implemented/architecture/2026-10-20-flann-opencv-dependencies.md)拥有；本文保留其他模块的总体约束。
 
+来源、安装、平台覆盖及系统依赖字段的统一提案见[统一模块配方字段与 macOS 全包验收](2026-11-06-module-recipe-contract-and-macos-validation.md)；本文的参考迁移边界及 FreeType 功能基线继续有效。
+
 ### 首批目标与范围
 
 首批以 FreeType 2.13.2 验证 URL 归档获取、摘要校验、多地址顺序回退及真实构建安装，同时适配参考仓库的新增模块技能。使用者通过现有根 CMake 入口选择 freetype，获得本仓库安装树中的头文件、静态库和安装配置；不要求下游导入或二进制交付。首批完成后即可独立验收，不以其他模块迁移为完成条件。
