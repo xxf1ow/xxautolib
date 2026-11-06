@@ -25,7 +25,7 @@
 | `steps`、`patches` | 追加 |
 | `copy` | 整数组替换 |
 
-旧 OS 表和 `architectures` 层级不接受。通用身份约束完整交付内容；安装类型本身不证明内容可跨平台使用。字段设计与验收要求见[统一配方设计](../agent-notes/proposed/architecture/2026-11-06-module-recipe-contract-and-macos-validation.md)。
+旧 OS 表和 `architectures` 层级不接受。通用身份约束完整交付内容；安装类型本身不证明内容可跨平台使用。cmake 和 copy 均可交付 any-any；消费准备、复用和 staging 按内容拒绝已知 ELF、PE、Mach-O、COFF 及目标代码归档，不依赖扩展名。copy 另核对映射集合及来源字节，允许平台无关的查找元数据；生成头文件和元数据的跨平台语义仍需审查与真实消费验证。字段设计与验收要求见[统一配方设计](../agent-notes/proposed/architecture/2026-11-06-module-recipe-contract-and-macos-validation.md)。
 
 ## 来源与安装字段
 
@@ -80,3 +80,5 @@ cache 和步骤支持 `<SOURCE_DIR>`、`<BINARY_DIR>`、`<INSTALL_DIR>`、`<RESO
 ## 只读描述
 
 describe 输出有效包身份、精确直接依赖、当前平台的系统包管理器条目、adapter 路径和相对 input_files，不输出完整配置镜像。输入包括配方、package.toml、实际 adapter、补丁及普通 DEPENDS 文件；生成文件不列为 checkout 输入。没有 adapter 的合法配方仍可描述和本地构建，CI 排除该包及依赖它的根并返回原因；坏声明直接报错。
+
+安装完成与复用检查声明的 config_dir/pkgconfig_dir 为已有目录，包括没有 adapter 的本地配方。有效上游 Config 导出目标优先复用；纯头文件身份不要求手写包含路径或语言要求。两个 Eigen 版本通过上游 CMake 安装，以 any-any 交付头文件与查找元数据，adapter 链接本包的 Eigen3::Eigen。

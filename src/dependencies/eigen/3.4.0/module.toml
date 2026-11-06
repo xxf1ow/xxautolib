@@ -1,6 +1,6 @@
 # eigen：线性代数头文件库，通过上游 CMake 安装头文件和配置。
 type = "cmake"
-package_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
+package_platforms = ['any-any']
 sentinel = "include/Eigen/Eigen"
 config_dir = "share/eigen3/cmake"
 package_name = "Eigen3"

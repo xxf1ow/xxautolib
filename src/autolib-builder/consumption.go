@@ -108,6 +108,11 @@ func prepareConsumption(o consumptionOptions) error {
 	if err := validateArtifactVersionPath(filepath.Join(o.InstallRoot, o.Name, o.Version)); err != nil {
 		return err
 	}
+	if o.Phase != "begin" {
+		if err := validateInstalledMetadata(module, filepath.Join(o.InstallRoot, o.Name, o.Version)); err != nil {
+			return err
+		}
+	}
 	adapterPath := filepath.Join(filepath.Dir(module.Path), "autolib-import.cmake")
 	adapter, err := os.ReadFile(adapterPath)
 	if errors.Is(err, os.ErrNotExist) {
@@ -241,4 +246,22 @@ func runConsumption(args []string, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+func validateInstalledMetadata(module *moduleDefinition, prefix string) error {
+	for _, field := range []struct{ name, value string }{{"config_dir", module.ConfigDir}, {"pkgconfig_dir", module.PkgconfigDir}} {
+		value := field.value
+		if value == "" {
+			continue
+		}
+		path := filepath.Join(prefix, value)
+		info, err := os.Stat(path)
+		if err != nil {
+			return fmt.Errorf("%s: %s installation directory %s: %w", module.Path, field.name, path, err)
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("%s: %s installation path must be a directory: %s", module.Path, field.name, path)
+		}
+	}
+	return nil
 }
