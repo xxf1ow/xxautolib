@@ -70,7 +70,7 @@ src/dependencies/eigen/
 
 ### ABI 支持范围
 
-公开二进制沿用[CI 环境与 ABI 基准](../../implemented/architecture/2026-10-20-ci-system.md#环境与-abi)：Linux 使用 Ubuntu 20.04、GCC 9.4、glibc 2.31 及官方配套的动态 C++ 运行库，不切换旧字符串 ABI；Windows 使用 VS 2022 x64/v143、Release、`MultiThreadedDLL`（`/MD`）。生产者、依赖和验证消费者使用相应基准，继续执行既有适用的符号需求检查及真实链接运行验证，不因版本化交付取消这些发布前检查，也不承诺工具集或 SDK 补丁版本完全固定。
+公开二进制沿用[CI 环境与 ABI 基准](../../implemented/architecture/2026-10-20-ci-system.md#环境与-abi)：Linux 使用 Ubuntu 20.04、GCC 10.5、glibc 2.31 及官方配套的动态 C++ 运行库，不切换旧字符串 ABI；Windows 使用 VS 2022 x64/v143、Release、`MultiThreadedDLL`（`/MD`）。生产者、依赖和验证消费者使用相应基准，继续执行既有适用的符号需求检查及真实链接运行验证，不因版本化交付取消这些发布前检查，也不承诺工具集或 SDK 补丁版本完全固定。
 
 本地与 CI 保证相同的产物结构和消费协议，不保证任意本地工具链、CRT 或编译选项生成的二进制都与公开产物兼容。本地允许沿用父构建的显式配置；使用者负责让消费者和依赖闭包保持兼容，混用本地与远端产物时也适用。包身份与 SHA256 校验不证明 ABI 兼容，不新增 ABI 变体、通用 ABI 自动判定或强制本地配置等同 CI 的限制。
 

@@ -1,4 +1,5 @@
 import json
+from itertools import product
 import os
 from pathlib import Path
 import shlex
@@ -22,9 +23,9 @@ root = Path(os.environ["PREPARATION_FIXTURE"])
 with (root / "events").open("a") as events:
     events.write(name + " " + " ".join(args) + "\n")
 if name == "dpkg":
-    print("amd64")
-elif name in ("gcc-9", "g++-9"):
-    print("9.4.0")
+    print(os.environ["PREPARATION_ARCH"])
+elif name in ("gcc-10", "g++-10"):
+    print("10.5.0")
 elif name == "nproc":
     print("4")
 elif name == "jq":
@@ -92,8 +93,9 @@ elif name == "make":
 @unittest.skipUnless(sys.platform == "linux", "requires Linux bash")
 class LinuxPreparationTests(unittest.TestCase):
     def test_library_tools_are_only_prepared_for_library_work(self):
-        for libraries in (False, True):
-            with self.subTest(libraries=libraries), tempfile.TemporaryDirectory(prefix="prepare linux ") as temporary:
+        platforms = (("linux-x86_64", "amd64"), ("linux-aarch64", "arm64"))
+        for (platform, arch), libraries in product(platforms, (False, True)):
+            with self.subTest(platform=platform, libraries=libraries), tempfile.TemporaryDirectory(prefix="prepare linux ") as temporary:
                 root = Path(temporary)
                 scripts = root / ".github/scripts"
                 scripts.mkdir(parents=True)
@@ -105,16 +107,21 @@ class LinuxPreparationTests(unittest.TestCase):
                 (root / "stub").chmod(0o755)
                 binary = root / "bin"
                 binary.mkdir()
-                for name in ("jq", "dpkg", "apt-get", "curl", "sha256sum", "tar", "make", "gcc-9", "g++-9",
+                for name in ("jq", "dpkg", "apt-get", "curl", "sha256sum", "tar", "make", "gcc-10", "g++-10",
                              "git", "dpkg-query", "nproc"):
                     (binary / name).symlink_to(root / "stub")
                 plan = root / "plan.json"
-                plan.write_text(json.dumps({"platforms": [{"id": "linux-x86_64", "roots": ["queue@1"] if libraries else [],
+                plan.write_text(json.dumps({"platforms": [{"id": platform, "roots": ["queue@1"] if libraries else [],
                                                          "system_dependencies": {"apt": []}}]}))
+                config = root / "ci-tools.json"
+                configuration = json.loads((ROOT / ".github/ci-tools.json").read_text())
+                configuration["production"]["linux"]["gcc_version"] = "10.5"
+                config.write_text(json.dumps(configuration))
+                github_env = root / "github-env"
                 env = dict(os.environ, PATH=str(binary) + os.pathsep + os.environ["PATH"],
-                           PREPARATION_FIXTURE=str(root), GITHUB_PATH="", GITHUB_ENV="")
-                result = subprocess.run(["bash", str(scripts / "prepare-linux.sh"), "--config", str(ROOT / ".github/ci-tools.json"),
-                                         "--plan", str(plan), "--platform", "linux-x86_64", "--work-root", str(root / "work")],
+                           PREPARATION_FIXTURE=str(root), PREPARATION_ARCH=arch, GITHUB_PATH="", GITHUB_ENV=str(github_env))
+                result = subprocess.run(["bash", str(scripts / "prepare-linux.sh"), "--config", str(config),
+                                         "--plan", str(plan), "--platform", platform, "--work-root", str(root / "work")],
                                         env=env, text=True, capture_output=True)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 output = json.loads(result.stdout)
@@ -122,12 +129,15 @@ class LinuxPreparationTests(unittest.TestCase):
                 self.assertEqual(output["budget"], 4 if libraries else 0)
                 if libraries:
                     self.assertTrue(Path(output["make_program"]).is_file())
+                    self.assertEqual(github_env.read_text(), "CC=gcc-10\nCXX=g++-10\n")
+                    events = (root / "events").read_text()
+                    self.assertIn("build-essential gcc-10 g++-10 pkg-config libgomp1", events)
                 else:
                     self.assertEqual(output["make_program"], "")
                     self.assertFalse((root / "work/ci-tools/src/make-4.4.1").exists())
                     events = (root / "events").read_text()
                     self.assertNotIn("build-essential", events)
-                    self.assertNotIn("gcc-9", events)
+                    self.assertNotIn("gcc-10", events)
                     self.assertNotIn("make-4.4.1.tar.gz", events)
 
 

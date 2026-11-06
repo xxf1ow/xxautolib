@@ -41,7 +41,7 @@ has_libraries=$(jq -r --arg platform "$platform" '.platforms[] | select(.id == $
 build_packages=()
 if [[ "$has_libraries" == true ]]; then
   gcc_version=$(jq -er '.production.linux.gcc_version' "$config")
-  [[ "$gcc_version" =~ ^9\.[0-9]+$ ]] || { echo "Unsupported configured GCC version: $gcc_version" >&2; exit 1; }
+  [[ "$gcc_version" =~ ^10\.[0-9]+$ ]] || { echo "Unsupported configured GCC version: $gcc_version" >&2; exit 1; }
   gcc_major=${gcc_version%%.*}
   build_packages=(build-essential "gcc-$gcc_major" "g++-$gcc_major" pkg-config libgomp1)
 fi

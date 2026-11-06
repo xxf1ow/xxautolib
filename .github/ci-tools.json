@@ -45,7 +45,7 @@
     },
     "linux": {
       "distribution": "ubuntu-20.04",
-      "gcc_version": "9.4",
+      "gcc_version": "10.5",
       "glibc_max": "2.31",
       "generator": "Unix Makefiles"
     },

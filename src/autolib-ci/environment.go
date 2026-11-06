@@ -127,7 +127,7 @@ func validateProductionEnvironment(config ciEnvironmentConfig) error {
 		return fmt.Errorf("production.common.cmake_defaults: expected lib installation layout and a major.minor policy minimum")
 	}
 	linux := config.Production.Linux
-	if linux.Distribution != "ubuntu-20.04" || !versionPair.MatchString(linux.GCCVersion) || !strings.HasPrefix(linux.GCCVersion, "9.") || !versionPair.MatchString(linux.GlibcMax) || compareVersion("GLIBC_"+linux.GlibcMax, "GLIBC_2.31") > 0 || linux.Generator != "Unix Makefiles" {
+	if linux.Distribution != "ubuntu-20.04" || !versionPair.MatchString(linux.GCCVersion) || !strings.HasPrefix(linux.GCCVersion, "10.") || !versionPair.MatchString(linux.GlibcMax) || compareVersion("GLIBC_"+linux.GlibcMax, "GLIBC_2.31") > 0 || linux.Generator != "Unix Makefiles" {
 		return fmt.Errorf("production.linux: expected supported Ubuntu, GCC, glibc, and generator values")
 	}
 	windows := config.Production.Windows

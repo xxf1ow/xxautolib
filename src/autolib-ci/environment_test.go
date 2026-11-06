@@ -133,6 +133,23 @@ func TestCIEnvironmentUsesConfiguredToolVersions(t *testing.T) {
 	}
 }
 
+func TestCIEnvironmentGCC10Baseline(t *testing.T) {
+	document := environmentFixture(t)
+	linux := document["production"].(map[string]any)["linux"].(map[string]any)
+	linux["gcc_version"] = "10.5"
+	if err := loadEnvironmentDocument(t, document); err != nil {
+		t.Fatalf("GCC 10.5 with Ubuntu 20.04 and glibc 2.31 was rejected: %v", err)
+	}
+	for _, version := range []string{"9.4", "11.1", "10", "10.5;OTHER=1"} {
+		t.Run(version, func(t *testing.T) {
+			linux["gcc_version"] = version
+			if err := loadEnvironmentDocument(t, document); err == nil {
+				t.Fatalf("unsupported GCC version %q was accepted", version)
+			}
+		})
+	}
+}
+
 func TestCIEnvironmentDigestsAreConfigurationOwned(t *testing.T) {
 	root, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
@@ -176,7 +193,7 @@ func environmentFixture(t *testing.T) map[string]any {
 			"cmake_defaults": map[string]any{"CMAKE_INSTALL_LIBDIR": "lib", "CMAKE_POLICY_VERSION_MINIMUM": "3.5"},
 		},
 		"linux": map[string]any{
-			"distribution": "ubuntu-20.04", "gcc_version": "9.4", "glibc_max": "2.31", "generator": "Unix Makefiles",
+			"distribution": "ubuntu-20.04", "gcc_version": "10.5", "glibc_max": "2.31", "generator": "Unix Makefiles",
 		},
 		"windows": map[string]any{
 			"generator": "Visual Studio 17 2022", "platform": "x64", "toolset": "v143,host=x64", "runtime": "MultiThreadedDLL",

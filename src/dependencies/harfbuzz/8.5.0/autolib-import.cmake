@@ -8,7 +8,7 @@ if(TARGET autolib::harfbuzz)
     return()
 endif()
 
-list(PREPEND CMAKE_PREFIX_PATH "${CMAKE_CURRENT_LIST_DIR}")
+list(PREPEND CMAKE_PREFIX_PATH "${CMAKE_CURRENT_LIST_DIR}" "${AUTOLIB_PACKAGE_DIR_freetype}")
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(_autolib_harfbuzz REQUIRED IMPORTED_TARGET GLOBAL harfbuzz)
 find_package(Threads REQUIRED)
