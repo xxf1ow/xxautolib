@@ -18,6 +18,17 @@ class PublicationRulesTests(unittest.TestCase):
         self.assertIsNotNone(importlib.util.find_spec('publication_rules'), 'publication rules are not implemented')
         self.rules = importlib.import_module('publication_rules')
 
+    def test_darwin_metadata_identity(self):
+        importer = dict(kind='importer', platform='darwin-aarch64', name='autolib-importer-darwin-aarch64.tar.xz')
+        self.assertEqual(self.rules.metadata_path(importer),
+                         'autolib-importer/autolib-importer-darwin-aarch64.tar.xz.sha256')
+        library = dict(kind='library', name='lz4-1.10.0-darwin-aarch64.tar.zst',
+                       package=dict(name='lz4', version='1.10.0', os='darwin', arch='aarch64'))
+        self.assertEqual(self.rules.metadata_path(library), 'lz4/1.10.0/lz4-1.10.0-darwin-aarch64.tar.zst.sha256')
+        for platform in ('darwin-x86_64', 'darwin-universal', 'unknown-aarch64'):
+            with self.subTest(platform=platform), self.assertRaises(ValueError):
+                self.rules.metadata_path(dict(importer, platform=platform))
+
     def test_choose_latest(self):
         choose = self.rules.choose_latest
         self.assertEqual(choose({}, {'queue': '1'}, {'queue'}, {}), {'queue': '1'})

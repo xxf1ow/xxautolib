@@ -136,6 +136,19 @@ func TestCISelectedPlatformCompletion(t *testing.T) {
 		t.Fatalf("verified selected platform must not require Release upload: %v", err)
 	}
 	all, _, complete := finalizeFixture()
+	darwin := all.Platforms[0]
+	darwin.ID = "darwin-aarch64"
+	all.Platforms = append(all.Platforms, darwin)
+	darwinResult := complete[0]
+	darwinResult.Platform = "darwin-aarch64"
+	darwinResult.Importer.File = "autolib-importer-darwin-aarch64"
+	complete = append(complete, darwinResult)
+	if err := finalizeCI(all, ciGitHubRepository, identity, complete); err != nil {
+		t.Fatalf("four selected platforms must complete: %v", err)
+	}
+	if err := finalizeCI(all, ciGitHubRepository, identity, complete[:3]); err == nil {
+		t.Fatal("missing Darwin result accepted")
+	}
 	for _, change := range []string{"missing", "duplicate", "attempt", "sha"} {
 		t.Run(change, func(t *testing.T) {
 			items := append([]ciPlatformResult{}, complete...)
