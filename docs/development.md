@@ -20,6 +20,20 @@ cmake -S . -B build -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release
 ```
 
+Darwin ARM64（Apple Silicon）：
+
+```sh
+cmake -S . -B build -G "Unix Makefiles" \
+  -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
+  "-DCMAKE_C_COMPILER=$(xcrun --find clang)" \
+  "-DCMAKE_CXX_COMPILER=$(xcrun --find clang++)" \
+  "-DCMAKE_OSX_SYSROOT=$(xcrun --sdk macosx --show-sdk-path)" \
+  -DCMAKE_MAKE_PROGRAM=/absolute/path/to/make-4.4.1
+cmake --build build --verbose -- -j2 --jobserver-style=fifo
+```
+
+Darwin 根和子项目固定以上五项 Apple 参数，拒绝配方冲突；其他平台和默认值保持下述优先级。
+
 引擎为 CMake 子项目提供 policy 下限 `3.5`、PIC `ON`、C++ 标准 `17` 的兜底值，通过原生 `CMAKE_ARGS` 传入，不向父级 cache 写默认值；不依赖 preset、IDE 设置或环境变量。根 configure 的 `-D` 或 toolchain 中已定义的值可覆盖兜底值，模块显式 cache 优先于父级值；修改公共值后重新 configure/build。已有 cache 条目保留为父级输入，不自动删除。policy 下限不降低上游较高声明，旧声明被提高后的兼容性仍须实际验证。IDE 可沿用已有编译器和配置。
 
 默认发现全部配方版本，安装到 `3rdparty/<包名>/<版本>/`。`BUILD_LIST` 用逗号分隔 `包名@版本`；裸名只读包级 `package.toml` 的 `latest`，不排序或改写版本。依赖闭包自动补齐。裸名 eigen 选 3.4.0，显式可选 5.0.1；PCL 固定依赖 `eigen@3.4.0`。根 BUILD_LIST 不传入 OpenCV。configure 输出工具链、安装目录与模块摘要，build 执行获取和安装。

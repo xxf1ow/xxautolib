@@ -87,6 +87,9 @@ execute_process(COMMAND ${managed_environment} "${managed_go}" env -json GOROOT 
 		if f.context.Platform != "" {
 			args = append(args, "-A", f.context.Platform, "-T", f.context.Toolset)
 		}
+		for key, value := range f.context.CMakeDefaults {
+			args = append(args, "-D"+key+"="+value)
+		}
 		f.must(args...)
 		var environment map[string]string
 		if err := json.Unmarshal([]byte(readFile(t, filepath.Join(build, "go-environment.json"))), &environment); err != nil {
@@ -121,7 +124,7 @@ func newEntryFixture(t *testing.T) *fixture {
 	}
 	t.Setenv("GOPROXY", "off")
 	t.Setenv("GOSUMDB", "off")
-	for _, file := range []string{"CMakeLists.txt", "go.mod", "go.sum"} {
+	for _, file := range []string{"CMakeLists.txt", "go.mod", "go.sum", "src/autolib.cmake"} {
 		data, err := os.ReadFile(filepath.Join("..", "..", file))
 		if err != nil {
 			t.Fatal(err)
@@ -162,6 +165,11 @@ func newEntryFixture(t *testing.T) *fixture {
 		}
 	}
 	seedManagedGo(f)
+	if runtime.GOOS == "darwin" {
+		f.context.SystemName = "Darwin"
+		f.context.Architecture = "aarch64"
+		f.context.CMakeDefaults = darwinTestDefaults(f)
+	}
 	return f
 }
 
@@ -188,7 +196,25 @@ func TestEntryInstalledImporter(t *testing.T) {
 			}
 			f.mustEntry("-DBUILD_LIST=demo")
 			tool := installedImporter(root)
-			if output, err := exec.Command(goExecutable(), "tool", "nm", tool).CombinedOutput(); err == nil || !strings.Contains(string(output), "no symbol") {
+			if runtime.GOOS == "darwin" {
+				binary, err := macho.Open(tool)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, section := range binary.Sections {
+					if section.Seg == "__DWARF" {
+						t.Error("installed importer retains DWARF")
+					}
+				}
+				if binary.Symtab != nil {
+					for _, symbol := range binary.Symtab.Syms {
+						if strings.Contains(symbol.Name, "main.main") {
+							t.Error("installed importer retains local Go symbols")
+						}
+					}
+				}
+				binary.Close()
+			} else if output, err := exec.Command(goExecutable(), "tool", "nm", tool).CombinedOutput(); err == nil || !strings.Contains(string(output), "no symbol") {
 				t.Fatalf("installed importer retains symbols: nm exit=%v", err)
 			}
 			stat, err := os.Stat(tool)
@@ -270,6 +296,9 @@ func (f *fixture) entry(args ...string) (string, error) {
 	command := []string{f.context.CMakeCommand, "-S", f.root, "-B", f.context.BuildRoot, "-G", f.context.Generator}
 	if f.context.Platform != "" {
 		command = append(command, "-A", f.context.Platform, "-T", f.context.Toolset)
+	}
+	for key, value := range f.context.CMakeDefaults {
+		command = append(command, "-D"+key+"="+value)
 	}
 	out, stderr, err := f.command(append(command, args...)...)
 	return out + stderr, err

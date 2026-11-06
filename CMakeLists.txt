@@ -1,5 +1,32 @@
 cmake_minimum_required(VERSION 3.20)
+if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin")
+    execute_process(COMMAND uname -m OUTPUT_VARIABLE native_arch OUTPUT_STRIP_TRAILING_WHITESPACE COMMAND_ERROR_IS_FATAL ANY)
+    if(NOT native_arch STREQUAL "arm64" OR CMAKE_CROSSCOMPILING OR
+       (DEFINED CMAKE_SYSTEM_NAME AND NOT CMAKE_SYSTEM_NAME STREQUAL "Darwin") OR
+       NOT CMAKE_OSX_ARCHITECTURES STREQUAL "arm64" OR
+       NOT CMAKE_OSX_DEPLOYMENT_TARGET STREQUAL "15.0")
+        message(FATAL_ERROR "Darwin native build requires Apple Silicon, arm64 and deployment target 15.0")
+    endif()
+    foreach(pair "CMAKE_C_COMPILER;clang" "CMAKE_CXX_COMPILER;clang++" "CMAKE_OSX_SYSROOT;macosx")
+        list(GET pair 0 key)
+        list(GET pair 1 tool)
+        if(tool STREQUAL "macosx")
+            execute_process(COMMAND xcrun --sdk macosx --show-sdk-path OUTPUT_VARIABLE expected OUTPUT_STRIP_TRAILING_WHITESPACE COMMAND_ERROR_IS_FATAL ANY)
+        else()
+            execute_process(COMMAND xcrun --find "${tool}" OUTPUT_VARIABLE expected OUTPUT_STRIP_TRAILING_WHITESPACE COMMAND_ERROR_IS_FATAL ANY)
+        endif()
+        if(NOT "${${key}}" STREQUAL "${expected}")
+            message(FATAL_ERROR "Darwin native build requires ${key}=${expected}")
+        endif()
+    endforeach()
+endif()
 project(xxautolib)
+if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin")
+    if(CMAKE_CROSSCOMPILING OR NOT CMAKE_SYSTEM_NAME STREQUAL "Darwin" OR
+       NOT CMAKE_C_COMPILER_ID STREQUAL "AppleClang" OR NOT CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+        message(FATAL_ERROR "Darwin native build requires native AppleClang C and C++ compilers")
+    endif()
+endif()
 
 # 查看 sha256: certutil -hashfile ./file_path sha256
 # ExternalProject: mkdir, download, update, patch, configure, build, install, test
