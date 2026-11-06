@@ -78,6 +78,81 @@ func TestRealModuleDeclarations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	refs, err := discoverModuleRefs(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(refs) != 31 {
+		t.Fatalf("want 31 recipe versions, got %d", len(refs))
+	}
+	for _, slot := range [][2]string{{"Windows", "x86_64"}, {"Linux", "x86_64"}, {"Linux", "aarch64"}, {"Darwin", "aarch64"}} {
+		t.Run("all-versions/"+slot[0]+"/"+slot[1], func(t *testing.T) {
+			description, err := describeSelection(root, slot[0], slot[1], nil, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(description.RequestedRoots) != 31 {
+				t.Fatal(description.RequestedRoots)
+			}
+			want := 31
+			if slot[0] == "Darwin" {
+				want = 9
+			}
+			if len(description.Roots) != want || len(description.FilteredRoots) != 31-want {
+				t.Fatalf("roots=%v filtered=%v", description.Roots, description.FilteredRoots)
+			}
+			byRef := map[string]*moduleDefinition{}
+			for _, ref := range refs {
+				path := filepath.Join(root, "src/dependencies", ref.Name, ref.Version, "module.toml")
+				module, err := readDefinition(path, slot[0], slot[1], false)
+				if err != nil {
+					t.Fatal(err)
+				}
+				byRef[ref.String()] = module
+			}
+			if got := byRef["pcl@pcl-1.15.1"].Depends; !reflect.DeepEqual(got, []string{"lz4@1.10.0", "flann@f9caaf609d8b", "boost@1.87.0", "eigen@3.4.0", "zlib@1.3.1"}) {
+				t.Fatal(got)
+			}
+			platform, _ := buildPlatform(slot[0], slot[1])
+			for _, ref := range refs {
+				module := byRef[ref.String()]
+				supported := false
+				for _, value := range module.PackagePlatforms {
+					supported = supported || value == "any-any" || value == platform
+				}
+				selection, err := selectModuleClosure(root, []string{ref.String()}, slot[0], slot[1], false)
+				if !supported {
+					if err != nil || len(selection.FilteredRoots) != 1 || selection.FilteredRoots[0].Code != "unsupported_platform" {
+						t.Fatalf("%s accepted unsupported %s: %v", ref, platform, err)
+					}
+					continue
+				}
+				if platform == "darwin-aarch64" && ref.Name == "websocketpp" {
+					if err != nil || len(selection.FilteredRoots) != 1 || selection.FilteredRoots[0].Code != "unsupported_dependency_platform" || !reflect.DeepEqual(selection.FilteredRoots[0].Chain, []string{"websocketpp@4dfe1be74e68", "boost@1.87.0"}) {
+						t.Fatalf("lost dependency filtering: %+v %v", selection, err)
+					}
+					continue
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, effective := range selection.Modules {
+					deps := []*moduleDefinition{}
+					for _, dependency := range effective.Depends {
+						deps = append(deps, byRef[dependency])
+					}
+					ctx := buildContext{SourceRoot: root, BuildRoot: t.TempDir(), SystemName: slot[0], Architecture: slot[1], Generator: "Unix Makefiles", CMakeCommand: "cmake", GitExecutable: "git"}
+					if slot[0] == "Darwin" {
+						ctx.CMakeDefaults = map[string]string{"CMAKE_OSX_ARCHITECTURES": "arm64", "CMAKE_OSX_DEPLOYMENT_TARGET": "15.0", "CMAKE_OSX_SYSROOT": "/fixture/SDK", "CMAKE_C_COMPILER": "/fixture/clang", "CMAKE_CXX_COMPILER": "/fixture/clang++"}
+					}
+					if _, err := renderModule(effective, ctx, deps); err != nil {
+						t.Fatal(effective.Name, effective.Version, err)
+					}
+				}
+			}
+		})
+	}
 	names := []string{"flann", "freetype", "harfbuzz", "librealsense", "libusb", "lz4", "nlohmann", "onnxruntime", "opencv", "queue", "zlib"}
 	for _, slot := range []struct{ system, arch, onnx string }{
 		{"Windows", "x64", "onnxruntime-win-x64-1.24.4.zip"},

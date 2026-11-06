@@ -1,0 +1,9 @@
+diff --git a/eigen3.pc.in b/eigen3.pc.in
+--- a/eigen3.pc.in
++++ b/eigen3.pc.in
+@@ -1,4 +1,4 @@
+-prefix=@CMAKE_INSTALL_PREFIX@
++prefix=${pcfiledir}/../..
+ exec_prefix=${prefix}
+ 
+ Name: Eigen3

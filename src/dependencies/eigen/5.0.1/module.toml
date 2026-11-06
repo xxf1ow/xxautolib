@@ -27,3 +27,6 @@ EIGEN_BUILD_LAPACK = false
 EIGEN_BUILD_DEMOS = false
 # 正式归档的 CMake 默认 prerelease 为 dev，须显式保留正式版本身份。
 EIGEN_PRERELEASE_VERSION = ""
+
+[[patches]] # pkg-config 的前缀相对本包 share/pkgconfig，支持安装树搬迁。
+file = "relocatable-pkgconfig.patch"

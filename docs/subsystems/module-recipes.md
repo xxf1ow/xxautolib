@@ -31,7 +31,7 @@
 
 `type` 必填且只能为 `cmake` 或 `copy`，分别使用上游 CMake 安装或复制映射。cmake 必须有有效主来源且禁止 `copy` 字段；copy 必须有非空映射且禁止整个 `cmake` 表，包括空表。安装方法不决定包平台身份。
 
-`source` 为可选主来源，`resources.<名称>` 为可选私有附属来源，默认空资源表；二者共用以下格式。CMake 安装以及选择主源码的复制映射需要主来源，resource-only copy 可省略主来源。
+`source` 为可选主来源表，`resources.<名称>` 为可选私有附属来源表，默认空资源表；二者共用以下格式。CMake 安装以及选择主源码的复制映射需要主来源，resource-only copy 可省略主来源。
 
 | 字段 | 类型与规则 |
 |---|---|
@@ -43,9 +43,12 @@ Git 与归档字段互斥。主来源和资源在目标覆盖时整项替换，�
 
 `cmake.SOURCE_SUBDIR` 是相对主源码根的可选目录，默认源码根。`cmake.cache` 默认空表，变量名须合法，值只接受字符串、布尔、整数或字符串数组；列表型路径键仅接受字符串或字符串数组。
 
-`copy` 每项可用 `resource` 指定有效资源，缺省主来源。`files` 或 `directories` 二选一，均为非空相对路径数组；`destination` 必填并相对本包安装前缀。路径禁止绝对值及越界，目录项允许 `.`。files 保留文件名，directories 复制目录内容；按映射顺序执行并沿用原生覆盖行为，下载前不检查输入文件是否已存在。
+`copy` 为表数组，每项可用非空字符串 `resource` 指定有效资源，缺省主来源。`files` 或 `directories` 二选一，均为非空相对路径数组；`destination` 必填并相对本包安装前缀。路径禁止绝对值及越界，目录项允许 `.`。files 保留文件名，directories 复制目录内容；按映射顺序执行并沿用原生覆盖行为，下载前不检查输入文件是否已存在。
 
-`config_dir`、`pkgconfig_dir`、`sentinel` 为可选安装前缀内相对路径，缺省未声明；`package_name` 为可选 CMake 包名，声明时必须有有效 config_dir。元数据路径与类型在解析时检查，来源需求、资源引用及跨字段完整性在目标合并后检查。所有分支中的未知字段、表结构和局部值错误均报错。
+`config_dir`、`pkgconfig_dir` 为可选非空字符串，相对本包安装前缀的目录，允许 `.`；`sentinel` 为可选非空字符串，指向该前缀内的代表文件。三者缺省未声明，禁止绝对路径与越界。sentinel 存在时跳过本包获取及安装，但保留依赖顺序和消费准备；它不证明版本、ABI 或安装完整性。`package_name` 为可选非空 CMake 包名，仅在有 config_dir 时使用，缺省使用包名；显式声明时没有有效 config_dir 即报错。元数据路径与类型在解析时检查，来源需求、资源引用及跨字段完整性在目标合并后检查。所有分支中的未知字段、表结构和局部值错误均报错。
+
+安装完成与复用检查声明的 config_dir/pkgconfig_dir 为已有目录，包括没有 adapter 的本地配方。有效上游 Config 导出目标优先复用；纯头文件身份不要求手写包含路径或语言要求。两个 Eigen 版本通过上游 CMake 安装，以 any-any 交付头文件与查找元数据，adapter 链接本包的 Eigen3::Eigen。
+
 
 ## 系统依赖
 
@@ -54,7 +57,7 @@ Git 与归档字段互斥。主来源和资源在目标覆盖时整项替换，�
 | 管理器 | 包名规则 |
 |---|---|
 | apt | `^[a-z0-9][a-z0-9+.-]*$` |
-| choco | `^[A-Za-z0-9.-]+$` 且首字符不能为 `-` |
+| choco | `^[A-Za-z0-9.][A-Za-z0-9.-]*$` |
 | brew | `^[a-z0-9][a-z0-9+_.@-]*$`，仅 formula，不接受 tap/cask |
 
 ## CMake 参数归属
@@ -69,11 +72,11 @@ Git 与归档字段互斥。主来源和资源在目标覆盖时整项替换，�
 
 ## 补丁、步骤与路径
 
-`patches` 默认空数组，每项必填配方目录内已有的普通 `file`，可选 resource 选择有效资源，否则需要主来源。同一来源按声明顺序应用，配置或复制等待所需资源及补丁完成。
+`patches` 为可选表数组，默认空；每项 file 必填非空字符串，指向配方目录内已有普通补丁文件，可选非空字符串 resource 选择有效资源，否则需要主来源。同一来源按声明顺序应用，配置或复制等待所需资源及补丁完成。
 
-`steps` 默认空数组，适用于两种安装方法。每项 name 必填、有效且合并后唯一，不能与原生步骤重名。COMMAND 必须为非空二维 argv 数组，每条命令非空且首项非空；多条命令依次执行，不隐式使用 shell。
+`steps` 为可选表数组，默认空，适用于两种安装方法。每项 name 必填非空名称字符串，合并后唯一，不能与原生步骤重名。COMMAND 必须为非空二维 argv 数组，每条命令非空且首项非空；多条命令依次执行，不隐式使用 shell。
 
-DEPENDEES、DEPENDERS 为步骤名数组，至少一侧非空，引用必须为原生或有效自定义步骤；数组顺序不决定调度，循环交给原生步骤图处理。DEPENDS 为可选文件路径数组，表示原生步骤输入变化，不是包依赖。WORKING_DIRECTORY 缺省 `<BINARY_DIR>`；普通相对路径基于配方目录。命令参数中的相对路径按工作目录解释，builder 不推断参数是否为文件。
+DEPENDEES、DEPENDERS 为可选字符串数组，默认空，表示步骤名，至少一侧非空，引用必须为原生或有效自定义步骤；数组顺序不决定调度，循环交给原生步骤图处理。DEPENDS 为可选字符串数组，默认空，表示文件路径，表示原生步骤输入变化，不是包依赖。WORKING_DIRECTORY 为可选非空字符串，缺省 `<BINARY_DIR>`；普通相对路径基于配方目录。命令参数中的相对路径按工作目录解释，builder 不推断参数是否为文件。
 
 cache 和步骤支持 `<SOURCE_DIR>`、`<BINARY_DIR>`、`<INSTALL_DIR>`、`<RESOURCE_SOURCE_DIR:名称>`。builder 展开资源目录，其余按原生步骤位置展开，未知占位符报错。DEPENDS 和 WORKING_DIRECTORY 的普通路径须在配方目录内；标签路径须以明确目录标签开头，不能通过 `..` 越界。普通 `<` 不跳过检查，路径字段不接受生成表达式。普通 DEPENDS 输入须为已有文件；标签指向的生成文件在执行时检查，不要求 describe 时存在。
 
@@ -81,7 +84,7 @@ cache 和步骤支持 `<SOURCE_DIR>`、`<BINARY_DIR>`、`<INSTALL_DIR>`、`<RESO
 
 describe 输出有效包身份、精确直接依赖、当前平台的系统包管理器条目、adapter 路径和相对 input_files，不输出完整配置镜像。输入包括配方、package.toml、实际 adapter、补丁及普通 DEPENDS 文件；生成文件不列为 checkout 输入。没有 adapter 的合法配方仍可描述和本地构建，CI 排除该包及依赖它的根并返回原因；坏声明直接报错。
 
-安装完成与复用检查声明的 config_dir/pkgconfig_dir 为已有目录，包括没有 adapter 的本地配方。有效上游 Config 导出目标优先复用；纯头文件身份不要求手写包含路径或语言要求。两个 Eigen 版本通过上游 CMake 安装，以 any-any 交付头文件与查找元数据，adapter 链接本包的 Eigen3::Eigen。
+## CI 与发布
 
 CI 按每个精确通用包的有效平台集合选择唯一 publisher；计划以 publishers 映射传递 name@version 到具体平台。运输与发布准备按映射核对来源，失败可在原选择重试，不切换生产平台；具体交付规则见[CI 设计](../agent-notes/implemented/architecture/2026-10-20-ci-system.md)。
 

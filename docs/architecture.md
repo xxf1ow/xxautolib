@@ -6,7 +6,7 @@
 
 源码配方采用 `src/dependencies/<包名>/package.toml` 和 `<版本>/module.toml`、`<版本>/autolib-import.cmake`。各版本平等，安装位置为 `<安装根>/<包名>/<版本>/`，源码、构建和缓存身份也区分版本。`package.toml` 的 `latest` 是显式版本选择，不是版本排序结果或发布完成标记。
 
-版本配方通过必填 `package_platforms` 声明平台资格和发布身份，规则见[字段参考](subsystems/module-recipes.md)。builder 校验完整依赖图，再检查有效闭包的目标来源；普通显式请求不支持时失败，自动发现和只读描述返回有效闭包及过滤原因，CI 继续叠加 adapter 资格，零有效库保留工具与入口。规则见[平台选择设计](agent-notes/implemented/architecture/2026-11-05-darwin-aarch64-native-build-and-ci.md#选择依赖与过滤结果)。
+名称和版本仅取自目录，版本配方通过必填 `package_platforms` 声明平台资格和发布身份，规则见[字段参考](subsystems/module-recipes.md)。builder 校验完整依赖图，再检查有效闭包的目标来源；普通显式请求不支持时失败，自动发现和只读描述返回有效闭包及过滤原因，CI 继续叠加 adapter 资格，零有效库保留工具与入口。规则见[平台选择设计](agent-notes/implemented/architecture/2026-11-05-darwin-aarch64-native-build-and-ci.md#选择依赖与过滤结果)。
 
 配方依赖必须使用 `包名@版本`；构建列表和下游请求可省略版本并读取对应来源的 latest，显式版本必须严格匹配。`BUILD_LIST` 留空发现全部配方版本，不增加 `BUILD_VERSIONS`。构建时解析依赖，安装包记录精确版本，消费时不重新选择依赖 latest。不做版本范围求解或同一消费工程的多版本隔离；全版本构建允许不同根包各自使用不同依赖版本，消费闭包的同名版本冲突直接报错。
 
@@ -20,7 +20,7 @@
 
 `autolib-importer` 负责包选择、精确依赖遍历、HTTPS 下载、安全解包、校验和缓存准备，不复制独立安装来源或执行路径修正。单文件 [autolib.cmake](../src/autolib.cmake) 负责宿主 importer 引导、按需 FetchContent Git 快照及仓库检查、结果身份与闭包校验及包就绪后的 target 加载。adapter 使用已准备的依赖公共目标，不自行推断 sibling 版本目录、重新选择依赖或下载编译。
 
-`autolib-ci` 在选择库时通过 builder 取得精确根及闭包，保留请求、有效及过滤根，按依赖层构建、逐根消费验证，再调用同提交 builder 打包并运输最终归档；两个 Eigen 版本各有独立消费者。零库选择仍保留各平台，验证 importer 与入口后打包工具并运输，不执行库构建或消费。workflow 提供可信源码仓库、平台环境、触发、权限与同目标串行，不在构建矩阵内发布 Release。
+`autolib-ci` 在选择库时通过 builder 取得精确根及闭包，保留请求、有效及过滤根，按依赖层构建、逐根消费验证，再调用同提交 builder 打包并运输最终归档；两个 Eigen 版本各有独立消费者。通用包以每个精确版本的有效平台集合选择 publisher，计划、运输及发布准备共用同一映射。零库选择仍保留各平台，验证 importer 与入口后打包工具并运输，不执行库构建或消费。workflow 提供可信源码仓库、平台环境、触发、权限与同目标串行，不在构建矩阵内发布 Release。
 
 ## 构建与交付
 

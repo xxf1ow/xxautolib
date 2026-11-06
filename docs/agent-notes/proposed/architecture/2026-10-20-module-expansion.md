@@ -8,13 +8,13 @@ zlib 和 queue 能验证本地基础流水线，但不能代表 URL 归档、预
 
 ## 方案
 
-沿用已有模块的职责划分和依赖决定，按真实接入需求扩展 TOML；本记录是本仓库的后续约束，不代表以下能力已经实现。当前字段与执行规则仍由[流水线决定](../../implemented/architecture/2026-10-19-toml-externalproject-zlib.md)拥有，阶段顺序由[路线图](../../../roadmap.md)拥有。
+沿用已有模块的职责划分和依赖决定，按真实接入需求扩展 TOML；本记录是本仓库的后续约束，不代表以下能力已经实现。当前字段由[字段参考](../../../subsystems/module-recipes.md)拥有，纯声明与原生执行规则由[流水线决定](../../implemented/architecture/2026-10-19-toml-externalproject-zlib.md)拥有，阶段顺序由[路线图](../../../roadmap.md)拥有。
 
 本地输入复用、安装 sentinel、源码子目录、平台/架构来源选择及 lz4、onnxruntime 接入由独立的[本地复用与平台输入设计](../../implemented/architecture/2026-10-20-local-reuse-and-platform-inputs.md)拥有。本文保留 FreeType 基线和后续模块扩展的总体约束，不重复该批实施方案。
 
 FLANN、HarfBuzz 与 OpenCV 4.14.0 已验证的依赖声明、安装查找位置及资源修改由[依赖与复杂资源决定](../../implemented/architecture/2026-10-20-flann-opencv-dependencies.md)拥有；本文保留其他模块的总体约束。
 
-来源、安装、平台覆盖及系统依赖字段的统一提案见[统一模块配方字段与 macOS 全包验收](2026-11-06-module-recipe-contract-and-macos-validation.md)；本文的参考迁移边界及 FreeType 功能基线继续有效。
+来源、安装、平台覆盖及系统依赖字段的职责决定与后续验收见[统一模块配方字段与 macOS 全包验收](2026-11-06-module-recipe-contract-and-macos-validation.md)；本文的参考迁移边界及 FreeType 功能基线继续有效。
 
 ### 首批目标与范围
 

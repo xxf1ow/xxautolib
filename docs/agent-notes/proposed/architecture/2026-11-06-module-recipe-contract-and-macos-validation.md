@@ -263,3 +263,24 @@ RealSense 和 ONNX Runtime 也列入调查与验收，不能仅因当前无 Darw
 Homebrew 依赖可改变可选功能探测、动态链接及最低运行要求。逐包记录实际使用，避免把 runner 上碰巧存在的库当成已声明依赖；保持 Apple Clang 和部署基线，不以放宽产物路径检查替代可交付性。
 
 第三方固定版本可能存在上游 macOS 限制，设备和图形功能也可能缺少执行条件。本任务要求完成调查及范围内最小修复，不预先保证所有包都能保留全部功能；具名阻断需要证据及人工确认，不能以过滤、关闭功能或换版本结束试验。
+
+
+## 验证结果
+
+### 第一阶段：统一配方与执行基础
+
+本阶段实现以 `9428eb9` 的批准设计为依据，在 `task/darwin-aarch64-native-ci` 追加本地提交；身份与平台、严格字段、执行所有权、通用 CMake 包、逐版本 publisher 及 brew/隔离验收入口分别由 `8532611`、`1d1a090`/`33b6588`、`3210413`、`1df1964`、`f787aa1`、`193d207` 实现。本文保持 proposed：后续 macos-15 全包与跨平台消费尚未完成，不将执行基础交付等同于整体验收。
+
+全部 31 份配方通过 `TestRealModuleDeclarations` 的 Windows x86_64、Linux x86_64/aarch64 和 Darwin aarch64 局部读取、有效描述与生成检查，没有取源或全库编译。前三目标各有 31 个有效根，Darwin 有 9 个；websocketpp 虽为通用载荷，仍因 boost 的具体平台资格被过滤。PCL 的五个精确依赖保持不变，Eigen 固定为 3.4.0。`TestDarwinEntryCompiler` 通过真实根与子项目确认 AppleClang、arm64 和 15.0 参数。
+
+字段、来源、依赖、覆盖、路径和参数所有权均有定向正负例；真实 argv、依赖接线与默认值夹具通过。两种安装类型的通用二进制内容拒绝、合法 config 目标及 staging 数据保护通过。每包 publisher 的异构平台集合、失败不接管和发布准备在 Go/Python 两端通过；真实轻量归档经运输及受控 HTTPS 入口消费通过。brew 选择、安装、版本记录及公式前缀传递由受控执行验证；独立 workflow 的过滤拒绝、执行接线与 Gitee 监听隔离通过。Chocolatey 名称规则完成静态核对，本机无 PowerShell，未执行该脚本。
+
+真实生产与消费位于 `build/recipe-contract-stage1-WWVGJ7/`，使用本机 macOS 27.2、Apple Clang、CMake 3.31.12、GNU Make 4.4.1，目标固定 arm64/15.0。普通根一次选择 `eigen@3.4.0,eigen@5.0.1,queue@45db9a8b4431,lz4@1.10.0` 完成构建。复用的 Git 来源取源前只读核对 HEAD 与干净状态：lz4 为 `ebb370ca83af193212df4dcbadcc5d87bc0de2f0`，queue 两资源为 `6867b56452352acf077fccd5f6cc7e3a8cfde0fb` 和 `683b9e31ea15eb69f1b81cc1defc7850d5f20b71`；Eigen 归档按各配方 SHA256 校验。没有重编无关模块或清理旧安装。
+
+两版 Eigen 的上游 pkg-config 模板将生产前缀写成绝对路径，真实检查先失败。版本目录内的局部补丁将 prefix 改为相对 `pcfiledir` 的本包前缀，保留上游 CMake 安装、Config/pkg-config 和全部功能选项；仅重建本任务 Eigen 状态，原结果留备份。补丁后 `.cmake/.pc` 无任务源码、build 或安装绝对路径，pkg-config 在原根及搬迁根均报告对应版本和正确 include。安装身份为 any/any，5.0.1 的语言要求来自上游目标。
+
+`tests/autolib/run-installed.cmake` 对两个独立 Eigen 消费者及 queue/lz4 组合，在原安装和复制搬迁安装各执行一次 configure/build/CTest，六次均为 1/1 通过，Eigen 分别报告 3.4.0、5.0.1。搬迁组运行时隐藏本任务原安装根，结束后还原。生产、增量 Eigen 重建及消费日志分别为任务根下 `production.log`、`eigen-rebuild.log`、`consumption.log`，逐消费者证据位于 `consumers/install/`、`consumers/relocated/`。
+
+### 尚未覆盖
+
+本阶段没有推送、远端 Actions、发布或合并。上述本机证据不证明 macOS 15 实际运行，也不证明全部 31 配方已支持 Darwin。完整逐版本 macos-15 结果、必要系统库和补丁、同一 Linux Eigen 归档跨 Windows/macOS 的摘要与消费、PCL 组合及 example 实机导入留待第二阶段；硬件和图形功能按实际条件单列。失败候选的具名阻断与重新尝试条件届时写入本节，不能以平台过滤或 CI 成功代替。
