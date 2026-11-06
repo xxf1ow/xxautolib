@@ -31,6 +31,55 @@ endfunction()
             self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("No API smoke implementation for untested", result.stdout + result.stderr)
 
+    def test_example_driver_preserves_existing_data_when_input_is_missing(self):
+        with tempfile.TemporaryDirectory(prefix="original example ") as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            (source / "example/3rdparty").mkdir(parents=True)
+            original = source / "example/3rdparty/user-cache"
+            original.write_text("keep original cache")
+            install = root / "install"
+            install.mkdir()
+            validation = source / "build/validation"
+            validation.mkdir(parents=True)
+            existing = validation / "keep"
+            existing.write_text("keep validation data")
+            result = subprocess.run(
+                ["cmake", f"-DSOURCE_ROOT={source}", f"-DINSTALL_ROOT={install}",
+                 f"-DVALIDATION_ROOT={validation}", "-DGENERATOR=Unix Makefiles",
+                 "-P", str(ROOT / "tests/autolib/run-example.cmake")], text=True, capture_output=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("Missing example input", result.stdout + result.stderr)
+            self.assertEqual(original.read_text(), "keep original cache")
+            self.assertEqual(existing.read_text(), "keep validation data")
+            self.assertEqual(sorted(p.name for p in validation.iterdir()), ["keep"])
+
+    def test_link_input_evidence_keeps_libraries_and_excludes_imported_programs(self):
+        with tempfile.TemporaryDirectory(prefix="consumer link inputs ") as temporary:
+            root = Path(temporary)
+            consumer = root / "consumer"
+            consumer.mkdir()
+            shutil.copyfile(ROOT / "tests/autolib/CMakeLists.txt", consumer / "CMakeLists.txt")
+            (consumer / "smoke.cpp").write_text("int main() { return 0; }\n")
+            library = root / "libfixture.a"
+            program = root / "python-interpreter"
+            entry = root / "entry.cmake"
+            entry.write_text(f'''add_executable(Fixture::Interpreter IMPORTED GLOBAL)
+set_property(TARGET Fixture::Interpreter PROPERTY IMPORTED_LOCATION [==[{program.as_posix()}]==])
+add_library(Fixture::Library STATIC IMPORTED GLOBAL)
+set_property(TARGET Fixture::Library PROPERTY IMPORTED_LOCATION [==[{library.as_posix()}]==])
+function(autolib_import)
+  set(AUTOLIB_PREPARED_PACKAGES queue PARENT_SCOPE)
+  set(AUTOLIB_PACKAGE_VERSION_queue 1 PARENT_SCOPE)
+endfunction()
+''')
+            build = root / "build"
+            self.cmake("-S", consumer, "-B", build, f"-DAUTOLIB_ENTRY={entry}",
+                       "-DMODULES=queue", "-DCMAKE_BUILD_TYPE=Release")
+            inputs = (build / "link-inputs-Release.txt").read_text().splitlines()
+            self.assertIn(library.as_posix(), inputs)
+            self.assertNotIn(program.as_posix(), inputs)
+
     def test_selected_package_dll_directories_are_recorded(self):
         with tempfile.TemporaryDirectory(prefix="consumer runtime ") as temporary:
             root = Path(temporary)

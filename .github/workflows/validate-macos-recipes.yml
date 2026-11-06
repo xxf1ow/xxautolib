@@ -20,29 +20,12 @@ jobs:
       fail-fast: false
       matrix:
         root:
-          - queue@45db9a8b4431
-          - lz4@1.10.0
-          - eigen@3.4.0
-          - eigen@5.0.1
-          - asio@8806a6803cde
-          - clipper2@1.5.4
-          - cpp-httplib@88956ccad838
-          - expected@1.3.1
-          - freetype@2.13.2
-          - gtest@1.17.0
-          - libusb@1.0.27
-          - libzmq@4.3.5
-          - nativefiledialog-extended@3cd252a8f7ca
-          - nlohmann@3.12.0
-          - oneTBB@628c90df6867
-          - onnxruntime@1.24.4
-          - portaudio@v190700_20210406
-          - pybind11@2.13.6
-          - sdl3@3.2.30
-          - spdlog@1.17.0
           - taskflow@83f90a279aaa
-          - yaml-cpp@2decf96e915d
-          - zlib@1.3.1
+          - libusb@1.0.27
+          - pybind11@2.13.6
+          - boost@1.87.0
+          - flann@f9caaf609d8b
+          - imgui@065f9e02695c
     defaults:
       run:
         shell: bash

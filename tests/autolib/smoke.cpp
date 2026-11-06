@@ -92,6 +92,21 @@ TEST(AutolibPackage, AssertionRuns) { EXPECT_EQ(6 * 7, 42); }
 #ifdef AUTOLIB_TEST_ZLIB
 #include <zlib.h>
 #endif
+#ifdef AUTOLIB_TEST_BOOST
+#include <boost/filesystem/path.hpp>
+#include <boost/regex.hpp>
+#endif
+#ifdef AUTOLIB_TEST_WEBSOCKETPP
+#include <websocketpp/config/asio_no_tls_client.hpp>
+#include <websocketpp/client.hpp>
+#endif
+#ifdef AUTOLIB_TEST_IMGUI
+#include <imgui.h>
+#endif
+#ifdef AUTOLIB_TEST_PCL
+#include <pcl/point_types.h>
+#include <pcl/search/kdtree.h>
+#endif
 #include <filesystem>
 #include <iostream>
 #include <system_error>
@@ -140,6 +155,42 @@ bool check_runtime(const char *name, const void *address, const char *expected_r
 
 int main()
 {
+#ifdef AUTOLIB_TEST_BOOST
+    if (!boost::regex_match(std::string("answer42"), boost::regex("answer[0-9]+"))
+        || boost::filesystem::path("/one/../two").lexically_normal().generic_string() != "/two")
+        return 42;
+#endif
+#ifdef AUTOLIB_TEST_WEBSOCKETPP
+    websocketpp::client<websocketpp::config::asio_client> client;
+    client.init_asio();
+    websocketpp::lib::error_code connection_error;
+    const auto connection = client.get_connection("ws://127.0.0.1:1/acceptance", connection_error);
+    if (connection_error || !connection || connection->get_uri()->get_resource() != "/acceptance")
+        return 43;
+#endif
+#ifdef AUTOLIB_TEST_IMGUI
+    auto *gui_context = ImGui::CreateContext();
+    if (!gui_context)
+        return 44;
+    float hue = 0, saturation = 0, brightness = 0;
+    ImGui::ColorConvertRGBtoHSV(0, 1, 0, hue, saturation, brightness);
+    ImGui::DestroyContext(gui_context);
+    if (hue < 0.333f || hue > 0.334f || saturation != 1 || brightness != 1)
+        return 45;
+#endif
+#ifdef AUTOLIB_TEST_PCL
+    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
+    cloud->push_back(pcl::PointXYZ(0, 0, 0));
+    cloud->push_back(pcl::PointXYZ(1, 1, 1));
+    cloud->push_back(pcl::PointXYZ(2, 2, 2));
+    pcl::search::KdTree<pcl::PointXYZ> tree;
+    tree.setInputCloud(cloud);
+    std::vector<int> neighbors(1);
+    std::vector<float> distances(1);
+    if (tree.nearestKSearch((*cloud)[1], 1, neighbors, distances) != 1
+        || neighbors[0] != 1 || distances[0] != 0)
+        return 46;
+#endif
 #ifdef AUTOLIB_TEST_ASIO
     asio::io_context io;
     int posted_value = 0;

@@ -14,4 +14,5 @@ endif()
 
 add_library(autolib::taskflow INTERFACE IMPORTED GLOBAL)
 target_include_directories(autolib::taskflow INTERFACE "${CMAKE_CURRENT_LIST_DIR}/include")
+target_compile_features(autolib::taskflow INTERFACE cxx_std_20)
 target_link_libraries(autolib::taskflow INTERFACE Threads::Threads)

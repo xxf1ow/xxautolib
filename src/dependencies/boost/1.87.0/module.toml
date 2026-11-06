@@ -1,6 +1,6 @@
 # boost：Boost C++ 库集合，安装静态库并使用独立 zlib 模块。
 type = "cmake"
-package_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
+package_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64','darwin-aarch64']
 depends = ["zlib@1.3.1"]
 sentinel = "lib/cmake/Boost-1.87.0/BoostConfig.cmake"
 config_dir = "lib/cmake/Boost-1.87.0"
