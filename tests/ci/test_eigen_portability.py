@@ -44,6 +44,10 @@ class EigenPortabilityTests(unittest.TestCase):
                 self.assertIn(f"WORK_ROOT={root}/build/ci/123-2/linux-x86_64", (root / "github-env").read_text())
                 env.update(GIT_TEST_ASSUME_DIFFERENT_OWNER="1", GIT_CONFIG_GLOBAL=str(root / "empty-global"),
                            GIT_CONFIG_NOSYSTEM="1")
+                self.assertLess(native.index("- name: Prepare native environment and tools"),
+                                native.index("- name: Record source identity"))
+                subprocess.run(["git", "config", "--global", "--add", "safe.directory", str(root)],
+                               env=env, cwd=root, check=True)
                 identity = subprocess.run([os.sys.executable, "-c", step_script(native, "Record source identity")],
                                           env=env, cwd=root, text=True, capture_output=True)
                 self.assertEqual(identity.returncode, 0, identity.stderr)
