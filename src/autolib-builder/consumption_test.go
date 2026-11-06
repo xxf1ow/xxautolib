@@ -165,7 +165,7 @@ file(APPEND "${CMAKE_INSTALL_PREFIX}/install-count" "installed\n")
 
 func TestConsumptionPreparationUniversal(t *testing.T) {
 	f := newFixture(t)
-	f.definition("queue", "copy", "package_platforms=['any-any']\n[resources.readerwriterqueue]\nGIT_REPOSITORY='fixture'\nGIT_TAG='fixed'\n[resources.concurrentqueue]\nGIT_REPOSITORY='fixture'\nGIT_TAG='fixed'\n[[copy]]\nresource='readerwriterqueue'\nfiles=['atomicops.h','readerwriterqueue.h','readerwritercircularbuffer.h']\ndestination='include/queue'\n[[copy]]\nresource='concurrentqueue'\nfiles=['concurrentqueue.h','lightweightsemaphore.h','blockingconcurrentqueue.h']\ndestination='include/queue'\n")
+	f.definition("queue", "copy", "package_platforms=['any-any']\n[resources.readerwriterqueue]\nGIT_REPOSITORY='fixture'\nGIT_TAG='0123456789012345678901234567890123456789'\n[resources.concurrentqueue]\nGIT_REPOSITORY='fixture'\nGIT_TAG='0123456789012345678901234567890123456789'\n[[copy]]\nresource='readerwriterqueue'\nfiles=['atomicops.h','readerwriterqueue.h','readerwritercircularbuffer.h']\ndestination='include/queue'\n[[copy]]\nresource='concurrentqueue'\nfiles=['concurrentqueue.h','lightweightsemaphore.h','blockingconcurrentqueue.h']\ndestination='include/queue'\n")
 	putFile(t, filepath.Join(f.root, "src/dependencies/queue/1.0/autolib-import.cmake"), "# queue adapter\n")
 	for _, entry := range [][2]string{{"atomicops.h", "readerwriterqueue"}, {"readerwriterqueue.h", "readerwriterqueue"}, {"readerwritercircularbuffer.h", "readerwriterqueue"}, {"concurrentqueue.h", "concurrentqueue"}, {"lightweightsemaphore.h", "concurrentqueue"}, {"blockingconcurrentqueue.h", "concurrentqueue"}} {
 		putFile(t, filepath.Join(f.root, "git/_resources/queue/1.0", entry[1], entry[0]), entry[0])

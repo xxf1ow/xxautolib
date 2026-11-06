@@ -15,7 +15,6 @@ var targetName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.+\-]*$`)
 var cacheKey = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 var sha256Hash = regexp.MustCompile(`^SHA256=[0-9a-fA-F]{64}$`)
 var resourceReference = regexp.MustCompile(`<RESOURCE_SOURCE_DIR:([^>]*)>`)
-var systemPackageName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9+_.:~=-]*$`)
 
 func normalizeArchitecture(value string) string {
 	switch strings.ToLower(value) {
@@ -119,6 +118,9 @@ func parseSource(value any, where string) (*sourceDefinition, error) {
 		if s.GitTag, err = text(m["GIT_TAG"], where+".GIT_TAG"); err != nil {
 			return nil, err
 		}
+		if !gitCommit.MatchString(s.GitTag) {
+			return nil, fmt.Errorf("%s.GIT_TAG: expected a complete 40-digit hexadecimal commit", where)
+		}
 		return s, nil
 	}
 	if s.URL, err = stringArray(m["URL"], where+".URL"); err != nil {
@@ -199,6 +201,13 @@ func parseCache(value any, where string, allowSubdir bool) (map[string]any, stri
 			at := where + ".cache." + key
 			if !cacheKey.MatchString(key) {
 				return nil, "", fmt.Errorf("%s: invalid cache key", at)
+			}
+			if key == "CMAKE_PREFIX_PATH" || key == "CMAKE_PROJECT_INCLUDE" || key == "CMAKE_PROJECT_INCLUDE_BEFORE" {
+				switch cache[key].(type) {
+				case string, []any:
+				default:
+					return nil, "", fmt.Errorf("%s: expected string or string array", at)
+				}
 			}
 			switch item := cache[key].(type) {
 			case string, bool, int64:
@@ -303,9 +312,6 @@ func metadata(m map[string]any, where string, base map[string]string) (map[strin
 			result[key] = value
 		}
 	}
-	if result["package_name"] != "" && result["config_dir"] == "" {
-		return nil, fmt.Errorf("%s.package_name: requires config_dir", where)
-	}
 	return result, nil
 }
 
@@ -339,6 +345,9 @@ func readDefinition(path, systemName, architecture string, requireTarget bool) (
 	if err = toml.Unmarshal(content, &raw); err != nil {
 		return nil, err
 	}
+	if err = validateDefinitionFields(raw, "module", false); err != nil {
+		return nil, err
+	}
 	m, err := table(raw, "module", "type", "source", "resources", "cmake", "patches", "steps", "copy", "platforms", "sentinel", "depends", "config_dir", "pkgconfig_dir", "package_name", "system_dependencies", "package_platforms")
 	if err != nil {
 		return nil, err
@@ -366,25 +375,12 @@ func readDefinition(path, systemName, architecture string, requireTarget bool) (
 	}
 	d.SystemDependencies = map[string][]string{}
 	if value, ok := m["system_dependencies"]; ok {
-		dependencies, err := table(value, "system_dependencies", "apt", "choco")
+		d.SystemDependencies, err = validateSystemDependencies(value)
 		if err != nil {
 			return nil, err
 		}
-		for _, manager := range []string{"apt", "choco"} {
-			if entries, exists := dependencies[manager]; exists {
-				values, err := stringArray(entries, "system_dependencies."+manager)
-				if err != nil {
-					return nil, err
-				}
-				for _, item := range values {
-					if !systemPackageName.MatchString(item) {
-						return nil, fmt.Errorf("system_dependencies.%s: invalid package name %q", manager, item)
-					}
-				}
-				d.SystemDependencies[manager] = unique(values)
-			}
-		}
 	}
+
 	versionDirectory := filepath.Dir(path)
 	packageDirectory := filepath.Dir(versionDirectory)
 	d.Name = filepath.Base(packageDirectory)
@@ -531,6 +527,9 @@ func readDefinition(path, systemName, architecture string, requireTarget bool) (
 	if requireTarget && !slices.Contains(d.PackagePlatforms, "any-any") && !slices.Contains(d.PackagePlatforms, platformID) {
 		return nil, fmt.Errorf("%s@%s: unsupported platform %s", d.Name, d.Version, platformID)
 	}
+	if requireTarget && d.PackageName != "" && d.ConfigDir == "" {
+		return nil, fmt.Errorf("package_name: requires config_dir")
+	}
 	if requireTarget && d.Kind == "cmake" && d.Source == nil {
 		return nil, fmt.Errorf("source: no primary source for %s/%s", systemName, architecture)
 	}
@@ -582,6 +581,9 @@ func readDefinition(path, systemName, architecture string, requireTarget bool) (
 		r, err := resource(p, "patches")
 		if err != nil {
 			return nil, err
+		}
+		if requireTarget && r == "" && d.Source == nil {
+			return nil, fmt.Errorf("patches: primary patch requires a source")
 		}
 		file, err := text(p["file"], "patches.file")
 		if err != nil {

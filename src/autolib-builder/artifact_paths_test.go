@@ -20,7 +20,7 @@ func TestVersionedArtifactPathIdentity(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newEntryFixture(t)
 			f.definitionVersion("dep", "1", "cmake", testSource)
-			f.definitionVersion("demo", "V1", "cmake", "depends=['dep@1']\n"+testSource+"[resources.extra]\nGIT_REPOSITORY='unused-resource'\nGIT_TAG='fixed'\n")
+			f.definitionVersion("demo", "V1", "cmake", "depends=['dep@1']\n"+testSource+"[resources.extra]\nGIT_REPOSITORY='unused-resource'\nGIT_TAG='0123456789012345678901234567890123456789'\n")
 			protected := putFile(t, filepath.Join(f.root, tc.path), "preserve existing version\n")
 			err := generate(f.context, []string{"demo@V1"})
 			requireFile(t, protected, "preserve existing version\n")
@@ -53,7 +53,7 @@ func TestVersionedArtifactPathIdentity(t *testing.T) {
 	t.Run("new and exact paths with other versions", func(t *testing.T) {
 		f := newEntryFixture(t)
 		f.definitionVersion("dep", "1", "cmake", testSource)
-		f.definitionVersion("demo", "V1", "cmake", "depends=['dep@1']\n"+testSource+"[resources.extra]\nGIT_REPOSITORY='unused-resource'\nGIT_TAG='fixed'\n")
+		f.definitionVersion("demo", "V1", "cmake", "depends=['dep@1']\n"+testSource+"[resources.extra]\nGIT_REPOSITORY='unused-resource'\nGIT_TAG='0123456789012345678901234567890123456789'\n")
 		for _, tc := range paths {
 			putFile(t, filepath.Join(f.root, strings.ReplaceAll(tc.path, "v1", "V2")), "another version")
 		}

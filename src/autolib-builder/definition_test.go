@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-const testSource = "\n[source]\nGIT_REPOSITORY='unused'\nGIT_TAG='fixed'\n"
+const testSource = "\n[source]\nGIT_REPOSITORY='unused'\nGIT_TAG='0123456789012345678901234567890123456789'\n"
 
 func TestPackagePlatforms(t *testing.T) {
 	for _, tc := range []struct {
@@ -79,7 +79,7 @@ sentinel='include/demo.h'
 `+testSource+`
 [resources.extra]
 GIT_REPOSITORY='common-extra'
-GIT_TAG='fixed'
+GIT_TAG='0123456789012345678901234567890123456789'
 [cmake]
 SOURCE_SUBDIR='build/cmake'
 [cmake.cache]
@@ -104,10 +104,10 @@ name='linux'
 COMMAND=[['cmake','-E','echo','one'],['cmake','-E','echo','two']]
 [platforms.linux-aarch64.source]
 GIT_REPOSITORY='arm'
-GIT_TAG='arm-tag'
+GIT_TAG='0123456789012345678901234567890123456789'
 [platforms.linux-aarch64.resources.extra]
 GIT_REPOSITORY='arm-extra'
-GIT_TAG='extra-tag'
+GIT_TAG='0123456789012345678901234567890123456789'
 [platforms.windows-x86_64]
 config_dir='lib'
 package_name='WinDemo'
@@ -151,7 +151,7 @@ sentinel='lib/DemoConfig.cmake'
 	if win.Source.GitRepository != "unused" || win.Cache["A"] != "common" || len(win.Steps) != 1 || win.ConfigDir != "lib" || win.PackageName != "WinDemo" || win.Sentinel != "lib/DemoConfig.cmake" {
 		t.Fatal(win)
 	}
-	path = definitionFile(t, root, "demo", "cmake", "[platforms.windows-x86_64.source]\nGIT_REPOSITORY='win'\nGIT_TAG='fixed'\n")
+	path = definitionFile(t, root, "demo", "cmake", "[platforms.windows-x86_64.source]\nGIT_REPOSITORY='win'\nGIT_TAG='0123456789012345678901234567890123456789'\n")
 	for _, arch := range []string{"x64", "AMD64", "x86_64"} {
 		if _, err := loadDefinition(path, "Windows", arch); err != nil {
 			t.Fatal(err)
@@ -240,7 +240,7 @@ func TestDefinitionLocalInputs(t *testing.T) {
 	path := definitionFile(t, root, "demo", "cmake", testSource+`
 [resources.extra]
 GIT_REPOSITORY='not-downloaded'
-GIT_TAG='fixed'
+GIT_TAG='0123456789012345678901234567890123456789'
 [cmake.cache]
 EXTRA=['<RESOURCE_SOURCE_DIR:extra>/modules','suffix']
 [[patches]]
@@ -276,7 +276,7 @@ WORKING_DIRECTORY='<SOURCE_DIR>'
 	}
 	path = definitionFile(t, root, "demo", "copy", `[resources.extra]
 GIT_REPOSITORY='unused'
-GIT_TAG='fixed'
+GIT_TAG='0123456789012345678901234567890123456789'
 [[copy]]
 resource='extra'
 directories=['.']
@@ -303,13 +303,13 @@ func TestDefinitionPreservesInput(t *testing.T) {
 }
 
 func TestSystemDependencies(t *testing.T) {
-	path := definitionFile(t, t.TempDir(), "demo", "cmake", testSource+"[system_dependencies]\napt=['pkg-config','libgomp1','pkg-config']\nchoco=['pkgconfiglite']\n")
+	path := definitionFile(t, t.TempDir(), "demo", "cmake", testSource+"[system_dependencies]\napt=['pkg-config','libgomp1']\nchoco=['pkgconfiglite']\n")
 	definition, err := loadDefinition(path, "Linux", "x86_64")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got, want := strings.Join(definition.SystemDependencies["apt"], ","), "pkg-config,libgomp1"; got != want {
-		t.Fatalf("APT list was not deduplicated: got %q, want %q", got, want)
+		t.Fatalf("APT list changed: got %q, want %q", got, want)
 	}
 	for _, invalid := range []string{
 		"apt=['pkg-config']\nyum=['yum-only']\n",

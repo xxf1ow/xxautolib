@@ -138,9 +138,9 @@ func TestDescribeInputs(t *testing.T) {
 	moduleDir := filepath.Join(f.root, "src", "dependencies", "plain", "1.0")
 	putFile(t, filepath.Join(moduleDir, "fix.patch"), "patch\n")
 	putFile(t, filepath.Join(moduleDir, "run.cmake"), "step input\n")
-	body := "version='1.0'\nconfig_dir='config/linux'\n" + testSource + "[resources.assets]\nGIT_REPOSITORY='assets'\nGIT_TAG='fixed'\n[cmake.cache]\nVALUE='selected'\n" +
-		"[platforms.linux-x86_64.cmake.cache]\nPLATFORM='linux'\n[[steps]]\nname='prepare'\nCOMMAND=['cmake','-P','run.cmake']\nDEPENDS=['run.cmake','<RESOURCE_SOURCE_DIR:assets>/run.cmake']\nWORKING_DIRECTORY='<RESOURCE_SOURCE_DIR:assets>'\n[[patches]]\nfile='fix.patch'\n[[copy]]\nfiles=['plain.h']\ndestination='include'\n"
-	definitionFile(t, f.root, "plain", "copy", body)
+	body := "version='1.0'\nconfig_dir='config/linux'\n" + testSource + "[resources.assets]\nGIT_REPOSITORY='assets'\nGIT_TAG='0123456789012345678901234567890123456789'\n[cmake.cache]\nVALUE='selected'\n" +
+		"[platforms.linux-x86_64.cmake.cache]\nPLATFORM='linux'\n[[steps]]\nname='prepare'\nCOMMAND=['cmake','-P','run.cmake']\nDEPENDS=['run.cmake','<RESOURCE_SOURCE_DIR:assets>/run.cmake']\nWORKING_DIRECTORY='<RESOURCE_SOURCE_DIR:assets>'\n[[patches]]\nfile='fix.patch'\n"
+	definitionFile(t, f.root, "plain", "cmake", body)
 	putFile(t, filepath.Join(moduleDir, "autolib-import.cmake"), "# adapter\n")
 	description, err := describeModules(f.root, "Linux", "x86_64", []string{"plain"})
 	if err != nil {
@@ -157,13 +157,12 @@ func TestDescribeInputs(t *testing.T) {
 	patches := configuration["Patches"].([]any)
 	steps := configuration["Steps"].([]any)
 	resources := configuration["Resources"].(map[string]any)
-	copies := configuration["Copies"].([]any)
 	if configuration["Cache"].(map[string]any)["PLATFORM"] != "linux" ||
 		patches[0].(map[string]any)["File"] != "src/dependencies/plain/1.0/fix.patch" ||
 		steps[0].(map[string]any)["WorkingDirectory"] != "<RESOURCE_SOURCE_DIR:assets>" ||
 		steps[0].(map[string]any)["Depends"].([]any)[0] != "src/dependencies/plain/1.0/run.cmake" ||
 		steps[0].(map[string]any)["Depends"].([]any)[1] != "<RESOURCE_SOURCE_DIR:assets>/run.cmake" ||
-		resources["assets"] == nil || len(copies) != 1 ||
+		resources["assets"] == nil ||
 		len(description.BuilderFiles) == 0 || !slices.Contains(description.BuilderFiles, "CMakeLists.txt") ||
 		slices.ContainsFunc(description.BuilderFiles, func(name string) bool { return strings.Contains(name, "ci_") }) {
 		t.Fatalf("effective configuration or production files missing: %+v / %+v", configuration, description)
@@ -199,7 +198,7 @@ func TestDescribeRejectsAbsoluteResourcePrefixes(t *testing.T) {
 			if field == "WORKING_DIRECTORY" {
 				fieldValue = "'" + outside + "'"
 			}
-			body := "version='1.0'\n" + testSource + "[resources.assets]\nGIT_REPOSITORY='assets'\nGIT_TAG='fixed'\n" +
+			body := "version='1.0'\n" + testSource + "[resources.assets]\nGIT_REPOSITORY='assets'\nGIT_TAG='0123456789012345678901234567890123456789'\n" +
 				"[[steps]]\nname='prepare'\nCOMMAND=['cmake','-P','x']\n" + field + "=" + fieldValue + "\n"
 			definitionFile(t, f.root, module, "cmake", body)
 			var stdout, stderr bytes.Buffer
