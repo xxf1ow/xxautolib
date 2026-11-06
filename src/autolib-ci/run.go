@@ -44,19 +44,6 @@ func runCILayer(ctx context.Context, o ciRunOptions) (failure error) {
 	if err != nil {
 		return err
 	}
-	if production.OS == "darwin" && o.Budget == 0 {
-		output, err := exec.CommandContext(ctx, "sysctl", "-n", "hw.logicalcpu").Output()
-		if err != nil {
-			return fmt.Errorf("query Darwin CPU budget: %w", err)
-		}
-		o.Budget, err = strconv.Atoi(strings.TrimSpace(string(output)))
-		if err != nil {
-			return fmt.Errorf("parse Darwin CPU budget: %w", err)
-		}
-		if o.Budget < 1 {
-			o.Budget = 1
-		}
-	}
 	if err := validateCIProductionIdentity(production, environment); err != nil {
 		return err
 	}

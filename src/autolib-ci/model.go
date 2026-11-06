@@ -40,7 +40,6 @@ type ciPlatformPlan struct {
 	ID                 string              `json:"id"`
 	RequestedRoots     []string            `json:"requested_roots"`
 	FilteredRoots      []string            `json:"filtered_roots"`
-	FilterReasons      []filteredRoot      `json:"filter_reasons"`
 	Roots              []string            `json:"roots"`
 	Description        moduleDescription   `json:"description"`
 	Layers             [][]string          `json:"layers"`

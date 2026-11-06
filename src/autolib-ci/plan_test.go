@@ -48,16 +48,21 @@ func TestCIPlatformFiltering(t *testing.T) {
 		}
 		data, _ := json.Marshal(p)
 		var wire struct {
-			Reasons []struct {
-				Root, Code string
-				Chain      []string
-			} `json:"filter_reasons"`
+			Description struct {
+				Reasons []struct {
+					Root, Code string
+					Chain      []string
+				} `json:"filtered_roots"`
+			} `json:"description"`
 		}
 		if err := json.Unmarshal(data, &wire); err != nil {
 			t.Fatal(err)
 		}
+		if len(wire.Description.Reasons) != 3 {
+			t.Fatalf("missing or repeated filter reasons: %s", data)
+		}
 		reasons := map[string]string{}
-		for _, reason := range wire.Reasons {
+		for _, reason := range wire.Description.Reasons {
 			reasons[reason.Root] = reason.Code
 			if reason.Root == "bad@1.0" && !reflect.DeepEqual(reason.Chain, []string{"bad@1.0", "blocked@1.0"}) {
 				t.Fatal(reason)

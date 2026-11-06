@@ -118,7 +118,7 @@ func runCIFinalize(args []string, stdout, stderr io.Writer) int {
 	}
 	for _, platform := range plan.Platforms {
 		fmt.Fprintf(stdout, "%s: requested_roots=%v roots=%v filtered_roots=%v\n", platform.ID, platform.RequestedRoots, platform.Roots, platform.FilteredRoots)
-		for _, reason := range platform.FilterReasons {
+		for _, reason := range platform.Description.FilteredRoots {
 			fmt.Fprintf(stdout, "%s: filtered %s: %s (%s)\n", platform.ID, reason.Root, reason.Code, strings.Join(reason.Chain, " -> "))
 		}
 	}

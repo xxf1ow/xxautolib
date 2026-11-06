@@ -59,8 +59,7 @@ func planCI(ctx context.Context, o ciPlanOptions) (ciPlan, error) {
 			return ciPlan{}, fmt.Errorf("platform %s: %w", platform, err)
 		}
 		description.Modules, description.Roots = modules, roots
-		reasons := append(slices.Clone(description.FilteredRoots), adapterReasons...)
-		description.FilteredRoots = reasons
+		description.FilteredRoots = append(description.FilteredRoots, adapterReasons...)
 		filtered := []string{}
 		for _, root := range requested {
 			if !slices.Contains(roots, root) {
@@ -71,7 +70,7 @@ func planCI(ctx context.Context, o ciPlanOptions) (ciPlan, error) {
 		if err != nil {
 			return ciPlan{}, err
 		}
-		plan.Platforms = append(plan.Platforms, ciPlatformPlan{ID: platform, RequestedRoots: requested, FilteredRoots: filtered, FilterReasons: reasons, Roots: roots, Description: description, Layers: layers, SystemDependencies: ciSystemDependencies(description.Modules)})
+		plan.Platforms = append(plan.Platforms, ciPlatformPlan{ID: platform, RequestedRoots: requested, FilteredRoots: filtered, Roots: roots, Description: description, Layers: layers, SystemDependencies: ciSystemDependencies(description.Modules)})
 		for _, root := range roots {
 			if !slices.Contains(plan.RequestedModules, root) {
 				plan.RequestedModules = append(plan.RequestedModules, root)
