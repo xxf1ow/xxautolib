@@ -83,11 +83,13 @@ class DarwinWorkflowTests(unittest.TestCase):
                 cmake.write_text('#!/bin/sh\nexit 0\n')
                 cmake.chmod(0o755)
                 cli = tools / 'autolib-ci'
+                (tools / 'autolib-builder').write_text('fixture builder')
                 cli.write_text('#!' + sys.executable + '\n' + textwrap.dedent('''
                     import json, sys
                     from pathlib import Path
                     args = sys.argv[1:]
                     options = dict(zip(args[1::2], args[2::2]))
+                    assert Path(options['--builder-file']).is_file(), options['--builder-file']
                     Path(options['--output']).write_text(json.dumps({'platforms': [{
                         'id': options['--platforms'], 'requested_roots': [options['--modules']],
                         'roots': [options['--modules']], 'filtered_roots': []}]}))
