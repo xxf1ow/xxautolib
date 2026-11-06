@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +17,48 @@ import (
 	"sync/atomic"
 	"testing"
 )
+
+func TestGoSDKDarwinHost(t *testing.T) {
+	if runtime.GOOS != "darwin" || runtime.GOARCH != "arm64" {
+		t.Skip("requires native Darwin ARM64")
+	}
+	archive := sdkArchive(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/go1.27.3.darwin-arm64.tar.gz" {
+			t.Errorf("unexpected SDK archive: %s", r.URL.Path)
+		}
+		_, _ = w.Write(archive)
+	}))
+	t.Cleanup(server.Close)
+	f := newSDKFixture(t, server.URL, fmt.Sprintf("%x", sha256.Sum256(archive)))
+	out, err := f.sdkCommand("env", "-json", "GOROOT", "GOOS", "GOARCH", "CGO_ENABLED", "GOTOOLCHAIN")
+	if err != nil {
+		t.Fatalf("native SDK: %v\n%s", err, out)
+	}
+	start := strings.Index(out, "{")
+	var env map[string]string
+	if start < 0 || json.Unmarshal([]byte(out[start:]), &env) != nil {
+		t.Fatalf("missing Go environment: %s", out)
+	}
+	for key, want := range map[string]string{"GOROOT": managedGoRoot(f), "GOOS": "darwin", "GOARCH": "arm64", "CGO_ENABLED": "0", "GOTOOLCHAIN": "local"} {
+		if env[key] != want {
+			t.Errorf("%s = %q, want %q", key, env[key], want)
+		}
+	}
+
+	// 只替换宿主查询，确保 Intel 在下载或执行 SDK 前被拒绝。
+	script := putFile(t, filepath.Join(f.root, "intel.cmake"), `set(CMAKE_HOST_SYSTEM_NAME Darwin)
+function(cmake_host_system_information)
+    set(host_arch x86_64 PARENT_SCOPE)
+endfunction()
+include("${CMAKE_CURRENT_LIST_DIR}/src/autolib-builder/go-sdk.cmake")
+xxautolib_prepare_go(go environment)
+`)
+	stdout, stderr, err := f.command(f.context.CMakeCommand, "-P", script)
+	if err == nil || !strings.Contains(stdout+stderr, "unsupported host: darwin-amd64") {
+		t.Fatalf("Intel host accepted: %v\n%s%s", err, stdout, stderr)
+	}
+}
 
 func sdkArchive(t *testing.T) []byte {
 	t.Helper()

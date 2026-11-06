@@ -1,6 +1,7 @@
 package main
 
 import (
+	"debug/macho"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -10,6 +11,34 @@ import (
 	"testing"
 	"time"
 )
+
+func TestEntryDarwinTools(t *testing.T) {
+	if runtime.GOOS != "darwin" || runtime.GOARCH != "arm64" {
+		t.Skip("requires native Darwin ARM64")
+	}
+	f := newEntryFixture(t)
+	putFile(t, filepath.Join(f.root, "src/autolib.cmake"), readFile(t, "../autolib.cmake"))
+	install := filepath.Join(f.root, "tools install")
+	f.must(f.context.CMakeCommand, "-DAUTOLIB_SOURCE_ROOT="+f.root, "-DAUTOLIB_INSTALL_ROOT="+install, "-P", filepath.Join(f.root, "src/autolib-builder/prepare-tools.cmake"))
+	tool := filepath.Join(install, "autolib-importer-darwin-aarch64")
+	binary, err := macho.Open(tool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer binary.Close()
+	if binary.Cpu != macho.CpuArm64 {
+		t.Fatalf("importer CPU = %v", binary.Cpu)
+	}
+	_, stderr, err := f.command(tool)
+	if err == nil || !strings.Contains(stderr, "usage: autolib-importer") {
+		t.Fatalf("native importer did not execute: %v %s", err, stderr)
+	}
+	requireFile(t, filepath.Join(install, "autolib.cmake"), readFile(t, "../autolib.cmake"))
+	version := f.must(goExecutable(), "version")
+	if strings.TrimSpace(version) != "go version go1.27.3 darwin/arm64" {
+		t.Fatal(version)
+	}
+}
 
 func managedGoRoot(f *fixture) string {
 	return filepath.Join(f.root, ".tools", "go", "sdk", runtime.Version(), runtime.GOOS+"-"+runtime.GOARCH, "go")

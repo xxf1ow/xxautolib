@@ -4,7 +4,7 @@ Go fixture 验证声明、原生构建、安装及版本化本地和受控远端
 
 ## 执行
 
-先按[开发指南](development.md)准备环境。Go 编译与测试仅在授权的 109 目录执行，当前进程 PATH 前置开发指南记录的 Make。阶段定向证据不替代真实托管和用户验收。
+先按[开发指南](development.md)准备环境。通用 Go 编译与测试优先在授权的 109 目录执行，当前进程 PATH 前置开发指南记录的 Make。本任务在新的本机隔离目录执行必要工具、轻量原生输入和代表库验证，范围及例外见[验证授权](development.md#远端构建与源码传输授权)。阶段定向证据不替代真实托管和用户验收。
 
 测试源码与各工具同目录。CMake 包装入口自动准备私有 SDK 和缓存；fixture 不下载真实依赖。builder 在 `build/tests/` 创建含空格和中文的隔离副本，importer 使用 Go 临时目录，结束时仅清理自身目录。SDK 获取、失败及离线复用、根入口与环境隔离由 [builder 测试](../src/autolib-builder/fixture_test.go)覆盖。定向验证用 `-run TestDefinition`；依赖接线用 `-run TestDirectDependencies`，资源补丁用 `-run TestPatch`，真实模块声明用 `-run TestRealModuleDeclarations`。只运行修改及直接受影响接口的增量用例，复用未失效证据；不运行全量 test、全量 vet 或重编无关模块。
 
