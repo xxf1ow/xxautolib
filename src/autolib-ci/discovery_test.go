@@ -125,7 +125,7 @@ func TestCIDiscoveryFiltering(t *testing.T) {
 			t.Fatal(err)
 		}
 		plan, err := planCI(context.Background(), ciPlanOptions{SourceRoot: root, BuilderFile: builder, Modules: stringPointer("all")})
-		if err != nil || plan.Publisher != "linux-x86_64" {
+		if err != nil || plan.Publishers["universal@1.0"] != "linux-x86_64" {
 			t.Fatalf("publisher depends on package name: %+v %v", plan, err)
 		}
 	})
@@ -152,7 +152,7 @@ func TestCIDiscoveryFiltering(t *testing.T) {
 				t.Fatal(err)
 			}
 			if selection == "local" || selection == "blocked" {
-				if len(plan.Platforms) != 1 || len(plan.Platforms[0].Layers) != 0 || plan.Publisher != "" {
+				if len(plan.Platforms) != 1 || len(plan.Platforms[0].Layers) != 0 || len(plan.Publishers) != 0 {
 					t.Fatalf("filtered work retained: %+v", plan)
 				}
 				return

@@ -89,7 +89,7 @@ def prepare_native_fixture(source, installed, builder, system, arch):
     plan = dict(platforms=[dict(id=platform, roots=roots, description=description,
                                requested_roots=roots, filtered_roots=[],
                                layers=[['dep@1', 'dep@2'], ['probe@1']], system_dependencies={})],
-                requested_modules=roots, publisher='')
+                requested_modules=roots, publishers={})
     identity = dict(repository='controlled-fork/source', ref='refs/heads/native', sha=sha,
                     checkout_sha=sha, run_id='42', attempt='1')
     inputs, selection = packaged_inputs(source, installed, builder, plan, identity)

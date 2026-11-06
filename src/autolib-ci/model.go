@@ -44,9 +44,9 @@ type ciPlatformPlan struct {
 }
 
 type ciPlan struct {
-	Platforms        []ciPlatformPlan `json:"platforms"`
-	RequestedModules []string         `json:"requested_modules"`
-	Publisher        string           `json:"publisher"`
+	Platforms        []ciPlatformPlan  `json:"platforms"`
+	RequestedModules []string          `json:"requested_modules"`
+	Publishers       map[string]string `json:"publishers"`
 }
 
 type ciProductionContext struct {

@@ -40,7 +40,7 @@ func planCI(ctx context.Context, o ciPlanOptions) (ciPlan, error) {
 			}
 		}
 	}
-	plan := ciPlan{Platforms: []ciPlatformPlan{}, RequestedModules: []string{}}
+	plan := ciPlan{Platforms: []ciPlatformPlan{}, RequestedModules: []string{}, Publishers: map[string]string{}}
 	for _, platform := range platforms {
 		systemName, architecture, err := ciTarget(platform)
 		if err != nil {
@@ -77,19 +77,7 @@ func planCI(ctx context.Context, o ciPlanOptions) (ciPlan, error) {
 			}
 		}
 	}
-	for _, preferred := range []string{"linux-x86_64", "linux-aarch64", "windows-x86_64", "darwin-aarch64"} {
-		for _, platform := range plan.Platforms {
-			if platform.ID != preferred {
-				continue
-			}
-			for _, module := range platform.Description.Modules {
-				if module.PackagePlatform == "any-any" {
-					plan.Publisher = preferred
-					return plan, nil
-				}
-			}
-		}
-	}
+	plan.Publishers = ciPublishers(plan.Platforms)
 	return plan, nil
 }
 
@@ -288,4 +276,45 @@ func ciSystemDependencies(modules []describedModule) map[string][]string {
 		slices.Sort(result[manager])
 	}
 	return result
+}
+
+func ciPublishers(platforms []ciPlatformPlan) map[string]string {
+	publishers := map[string]string{}
+	for _, preferred := range []string{"linux-x86_64", "linux-aarch64", "windows-x86_64", "darwin-aarch64"} {
+		for _, platform := range platforms {
+			if platform.ID != preferred {
+				continue
+			}
+			for _, module := range platform.Description.Modules {
+				key := moduleIdentity(module)
+				if module.PackagePlatform == "any-any" && publishers[key] == "" {
+					publishers[key] = preferred
+				}
+			}
+		}
+	}
+	return publishers
+}
+
+func validateCIPublishers(plan ciPlan) error {
+	if plan.Publishers == nil {
+		return fmt.Errorf("CI plan requires publishers object")
+	}
+	expected := ciPublishers(plan.Platforms)
+	if len(expected) != len(plan.Publishers) {
+		return fmt.Errorf("CI publishers do not match exact universal packages")
+	}
+	for key, publisher := range expected {
+		if plan.Publishers[key] != publisher {
+			return fmt.Errorf("CI publisher for %s must be %s", key, publisher)
+		}
+	}
+	for _, platform := range plan.Platforms {
+		for _, module := range platform.Description.Modules {
+			if module.PackagePlatform != "any-any" && module.PackagePlatform != platform.ID {
+				return fmt.Errorf("invalid package_platform for %s on %s", moduleIdentity(module), platform.ID)
+			}
+		}
+	}
+	return nil
 }
