@@ -1,6 +1,6 @@
 # zlib：通用无损压缩库，只编译和安装静态库。
 type = "cmake"
-package_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
+package_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64','darwin-aarch64']
 sentinel = "include/zlib.h"
 pkgconfig_dir = "share/pkgconfig"
 

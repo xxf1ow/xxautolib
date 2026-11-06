@@ -73,6 +73,8 @@ class DarwinWorkflowTests(unittest.TestCase):
                     return re.sub(r'\$\{\{ ([\w.]+) \}\}', lambda m: replacements[m[1]], value)
                 work = Path(expand(work_template))
                 work.mkdir(parents=True)
+                (work / 'results').mkdir()
+                (work / 'results/darwin-aarch64.json').write_text('{}')
                 tools = root / 'build/tools'
                 tools.mkdir(parents=True)
                 cmake = tools / 'cmake'

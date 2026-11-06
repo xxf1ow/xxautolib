@@ -1,6 +1,6 @@
 # portaudio：跨平台音频 I/O，安装参考默认静动态库及配置。
 type = "cmake"
-package_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
+package_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64','darwin-aarch64']
 sentinel = "lib/cmake/portaudio/portaudioConfig.cmake"
 config_dir = "lib/cmake/portaudio"
 pkgconfig_dir = "lib/pkgconfig"

@@ -20,10 +20,25 @@ jobs:
       fail-fast: false
       matrix:
         root:
-          - queue@45db9a8b4431
-          - lz4@1.10.0
-          - eigen@3.4.0
-          - eigen@5.0.1
+          - asio@8806a6803cde
+          - clipper2@1.5.4
+          - cpp-httplib@88956ccad838
+          - expected@1.3.1
+          - freetype@2.13.2
+          - gtest@1.17.0
+          - libusb@1.0.27
+          - libzmq@4.3.5
+          - nativefiledialog-extended@3cd252a8f7ca
+          - nlohmann@3.12.0
+          - oneTBB@628c90df6867
+          - onnxruntime@1.24.4
+          - portaudio@v190700_20210406
+          - pybind11@2.13.6
+          - sdl3@3.2.30
+          - spdlog@1.17.0
+          - taskflow@83f90a279aaa
+          - yaml-cpp@2decf96e915d
+          - zlib@1.3.1
     defaults:
       run:
         shell: bash
@@ -91,13 +106,38 @@ jobs:
           CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
           MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
           BUDGET: ${{ steps.environment.outputs.budget }}
-        run: >-
+        run: |
+          cp "$WORK_ROOT/results/$PLATFORM.json" "$WORK_ROOT/built-result.json"
           "$WORK_ROOT/autolib-ci" run --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer verify --work-root "$WORK_ROOT" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
       - name: Package and transport verified artifacts
         env:
           CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
         run: >-
           "$WORK_ROOT/autolib-ci" transport --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --work-root "$WORK_ROOT" --cmake-command "$CMAKE_COMMAND" --output "$WORK_ROOT/transport.tar"
+      - name: Verify relocated archives
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+          MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
+          BUDGET: ${{ steps.environment.outputs.budget }}
+        run: |
+          set -euo pipefail
+          relocated="$WORK_ROOT/relocated"
+          mkdir -p "$relocated/transport" "$relocated/install" "$relocated/results"
+          (cd "$relocated/transport" && "$CMAKE_COMMAND" -E tar xf "$WORK_ROOT/transport.tar")
+          cp "$relocated/transport/autolib.cmake" "$relocated/install/"
+          cp "$WORK_ROOT/built-result.json" "$relocated/results/$PLATFORM.json"
+          while IFS=$'\t' read -r asset digest; do
+            archive="$relocated/transport/$asset"
+            [[ "$(shasum -a 256 "$archive" | cut -d ' ' -f 1)" == "$digest" ]]
+            (cd "$relocated/install" && "$CMAKE_COMMAND" -E tar xf "$archive")
+          done < <(jq -r '.assets[] | [.path,.sha256] | @tsv' "$relocated/transport/transport.json")
+          for candidate in "$relocated/transport/candidates/"*; do
+            cp "$candidate/package.toml" "$relocated/install/$(basename "$candidate")/package.toml"
+          done
+          mv "$WORK_ROOT/install" "$WORK_ROOT/original-install"
+          trap 'mv "$WORK_ROOT/original-install" "$WORK_ROOT/install"' EXIT
+          env -u CMAKE_PREFIX_PATH -u PKG_CONFIG_PATH -u DYLD_LIBRARY_PATH -u DYLD_FALLBACK_LIBRARY_PATH \
+            "$WORK_ROOT/autolib-ci" run --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer verify --work-root "$relocated" --importer-file "$relocated/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
       - name: Finalize validation
         run: >-
           "$WORK_ROOT/autolib-ci" finalize --repository "$GITHUB_REPOSITORY" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --results "$WORK_ROOT/results"
@@ -128,5 +168,7 @@ jobs:
             build/ci/${{ github.run_id }}-${{ github.run_attempt }}/darwin-aarch64/${{ matrix.root }}/evidence/**/*.log
             build/ci/${{ github.run_id }}-${{ github.run_attempt }}/darwin-aarch64/${{ matrix.root }}/evidence/**/*.txt
             build/ci/${{ github.run_id }}-${{ github.run_attempt }}/darwin-aarch64/${{ matrix.root }}/jobserver.json
+            ${{ env.WORK_ROOT }}/relocated/results/*.json
+            ${{ env.WORK_ROOT }}/relocated/evidence/
           if-no-files-found: warn
 

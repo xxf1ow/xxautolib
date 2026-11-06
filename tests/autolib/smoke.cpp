@@ -1,3 +1,10 @@
+#ifdef AUTOLIB_PYBIND_MODULE
+#include <pybind11/pybind11.h>
+PYBIND11_MODULE(autolib_binding, module)
+{
+    module.def("add", [](int left, int right) { return left + right; });
+}
+#else
 #ifdef AUTOLIB_TEST_QUEUE
 #include <queue/readerwriterqueue.h>
 #endif
@@ -38,6 +45,52 @@
 #endif
 #ifdef AUTOLIB_TEST_ONNXRUNTIME
 #include <onnxruntime_c_api.h>
+#endif
+#ifdef AUTOLIB_TEST_ASIO
+#include <asio.hpp>
+#endif
+#ifdef AUTOLIB_TEST_CLIPPER2
+#include <clipper2/clipper.h>
+#endif
+#ifdef AUTOLIB_TEST_CPP_HTTPLIB
+#include <cpp-httplib/httplib.h>
+#endif
+#ifdef AUTOLIB_TEST_EXPECTED
+#include <tl/expected.hpp>
+#endif
+#ifdef AUTOLIB_TEST_GTEST
+#include <gtest/gtest.h>
+TEST(AutolibPackage, AssertionRuns) { EXPECT_EQ(6 * 7, 42); }
+#endif
+#ifdef AUTOLIB_TEST_LIBZMQ
+#include <zmq.h>
+#endif
+#ifdef AUTOLIB_TEST_NATIVEFILEDIALOG_EXTENDED
+#include <nfd.h>
+#endif
+#ifdef AUTOLIB_TEST_ONETBB
+#include <oneapi/tbb/parallel_reduce.h>
+#include <oneapi/tbb/blocked_range.h>
+#endif
+#ifdef AUTOLIB_TEST_PORTAUDIO
+#include <portaudio.h>
+#endif
+#ifdef AUTOLIB_TEST_SDL3
+#include <SDL3/SDL.h>
+#endif
+#ifdef AUTOLIB_TEST_SPDLOG
+#include <spdlog/spdlog.h>
+#include <spdlog/sinks/ostream_sink.h>
+#include <sstream>
+#endif
+#ifdef AUTOLIB_TEST_TASKFLOW
+#include <taskflow/taskflow.hpp>
+#endif
+#ifdef AUTOLIB_TEST_YAML_CPP
+#include <yaml-cpp/yaml.h>
+#endif
+#ifdef AUTOLIB_TEST_ZLIB
+#include <zlib.h>
 #endif
 #include <filesystem>
 #include <iostream>
@@ -87,6 +140,118 @@ bool check_runtime(const char *name, const void *address, const char *expected_r
 
 int main()
 {
+#ifdef AUTOLIB_TEST_ASIO
+    asio::io_context io;
+    int posted_value = 0;
+    asio::post(io, [&] { posted_value = 42; });
+    if (io.run() != 1 || posted_value != 42)
+        return 21;
+#endif
+#ifdef AUTOLIB_TEST_CLIPPER2
+    const Clipper2Lib::Paths64 subject = {{{0, 0}, {10, 0}, {10, 10}, {0, 10}}};
+    const Clipper2Lib::Paths64 clip = {{{5, 0}, {15, 0}, {15, 10}, {5, 10}}};
+    const auto intersection = Clipper2Lib::Intersect(subject, clip, Clipper2Lib::FillRule::NonZero);
+    if (Clipper2Lib::Area(intersection) != 50)
+        return 22;
+#endif
+#ifdef AUTOLIB_TEST_CPP_HTTPLIB
+    httplib::Response response;
+    response.set_content("verified response", "text/plain");
+    if (response.body != "verified response" || response.get_header_value("Content-Type") != "text/plain")
+        return 23;
+#endif
+#ifdef AUTOLIB_TEST_EXPECTED
+    const tl::expected<int, int> success = 42;
+    const tl::expected<int, int> failure = tl::unexpected<int>(7);
+    if (!success || *success != 42 || failure || failure.error() != 7)
+        return 24;
+#endif
+#ifdef AUTOLIB_TEST_GTEST
+    testing::InitGoogleTest();
+    if (RUN_ALL_TESTS() != 0)
+        return 25;
+#endif
+#ifdef AUTOLIB_TEST_LIBZMQ
+    void *context = zmq_ctx_new();
+    if (!context)
+        return 26;
+    void *sender = zmq_socket(context, ZMQ_PAIR);
+    void *receiver = zmq_socket(context, ZMQ_PAIR);
+    if (!sender || !receiver || zmq_bind(sender, "inproc://autolib-smoke") != 0
+        || zmq_connect(receiver, "inproc://autolib-smoke") != 0)
+        return 27;
+    char message[4] = {};
+    if (zmq_send(sender, "test", 4, 0) != 4 || zmq_recv(receiver, message, 4, 0) != 4
+        || std::string(message, 4) != "test")
+        return 28;
+    if (zmq_close(sender) || zmq_close(receiver) || zmq_ctx_term(context))
+        return 29;
+#endif
+#ifdef AUTOLIB_TEST_NATIVEFILEDIALOG_EXTENDED
+    if (NFD_Init() != NFD_OKAY)
+        return 30;
+    NFD_Quit();
+#endif
+#ifdef AUTOLIB_TEST_ONETBB
+    const int sum = oneapi::tbb::parallel_reduce(oneapi::tbb::blocked_range<int>(0, 100), 0,
+        [](const auto &range, int value) { for (int i = range.begin(); i != range.end(); ++i) value += i; return value; },
+        [](int left, int right) { return left + right; });
+    if (sum != 4950)
+        return 31;
+#endif
+#ifdef AUTOLIB_TEST_PORTAUDIO
+    if (Pa_Initialize() != paNoError)
+        return 32;
+    const auto host_count = Pa_GetHostApiCount();
+    if (host_count < 0 || Pa_Terminate() != paNoError)
+        return 33;
+    std::cout << "portaudio_host_apis=" << host_count << '\n';
+#endif
+#ifdef AUTOLIB_TEST_SDL3
+    SDL_Surface *surface = SDL_CreateSurface(2, 2, SDL_PIXELFORMAT_RGBA32);
+    if (!surface || !SDL_FillSurfaceRect(surface, nullptr, SDL_MapSurfaceRGB(surface, 10, 20, 30)))
+        return 34;
+    Uint8 red = 0, green = 0, blue = 0;
+    const bool read_pixel = SDL_ReadSurfacePixel(surface, 1, 1, &red, &green, &blue, nullptr);
+    SDL_DestroySurface(surface);
+    if (!read_pixel || red != 10 || green != 20 || blue != 30)
+        return 35;
+#endif
+#ifdef AUTOLIB_TEST_SPDLOG
+    std::ostringstream logged;
+    auto sink = std::make_shared<spdlog::sinks::ostream_sink_mt>(logged);
+    spdlog::logger logger("smoke", sink);
+    logger.set_pattern("%v");
+    logger.info("answer {}", 42);
+    logger.flush();
+    if (logged.str() != "answer 42\n")
+        return 36;
+#endif
+#ifdef AUTOLIB_TEST_TASKFLOW
+    tf::Executor executor(2);
+    tf::Taskflow taskflow;
+    int task_value = 0;
+    auto first = taskflow.emplace([&] { task_value = 20; });
+    auto second = taskflow.emplace([&] { task_value += 22; });
+    first.precede(second);
+    executor.run(taskflow).get();
+    if (task_value != 42)
+        return 37;
+#endif
+#ifdef AUTOLIB_TEST_YAML_CPP
+    const auto yaml = YAML::Load("answer: 42\nvalues: [1, 2, 3]\n");
+    if (yaml["answer"].as<int>() != 42 || yaml["values"].size() != 3)
+        return 38;
+#endif
+#ifdef AUTOLIB_TEST_ZLIB
+    const unsigned char plain[] = "repeat repeat repeat repeat";
+    unsigned char encoded[128] = {}, decoded[sizeof(plain)] = {};
+    uLongf encoded_size = sizeof(encoded), decoded_size = sizeof(decoded);
+    if (compress2(encoded, &encoded_size, plain, sizeof(plain), Z_BEST_COMPRESSION) != Z_OK
+        || uncompress(decoded, &decoded_size, encoded, encoded_size) != Z_OK
+        || decoded_size != sizeof(plain) || std::string(reinterpret_cast<char *>(decoded)) != "repeat repeat repeat repeat")
+        return 39;
+#endif
 #ifdef AUTOLIB_TEST_FREETYPE
     FT_Library font_library = nullptr;
     if (FT_Init_FreeType(&font_library) != 0)
@@ -129,6 +294,16 @@ int main()
     const auto *api_base = OrtGetApiBase();
     if (!api_base || !api_base->GetApi(ORT_API_VERSION))
         return 19;
+    const auto *api = api_base->GetApi(ORT_API_VERSION);
+    OrtEnv *environment = nullptr;
+    if (auto *status = api->CreateEnv(ORT_LOGGING_LEVEL_WARNING, "autolib-smoke", &environment)) {
+        std::cerr << api->GetErrorMessage(status) << '\n';
+        api->ReleaseStatus(status);
+        return 40;
+    }
+    api->ReleaseEnv(environment);
+    if (std::string(api_base->GetVersionString()) != "1.24.4")
+        return 41;
     std::cout << "onnxruntime_version=" << api_base->GetVersionString() << '\n';
     if (!check_runtime("onnxruntime", reinterpret_cast<const void *>(&OrtGetApiBase), AUTOLIB_EXPECT_ONNXRUNTIME_ROOT))
         return 20;
@@ -194,3 +369,4 @@ int main()
 #endif
     return 0;
 }
+#endif
