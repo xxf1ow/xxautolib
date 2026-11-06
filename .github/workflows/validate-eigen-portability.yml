@@ -1,0 +1,550 @@
+name: Validate Eigen portability
+
+on:
+  push:
+    branches:
+      - task/darwin-aarch64-native-ci
+    paths:
+      - .github/workflows/validate-eigen-portability.yml
+      - tests/autolib/run-eigen-portability.cmake
+      - tests/autolib/run-installed.cmake
+      - tests/autolib/CMakeLists.txt
+      - tests/autolib/smoke.cpp
+      - src/dependencies/eigen/**
+      - src/dependencies/pcl/**
+      - src/dependencies/boost/**
+      - src/dependencies/flann/**
+      - src/dependencies/lz4/**
+      - src/dependencies/zlib/**
+      - src/autolib.cmake
+      - src/autolib-builder/**
+      - src/autolib-ci/**
+      - src/autolib-importer/**
+      - src/internal/packagemetadata/**
+      - .github/ci-tools.json
+      - .github/scripts/prepare-linux.sh
+      - .github/scripts/prepare-windows.ps1
+      - .github/scripts/prepare-darwin.sh
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.repository }}-eigen-portability-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      artifact: ${{ steps.plan.outputs.artifact }}
+      linux_image: ${{ steps.plan.outputs.linux_image }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Plan exact native inputs
+        id: plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/ci-input build/tools
+          cmake -P src/autolib-builder/go-sdk.cmake -- build -mod=readonly -trimpath -o build/tools/autolib-builder ./src/autolib-builder
+          cmake -P src/autolib-builder/go-sdk.cmake -- build -mod=readonly -trimpath -o build/tools/autolib-ci ./src/autolib-ci
+          build/tools/autolib-ci plan --source-root "$GITHUB_WORKSPACE" --builder-file "$GITHUB_WORKSPACE/build/tools/autolib-builder" --output build/ci-input/eigen.json --platforms linux-x86_64,windows-x86_64,darwin-aarch64 --modules eigen@3.4.0,eigen@5.0.1
+          build/tools/autolib-ci plan --source-root "$GITHUB_WORKSPACE" --builder-file "$GITHUB_WORKSPACE/build/tools/autolib-builder" --output build/ci-input/pcl.json --platforms linux-x86_64,linux-aarch64,windows-x86_64 --modules pcl@pcl-1.15.1
+          jq -e 'all(.platforms[]; (.roots|length)==2 and (.filtered_roots|length)==0)' build/ci-input/eigen.json
+          jq -e 'all(.platforms[]; .roots==["pcl@pcl-1.15.1"] and (.filtered_roots|length)==0)' build/ci-input/pcl.json
+          echo "artifact=eigen-plan-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+          echo "linux_image=$(jq -r '.ubuntu.image' .github/ci-tools.json)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.plan.outputs.artifact }}
+          path: build/ci-input/*.json
+          if-no-files-found: error
+
+  produce:
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    container:
+      image: ${{ needs.plan.outputs.linux_image }}
+    outputs:
+      artifact: ${{ steps.export.outputs.artifact }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      LC_ALL: C.UTF-8
+      PLATFORM: linux-x86_64
+      WORK_ROOT: ${{ github.workspace }}/build/ci/${{ github.run_id }}-${{ github.run_attempt }}/linux-x86_64
+    steps:
+      - name: Bootstrap container
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates curl git jq python3
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.plan.outputs.artifact }}
+          path: build/ci-input
+      - name: Bind Eigen plan
+        run: |
+          cp build/ci-input/eigen.json build/ci-input/plan.json
+      - name: Record source identity
+        shell: python3 {0}
+        run: |
+          import json, os, subprocess
+          from pathlib import Path
+          checkout=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+          if checkout!=os.environ['GITHUB_SHA']:raise SystemExit('Checkout does not match source SHA')
+          p=Path('build/ci-input/run.json');p.parent.mkdir(parents=True,exist_ok=True)
+          p.write_text(json.dumps(dict(repository=os.environ['GITHUB_REPOSITORY'],ref=os.environ['GITHUB_REF'],sha=os.environ['GITHUB_SHA'],checkout_sha=checkout,run_id=os.environ['GITHUB_RUN_ID'],attempt=os.environ['GITHUB_RUN_ATTEMPT'])))
+      - name: Prepare native environment and tools
+        id: environment
+        run: |
+          set -euo pipefail
+          bash .github/scripts/prepare-linux.sh --config .github/ci-tools.json --plan build/ci-input/plan.json --platform "$PLATFORM" --work-root "$WORK_ROOT" > build/ci-input/environment.json
+          jq -r 'to_entries[] | "\(.key)=\(.value)"' build/ci-input/environment.json >> "$GITHUB_OUTPUT"
+      - name: Prepare platform
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+          MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
+          BUDGET: ${{ steps.environment.outputs.budget }}
+        run: |
+          "$WORK_ROOT/autolib-ci" run --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer prepare --work-root "$WORK_ROOT" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
+      - name: Produce dependency layers
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+          MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
+          BUDGET: ${{ steps.environment.outputs.budget }}
+        run: |
+          set -euo pipefail
+          layers=$(jq -er --arg platform "$PLATFORM" '.platforms[] | select(.id == $platform) | .layers | length' build/ci-input/plan.json)
+          for ((index=0; index<layers; index++)); do
+            "$WORK_ROOT/autolib-ci" run --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer "layer$index" --work-root "$WORK_ROOT" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
+          done
+      - name: Verify selected work
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+          MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
+          BUDGET: ${{ steps.environment.outputs.budget }}
+        run: |
+          "$WORK_ROOT/autolib-ci" run --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer verify --work-root "$WORK_ROOT" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
+      - name: Package and transport verified artifacts
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+          MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
+          BUDGET: ${{ steps.environment.outputs.budget }}
+        run: |
+          "$WORK_ROOT/autolib-ci" transport --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --work-root "$WORK_ROOT" --cmake-command "$CMAKE_COMMAND" --output "$WORK_ROOT/transport.tar"
+      - name: Export original Linux archives
+        id: export
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+        run: |
+          set -euo pipefail
+          mkdir -p build/eigen-transport build/eigen-artifacts
+          (cd build/eigen-transport && "$CMAKE_COMMAND" -E tar xf "$WORK_ROOT/transport.tar")
+          python3 - <<'CODE'
+          import hashlib,json,shutil
+          from pathlib import Path
+          transport=Path('build/eigen-transport');out=Path('build/eigen-artifacts')
+          manifest=json.loads((transport/'transport.json').read_text());inputs={}
+          for version in ['3.4.0','5.0.1']:
+              asset=next(a for a in manifest['assets'] if Path(a['path']).name==f'eigen-{version}-any-any.tar.zst')
+              raw=transport/asset['path'];digest=hashlib.sha256(raw.read_bytes()).hexdigest()
+              if digest!=asset['sha256']:raise SystemExit('Linux transport archive SHA256 mismatch')
+              shutil.copy2(raw,out/raw.name);inputs[version]={'filename':raw.name,'sha256':digest}
+          shutil.copy2('build/ci-input/run.json',out/'producer.json')
+          (out/'manifest.json').write_text(json.dumps(inputs,indent=2))
+          CODE
+          echo "artifact=linux-eigen-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.export.outputs.artifact }}
+          path: build/eigen-artifacts/*
+          if-no-files-found: error
+      - name: Retain portability evidence
+        if: ${{ always() && !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: eigen-evidence-${{ github.run_id }}-${{ github.run_attempt }}-${{ env.PLATFORM }}-producer
+          path: |
+            build/ci-input/*.json
+            build/linux-eigen/*.json
+            build/portability/**/inputs.txt
+            build/portability/**/producer.json
+            build/portability/**/consumer.json
+            build/portability/**/*.log
+            build/portability/**/imported-properties.txt
+            build/portability/**/prepared-state.cmake
+            build/ci/**/logs/
+            build/ci/**/evidence/**/*.log
+            build/ci/**/evidence/**/*.txt
+          if-no-files-found: warn
+
+  windows:
+    needs: [plan, produce]
+    runs-on: windows-2022
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        kind: [eigen, pcl]
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      PLATFORM: windows-x86_64
+      VALIDATION_KIND: ${{ matrix.kind }}
+      WORK_ROOT: ${{ github.workspace }}/build/ci/${{ github.run_id }}-${{ github.run_attempt }}/windows-x86_64
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.plan.outputs.artifact }}
+          path: build/ci-input
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.produce.outputs.artifact }}
+          path: build/linux-eigen
+      - name: Bind native plan
+        run: |
+          Copy-Item "build/ci-input/$env:VALIDATION_KIND.json" build/ci-input/plan.json
+      - name: Record source identity
+        shell: python
+        run: |
+          import json, os, subprocess
+          from pathlib import Path
+          checkout=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+          if checkout!=os.environ['GITHUB_SHA']:raise SystemExit('Checkout does not match source SHA')
+          p=Path('build/ci-input/run.json');p.parent.mkdir(parents=True,exist_ok=True)
+          p.write_text(json.dumps(dict(repository=os.environ['GITHUB_REPOSITORY'],ref=os.environ['GITHUB_REF'],sha=os.environ['GITHUB_SHA'],checkout_sha=checkout,run_id=os.environ['GITHUB_RUN_ID'],attempt=os.environ['GITHUB_RUN_ATTEMPT'])))
+      - name: Prepare native environment and tools
+        id: environment
+        run: |
+          $settings = ./.github/scripts/prepare-windows.ps1 -Config .github/ci-tools.json -Plan build/ci-input/plan.json -Platform windows-x86_64 -WorkRoot $env:WORK_ROOT | ConvertFrom-Json
+          "cmake_command=$($settings.cmake_command)" >> $env:GITHUB_OUTPUT
+      - name: Prepare platform
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+        run: |
+          & "$env:WORK_ROOT/autolib-ci.exe" run --repository $env:GITHUB_REPOSITORY --source-root $env:GITHUB_WORKSPACE --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform windows-x86_64 --layer prepare --work-root $env:WORK_ROOT --importer-file "$env:WORK_ROOT/install/autolib-importer-windows-x86_64.exe" --cmake-command $env:CMAKE_COMMAND
+      - name: Preseed original Linux Eigen for PCL
+        if: matrix.kind == 'pcl'
+        shell: python
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+        run: |
+          import hashlib,json,os,shutil,subprocess
+          from pathlib import Path
+          root=Path(os.environ['GITHUB_WORKSPACE']).resolve();install=Path(os.environ['WORK_ROOT'])/'install';raw=root/'build/linux-eigen'
+          manifest=json.loads((raw/'manifest.json').read_text());item=manifest['3.4.0'];archive=raw/item['filename']
+          producer=json.loads((raw/'producer.json').read_text())
+          if producer['repository']!=os.environ['GITHUB_REPOSITORY'] or producer['sha']!=os.environ['GITHUB_SHA']:raise SystemExit('Linux Eigen source identity mismatch')
+          if hashlib.sha256(archive.read_bytes()).hexdigest()!=item['sha256']:raise SystemExit('Linux Eigen SHA256 mismatch')
+          install.mkdir(parents=True,exist_ok=True)
+          subprocess.run([os.environ['CMAKE_COMMAND'],'-E','tar','xf',str(archive)],cwd=install,check=True)
+          shutil.copy2(root/'src/dependencies/eigen/package.toml',install/'eigen/package.toml')
+      - name: Produce dependency layers
+        if: matrix.kind == 'pcl'
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+        run: |
+          $plan = Get-Content build/ci-input/plan.json -Raw | ConvertFrom-Json
+          $platform = @($plan.platforms | Where-Object id -eq 'windows-x86_64')[0]
+          for ($index = 0; $index -lt $platform.layers.Count; $index++) {
+            & "$env:WORK_ROOT/autolib-ci.exe" run --repository $env:GITHUB_REPOSITORY --source-root $env:GITHUB_WORKSPACE --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform windows-x86_64 --layer "layer$index" --work-root $env:WORK_ROOT --importer-file "$env:WORK_ROOT/install/autolib-importer-windows-x86_64.exe" --cmake-command $env:CMAKE_COMMAND
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+      - name: Verify selected work
+        if: matrix.kind == 'pcl'
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+        run: |
+          & "$env:WORK_ROOT/autolib-ci.exe" run --repository $env:GITHUB_REPOSITORY --source-root $env:GITHUB_WORKSPACE --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform windows-x86_64 --layer verify --work-root $env:WORK_ROOT --importer-file "$env:WORK_ROOT/install/autolib-importer-windows-x86_64.exe" --cmake-command $env:CMAKE_COMMAND
+      - name: Consume original Linux archives
+        shell: python
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+          GENERATOR: Visual Studio 17 2022
+          GENERATOR_PLATFORM: x64
+          GENERATOR_TOOLSET: v143,host=x64
+          CMAKE_MSVC_RUNTIME_LIBRARY: MultiThreadedDLL
+        run: |
+          import json, os, subprocess
+          from pathlib import Path
+          root=Path(os.environ['GITHUB_WORKSPACE']).resolve();work=Path(os.environ['WORK_ROOT']);raw=root/'build/linux-eigen'
+          manifest=json.loads((raw/'manifest.json').read_text())
+          args=[os.environ['CMAKE_COMMAND'],f'-DSOURCE_ROOT={root}',f'-DINSTALL_ROOT={work}/install',f'-DVALIDATION_ROOT={root}/build/portability/{os.environ["PLATFORM"]}/{os.environ.get("VALIDATION_KIND","eigen")}',f'-DPLATFORM={os.environ["PLATFORM"]}',f'-DGENERATOR={os.environ["GENERATOR"]}',f'-DPRODUCER_IDENTITY={raw}/producer.json',f'-DCONSUMER_IDENTITY={root}/build/ci-input/run.json']
+          for version,label in [('3.4.0','340'),('5.0.1','501')]:
+              item=manifest[version]
+              args += [f'-DEIGEN_{label}_ARCHIVE={raw/item["filename"]}',f'-DEIGEN_{label}_SHA256={item["sha256"]}']
+          if os.environ.get('VALIDATION_KIND')=='pcl':args.append('-DPCL_VERSION=pcl-1.15.1')
+          for key in ['CMAKE_MAKE_PROGRAM','CMAKE_C_COMPILER','CMAKE_CXX_COMPILER','CMAKE_OSX_ARCHITECTURES','CMAKE_OSX_DEPLOYMENT_TARGET','CMAKE_OSX_SYSROOT','GENERATOR_PLATFORM','GENERATOR_TOOLSET','CMAKE_MSVC_RUNTIME_LIBRARY']:
+              if os.environ.get(key):args.append(f'-D{key}={os.environ[key]}')
+          args += ['-DCMAKE_POLICY_VERSION_MINIMUM=3.5','-P',str(root/'tests/autolib/run-eigen-portability.cmake')]
+          subprocess.run(args,check=True)
+      - name: Retain portability evidence
+        if: ${{ always() && !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: eigen-evidence-${{ github.run_id }}-${{ github.run_attempt }}-${{ env.PLATFORM }}-${{ env.VALIDATION_KIND }}
+          path: |
+            build/ci-input/*.json
+            build/linux-eigen/*.json
+            build/portability/**/inputs.txt
+            build/portability/**/producer.json
+            build/portability/**/consumer.json
+            build/portability/**/*.log
+            build/portability/**/imported-properties.txt
+            build/portability/**/prepared-state.cmake
+            build/ci/**/logs/
+            build/ci/**/evidence/**/*.log
+            build/ci/**/evidence/**/*.txt
+          if-no-files-found: warn
+
+  darwin:
+    needs: [plan, produce]
+    runs-on: macos-15
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash
+    env:
+      PLATFORM: darwin-aarch64
+      VALIDATION_KIND: eigen
+      WORK_ROOT: ${{ github.workspace }}/build/ci/${{ github.run_id }}-${{ github.run_attempt }}/darwin-aarch64
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.plan.outputs.artifact }}
+          path: build/ci-input
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.produce.outputs.artifact }}
+          path: build/linux-eigen
+      - name: Require native macOS 15
+        run: |
+          [[ "$(uname -m)" == arm64 && "$(sw_vers -productVersion)" == 15.* ]]
+          mkdir -p "$WORK_ROOT"
+      - name: Bind Eigen plan
+        run: |
+          cp build/ci-input/eigen.json build/ci-input/plan.json
+      - name: Record source identity
+        shell: python3 {0}
+        run: |
+          import json, os, subprocess
+          from pathlib import Path
+          checkout=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+          if checkout!=os.environ['GITHUB_SHA']:raise SystemExit('Checkout does not match source SHA')
+          p=Path('build/ci-input/run.json');p.parent.mkdir(parents=True,exist_ok=True)
+          p.write_text(json.dumps(dict(repository=os.environ['GITHUB_REPOSITORY'],ref=os.environ['GITHUB_REF'],sha=os.environ['GITHUB_SHA'],checkout_sha=checkout,run_id=os.environ['GITHUB_RUN_ID'],attempt=os.environ['GITHUB_RUN_ATTEMPT'])))
+      - name: Prepare native environment and tools
+        id: environment
+        run: |
+          set -euo pipefail
+          bash .github/scripts/prepare-darwin.sh --config .github/ci-tools.json --plan build/ci-input/plan.json --platform "$PLATFORM" --work-root "$WORK_ROOT" > build/ci-input/environment.json 2> >(tee "$WORK_ROOT/environment.log" >&2)
+          jq -r 'to_entries[] | "\(.key)=\(.value)"' build/ci-input/environment.json >> "$GITHUB_OUTPUT"
+      - name: Prepare platform
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+          MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
+          BUDGET: ${{ steps.environment.outputs.budget }}
+        run: |
+          "$WORK_ROOT/autolib-ci" run --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer prepare --work-root "$WORK_ROOT" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
+      - name: Consume original Linux archives
+        shell: python3 {0}
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+          MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
+          BUDGET: ${{ steps.environment.outputs.budget }}
+          GENERATOR: Unix Makefiles
+          CMAKE_MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
+          CMAKE_OSX_ARCHITECTURES: arm64
+          CMAKE_OSX_DEPLOYMENT_TARGET: 15.0
+        run: |
+          import json, os, subprocess
+          from pathlib import Path
+          root=Path(os.environ['GITHUB_WORKSPACE']).resolve();work=Path(os.environ['WORK_ROOT']);raw=root/'build/linux-eigen'
+          manifest=json.loads((raw/'manifest.json').read_text())
+          args=[os.environ['CMAKE_COMMAND'],f'-DSOURCE_ROOT={root}',f'-DINSTALL_ROOT={work}/install',f'-DVALIDATION_ROOT={root}/build/portability/{os.environ["PLATFORM"]}/{os.environ.get("VALIDATION_KIND","eigen")}',f'-DPLATFORM={os.environ["PLATFORM"]}',f'-DGENERATOR={os.environ["GENERATOR"]}',f'-DPRODUCER_IDENTITY={raw}/producer.json',f'-DCONSUMER_IDENTITY={root}/build/ci-input/run.json']
+          for version,label in [('3.4.0','340'),('5.0.1','501')]:
+              item=manifest[version]
+              args += [f'-DEIGEN_{label}_ARCHIVE={raw/item["filename"]}',f'-DEIGEN_{label}_SHA256={item["sha256"]}']
+          if os.environ.get('VALIDATION_KIND')=='pcl':args.append('-DPCL_VERSION=pcl-1.15.1')
+          os.environ['CMAKE_C_COMPILER']=os.environ['CC'];os.environ['CMAKE_CXX_COMPILER']=os.environ['CXX']
+          for key in ['CMAKE_MAKE_PROGRAM','CMAKE_C_COMPILER','CMAKE_CXX_COMPILER','CMAKE_OSX_ARCHITECTURES','CMAKE_OSX_DEPLOYMENT_TARGET','CMAKE_OSX_SYSROOT','GENERATOR_PLATFORM','GENERATOR_TOOLSET','CMAKE_MSVC_RUNTIME_LIBRARY']:
+              if os.environ.get(key):args.append(f'-D{key}={os.environ[key]}')
+          args += ['-DCMAKE_POLICY_VERSION_MINIMUM=3.5','-P',str(root/'tests/autolib/run-eigen-portability.cmake')]
+          subprocess.run(args,check=True)
+      - name: Retain portability evidence
+        if: ${{ always() && !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: eigen-evidence-${{ github.run_id }}-${{ github.run_attempt }}-${{ env.PLATFORM }}-${{ env.VALIDATION_KIND }}
+          path: |
+            build/ci-input/*.json
+            build/linux-eigen/*.json
+            build/portability/**/inputs.txt
+            build/portability/**/producer.json
+            build/portability/**/consumer.json
+            build/portability/**/*.log
+            build/portability/**/imported-properties.txt
+            build/portability/**/prepared-state.cmake
+            build/ci/**/logs/
+            build/ci/**/evidence/**/*.log
+            build/ci/**/evidence/**/*.txt
+          if-no-files-found: warn
+
+  linux-pcl:
+    needs: [plan, produce]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x86_64
+            runner: ubuntu-24.04
+          - platform: linux-aarch64
+            runner: ubuntu-24.04-arm
+    container:
+      image: ${{ needs.plan.outputs.linux_image }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      LC_ALL: C.UTF-8
+      PLATFORM: ${{ matrix.platform }}
+      VALIDATION_KIND: pcl
+      WORK_ROOT: ${{ github.workspace }}/build/ci/${{ github.run_id }}-${{ github.run_attempt }}/${{ matrix.platform }}
+    steps:
+      - name: Bootstrap container
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates curl git jq python3
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.plan.outputs.artifact }}
+          path: build/ci-input
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.produce.outputs.artifact }}
+          path: build/linux-eigen
+      - name: Bind PCL plan
+        run: |
+          cp build/ci-input/pcl.json build/ci-input/plan.json
+      - name: Record source identity
+        shell: python3 {0}
+        run: |
+          import json, os, subprocess
+          from pathlib import Path
+          checkout=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+          if checkout!=os.environ['GITHUB_SHA']:raise SystemExit('Checkout does not match source SHA')
+          p=Path('build/ci-input/run.json');p.parent.mkdir(parents=True,exist_ok=True)
+          p.write_text(json.dumps(dict(repository=os.environ['GITHUB_REPOSITORY'],ref=os.environ['GITHUB_REF'],sha=os.environ['GITHUB_SHA'],checkout_sha=checkout,run_id=os.environ['GITHUB_RUN_ID'],attempt=os.environ['GITHUB_RUN_ATTEMPT'])))
+      - name: Prepare native environment and tools
+        id: environment
+        run: |
+          set -euo pipefail
+          bash .github/scripts/prepare-linux.sh --config .github/ci-tools.json --plan build/ci-input/plan.json --platform "$PLATFORM" --work-root "$WORK_ROOT" > build/ci-input/environment.json
+          jq -r 'to_entries[] | "\(.key)=\(.value)"' build/ci-input/environment.json >> "$GITHUB_OUTPUT"
+      - name: Prepare platform
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+          MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
+          BUDGET: ${{ steps.environment.outputs.budget }}
+        run: |
+          "$WORK_ROOT/autolib-ci" run --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer prepare --work-root "$WORK_ROOT" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
+      - name: Preseed original Linux Eigen for PCL
+        shell: python3 {0}
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+          MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
+          BUDGET: ${{ steps.environment.outputs.budget }}
+        run: |
+          import hashlib,json,os,shutil,subprocess
+          from pathlib import Path
+          root=Path(os.environ['GITHUB_WORKSPACE']).resolve();install=Path(os.environ['WORK_ROOT'])/'install';raw=root/'build/linux-eigen'
+          manifest=json.loads((raw/'manifest.json').read_text());item=manifest['3.4.0'];archive=raw/item['filename']
+          producer=json.loads((raw/'producer.json').read_text())
+          if producer['repository']!=os.environ['GITHUB_REPOSITORY'] or producer['sha']!=os.environ['GITHUB_SHA']:raise SystemExit('Linux Eigen source identity mismatch')
+          if hashlib.sha256(archive.read_bytes()).hexdigest()!=item['sha256']:raise SystemExit('Linux Eigen SHA256 mismatch')
+          install.mkdir(parents=True,exist_ok=True)
+          subprocess.run([os.environ['CMAKE_COMMAND'],'-E','tar','xf',str(archive)],cwd=install,check=True)
+          shutil.copy2(root/'src/dependencies/eigen/package.toml',install/'eigen/package.toml')
+      - name: Produce dependency layers
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+          MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
+          BUDGET: ${{ steps.environment.outputs.budget }}
+        run: |
+          set -euo pipefail
+          layers=$(jq -er --arg platform "$PLATFORM" '.platforms[] | select(.id == $platform) | .layers | length' build/ci-input/plan.json)
+          for ((index=0; index<layers; index++)); do
+            "$WORK_ROOT/autolib-ci" run --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer "layer$index" --work-root "$WORK_ROOT" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
+          done
+      - name: Verify selected work
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+          MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
+          BUDGET: ${{ steps.environment.outputs.budget }}
+        run: |
+          "$WORK_ROOT/autolib-ci" run --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer verify --work-root "$WORK_ROOT" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
+      - name: Consume original Linux archives
+        shell: python3 {0}
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+          MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
+          BUDGET: ${{ steps.environment.outputs.budget }}
+          GENERATOR: Unix Makefiles
+          CMAKE_MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
+        run: |
+          import json, os, subprocess
+          from pathlib import Path
+          root=Path(os.environ['GITHUB_WORKSPACE']).resolve();work=Path(os.environ['WORK_ROOT']);raw=root/'build/linux-eigen'
+          manifest=json.loads((raw/'manifest.json').read_text())
+          args=[os.environ['CMAKE_COMMAND'],f'-DSOURCE_ROOT={root}',f'-DINSTALL_ROOT={work}/install',f'-DVALIDATION_ROOT={root}/build/portability/{os.environ["PLATFORM"]}/{os.environ.get("VALIDATION_KIND","eigen")}',f'-DPLATFORM={os.environ["PLATFORM"]}',f'-DGENERATOR={os.environ["GENERATOR"]}',f'-DPRODUCER_IDENTITY={raw}/producer.json',f'-DCONSUMER_IDENTITY={root}/build/ci-input/run.json']
+          for version,label in [('3.4.0','340'),('5.0.1','501')]:
+              item=manifest[version]
+              args += [f'-DEIGEN_{label}_ARCHIVE={raw/item["filename"]}',f'-DEIGEN_{label}_SHA256={item["sha256"]}']
+          if os.environ.get('VALIDATION_KIND')=='pcl':args.append('-DPCL_VERSION=pcl-1.15.1')
+          for key in ['CMAKE_MAKE_PROGRAM','CMAKE_C_COMPILER','CMAKE_CXX_COMPILER','CMAKE_OSX_ARCHITECTURES','CMAKE_OSX_DEPLOYMENT_TARGET','CMAKE_OSX_SYSROOT','GENERATOR_PLATFORM','GENERATOR_TOOLSET','CMAKE_MSVC_RUNTIME_LIBRARY']:
+              if os.environ.get(key):args.append(f'-D{key}={os.environ[key]}')
+          args += ['-DCMAKE_POLICY_VERSION_MINIMUM=3.5','-P',str(root/'tests/autolib/run-eigen-portability.cmake')]
+          subprocess.run(args,check=True)
+      - name: Retain portability evidence
+        if: ${{ always() && !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: eigen-evidence-${{ github.run_id }}-${{ github.run_attempt }}-${{ env.PLATFORM }}-${{ env.VALIDATION_KIND }}
+          path: |
+            build/ci-input/*.json
+            build/linux-eigen/*.json
+            build/portability/**/inputs.txt
+            build/portability/**/producer.json
+            build/portability/**/consumer.json
+            build/portability/**/*.log
+            build/portability/**/imported-properties.txt
+            build/portability/**/prepared-state.cmake
+            build/ci/**/logs/
+            build/ci/**/evidence/**/*.log
+            build/ci/**/evidence/**/*.txt
+          if-no-files-found: warn
