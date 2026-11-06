@@ -40,6 +40,15 @@ func TestVersionedMetadataAsset(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
+			if tc.Name == "version-case-collision" {
+				entries, err := os.ReadDir(filepath.Join(root, "eigen"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(entries) != 2 {
+					t.Skip("filesystem cannot represent case-colliding versions")
+				}
+			}
 			for path, content := range tc.Files {
 				putTestFile(t, filepath.Join(root, filepath.FromSlash(path)), content)
 			}

@@ -42,7 +42,7 @@ func TestUniversalPackageAcrossTargets(t *testing.T) {
 		putFile(t, filepath.Join(o.SourceRoot, "git/_resources/queue", resource, name), body)
 		putFile(t, filepath.Join(o.InstallRoot, "queue/1.0/include/queue", name), body)
 	}
-	for _, target := range [][2]string{{"windows", "x86_64"}, {"linux", "x86_64"}, {"linux", "aarch64"}} {
+	for _, target := range [][2]string{{"windows", "x86_64"}, {"linux", "x86_64"}, {"linux", "aarch64"}, {"darwin", "aarch64"}} {
 		o.OS, o.Arch, o.Modules = target[0], target[1], []string{"queue"}
 		if err := packageRelease(o); err != nil {
 			t.Fatal(err)

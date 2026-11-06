@@ -32,7 +32,7 @@ func validatePackageName(value string) error {
 }
 
 func validatePackagePlatform(system, arch string) error {
-	if (system != "windows" && system != "linux") || (arch != "x86_64" && arch != "aarch64") {
+	if !((system == "windows" || system == "linux") && (arch == "x86_64" || arch == "aarch64") || system == "darwin" && arch == "aarch64") {
 		return fmt.Errorf("unsupported package platform %s/%s", system, arch)
 	}
 	return nil

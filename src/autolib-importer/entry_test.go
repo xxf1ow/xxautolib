@@ -71,7 +71,7 @@ func newEntryFixture(t *testing.T, fake bool, suffix string) *entryFixture {
 		t.Fatal(err)
 	}
 	generator, toolName := "Ninja", "ninja"
-	if runtime.GOOS == "linux" {
+	if runtime.GOOS == "linux" || runtime.GOOS == "darwin" {
 		generator, toolName = "Unix Makefiles", "make"
 	}
 	buildTool, err := exec.LookPath(toolName)
