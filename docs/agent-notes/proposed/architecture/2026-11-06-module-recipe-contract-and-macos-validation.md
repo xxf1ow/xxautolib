@@ -283,7 +283,9 @@ runner 预装的 Homebrew 库可能改变可选功能探测、动态链接及最
 
 独立总审查在 `05ad429..e54dbac` 发现一项平台过滤顺序缺陷：仅在 Windows 覆盖声明复制映射的 copy 包，会提前阻断 Darwin 自动发现。`TestPlatformSelectionCopyMappings` 先复现失败，再将非空映射完整性限制为有效目标检查；Windows 映射读取、支持目标缺映射拒绝及未选分支坏字段拒绝均通过。受影响的字段、过滤、describe 与全配方检查六项通过，未重跑未失效的真实库消费。审查无其他已证实 Critical/Minor；托管环境、跨平台同归档、PCL/example 和 PowerShell 执行仍为下节缺口。
 
-### 第二阶段：macOS 逐包验收（进行中）
+### 第二阶段：macOS 逐包验收
+
+31 份版本配方中，23 份通过已实现的 API smoke、打包及搬迁消费，4 份因仓库第三方依赖问题直接暂缓，另 4 份随依赖闭包暂缓。当前 Darwin 描述的 23 个有效根与成功快照一致，其余 8 个根被过滤；过滤不计为验证成功。原样 example 的真实执行及下述硬件能力仍未验，本记录保持 proposed，等待阶段验收。
 
 用户在执行中收紧第三方库来源：macOS 依赖只使用本仓库固定并编译的版本，不使用或捆绑 Homebrew、runner 及其他系统预装的第三方库。困难依赖先报告并留待后续处理，不为当前试验改变版本、关闭功能或扩展依赖方案。Apple SDK Framework 和原生运行时仍按 Native 要求使用。
 
@@ -301,11 +303,11 @@ WebSocket++ 4dfe1be74e68、PCL pcl-1.15.1 的 Darwin 验收因 Boost 闭包缺�
 
 原样 `example/` 的隔离 driver 已有缺输入及数据保护检查，但本轮 macos-15 未完成真实导入、编译和运行：其 FLANN 依赖尚未合格。这是阶段验收缺口，不能以其他库的 smoke 通过代替。
 
-`librealsense@2.58.1` 在 [macOS 15 验收 run 42260213354，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42260213354/job/128037859866) 编译到最终共享库链接，因静态 libusb 的 `SecTaskCreateFromSelf`、`SecTaskCopyValueForEntitlement` 未解析失败。包级本地依赖补丁补齐与 libusb 固定上游相同的 Foundation、IOKit、Security Framework；本机使用实际仓库 libusb 的链接及 API probe 先失败后通过。托管重试尚未完成，不计为成功；无相机环境不能验证取流。
+`librealsense@2.58.1` 在 [macOS 15 验收 run 42260213354，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42260213354/job/128037859866) 编译到最终共享库链接，因静态 libusb 的 `SecTaskCreateFromSelf`、`SecTaskCopyValueForEntitlement` 未解析失败。包级本地依赖补丁补齐与 libusb 固定上游相同的 Foundation、IOKit、Security Framework；本机使用实际仓库 libusb 的链接及 API probe 先失败后通过。修复后源码 `04842df170604bbd1f2d60725524bdd817334ea4` 的 [macOS 15 验收 run 42263227882，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42263227882) 完成构建、创建 SDK config 并关闭流配置、打包及直接/搬迁消费，原始归档摘要核对一致；无相机环境不能验证取流。固定上游版本的 macOS 安装说明还明确列出 Viewer 不支持、IMU 禁用及 USB 访问通常需要提升权限；本轮 SDK smoke 不覆盖这些设备能力，也未改变上游设置。
 
 ### macOS 逐版本快照
 
-以下成功表示该版本完成 macos-15 构建或复制安装、Config/adapter 导入、真实 API smoke、打包摘要核对和归档搬迁消费。归档摘要指 transport 中的原始 `.tar.zst`；直接与搬迁的 CTest 均通过。三个 run 的 attempt 均为 1，源码分别为 `03d5f5afd5c080f5bd5106bc4083906b68a2318d`（[42251612424](https://github.com/xxf1ow/xxautolib/actions/runs/42251612424)）、`d07d8c06dc930ac2cb897e22bdf4e6df87579749`（[42257137133](https://github.com/xxf1ow/xxautolib/actions/runs/42257137133)）和 `c8eec1ec11a8464cd8af03a9dd953bcb35740eec`（[42260213354](https://github.com/xxf1ow/xxautolib/actions/runs/42260213354)）。
+本轮 runner 实际为 macOS 15.8.2、arm64；镜像版本为 `20261028.0489.1` 或 `20261104.0514.1`。以下成功表示该版本完成 macos-15 构建或复制安装、Config/adapter 导入、真实 API smoke、打包摘要核对和归档搬迁消费。归档摘要指 transport 中的原始 `.tar.zst`；直接与搬迁的 CTest 均通过。前三个 run 的 attempt 均为 1，源码分别为 `03d5f5afd5c080f5bd5106bc4083906b68a2318d`（[42251612424](https://github.com/xxf1ow/xxautolib/actions/runs/42251612424)）、`d07d8c06dc930ac2cb897e22bdf4e6df87579749`（[42257137133](https://github.com/xxf1ow/xxautolib/actions/runs/42257137133)）和 `c8eec1ec11a8464cd8af03a9dd953bcb35740eec`（[42260213354](https://github.com/xxf1ow/xxautolib/actions/runs/42260213354)）。
 
 | 精确版本 | 结论与证据 run | 原始归档 SHA256 |
 |---|---|---|
@@ -321,7 +323,7 @@ WebSocket++ 4dfe1be74e68、PCL pcl-1.15.1 的 Darwin 验收因 Boost 闭包缺�
 | `gtest@1.17.0` | 通过 / 42251612424 | `86b965d2374257f1c96838b7cfbd332329074f8b01c70535f8af13f2bac851bd` |
 | `harfbuzz@8.5.0` | 依赖闭包暂缓 / FreeType | — |
 | `imgui@065f9e02695c` | 通过 / 42260213354 | `af8f3931f11087e7d357db90b295ab0351db7c50e1ccdde1d18c56357a79f453` |
-| `librealsense@2.58.1` | 待修复重试 / 42260213354 | — |
+| `librealsense@2.58.1` | 通过 / 42263227882 | `ace2fae72212280fad3aaadfdb8cf8d85b1e0937b7961fc65c93fd659b63d310` |
 | `libusb@1.0.27` | 通过 / 42257137133 | `0b131d2c44727f966e1edacc6b209b05a2a5c8714cd8b115fe0db6dcf5e7998a` |
 | `libzmq@4.3.5` | 暂缓 / 42260213354 / GnuTLS 缺失 | — |
 | `lz4@1.10.0` | 通过 / 42251612424 | `b32d744bf837353f66d2f9f580bf69edf091c73f70354910db4a21a8df8beeb2` |
@@ -341,8 +343,30 @@ WebSocket++ 4dfe1be74e68、PCL pcl-1.15.1 的 Darwin 验收因 Boost 闭包缺�
 | `yaml-cpp@2decf96e915d` | 通过 / 42251612424 | `61674b68034ae2a917e4622841fd59954ab25a64f6dc35f93f4f3acabdb723c3` |
 | `zlib@1.3.1` | 通过 / 42251612424 | `f5d86230d8abb59f97fff177dd351df89261ffaccef5957ead480e0c33bc05a1` |
 
-功能覆盖限于 smoke 实际调用：PortAudio 查询运行环境，未验音频设备；SDL3 验证内存 surface，未验图形会话、HID/USB 和按名加载 `libusb-1.0.dylib` 的可选路径；ImGui 创建上下文并生成帧数据，未验窗口显示；Native File Dialog 未调用交互对话框；libusb 未验真实 USB 设备；ONNX Runtime 创建并释放 CPU 环境，未验模型推理。上述设备及后端路径不计入通过范围，SDL 可选动态后端的依赖来源仍需后续实机核对。pybind11 的通过包含编译绑定扩展并由匹配 Python 实际调用。
+功能覆盖限于 smoke 实际调用：PortAudio 查询运行环境，未验音频设备；SDL3 验证内存 surface，未验图形会话、HID/USB 和按名加载 `libusb-1.0.dylib` 的可选路径；ImGui 创建上下文并验证颜色转换，未验窗口显示；Native File Dialog 未调用交互对话框；libusb 未验真实 USB 设备；ONNX Runtime 创建并释放 CPU 环境，未验模型推理。上述设备及后端路径不计入通过范围，SDL 可选动态后端的依赖来源仍需后续实机核对。pybind11 的通过包含编译绑定扩展并由匹配 Python 实际调用。
+
+### Linux Eigen 同归档跨平台消费
+
+源码 `d8ffda6a51e0a427a8ddec6fd508ff61c564625c` 的 [独立验收 run 42264057220，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42264057220) 在固定 Ubuntu 20.04 x86_64 容器生产两版 Eigen，经现有 CI verify/transport 取得原始 any-any 归档，未重新打包。Eigen 3.4.0 原件 SHA256 为 `be0dcfb8cd69556b00edeb541fbacff0ac4f9d9167ac75f47546bdf00923a2c4`，5.0.1 为 `9d71707429eeff4186b5993e3caff52fe76c33f6f8afb66f2801dcbb0831d578`。
+
+Windows 2022 x86_64 和 macos-15 ARM64 各从同一 producer artifact 解包原件，不原生重建 Eigen；每版分别通过独立的 Config 导入、矩阵运算及搬迁消费，共八次 CTest 通过。下载证据中的输入摘要与 Linux 原件逐字一致，生产及消费的仓库、源码 SHA 相同。Darwin PCL 因 Boost/FLANN 闭包阻断未参加，不能由 Eigen 的 macOS 成功推断该组合已通过。
+
+PCL 在源码 `74c68a74d04045af4b38424b5abfe42cac17575d` 的 [独立验收 run 42272676188，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42272676188) 通过 Windows x86_64、Linux x86_64 和 Linux aarch64 三个原有平台。各平台先预置同一 Linux Eigen 3.4.0 原件，再通过普通流程构建 PCL 必要闭包并验证原安装；随后从经 staging 修正的原生 transport 归档建立隔离安装，重新预置该 Eigen 原件，直接及搬迁共六次 CTest 均通过。证据中的 `Eigen3::Eigen` include、准备目录及 PCL 依赖指向各自新根的 3.4.0，实际消费期间原生安装被隐藏，完成后恢复。生产与消费身份、两个 Eigen 原始摘要及三份 transport 中的全部资产摘要均已核对；没有重跑成功的 producer 或 Windows/macOS Eigen 消费。
+
+| 原生平台 | PCL 原始归档 SHA256 |
+|---|---|
+| [windows-x86_64](https://github.com/xxf1ow/xxautolib/actions/runs/42272676188/job/128081152857) | `6016327d9a87d6a84c334af2ce2064ccd0289bed90b5a2147b4b04fd5cc8ae8e` |
+| [linux-x86_64](https://github.com/xxf1ow/xxautolib/actions/runs/42272676188/job/128081152837) | `0e1160a2704228e858e18df2a5f5c41e2c316efdc625e3cca80b2efcd7be861e` |
+| [linux-aarch64](https://github.com/xxf1ow/xxautolib/actions/runs/42272676188/job/128081152720) | `3e49535bab18369e5595c9ec5869c6f49950a1913ecff88f87c059dec739c428` |
+
+PCL smoke 的查询变量使用独立名称，避免与同时启用的 FLANN 检查重名。PCL 消费必须使用 CI transport 中的 staged 成品：直接复制构建安装树会保留 FLANN 导出中的 LZ4 绝对路径，不能作为成品搬迁证据。三平台曾因这两处新增验收代码缺陷失败，修复后的最终结果如上，不将其记为包支持阻断。
+
+消费修复通过显式 run、artifact 名和 producer SHA 复用上述 Linux 原件，生产、消费提交分别保留，校验同仓库及指定生产 SHA；不要求消费修复与原件生产提交相同。将 workflow 中的 `EIGEN_PRODUCER_RUN` 设为空时重新生产并验两版 Windows/macOS；固定已验 producer 时只执行 PCL 组合。此模式只服务独立验收，不改变发布协议或包资格。
+
+开发指南增加独立验收入口、无发布范围及 macOS 依赖来源规则，测试指南仅保留同归档定向命令和 example 阻断入口。详细证据仍由本记录拥有；精简后原 530/500 词预算仍缺少必要空间，将两页上限调整为 560/550，保留至少 5% 余量。
+
+第二阶段独立审查覆盖 `977e2ca..d8ffda6` 及当时四份文档工作区，未发现已证实的 Critical、Important 或 Minor。其后两处 PCL 验收代码修复由定向输入/隔离回归 7/7 和上述三平台实机结果验证，未再进行独立审查；共享消费者 5/5、macOS 配方 workflow 3/3 的未失效结果继续复用。文档及格式检查通过。审查时待定的 PCL 组合已有最终证据；依赖阻断、example 和硬件覆盖仍按上述范围保留。
 
 ### 第一阶段未覆盖的范围
 
-第一阶段没有推送、远端 Actions、发布或合并。上述本机证据不证明 macOS 15 实际运行，也不证明全部 31 配方已支持 Darwin。完整逐版本 macos-15 结果、必要系统库和补丁、同一 Linux Eigen 归档跨 Windows/macOS 的摘要与消费、PCL 组合及 example 实机导入留待第二阶段；硬件和图形功能按实际条件单列。失败候选的具名阻断与重新尝试条件届时写入本节，不能以平台过滤或 CI 成功代替。
+第一阶段没有推送、远端 Actions、发布或合并，本机闭环不能替代 macOS 15 或同归档跨平台证据。第二阶段的实际结果、具名阻断及重试条件见上述快照；example、Darwin PCL 和列出的硬件及后端能力仍未验。阶段验收不等于整体设计全部达标，本记录保持 proposed，未执行合并或 Gitee 发布。

@@ -58,6 +58,14 @@ cmake -P src/autolib-builder/go-sdk.cmake -- build -mod=readonly -trimpath -o bu
 
 queue、lz4、flann 的历史三平台供给、逐槽消费、双搬迁及凭据写入，连同 ABI、FIFO、平台跳过项和运行依据，由[CI 验证记录](agent-notes/implemented/architecture/2026-10-20-ci-system.md#真实运行)和[每轮重建与空 label 发布](agent-notes/implemented/simplification/2026-10-24-ci-rebuild-without-production-cache.md)拥有；本地回归不替代新策略的真实远端验收，下载消费另按上节。
 
+[同归档验收](../.github/workflows/validate-eigen-portability.yml)使用 Linux 原始 Eigen 归档；[输入绑定与隔离回归](../tests/ci/test_eigen_portability.py)不替代实机结果：
+
+```text
+python3.12 -B -m unittest discover -s tests/ci -p test_eigen_portability.py -v
+```
+
+原样 example 因 FLANN 阻断未验，见[阶段结果](agent-notes/proposed/architecture/2026-11-06-module-recipe-contract-and-macos-validation.md#第二阶段macos-逐包验收)。
+
 ## 独立 Gitee 发布验证
 
 使用 Python 3.12 和 Git，在仓库根创建专用 venv；Windows 命令如下，Linux 将解释器路径中的 `Scripts/python.exe` 换为 `bin/python`：
