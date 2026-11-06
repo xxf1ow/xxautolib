@@ -1,7 +1,5 @@
 package main
 
-import "encoding/json"
-
 type moduleDescription struct {
 	SystemName     string            `json:"system_name"`
 	Architecture   string            `json:"architecture"`
@@ -26,7 +24,6 @@ type describedModule struct {
 	Depends            []string            `json:"depends"`
 	PackagePlatform    string              `json:"package_platform"`
 	SystemDependencies map[string][]string `json:"system_dependencies"`
-	Configuration      json.RawMessage     `json:"configuration"`
 	InputFiles         []string            `json:"input_files"`
 	AdapterFile        string              `json:"adapter_file"`
 }

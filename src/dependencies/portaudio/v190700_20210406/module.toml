@@ -24,4 +24,4 @@ DEPENDEES = ["build"]
 DEPENDERS = ["install"]
 WORKING_DIRECTORY = "."
 DEPENDS = ["fix-pkgconfig.cmake"]
-COMMAND = ["cmake", "-DPC_FILE=<BINARY_DIR>/portaudio-2.0.pc", "-P", "fix-pkgconfig.cmake"]
+COMMAND = [["cmake", "-DPC_FILE=<BINARY_DIR>/portaudio-2.0.pc", "-P", "fix-pkgconfig.cmake"]]

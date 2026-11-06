@@ -62,9 +62,7 @@ func validateModuleDescription(description moduleDescription, systemName, archit
 	}
 	byName := make(map[string]describedModule, len(description.Modules))
 	for _, module := range description.Modules {
-		var configuration map[string]json.RawMessage
-		configurationErr := json.Unmarshal(module.Configuration, &configuration)
-		if module.Name == "" || module.Version == "" || module.Target == "" || module.Depends == nil || module.SystemDependencies == nil || len(module.Configuration) == 0 || configurationErr != nil || configuration == nil || module.InputFiles == nil {
+		if module.Name == "" || module.Version == "" || module.Target == "" || module.Depends == nil || module.SystemDependencies == nil || module.InputFiles == nil {
 			return fmt.Errorf("builder describe output has incomplete module description %q", module.Name)
 		}
 		if module.PackagePlatform != "any-any" && module.PackagePlatform != strings.ToLower(systemName)+"-"+architecture {

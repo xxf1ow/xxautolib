@@ -34,9 +34,18 @@ func validateDefinitionFields(raw map[string]any, where string, override bool) e
 		return err
 	}
 	if v, ok := raw["cmake"]; ok {
-		if _, _, err := parseCache(v, where+".cmake", true); err != nil {
+		cache, _, err := parseCache(v, where+".cmake", true)
+		if err != nil {
 			return err
 		}
+		for _, key := range sortedKeys(cache) {
+			for _, value := range cacheStrings(cache[key]) {
+				if err := validatePlaceholders(value, where+".cmake.cache."+key, nil); err != nil {
+					return err
+				}
+			}
+		}
+
 	}
 	for _, key := range []string{"config_dir", "pkgconfig_dir", "sentinel", "package_name"} {
 		if v, ok := raw[key]; ok {

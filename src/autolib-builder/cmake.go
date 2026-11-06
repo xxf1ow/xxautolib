@@ -85,6 +85,13 @@ func unique(values []string) []string {
 }
 
 func renderModule(module *moduleDefinition, context buildContext, dependencies []*moduleDefinition) (string, error) {
+	platform, err := buildPlatform(context.SystemName, context.Architecture)
+	if err != nil {
+		return "", err
+	}
+	if err := validateCacheOwnership(module, platform, dependencies); err != nil {
+		return "", err
+	}
 	target := moduleTarget(moduleRef{module.Name, module.Version})
 	prefix := filepath.Join(context.BuildRoot, "ep", module.Name, module.Version)
 	installRoot := context.InstallRoot
@@ -261,17 +268,15 @@ func renderModule(module *moduleDefinition, context buildContext, dependencies [
 				if value == "" || (key == "CMAKE_OSX_ARCHITECTURES" && value != "arm64") || (key == "CMAKE_OSX_DEPLOYMENT_TARGET" && value != "15.0") {
 					return "", fmt.Errorf("Darwin native build: invalid %s=%q", key, value)
 				}
-				if override, ok := module.Cache[key]; ok && strings.Join(cacheStrings(override), ";") != value {
-					return "", fmt.Errorf("%s: Darwin native build: conflicting %s", module.Path, key)
-				}
+
 			}
 		}
 		for key, value := range module.Cache {
 			cache[key] = value
 		}
 		resolve := func(value string) (string, error) {
-			if strings.Contains(value, "<PYTHON_EXECUTABLE>") {
-				return "", fmt.Errorf("%s: PYTHON_EXECUTABLE: 当前生成器不支持解释器注入", module.Path)
+			if err := validatePlaceholders(value, "cmake.cache", module.Resources); err != nil {
+				return "", err
 			}
 			return resourceReference.ReplaceAllStringFunc(value, func(match string) string { return resourceDirectory(resourceReference.FindStringSubmatch(match)[1]) }), nil
 		}
@@ -295,10 +300,7 @@ func renderModule(module *moduleDefinition, context buildContext, dependencies [
 				cache[key] = result
 			}
 		}
-		// 配置身份和安装前缀只由公共入口确定。
-		for _, key := range []string{"CMAKE_INSTALL_PREFIX", "CMAKE_BUILD_TYPE", "CMAKE_MSVC_RUNTIME_LIBRARY", "CMAKE_GENERATOR", "CMAKE_GENERATOR_PLATFORM", "CMAKE_GENERATOR_TOOLSET", "CMAKE_GENERATOR_INSTANCE"} {
-			delete(cache, key)
-		}
+
 		if context.Generator == "Unix Makefiles" && context.MakeProgram != "" {
 			cache["CMAKE_MAKE_PROGRAM"] = context.MakeProgram
 		}
@@ -424,6 +426,14 @@ func renderModule(module *moduleDefinition, context buildContext, dependencies [
 	}
 	patchDependencies(target, "")
 	for _, step := range module.Steps {
+		resolve := func(value string) string {
+			return resourceReference.ReplaceAllStringFunc(value, func(tag string) string { return resourceDirectory(resourceReference.FindStringSubmatch(tag)[1]) })
+		}
+		step.Depends = slices.Clone(step.Depends)
+		for i, value := range step.Depends {
+			step.Depends[i] = resolve(value)
+		}
+		step.WorkingDirectory = resolve(step.WorkingDirectory)
 		options := []cmakeOption{}
 		for _, opt := range []cmakeOption{option("DEPENDEES", step.Dependees...), option("DEPENDERS", step.Dependers...), option("DEPENDS", step.Depends...)} {
 			if opt.args != nil {
@@ -434,7 +444,11 @@ func renderModule(module *moduleDefinition, context buildContext, dependencies [
 			options = append(options, option("WORKING_DIRECTORY", step.WorkingDirectory))
 		}
 		for _, argv := range step.Commands {
-			options = append(options, option("COMMAND", argv...))
+			resolved := make([]string, len(argv))
+			for i, value := range argv {
+				resolved[i] = resolve(value)
+			}
+			options = append(options, option("COMMAND", resolved...))
 		}
 		emit("ExternalProject_Add_Step", []string{target, step.Name}, options)
 	}

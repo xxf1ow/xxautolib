@@ -56,3 +56,27 @@ Git 与归档字段互斥。主来源和资源在目标覆盖时整项替换，�
 | apt | `^[a-z0-9][a-z0-9+.-]*$` |
 | choco | `^[A-Za-z0-9.-]+$` 且首字符不能为 `-` |
 | brew | `^[a-z0-9][a-z0-9+_.@-]*$`，仅 formula，不接受 tap/cask |
+
+## CMake 参数归属
+
+布尔 cache 生成 BOOL，其余允许值生成 STRING，字符串数组转 CMake 列表。cmake 子项目的 policy 下限、PIC、C++ 标准、libdir 兜底分别为 `3.5`、`ON`、`17`、`lib`，按引擎→入口默认→有效配方合成。copy 不应用这些默认值。policy 不降低上游更高声明；PIC 显式关闭后，静态库链入下游共享库须经实际消费验证。
+
+`BUILD_SHARED_LIBS` 及库专用构建形态开关由配方和平台覆盖决定；未声明时采用上游默认。根入口不自动传递父项目的 BUILD_SHARED_LIBS。
+
+入口拥有安装前缀、Release 配置、运行库、生成器及 platform/toolset/instance、Make、C/C++ 编译器和 Native 目标。配方禁止填写 `CMAKE_INSTALL_PREFIX`、`CMAKE_BUILD_TYPE`、`CMAKE_MSVC_RUNTIME_LIBRARY`、`CMAKE_GENERATOR` 及其 PLATFORM/TOOLSET/INSTANCE、`CMAKE_MAKE_PROGRAM`、`CMAKE_C_COMPILER`、`CMAKE_CXX_COMPILER`，也不能通过 toolchain、sysroot、系统身份或编译器目标切换目标。Darwin 还禁止配方填写三个 `CMAKE_OSX_ARCHITECTURES`、`CMAKE_OSX_DEPLOYMENT_TARGET`、`CMAKE_OSX_SYSROOT`。同值重复也报错。
+
+直接依赖前缀加入 CMAKE_PREFIX_PATH，并保留配方路径。依赖自身的 config_dir 和 package_name 决定注入的 `<Package>_DIR`；使用方有效 cache 声明同名键即报错，不禁止其他 `_DIR`。使用方自身的 config_dir 描述安装输出，与此检查无冲突。依赖 pkgconfig_dir 加入子进程 PKG_CONFIG_PATH，项目 include 包装保留配方的 include 执行。
+
+## 补丁、步骤与路径
+
+`patches` 默认空数组，每项必填配方目录内已有的普通 `file`，可选 resource 选择有效资源，否则需要主来源。同一来源按声明顺序应用，配置或复制等待所需资源及补丁完成。
+
+`steps` 默认空数组，适用于两种安装方法。每项 name 必填、有效且合并后唯一，不能与原生步骤重名。COMMAND 必须为非空二维 argv 数组，每条命令非空且首项非空；多条命令依次执行，不隐式使用 shell。
+
+DEPENDEES、DEPENDERS 为步骤名数组，至少一侧非空，引用必须为原生或有效自定义步骤；数组顺序不决定调度，循环交给原生步骤图处理。DEPENDS 为可选文件路径数组，表示原生步骤输入变化，不是包依赖。WORKING_DIRECTORY 缺省 `<BINARY_DIR>`；普通相对路径基于配方目录。命令参数中的相对路径按工作目录解释，builder 不推断参数是否为文件。
+
+cache 和步骤支持 `<SOURCE_DIR>`、`<BINARY_DIR>`、`<INSTALL_DIR>`、`<RESOURCE_SOURCE_DIR:名称>`。builder 展开资源目录，其余按原生步骤位置展开，未知占位符报错。DEPENDS 和 WORKING_DIRECTORY 的普通路径须在配方目录内；标签路径须以明确目录标签开头，不能通过 `..` 越界。普通 `<` 不跳过检查，路径字段不接受生成表达式。普通 DEPENDS 输入须为已有文件；标签指向的生成文件在执行时检查，不要求 describe 时存在。
+
+## 只读描述
+
+describe 输出有效包身份、精确直接依赖、当前平台的系统包管理器条目、adapter 路径和相对 input_files，不输出完整配置镜像。输入包括配方、package.toml、实际 adapter、补丁及普通 DEPENDS 文件；生成文件不列为 checkout 输入。没有 adapter 的合法配方仍可描述和本地构建，CI 排除该包及依赖它的根并返回原因；坏声明直接报错。

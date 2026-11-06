@@ -29,7 +29,6 @@ type describedModule struct {
 	Depends            []string            `json:"depends"`
 	PackagePlatform    string              `json:"package_platform"`
 	SystemDependencies map[string][]string `json:"system_dependencies"`
-	Configuration      json.RawMessage     `json:"configuration"`
 	InputFiles         []string            `json:"input_files"`
 	AdapterFile        string              `json:"adapter_file"`
 }
@@ -66,7 +65,18 @@ func describeSelection(sourceRoot, systemName, architecture string, requests []s
 	}
 	result.RequestedRoots, result.Roots, result.FilteredRoots = selection.RequestedRoots, selection.Roots, selection.FilteredRoots
 	definitions := selection.Modules
+	byRef := map[string]*moduleDefinition{}
+	for _, d := range definitions {
+		byRef[(moduleRef{d.Name, d.Version}).String()] = d
+	}
 	for _, definition := range definitions {
+		deps := []*moduleDefinition{}
+		for _, ref := range definition.Depends {
+			deps = append(deps, byRef[ref])
+		}
+		if err := validateCacheOwnership(definition, strings.ToLower(systemName)+"-"+result.Architecture, deps); err != nil {
+			return result, err
+		}
 		module, err := describeModule(root, definition, strings.ToLower(systemName)+"-"+result.Architecture)
 		if err != nil {
 			return result, err
@@ -105,20 +115,18 @@ func describeModule(root string, definition *moduleDefinition, platform string) 
 	if result.Depends == nil {
 		result.Depends = []string{}
 	}
-	for _, manager := range []string{"apt", "choco"} {
-		result.SystemDependencies[manager] = slices.Clone(definition.SystemDependencies[manager])
-		if result.SystemDependencies[manager] == nil {
-			result.SystemDependencies[manager] = []string{}
-		}
+	manager := map[string]string{"windows": "choco", "linux": "apt", "darwin": "brew"}[strings.SplitN(platform, "-", 2)[0]]
+	result.SystemDependencies[manager] = slices.Clone(definition.SystemDependencies[manager])
+	if result.SystemDependencies[manager] == nil {
+		result.SystemDependencies[manager] = []string{}
 	}
+
 	paths := map[string]bool{}
 	toRelative := func(value string, allowPlaceholder bool) (string, error) {
-		if allowPlaceholder && resourceReference.MatchString(value) {
-			if filepath.IsAbs(value) {
-				return "", fmt.Errorf("referenced path escapes source root: %s", value)
-			}
+		if allowPlaceholder && directoryTag.MatchString(value) {
 			return value, nil
 		}
+
 		path := value
 		if !filepath.IsAbs(path) {
 			path = filepath.Join(filepath.Dir(definition.Path), path)
@@ -144,88 +152,26 @@ func describeModule(root string, definition *moduleDefinition, platform string) 
 		}
 		paths[path] = true
 	}
-	resources := map[string]sourceDefinition{}
-	for name, source := range definition.Resources {
-		normalized := normalizedSource(&source)
-		resources[name] = *normalized
-	}
-	if resources == nil {
-		resources = map[string]sourceDefinition{}
-	}
-	copies := slices.Clone(definition.Copies)
-	for i := range copies {
-		if copies[i].Files == nil {
-			copies[i].Files = []string{}
-		}
-		if copies[i].Directories == nil {
-			copies[i].Directories = []string{}
-		}
-	}
-	configuration := map[string]any{
-		"Name": definition.Name, "Kind": definition.Kind, "Version": definition.Version,
-		"Sentinel": definition.Sentinel, "SourceSubdir": definition.SourceSubdir,
-		"ConfigDir": definition.ConfigDir, "PkgconfigDir": definition.PkgconfigDir,
-		"PackageName": definition.PackageName, "Source": normalizedSource(definition.Source),
-		"Resources": resources, "Cache": definition.Cache,
-		"Patches": slices.Clone(definition.Patches), "Steps": slices.Clone(definition.Steps), "Copies": copies,
-	}
-	if definition.Resources == nil {
-		configuration["Resources"] = map[string]sourceDefinition{}
-	}
-	if definition.Cache == nil {
-		configuration["Cache"] = map[string]any{}
-	}
-	if definition.Patches == nil {
-		configuration["Patches"] = []patchDefinition{}
-	}
-	if definition.Steps == nil {
-		configuration["Steps"] = []stepDefinition{}
-	}
-	if definition.Copies == nil {
-		configuration["Copies"] = []copyDefinition{}
-	}
-	for i := range definition.Patches {
-		path, err := toRelative(definition.Patches[i].File, false)
+	for _, patch := range definition.Patches {
+		path, err := toRelative(patch.File, false)
 		if err != nil {
-			return result, fmt.Errorf("module %s: %w", definition.Name, err)
+			return result, err
 		}
-		configuration["Patches"].([]patchDefinition)[i].File = path
 		paths[path] = true
 	}
-	steps := slices.Clone(definition.Steps)
-	for i := range steps {
-		if steps[i].Commands == nil {
-			steps[i].Commands = [][]string{}
-		}
-		if steps[i].Dependees == nil {
-			steps[i].Dependees = []string{}
-		}
-		if steps[i].Dependers == nil {
-			steps[i].Dependers = []string{}
-		}
-		if steps[i].Depends == nil {
-			steps[i].Depends = []string{}
-		}
-		for j, value := range steps[i].Depends {
-			path, err := toRelative(value, true)
+	for _, step := range definition.Steps {
+		for _, value := range step.Depends {
+			if directoryTag.MatchString(value) {
+				continue
+			}
+			path, err := toRelative(value, false)
 			if err != nil {
-				return result, fmt.Errorf("module %s step %s: %w", definition.Name, steps[i].Name, err)
+				return result, err
 			}
-			steps[i].Depends[j] = path
-			if path != value || !resourceReference.MatchString(value) {
-				paths[path] = true
-			}
-		}
-		if steps[i].WorkingDirectory != "" {
-			value := steps[i].WorkingDirectory
-			path, err := toRelative(value, true)
-			if err != nil {
-				return result, fmt.Errorf("module %s step %s: %w", definition.Name, steps[i].Name, err)
-			}
-			steps[i].WorkingDirectory = path
+			paths[path] = true
 		}
 	}
-	configuration["Steps"] = steps
+
 	adapter := filepath.Join(filepath.Dir(definition.Path), "autolib-import.cmake")
 	if _, err := os.Stat(adapter); err == nil {
 		result.AdapterFile, err = toRelative(adapter, false)
@@ -241,23 +187,7 @@ func describeModule(root string, definition *moduleDefinition, platform string) 
 		result.InputFiles = append(result.InputFiles, path)
 	}
 	slices.Sort(result.InputFiles)
-	encoded, err := json.Marshal(configuration)
-	if err != nil {
-		return result, err
-	}
-	result.Configuration = encoded
 	return result, nil
-}
-
-func normalizedSource(source *sourceDefinition) *sourceDefinition {
-	if source == nil {
-		return nil
-	}
-	result := *source
-	if result.URL == nil {
-		result.URL = []string{}
-	}
-	return &result
 }
 
 func runDescribe(args []string, stdout, stderr io.Writer) int {

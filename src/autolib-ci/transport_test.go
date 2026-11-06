@@ -533,7 +533,7 @@ func installedCIFixture(t *testing.T) installedFixture {
 		if item.depends != "" {
 			recipe += "depends=['" + item.depends + "']\n"
 		}
-		recipe += "[source]\nGIT_REPOSITORY='local-fixture'\nGIT_TAG='fixed'\n[[copy]]\nfiles=['header.h']\ndestination='include'\n"
+		recipe += "[source]\nGIT_REPOSITORY='local-fixture'\nGIT_TAG='0123456789012345678901234567890123456789'\n[[copy]]\nfiles=['header.h']\ndestination='include'\n"
 		writeCIFixture(t, root, "src/dependencies/"+name+"/"+version+"/module.toml", recipe)
 		writeCIFixture(t, root, "src/dependencies/"+name+"/package.toml", "latest='"+map[string]string{"dep": "1", "queue": "1", "eigen": "3"}[name]+"'\n")
 		adapter := "add_library(autolib::" + name + " INTERFACE IMPORTED GLOBAL)\nset_target_properties(autolib::" + name + " PROPERTIES INTERFACE_INCLUDE_DIRECTORIES \"${CMAKE_CURRENT_LIST_DIR}/include\" INTERFACE_COMPILE_DEFINITIONS \"FIXTURE_" + strings.ToUpper(name) + "=" + version + "\")\n"

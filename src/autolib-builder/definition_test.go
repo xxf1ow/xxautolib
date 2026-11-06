@@ -88,7 +88,8 @@ B=42
 LIST=['one','two']
 [[steps]]
 name='common'
-COMMAND=['cmake','-E','echo','common']
+COMMAND=[['cmake','-E','echo','common']]
+DEPENDEES=['download']
 [platforms.linux-x86_64.source]
 URL=['https://one.invalid/linux.tar.xz','https://two.invalid/linux.tar.xz']
 URL_HASH='SHA256=`+strings.Repeat("a", 64)+`'
@@ -102,6 +103,7 @@ C=true
 [[platforms.linux-x86_64.steps]]
 name='linux'
 COMMAND=[['cmake','-E','echo','one'],['cmake','-E','echo','two']]
+DEPENDEES=['download']
 [platforms.linux-aarch64.source]
 GIT_REPOSITORY='arm'
 GIT_TAG='0123456789012345678901234567890123456789'
@@ -187,9 +189,9 @@ func TestDefinitionRejectsInvalidData(t *testing.T) {
 		{"cmake", testSource + "[[steps]]\nname='s'\nCOMMAND='echo no'\n", "COMMAND"},
 		{"cmake", testSource + "[[steps]]\nname='s'\nCOMMAND=[['echo'],1]\n", "COMMAND"},
 		{"cmake", testSource + "[[steps]]\nname='s'\nCOMMAND=[[]]\n", "COMMAND"},
-		{"cmake", testSource + "[[steps]]\nname='s'\nCOMMAND=['']\n", "COMMAND"},
-		{"cmake", testSource + "[[steps]]\nname='s'\nCOMMAND=['echo']\nBEFORE='build'\n", "BEFORE"},
-		{"cmake", testSource + "[[steps]]\nname='s'\nCOMMAND=['echo']\n[[steps]]\nname='s'\nCOMMAND=['echo']\n", "steps.name"},
+		{"cmake", testSource + "[[steps]]\nname='s'\nCOMMAND=[['']]\n", "COMMAND"},
+		{"cmake", testSource + "[[steps]]\nname='s'\nCOMMAND=[['echo']]\nDEPENDEES=['download']\nBEFORE='build'\n", "BEFORE"},
+		{"cmake", testSource + "[[steps]]\nname='s'\nCOMMAND=[['echo']]\nDEPENDEES=['download']\n[[steps]]\nname='s'\nCOMMAND=[['echo']]\nDEPENDEES=['download']\n", "steps.name"},
 		{"cmake", testSource + "[[copy]]\nfiles=['a']\ndestination='.'\n", "copy"},
 		{"copy", "[[copy]]\nfiles=['a']\ndestination='.'\n", "copy"},
 		{"copy", testSource + "[[copy]]\nresource='missing'\nfiles=['a']\ndestination='.'\n", "copy.resource"},
@@ -248,11 +250,13 @@ file='change.patch'
 resource='extra'
 [[steps]]
 name='change'
-COMMAND=['cmake','-P','change.cmake']
+COMMAND=[['cmake','-P','change.cmake']]
+DEPENDEES=['download']
 DEPENDS=['change.cmake','<SOURCE_DIR>/input']
 WORKING_DIRECTORY='<SOURCE_DIR>'
 `)
 	patch := putFile(t, filepath.Join(filepath.Dir(path), "change.patch"), "patch input")
+	putFile(t, filepath.Join(filepath.Dir(path), "change.cmake"), "input")
 	m, err := loadDefinition(path, "Linux", "x86_64")
 	if err != nil {
 		t.Fatal(err)

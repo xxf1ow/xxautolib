@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -44,7 +45,7 @@ func discoveryVersion(t *testing.T, root, name, version string, adapter bool, de
 	if !strings.Contains(depends, "package_platforms") {
 		depends = "package_platforms=['windows-x86_64','linux-x86_64','linux-aarch64','darwin-aarch64']\n" + depends
 	}
-	declaration := "type='cmake'\n" + depends + "\n[source]\nGIT_REPOSITORY='fixture'\nGIT_TAG='fixed'\n"
+	declaration := "type='cmake'\n" + depends + "\n[source]\nGIT_REPOSITORY='fixture'\nGIT_TAG='0123456789012345678901234567890123456789'\n"
 	writeCIFixture(t, root, "src/dependencies/"+name+"/package.toml", "latest='"+version+"'\n")
 	writeCIFixture(t, root, "src/dependencies/"+name+"/"+version+"/module.toml", declaration)
 	if adapter {
@@ -108,7 +109,7 @@ func TestCIDiscoveryFiltering(t *testing.T) {
 			t.Fatal(err)
 		}
 		plan, err := planCI(context.Background(), ciPlanOptions{SourceRoot: root, BuilderFile: builder, Modules: stringPointer("all")})
-		if err != nil || len(plan.Platforms) != 3 || len(plan.RequestedModules) != 0 {
+		if err != nil || len(plan.Platforms) != 4 || len(plan.RequestedModules) != 0 {
 			t.Fatalf("empty module directory: %+v %v", plan, err)
 		}
 	})
@@ -132,7 +133,7 @@ func TestCIDiscoveryFiltering(t *testing.T) {
 		root := discoveryRoot(t)
 		discoveryModule(t, root, "local", false, "")
 		plan, err := planCI(context.Background(), ciPlanOptions{SourceRoot: root, BuilderFile: builder, Modules: stringPointer("all")})
-		if err != nil || len(plan.Platforms) != 3 || len(plan.RequestedModules) != 0 {
+		if err != nil || len(plan.Platforms) != 4 || len(plan.RequestedModules) != 0 {
 			t.Fatalf("ineligible discovery retained work: %+v %v", plan, err)
 		}
 	})
@@ -205,5 +206,25 @@ func TestCIDiscoveryFiltering(t *testing.T) {
 				t.Fatal("invalid input accepted")
 			}
 		})
+	}
+}
+
+func TestCIDescriptionContract(t *testing.T) {
+	builder := discoveryBuilder(t)
+	root := discoveryRoot(t)
+	discoveryModule(t, root, "demo", true, "")
+	data, err := exec.Command(builder, "describe", "--source-root="+root, "--system-name=Linux", "--architecture=x86_64", "--module=demo").CombinedOutput()
+	if err != nil {
+		t.Fatalf("describe: %v %s", err, data)
+	}
+	if strings.Contains(string(data), `"configuration"`) {
+		t.Fatal("builder still emits configuration")
+	}
+	var description moduleDescription
+	if err := json.Unmarshal(data, &description); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateModuleDescription(description, "Linux", "x86_64", []string{"demo"}); err != nil {
+		t.Fatal(err)
 	}
 }

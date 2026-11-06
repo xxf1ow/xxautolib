@@ -226,7 +226,7 @@ func parseCache(value any, where string, allowSubdir bool) (map[string]any, stri
 }
 
 func inputPath(value, directory string) string {
-	if strings.Contains(value, "<") {
+	if directoryTag.MatchString(value) {
 		return value
 	}
 	if !filepath.IsAbs(value) {
@@ -253,10 +253,7 @@ func parseSteps(value any, directory, where string) ([]stepDefinition, error) {
 		}
 		commands, ok := m["COMMAND"].([]any)
 		if !ok || len(commands) == 0 {
-			return nil, fmt.Errorf("%s.COMMAND: expected argv or an array of argv arrays", at)
-		}
-		if _, flat := commands[0].(string); flat {
-			commands = []any{commands}
+			return nil, fmt.Errorf("%s.COMMAND: expected an array of argv arrays", at)
 		}
 		for _, command := range commands {
 			argv, err := stringArray(command, at+".COMMAND")
@@ -265,6 +262,11 @@ func parseSteps(value any, directory, where string) ([]stepDefinition, error) {
 			}
 			if len(argv) == 0 || argv[0] == "" {
 				return nil, fmt.Errorf("%s.COMMAND: command executable cannot be empty", at)
+			}
+			for _, arg := range argv {
+				if err := validatePlaceholders(arg, at+".COMMAND", nil); err != nil {
+					return nil, err
+				}
 			}
 			s.Commands = append(s.Commands, argv)
 		}
@@ -279,12 +281,26 @@ func parseSteps(value any, directory, where string) ([]stepDefinition, error) {
 				}
 			}
 		}
+		if len(s.Dependees)+len(s.Dependers) == 0 {
+			return nil, fmt.Errorf("%s: steps require DEPENDEES or DEPENDERS", at)
+		}
+		if slices.Contains(nativeSteps, s.Name) {
+			return nil, fmt.Errorf("%s.name: native step name %q", where, s.Name)
+		}
 		for i, p := range s.Depends {
+			if err := validateRecipePath(p, at+".DEPENDS", true); err != nil {
+				return nil, err
+			}
 			s.Depends[i] = inputPath(p, directory)
 		}
+		s.WorkingDirectory = "<BINARY_DIR>"
+
 		if v, ok := m["WORKING_DIRECTORY"]; ok {
 			p, err := text(v, at+".WORKING_DIRECTORY")
 			if err != nil {
+				return nil, err
+			}
+			if err := validateRecipePath(p, at+".WORKING_DIRECTORY", true); err != nil {
 				return nil, err
 			}
 			s.WorkingDirectory = inputPath(p, directory)
@@ -649,6 +665,11 @@ func readDefinition(path, systemName, architecture string, requireTarget bool) (
 			mapping.Directories = entries
 		}
 		d.Copies = append(d.Copies, mapping)
+	}
+	if requireTarget {
+		if err := validateEffectiveExecution(d); err != nil {
+			return nil, err
+		}
 	}
 	return d, nil
 }

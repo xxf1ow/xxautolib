@@ -36,7 +36,7 @@ description: >-
 1. 在 `src/dependencies/<name>/package.toml` 指定有效 latest，在 `<version>/module.toml` 填写 `type` 和必填 `package_platforms`，身份只从目录读取。精确依赖、平台身份和覆盖规则见[字段参考](../../../docs/subsystems/module-recipes.md)。新平台须有实际适配及验证依据，不能从头文件或来源推断支持。版本精确匹配；聚合多个独立上游时可使用明确的资源组合包版本。文件开头用中文说明库用途和交付类型。
 2. 为主来源或 `[resources.<资源名>]` 选择一种来源：Git 仓库与完整固定提交成对；归档使用有序非空 `URL` 数组和 `URL_HASH="SHA256=..."`。需要统一镜像文件名时填写 `DOWNLOAD_NAME`；升级同步核对版本、地址、摘要与布局。平台覆盖使用 `platforms.<完整平台ID>`，来源整组替换，资源按名称整项替换，不混合 Git/URL 字段；平台资格通过后才要求当前目标来源。各资源独立固定版本。
 3. 只保留实际需要的库特定 cache、patches、steps 或 copy 数据。非默认选项、固定版本、补丁与专用步骤写明中文维护约束；公共生成器、工具集、instance、CRT、Release 和路径由公共入口与引擎拥有，policy/PIC/C++ 标准兜底值由引擎的 CMake 子项目参数组装处提供，不逐库重复。模块 cache 优先于父级已定义值，父级值优先于引擎兜底值；具体规则见开发指南。
-4. 补丁、专用 CMakeLists 和执行文件放在同一版本目录。文件补丁使用 `[[patches]]`，可用 `resource` 指向本模块资源；主库配置等待资源补丁完成。cache 用 `<RESOURCE_SOURCE_DIR:资源名>` 引用所选源码根，不硬编码 build 布局。其他时机的修改使用原生 `[[steps]]`，按 DEPENDEES、DEPENDERS 排序，需要输入跟踪时声明 DEPENDS。显式 shell 命令才依赖 bash/sed，不假设 Windows 自带这些工具。
+4. 补丁、专用 CMakeLists 和执行文件放在同一版本目录。文件补丁使用 `[[patches]]`，可用 `resource` 指向本模块资源；主库配置等待资源补丁完成。cache 用 `<RESOURCE_SOURCE_DIR:资源名>` 引用所选源码根，不硬编码 build 布局。其他时机的修改使用原生 `[[steps]]`，COMMAND 使用二维 argv，至少声明一侧 DEPENDEES/DEPENDERS；路径、输入跟踪和参数所有权见[字段参考](../../../docs/subsystems/module-recipes.md)。显式 shell 命令才依赖 bash/sed，不假设 Windows 自带这些工具。
 5. `copy` 使用互斥的非空 files 或 directories 和相对安装前缀的 destination；`directories=["."]`、`destination="."` 复制完整归档内容。核对同目录 include、库和运行文件；资源在 build 时才准备，不以 configure 时路径尚未存在判断失败。可选 sentinel 登记参考安装文件的相对路径；存在时跳过资源和安装步骤，但保留直接模块依赖顺序、查找元数据及消费准备，不验证版本、ABI 或完整性。
 6. 按[开发指南](../../../docs/development.md)通过普通根 CMake 入口选择 `包名@版本` 并 configure/build，裸名只选 latest，空列表发现全部版本，不要求 preset 或 IDE 设置；再按[测试指南](../../../docs/testing.md)完成实际构建安装与产物检查。configure 成功只证明发现和目标生成，不替代构建安装。
 

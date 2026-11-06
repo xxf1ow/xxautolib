@@ -169,7 +169,7 @@ func executableSuffix() string {
 
 func TestCIDescriptionPackagePlatform(t *testing.T) {
 	for _, platform := range []string{"any-any", "linux-x86_64", "", "windows-x86_64"} {
-		d := moduleDescription{SystemName: "Linux", Architecture: "x86_64", Roots: []string{"demo@1"}, RequestedRoots: []string{"demo@1"}, FilteredRoots: []filteredRoot{}, GoModuleFiles: []string{}, BuilderFiles: []string{}, Modules: []describedModule{{Name: "demo", Version: "1", Target: "demo", Depends: []string{}, PackagePlatform: platform, Configuration: []byte("{}"), SystemDependencies: map[string][]string{}, InputFiles: []string{}}}}
+		d := moduleDescription{SystemName: "Linux", Architecture: "x86_64", Roots: []string{"demo@1"}, RequestedRoots: []string{"demo@1"}, FilteredRoots: []filteredRoot{}, GoModuleFiles: []string{}, BuilderFiles: []string{}, Modules: []describedModule{{Name: "demo", Version: "1", Target: "demo", Depends: []string{}, PackagePlatform: platform, SystemDependencies: map[string][]string{}, InputFiles: []string{}}}}
 		err := validateModuleDescription(d, "Linux", "x86_64", nil)
 		if (err == nil) != (platform == "any-any" || platform == "linux-x86_64") {
 			t.Fatalf("package_platform=%q: %v", platform, err)
