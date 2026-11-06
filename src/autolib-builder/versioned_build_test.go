@@ -77,6 +77,8 @@ install(FILES "${CMAKE_BINARY_DIR}/marker" DESTINATION .)
 
 func TestVersionedBuildLocations(t *testing.T) {
 	f := newEntryFixture(t)
+	f.context.BuilderFile = filepath.Join(f.root, "builder")
+	f.must(goExecutable(), "build", "-o", f.context.BuilderFile, ".")
 	main := f.repository("main", map[string]string{"main.h": "main"})
 	extra := f.repository("extra", map[string]string{"extra.h": "extra"})
 	for _, version := range []string{"a+b", "a_b", "a-b"} {
@@ -114,7 +116,7 @@ func TestVersionedBuildLocations(t *testing.T) {
 func TestVersionedDependencyWiring(t *testing.T) {
 	f := newFixture(t)
 	t.Setenv("PKG_CONFIG_PATH", "existing-pc")
-	depSource := f.repository("dep", map[string]string{"dep.h": "#define DEP 17\n", "CMakeLists.txt": "cmake_minimum_required(VERSION 3.20)\nproject(dep NONE)\ninstall(FILES dep.h DESTINATION include)\n"})
+	depSource := f.repository("dep", map[string]string{"dep.h": "#define DEP 17\n", "CMakeLists.txt": "cmake_minimum_required(VERSION 3.20)\nproject(dep NONE)\ninstall(FILES dep.h DESTINATION include)\ninstall(DIRECTORY DESTINATION lib/cmake/Dep)\ninstall(DIRECTORY DESTINATION lib/pkgconfig)\n"})
 	for _, version := range []string{"1", "2"} {
 		f.definitionVersion("dep", version, "cmake", "config_dir='lib/cmake/Dep'\npackage_name='Dep'\npkgconfig_dir='lib/pkgconfig'\n[source]\n"+depSource)
 	}

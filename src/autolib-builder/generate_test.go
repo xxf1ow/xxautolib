@@ -71,6 +71,8 @@ func TestGenerationWrites(t *testing.T) {
 
 func TestVersionedGeneratedSetupIsolation(t *testing.T) {
 	f := newEntryFixture(t)
+	f.context.BuilderFile = filepath.Join(f.root, "builder")
+	f.must(goExecutable(), "build", "-o", f.context.BuilderFile, ".")
 	depSource := f.repository("dep", map[string]string{"dep.h": "dependency"})
 	f.definitionVersion("dep", "1", "copy", "[source]\n"+depSource+"[[copy]]\nfiles=['dep.h']\ndestination='include'\n")
 	source := f.repository("demo", map[string]string{"input.h": "installed", "CMakeLists.txt": "cmake_minimum_required(VERSION 3.20)\nproject(demo NONE)\ninstall(FILES input.h DESTINATION include)\n"})

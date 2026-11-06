@@ -116,7 +116,10 @@ func prepareConsumption(o consumptionOptions) error {
 	adapterPath := filepath.Join(filepath.Dir(module.Path), "autolib-import.cmake")
 	adapter, err := os.ReadFile(adapterPath)
 	if errors.Is(err, os.ErrNotExist) {
-		return nil
+		if o.Phase == "begin" {
+			return nil
+		}
+		return writeInstalledPackageIndex(module, o.InstallRoot)
 	}
 	if err != nil {
 		return fmt.Errorf("%s: %w", adapterPath, err)
@@ -210,16 +213,20 @@ func prepareConsumption(o consumptionOptions) error {
 			return err
 		}
 	}
-	packageFile := filepath.Join(filepath.Dir(filepath.Dir(module.Path)), "package.toml")
-	metadata, err := os.ReadFile(packageFile)
-	if err != nil {
-		return err
-	}
-	if _, err := writeIfChanged(filepath.Join(o.InstallRoot, o.Name, "package.toml"), string(metadata)); err != nil {
+	if err := writeInstalledPackageIndex(module, o.InstallRoot); err != nil {
 		return err
 	}
 	header := fmt.Sprintf("set(AUTOLIB_PACKAGE_NAME %q)\nset(AUTOLIB_PACKAGE_VERSION %q)\nset(AUTOLIB_OS %q)\nset(AUTOLIB_ARCH %q)\nset(AUTOLIB_DEPENDENCIES %q)\n", o.Name, o.Version, packageOS, packageArch, strings.Join(dependencies, ";"))
 	_, err = writeIfChanged(output, header+string(adapter))
+	return err
+}
+
+func writeInstalledPackageIndex(module *moduleDefinition, installRoot string) error {
+	metadata, err := os.ReadFile(filepath.Join(filepath.Dir(filepath.Dir(module.Path)), "package.toml"))
+	if err != nil {
+		return err
+	}
+	_, err = writeIfChanged(filepath.Join(installRoot, module.Name, "package.toml"), string(metadata))
 	return err
 }
 

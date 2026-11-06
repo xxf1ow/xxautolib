@@ -164,10 +164,45 @@ func TestUniversalPayloadReuseAndStage(t *testing.T) {
 }
 
 func TestInstalledMetadataWithoutAdapter(t *testing.T) {
-	f := newFixture(t)
-	f.definition("demo", "cmake", "config_dir='share/absent'\n"+testSource)
-	putFile(t, f.installed("demo", "include/input.h"), "// header\n")
-	if err := consumptionCommand(f, "demo", "installed"); err == nil {
-		t.Fatal("accepted missing metadata directory without adapter")
+	for _, kind := range []string{"cmake", "copy"} {
+		t.Run(kind, func(t *testing.T) {
+			f := newEntryFixture(t)
+			repository := f.repository("demo", map[string]string{
+				"demo.h":         "// header\n",
+				"CMakeLists.txt": "cmake_minimum_required(VERSION 3.20)\nproject(demo NONE)\ninstall(FILES demo.h DESTINATION include)\n",
+			})
+			body := "sentinel='include/demo.h'\nconfig_dir='share/config'\npkgconfig_dir='share/pc'\n[source]\n" + repository
+			if kind == "copy" {
+				body += "[[copy]]\nfiles=['demo.h']\ndestination='include'\n"
+			}
+			f.definition("demo", kind, body)
+			f.mustEntry("-DBUILD_LIST=demo")
+			requireFailure := func(field string) {
+				t.Helper()
+				out, stderr, err := f.command(f.context.CMakeCommand, "--build", f.context.BuildRoot, "--config", "Release")
+				if err == nil || !strings.Contains(out+stderr, field+" installation directory") {
+					t.Fatalf("missing %s was not rejected: %v\n%s%s", field, err, out, stderr)
+				}
+			}
+			requireFailure("config_dir")
+			putFile(t, f.installed("demo", "share/config/DemoConfig.cmake"), "# config\n")
+			requireFailure("pkgconfig_dir")
+			putFile(t, f.installed("demo", "share/pc/demo.pc"), "# pkgconfig\n")
+			f.build()
+			requireFile(t, filepath.Join(f.root, "3rdparty/demo/package.toml"), "latest='1.0'\n")
+			if _, err := os.Stat(f.installed("demo", "autolib-import.cmake")); !os.IsNotExist(err) {
+				t.Fatalf("local-only package got an adapter: %v", err)
+			}
+			if err := os.RemoveAll(f.installed("demo", "share/config")); err != nil {
+				t.Fatal(err)
+			}
+			// ExternalProject stamp 与 sentinel 是两条独立的复用入口。
+			requireFailure("config_dir")
+			f.mustEntry("-DBUILD_LIST=demo")
+			requireFailure("config_dir")
+			putFile(t, f.installed("demo", "share/config/DemoConfig.cmake"), "# config\n")
+			f.build()
+			requireFile(t, f.installed("demo", "include/demo.h"), "// header\n")
+		})
 	}
 }

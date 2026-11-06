@@ -364,10 +364,7 @@ func readDefinition(path, systemName, architecture string, requireTarget bool) (
 	if err = validateDefinitionFields(raw, "module", false); err != nil {
 		return nil, err
 	}
-	m, err := table(raw, "module", "type", "source", "resources", "cmake", "patches", "steps", "copy", "platforms", "sentinel", "depends", "config_dir", "pkgconfig_dir", "package_name", "system_dependencies", "package_platforms")
-	if err != nil {
-		return nil, err
-	}
+	m := raw
 	d := &moduleDefinition{Path: path}
 	if d.PackagePlatforms, err = stringArray(m["package_platforms"], "package_platforms"); err != nil {
 		return nil, err
@@ -469,18 +466,22 @@ func readDefinition(path, systemName, architecture string, requireTarget bool) (
 	if d.Steps, err = parseSteps(optional(m, "steps", []any{}), filepath.Dir(path), "steps"); err != nil {
 		return nil, err
 	}
-	platforms, err := table(optional(m, "platforms", map[string]any{}), "platforms", recipePlatforms...)
-	if err != nil {
-		return nil, err
-	}
+	platforms := optional(m, "platforms", map[string]any{}).(map[string]any)
 	for _, platform := range sortedKeys(platforms) {
 		at := "platforms." + platform
 		if !slices.Contains(d.PackagePlatforms, "any-any") && !slices.Contains(d.PackagePlatforms, platform) {
 			return nil, fmt.Errorf("%s: override must belong to package_platforms", at)
 		}
-		options, err := table(platforms[platform], at, "cmake", "steps", "patches", "copy", "source", "resources", "config_dir", "pkgconfig_dir", "package_name", "sentinel")
+		options := platforms[platform].(map[string]any)
+		primary, resources, err := sources(options, at)
 		if err != nil {
 			return nil, err
+		}
+		for resource := range resources {
+			declaredResources[resource] = true
+		}
+		if platform != platformID {
+			continue
 		}
 		meta, err := metadata(options, at, common)
 		if err != nil {
@@ -493,23 +494,6 @@ func readDefinition(path, systemName, architecture string, requireTarget bool) (
 		steps, err := parseSteps(optional(options, "steps", []any{}), filepath.Dir(path), at+".steps")
 		if err != nil {
 			return nil, err
-		}
-		primary, resources, err := sources(options, at)
-		if err != nil {
-			return nil, err
-		}
-		for resource := range resources {
-			declaredResources[resource] = true
-		}
-		for _, key := range []string{"patches", "copy"} {
-			if value, ok := options[key]; ok {
-				if _, ok := value.([]any); !ok {
-					return nil, fmt.Errorf("%s.%s: expected array of tables", at, key)
-				}
-			}
-		}
-		if platform != platformID {
-			continue
 		}
 		selectedMetadata = meta
 		for key, value := range cache {
@@ -526,10 +510,7 @@ func readDefinition(path, systemName, architecture string, requireTarget bool) (
 			d.Resources[key] = value
 		}
 		if value, ok := options["patches"]; ok {
-			common, ok := optional(m, "patches", []any{}).([]any)
-			if !ok {
-				return nil, fmt.Errorf("patches: expected array of tables")
-			}
+			common := optional(m, "patches", []any{}).([]any)
 			m["patches"] = append(slices.Clone(common), value.([]any)...)
 		}
 		if value, ok := options["copy"]; ok {
@@ -573,98 +554,48 @@ func readDefinition(path, systemName, architecture string, requireTarget bool) (
 		}
 		names[step.Name] = true
 	}
-	patches, ok := optional(m, "patches", []any{}).([]any)
-	if !ok {
-		return nil, fmt.Errorf("patches: expected an array of tables")
+	patches, err := parsePatches(optional(m, "patches", []any{}), "patches")
+	if err != nil {
+		return nil, err
 	}
-	resource := func(m map[string]any, where string) (string, error) {
-		v, exists := m["resource"]
-		if !exists {
-			return "", nil
+	resource := func(value, where string) error {
+		if value == "" {
+			return nil
 		}
-		s, ok := v.(string)
-		_, selected := d.Resources[s]
-		if !ok || requireTarget && !selected || !requireTarget && !declaredResources[s] {
-			return "", fmt.Errorf("%s.resource: unknown resource %v", where, v)
+		_, selected := d.Resources[value]
+		if requireTarget && !selected || !requireTarget && !declaredResources[value] {
+			return fmt.Errorf("%s.resource: unknown resource %s", where, value)
 		}
-		return s, nil
+		return nil
 	}
-	for _, item := range patches {
-		p, err := table(item, "patches", "file", "resource")
-		if err != nil {
+	for _, patch := range patches {
+		if err := resource(patch.Resource, "patches"); err != nil {
 			return nil, err
 		}
-		r, err := resource(p, "patches")
-		if err != nil {
-			return nil, err
-		}
-		if requireTarget && r == "" && d.Source == nil {
+		if requireTarget && patch.Resource == "" && d.Source == nil {
 			return nil, fmt.Errorf("patches: primary patch requires a source")
 		}
-		file, err := text(p["file"], "patches.file")
-		if err != nil {
-			return nil, err
-		}
-		if !filepath.IsAbs(file) {
-			file = filepath.Join(filepath.Dir(path), file)
-		}
+		file := filepath.Join(filepath.Dir(path), patch.File)
 		stat, err := os.Stat(file)
 		if err != nil || !stat.Mode().IsRegular() {
 			return nil, fmt.Errorf("patches.file: file not found: %s", file)
 		}
-		d.Patches = append(d.Patches, patchDefinition{File: filepath.Clean(file), Resource: r})
+		patch.File = filepath.Clean(file)
+		d.Patches = append(d.Patches, patch)
 	}
-	copies, ok := optional(m, "copy", []any{}).([]any)
-	if !ok || (requireTarget && d.Kind == "copy" && len(copies) == 0) {
+	if d.Copies, err = parseCopies(optional(m, "copy", []any{}), "copy"); err != nil {
+		return nil, err
+	}
+	if requireTarget && d.Kind == "copy" && len(d.Copies) == 0 {
 		return nil, fmt.Errorf("copy: expected nonempty installation mappings for copy modules")
 	}
-	if d.Kind == "cmake" && len(copies) > 0 {
-		return nil, fmt.Errorf("copy: installation mappings require type=copy")
-	}
-	for _, item := range copies {
-		c, err := table(item, "copy", "resource", "files", "directories", "destination")
-		if err != nil {
+	for _, mapping := range d.Copies {
+		if err := resource(mapping.Resource, "copy"); err != nil {
 			return nil, err
 		}
-		r, err := resource(c, "copy")
-		if err != nil {
-			return nil, err
-		}
-		if requireTarget && r == "" && d.Source == nil {
+		if requireTarget && mapping.Resource == "" && d.Source == nil {
 			return nil, fmt.Errorf("copy: mapping requires a source or resource")
 		}
-		_, files := c["files"]
-		_, dirs := c["directories"]
-		if files == dirs {
-			return nil, fmt.Errorf("copy: specify either files or directories")
-		}
-		key := "files"
-		if dirs {
-			key = "directories"
-		}
-		entries, err := stringArray(c[key], "copy."+key)
-		if err != nil {
-			return nil, err
-		}
-		if len(entries) == 0 {
-			return nil, fmt.Errorf("copy.%s: expected at least one path", key)
-		}
-		for _, entry := range entries {
-			if _, err := relative(entry, "copy."+key); err != nil {
-				return nil, err
-			}
-		}
-		destination, err := relative(c["destination"], "copy.destination")
-		if err != nil {
-			return nil, err
-		}
-		mapping := copyDefinition{Resource: r, Destination: destination}
-		if files {
-			mapping.Files = entries
-		} else {
-			mapping.Directories = entries
-		}
-		d.Copies = append(d.Copies, mapping)
 	}
 	if requireTarget {
 		if err := validateEffectiveExecution(d); err != nil {
