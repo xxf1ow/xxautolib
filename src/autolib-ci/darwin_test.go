@@ -123,8 +123,8 @@ func TestCIDarwinNative(t *testing.T) {
 			}
 			all := "all"
 			p, err := planCI(t.Context(), ciPlanOptions{SourceRoot: f.options.SourceRoot, BuilderFile: "unused", Platforms: &all})
-			if err != nil || len(p.Platforms) != 3 {
-				t.Fatal("stage one changed all", p, err)
+			if err != nil || len(p.Platforms) != 4 {
+				t.Fatal("all did not retain four platforms", p, err)
 			}
 		})
 	}

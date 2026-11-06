@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-var ciPlatforms = []string{"windows-x86_64", "linux-x86_64", "linux-aarch64"}
+var ciPlatforms = []string{"windows-x86_64", "linux-x86_64", "linux-aarch64", "darwin-aarch64"}
 
 func planCI(ctx context.Context, o ciPlanOptions) (ciPlan, error) {
 	if strings.TrimSpace(o.SourceRoot) == "" || strings.TrimSpace(o.BuilderFile) == "" {
@@ -19,7 +19,7 @@ func planCI(ctx context.Context, o ciPlanOptions) (ciPlan, error) {
 	if platformSelection != nil && strings.TrimSpace(*platformSelection) == "all" {
 		platformSelection = nil
 	}
-	platforms, err := ciList(platformSelection, ciPlatforms, append(slices.Clone(ciPlatforms), "darwin-aarch64"), "platform")
+	platforms, err := ciList(platformSelection, ciPlatforms, ciPlatforms, "platform")
 	if err != nil {
 		return ciPlan{}, err
 	}

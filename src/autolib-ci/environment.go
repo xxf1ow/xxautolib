@@ -97,9 +97,9 @@ func validateCIEnvironment(config ciEnvironmentConfig) error {
 	if !versionTriplet.MatchString(config.CMake.Version) || config.CMake.ChecksumsURL != "https://github.com/Kitware/CMake/releases/download/v"+config.CMake.Version+"/cmake-"+config.CMake.Version+"-SHA-256.txt" {
 		return fmt.Errorf("cmake: expected version-matched Kitware checksums URL")
 	}
-	want := map[string]string{"linux-aarch64": "linux-aarch64.tar.gz", "linux-x86_64": "linux-x86_64.tar.gz", "windows-x86_64": "windows-x86_64.zip"}
+	want := map[string]string{"linux-aarch64": "linux-aarch64.tar.gz", "linux-x86_64": "linux-x86_64.tar.gz", "windows-x86_64": "windows-x86_64.zip", "darwin-aarch64": "macos-universal.tar.gz"}
 	if len(config.CMake.Assets) != len(want) {
-		return fmt.Errorf("cmake.assets: expected Linux aarch64/x86_64 and Windows x86_64 assets")
+		return fmt.Errorf("cmake.assets: expected Linux aarch64/x86_64, Windows x86_64 and Darwin aarch64 assets")
 	}
 	for _, asset := range config.CMake.Assets {
 		suffix, ok := want[asset.Platform]
