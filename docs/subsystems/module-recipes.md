@@ -84,3 +84,5 @@ describe 输出有效包身份、精确直接依赖、当前平台的系统包�
 安装完成与复用检查声明的 config_dir/pkgconfig_dir 为已有目录，包括没有 adapter 的本地配方。有效上游 Config 导出目标优先复用；纯头文件身份不要求手写包含路径或语言要求。两个 Eigen 版本通过上游 CMake 安装，以 any-any 交付头文件与查找元数据，adapter 链接本包的 Eigen3::Eigen。
 
 CI 按每个精确通用包的有效平台集合选择唯一 publisher；计划以 publishers 映射传递 name@version 到具体平台。运输与发布准备按映射核对来源，失败可在原选择重试，不切换生产平台；具体交付规则见[CI 设计](../agent-notes/implemented/architecture/2026-10-20-ci-system.md)。
+
+Darwin 准备脚本从计划的当前平台读取 brew formula，校验并去重后直接安装、记录版本，只将这些 formula 前缀追加到 CMake/pkg-config 查找环境；空列表不调用 brew。验收 workflow 使用任务分支 push 选择明确根包，并拒绝任何平台或 adapter 过滤；与正式发布入口独立。

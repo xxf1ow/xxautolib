@@ -29,6 +29,46 @@ class DarwinWorkflowTests(unittest.TestCase):
     def setUp(self):
         self.source = WORKFLOW.read_text()
 
+    def test_recipe_validation_entry(self):
+        source = (ROOT / '.github/workflows/validate-macos-recipes.yml').read_text()
+        self.assertIn('name: Validate macOS recipes', source)
+        self.assertRegex(source, r'(?s)on:\n  push:\n    branches:\n      - task/darwin-aarch64-native-ci\n')
+        self.assertIn('contents: read', source)
+        self.assertNotIn('workflow_dispatch:', source)
+        native = job(source, 'validate')
+        self.assertIn('runs-on: macos-15', native)
+        self.assertIn('SELECTED_MODULES: queue@45db9a8b4431,lz4@1.10.0', native)
+        self.assertIn('ref: ${{ github.sha }}', native)
+        self.assertIn('persist-credentials: false', native)
+        guard = step_script(native, 'Require native macOS 15')
+        self.assertIn('arm64', guard)
+        self.assertIn('15.*', guard)
+        for name in ['Prepare platform', 'Produce dependency layers', 'Verify selected work', 'Package and transport verified artifacts', 'Finalize validation']:
+            self.assertIn('autolib-ci', step_script(native, name))
+        self.assertIn('if: ${{ always() && !cancelled() }}', native)
+        for path in ['runner.log', 'environment.log', '/results/', '/evidence/', '/logs/', 'jobserver.json']:
+            self.assertIn(path, native)
+        self.assertNotIn('prepare-publication', native)
+        self.assertNotIn('gitee', native.lower())
+        listener = (ROOT / '.github/workflows/publish-artifacts.yml').read_text()
+        self.assertIn('Representative releases', listener)
+        self.assertNotIn('Validate macOS recipes', listener)
+
+    def test_recipe_roots_must_survive_filtering(self):
+        source = (ROOT / '.github/workflows/validate-macos-recipes.yml').read_text()
+        script = step_script(job(source, 'validate'), 'Require all requested roots')
+        roots = ['queue@45db9a8b4431', 'lz4@1.10.0']
+        for active, requested, filtered, expected in [(roots, roots, [], 0),
+                                                    (roots[:1], roots, ['lz4@1.10.0'], 1),
+                                                    ([], roots, roots, 1), ([], [], [], 1)]:
+            with self.subTest(active=active), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                (root / 'build/ci-input').mkdir(parents=True)
+                (root / 'build/ci-input/plan.json').write_text(json.dumps(dict(platforms=[dict(id='darwin-aarch64', roots=active, requested_roots=requested, filtered_roots=filtered)])))
+                result = subprocess.run(['/bin/bash', '-euc', script], cwd=root,
+                                        env=dict(os.environ, PLATFORM='darwin-aarch64', SELECTED_MODULES=','.join(roots)), capture_output=True, text=True)
+                self.assertEqual(result.returncode, expected, result.stderr)
+
     def test_platform_outputs_and_result_collection(self):
         self.assertIn('          - darwin-aarch64\n', self.source)
         plan = job(self.source, 'plan')
