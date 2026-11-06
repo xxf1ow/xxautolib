@@ -202,6 +202,7 @@ jobs:
             build/portability/**/*.log
             build/portability/**/imported-properties.txt
             build/portability/**/prepared-state.cmake
+            build/ci/**/transport.tar
             build/ci/**/logs/
             build/ci/**/evidence/**/*.log
             build/ci/**/evidence/**/*.txt
@@ -294,6 +295,12 @@ jobs:
           CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
         run: |
           & "$env:WORK_ROOT/autolib-ci.exe" run --repository $env:GITHUB_REPOSITORY --source-root $env:GITHUB_WORKSPACE --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform windows-x86_64 --layer verify --work-root $env:WORK_ROOT --importer-file "$env:WORK_ROOT/install/autolib-importer-windows-x86_64.exe" --cmake-command $env:CMAKE_COMMAND
+      - name: Package verified native closure
+        if: matrix.kind == 'pcl'
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+        run: |
+          & "$env:WORK_ROOT/autolib-ci.exe" transport --repository $env:GITHUB_REPOSITORY --source-root $env:GITHUB_WORKSPACE --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform windows-x86_64 --work-root $env:WORK_ROOT --cmake-command $env:CMAKE_COMMAND --output "$env:WORK_ROOT/transport.tar"
       - name: Consume original Linux archives
         shell: python
         env:
@@ -312,7 +319,7 @@ jobs:
               item=manifest[version]
               args += [f'-DEIGEN_{label}_ARCHIVE={raw/item["filename"]}',f'-DEIGEN_{label}_SHA256={item["sha256"]}']
           args.append(f'-DEXPECTED_PRODUCER_SHA={os.environ["EXPECTED_PRODUCER_SHA"]}')
-          if os.environ.get('VALIDATION_KIND')=='pcl':args.append('-DPCL_VERSION=pcl-1.15.1')
+          if os.environ.get('VALIDATION_KIND')=='pcl':args += ['-DPCL_VERSION=pcl-1.15.1',f'-DNATIVE_TRANSPORT={work}/transport.tar']
           for key in ['CMAKE_MAKE_PROGRAM','CMAKE_C_COMPILER','CMAKE_CXX_COMPILER','CMAKE_OSX_ARCHITECTURES','CMAKE_OSX_DEPLOYMENT_TARGET','CMAKE_OSX_SYSROOT','GENERATOR_PLATFORM','GENERATOR_TOOLSET','CMAKE_MSVC_RUNTIME_LIBRARY']:
               if os.environ.get(key):args.append(f'-D{key}={os.environ[key]}')
           args += ['-DCMAKE_POLICY_VERSION_MINIMUM=3.5','-P',str(root/'tests/autolib/run-eigen-portability.cmake')]
@@ -331,6 +338,7 @@ jobs:
             build/portability/**/*.log
             build/portability/**/imported-properties.txt
             build/portability/**/prepared-state.cmake
+            build/ci/**/transport.tar
             build/ci/**/logs/
             build/ci/**/evidence/**/*.log
             build/ci/**/evidence/**/*.txt
@@ -413,7 +421,7 @@ jobs:
               item=manifest[version]
               args += [f'-DEIGEN_{label}_ARCHIVE={raw/item["filename"]}',f'-DEIGEN_{label}_SHA256={item["sha256"]}']
           args.append(f'-DEXPECTED_PRODUCER_SHA={os.environ["EXPECTED_PRODUCER_SHA"]}')
-          if os.environ.get('VALIDATION_KIND')=='pcl':args.append('-DPCL_VERSION=pcl-1.15.1')
+          if os.environ.get('VALIDATION_KIND')=='pcl':args += ['-DPCL_VERSION=pcl-1.15.1',f'-DNATIVE_TRANSPORT={work}/transport.tar']
           os.environ['CMAKE_C_COMPILER']=os.environ['CC'];os.environ['CMAKE_CXX_COMPILER']=os.environ['CXX']
           for key in ['CMAKE_MAKE_PROGRAM','CMAKE_C_COMPILER','CMAKE_CXX_COMPILER','CMAKE_OSX_ARCHITECTURES','CMAKE_OSX_DEPLOYMENT_TARGET','CMAKE_OSX_SYSROOT','GENERATOR_PLATFORM','GENERATOR_TOOLSET','CMAKE_MSVC_RUNTIME_LIBRARY']:
               if os.environ.get(key):args.append(f'-D{key}={os.environ[key]}')
@@ -433,6 +441,7 @@ jobs:
             build/portability/**/*.log
             build/portability/**/imported-properties.txt
             build/portability/**/prepared-state.cmake
+            build/ci/**/transport.tar
             build/ci/**/logs/
             build/ci/**/evidence/**/*.log
             build/ci/**/evidence/**/*.txt
@@ -542,6 +551,11 @@ jobs:
           BUDGET: ${{ steps.environment.outputs.budget }}
         run: |
           "$WORK_ROOT/autolib-ci" run --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer verify --work-root "$WORK_ROOT" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
+      - name: Package verified native closure
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+        run: >-
+          "$WORK_ROOT/autolib-ci" transport --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --work-root "$WORK_ROOT" --cmake-command "$CMAKE_COMMAND" --output "$WORK_ROOT/transport.tar"
       - name: Consume original Linux archives
         shell: python3 {0}
         env:
@@ -560,7 +574,7 @@ jobs:
               item=manifest[version]
               args += [f'-DEIGEN_{label}_ARCHIVE={raw/item["filename"]}',f'-DEIGEN_{label}_SHA256={item["sha256"]}']
           args.append(f'-DEXPECTED_PRODUCER_SHA={os.environ["EXPECTED_PRODUCER_SHA"]}')
-          if os.environ.get('VALIDATION_KIND')=='pcl':args.append('-DPCL_VERSION=pcl-1.15.1')
+          if os.environ.get('VALIDATION_KIND')=='pcl':args += ['-DPCL_VERSION=pcl-1.15.1',f'-DNATIVE_TRANSPORT={work}/transport.tar']
           for key in ['CMAKE_MAKE_PROGRAM','CMAKE_C_COMPILER','CMAKE_CXX_COMPILER','CMAKE_OSX_ARCHITECTURES','CMAKE_OSX_DEPLOYMENT_TARGET','CMAKE_OSX_SYSROOT','GENERATOR_PLATFORM','GENERATOR_TOOLSET','CMAKE_MSVC_RUNTIME_LIBRARY']:
               if os.environ.get(key):args.append(f'-D{key}={os.environ[key]}')
           args += ['-DCMAKE_POLICY_VERSION_MINIMUM=3.5','-P',str(root/'tests/autolib/run-eigen-portability.cmake')]
@@ -579,6 +593,7 @@ jobs:
             build/portability/**/*.log
             build/portability/**/imported-properties.txt
             build/portability/**/prepared-state.cmake
+            build/ci/**/transport.tar
             build/ci/**/logs/
             build/ci/**/evidence/**/*.log
             build/ci/**/evidence/**/*.txt

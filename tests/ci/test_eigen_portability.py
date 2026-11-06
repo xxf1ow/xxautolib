@@ -128,7 +128,21 @@ class EigenPortabilityTests(unittest.TestCase):
                 if kind == "pcl":
                     pcl = install / "pcl/pcl-1.15.1"
                     pcl.mkdir(parents=True)
-                    (pcl / "autolib-import.cmake").write_text("native PCL fixture")
+                    (pcl / "autolib-import.cmake").write_text("unrelocated native PCL")
+                    staging = root / "staging"
+                    packaged = staging / "pcl/pcl-1.15.1"
+                    packaged.mkdir(parents=True)
+                    (packaged / "autolib-import.cmake").write_text("native PCL fixture")
+                    native_archive = root / "native.tar.zst"
+                    subprocess.run(["cmake", "-E", "tar", "cf", str(native_archive), "--format=gnutar", "--zstd", "pcl"],
+                                   cwd=staging, check=True)
+                    transport_manifest = json.dumps({"assets": [{"path": "assets/native.tar.zst",
+                        "sha256": hashlib.sha256(native_archive.read_bytes()).hexdigest()}]}).encode()
+                    with tarfile.open(native / "transport.tar", "w") as stream:
+                        item = tarfile.TarInfo("transport.json")
+                        item.size = len(transport_manifest)
+                        stream.addfile(item, io.BytesIO(transport_manifest))
+                        stream.add(native_archive, arcname="assets/native.tar.zst")
                 package = root / "src/dependencies/eigen/package.toml"
                 package.parent.mkdir(parents=True)
                 package.write_text('latest = "5.0.1"\n')
