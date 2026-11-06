@@ -44,6 +44,8 @@ cmake -P src/autolib-builder/go-sdk.cmake -- test -mod=readonly ./src/autolib-im
 
 ## CI 验证
 
+Darwin 定向检查使用 `cmake -P src/autolib-builder/go-sdk.cmake -- test -mod=readonly ./src/autolib-ci -run 'TestCIDarwin' -count=1 -v`，PATH 前置固定 CMake/Make。实机 queue/lz4 的生产、直接及搬迁消费、Mach-O 与 FIFO 证据和未测项见[Darwin 验证](agent-notes/proposed/architecture/2026-11-05-darwin-aarch64-native-build-and-ci.md#第一阶段验证证据)；本机通过不代表 macos-15 CI 已通过。
+
 [CI 测试](../src/autolib-ci/main_test.go)覆盖精确计划、独立根验证、原生 builder 打包、成品摘要与数量、运输安全及所选平台完整性；workflow 定向测试核对事件条件、参数与接线。本地 fixture 和 workflow 片段执行不模拟完整 Actions，不替代三平台真实验收。109的工具构建命令：
 
 ```text

@@ -133,9 +133,33 @@ builder、importer、公共 `autolib.cmake`、CI 与发布端同步接受 `darwi
 
 ## 第一阶段验证证据
 
-Darwin 宿主 SDK 使用 [Go 官方下载元数据](https://go.dev/dl/?mode=json&include=all)中的 `go1.27.3.darwin-arm64.tar.gz`，SHA256 为 `dd3908cf20959d798c1e06ebe5b72213f0505ce01373b40ce3110975a6cd99c2`。[Go 1.27 要求 macOS 13 或更新系统](https://go.dev/doc/go1.27#darwin)，满足本任务 15.0 基线；该下限独立于 CMake deployment target，实际二进制仍需验证。
+Darwin 宿主 SDK 使用 [Go 官方下载元数据](https://go.dev/dl/?mode=json&include=all)中的 `go1.27.3.darwin-arm64.tar.gz`，SHA256 为 `dd3908cf20959d798c1e06ebe5b72213f0505ce01373b40ce3110975a6cd99c2`。[Go 1.27 要求 macOS 13 或更新系统](https://go.dev/doc/go1.27#darwin)，满足本任务 15.0 基线；该下限独立于 CMake deployment target。
 
 本机 SDK 下载、私有环境、离线复用及下载/摘要/解包失败检查通过；工具准备生成的 importer 为 ARM64 Mach-O，实际执行返回预期 CLI 用法，安装入口与源码逐字节一致。此次验证未提供 Linux 回归证据：109 的 SSH 在返回服务端版本前关闭连接，未传输源码或更改远端数据；也不构成 macos-15 或真实 GitHub Actions 验收。
+
+### 原生代表库闭环
+
+验证源码为 `b757ab4f4ff40b560a2af987316e5d0520498028` 的干净 Git archive，任务根为 `build/darwin-stage1-r16m8kmr/`。实际环境为 macOS 27.2（26B123）、arm64、SDK 27.2、Apple Clang 21.0.0（clang-2100.4.1.1）、Go 1.27.3、CMake 3.31.12、GNU Make 4.4.1。CMake 与 Make 仅准备在任务自有目录，官方归档 SHA256 分别为 `799af7fd545db9bf1b9cfe72f8095880e727a2d4e0df0e3dffc3bc7b95c2d3b0`、`dd16fb1d67bfab79a72f5e8390735c49e3e8e70b4945a15ab1f81ddb78658fb3`。Make 从该源码归档安装，未写系统目录。
+
+普通根使用[开发指南的 Darwin 参数](../../../development.md#准备与配置)，选择 `queue@45db9a8b4431,lz4@1.10.0`；安装根通过 `AUTOLIB_INSTALL_ROOT` 指向隔离源码的 `build/install`。configure/build 成功，实际 lz4 子 cache 与根保持五项 Apple 参数及同一 Make；没有包专用构建入口。以 `-j2 --jobserver-style=fifo --debug=j` 在另一隔离 build 根重新构建，父子 Make 均报告相同的 `Using jobserver controller fifo:…/GMfifo81415`，结束归还全部 token，无 unavailable/reset 警告。轻量并发探针的预算 1 峰值为 1、预算 2 峰值为 2 且出现重叠；CPU 自动预算查询返回 12。
+
+现有 `run-installed.cmake` 分别消费原安装和新根解包结果，两次 configure/build/CTest 均通过。消费者使用相同 Apple/Make 参数，原消费链接输入位于原安装，新消费全部位于搬迁根且不含原安装路径。打包前后递归 bytes、mode、mtime 快照一致；canonical 入口字节和 importer 可执行权限保持。显式请求 RealSense 在新 build 根的配置阶段因不支持 `darwin-aarch64` 失败，没有获取其源码或覆盖成功安装。
+
+lz4 静态库为 arm64，五个机器码成员的 minos 均为 15.0。两个消费者均为 arm64、minos 15.0，动态依赖仅系统 `libc++.1.dylib` 和 `libSystem.B.dylib`。实际 importer 为 arm64、minos 13.0，依赖仅 libSystem、libresolv、CoreFoundation 和 Security，无第三方或 C++ 运行库。轻量共享库 fixture 另覆盖运行加载位置；首轮真实代表库没有共享库。
+
+同提交 builder 的 `package` 生成以下精确资产，并逐一解包搬迁消费成功；摘要来自实际输出与文件复核：
+
+| 资产 | SHA256 |
+| --- | --- |
+| `autolib-importer-darwin-aarch64.tar.xz` | `f7d30e772e21213eccf01cd47746c947850907ccda55d0978f9af7152383fcfb` |
+| `lz4-1.10.0-darwin-aarch64.tar.zst` | `77394abf4fc69369385607fb2d7fa55d62b0b9f8f4e3485f0d8454e4cde504d4` |
+| `queue-45db9a8b4431-any-any.tar.zst` | `e5f9725b602afcd933a12d4bc5cb1593b5c2c993483c83c5620ba1f5193dbb2a` |
+
+### 定向回归与覆盖限制
+
+平台声明及依赖过滤、Apple 参数与冲突、公共入口身份、版本化安装与搬迁、CI 原生 prepare/layers/verify、工具专用与过滤后零库、Mach-O 架构/部署目标/动态依赖/路径负例、两个消费 driver 及 FIFO 定向回归均在本机通过。默认/all 保持原三个平台；workflow、Darwin 下载资产配置与远端发布接线未进入本阶段。规范的定向入口由[测试指南](../../../testing.md#ci-验证)拥有，过程日志与环境详情保留在上述忽略的任务根。
+
+`TestVersionedMetadataAsset/version-case-collision` 因本机文件系统不能同时存放 `V1`/`v1` 而跳过；Git 树大小写冲突用显式 index 输入验证通过，核心 Darwin 工具、生产和消费用例没有跳过。109 不可用期间，必要的共享逻辑定向回归在本机执行，Linux 执行证据仍缺失。未执行其他真实库、全量 Go suite/vet、最低 CMake、macos-15 runner 或 15.0 原版系统验证。本机新 SDK 的 minos 证据只证明目标要求与本机执行结果，不能替代 15.x 运行验收。
 
 ## 风险
 
@@ -147,6 +171,6 @@ Darwin 宿主 SDK 使用 [Go 官方下载元数据](https://go.dev/dl/?mode=json
 
 首轮没有共享库代表输入，也不适配全部包、相机功能或更早 macOS。后续包需要新的系统依赖、上游补丁或专用动态加载处理时，按该包实际需要另行确认，不扩建通用兼容、恢复或逐库工具链选择机制。
 
-### 开发指南预算
+### 开发与测试指南预算
 
-Darwin 的首次配置要求五项显式 Apple 参数和 GNU Make 路径，完整可复制命令归开发指南所有。工具版本的理由和验证细节已留在本设计；该命令无法在保持输入完整的情况下进一步压缩，拆入另一页会割裂平台配置入口。`scripts/doc-budgets.manifest.json` 将开发指南预算由 440 调整为 510，容纳此配置及必要余量。
+Darwin 的首次配置要求五项显式 Apple 参数和 GNU Make 路径，完整可复制命令归开发指南所有。工具版本的理由和验证细节已留在本设计；该命令无法在保持输入完整的情况下进一步压缩，拆入另一页会割裂平台配置入口。开发指南还须明确支持过滤、消费参数及 workflow 的平台范围，测试指南拥有定向命令和证据入口。详细结果已集中在本设计，继续删减指南会丢失操作条件；`scripts/doc-budgets.manifest.json` 将开发指南预算由 440 调整为 530、测试指南由 450 调整为 500，容纳必要命令并保留至少 5% 余量。

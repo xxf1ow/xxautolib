@@ -20,10 +20,11 @@ cmake -S . -B build -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release
 ```
 
-Darwin ARM64（Apple Silicon）：
+Darwin ARM64（Apple Silicon），使用固定 CMake 3.31.12、GNU Make 4.4.1：
 
 ```sh
 cmake -S . -B build -G "Unix Makefiles" \
+  -DBUILD_LIST=queue@45db9a8b4431,lz4@1.10.0 -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
   "-DCMAKE_C_COMPILER=$(xcrun --find clang)" \
   "-DCMAKE_CXX_COMPILER=$(xcrun --find clang++)" \
@@ -36,7 +37,7 @@ Darwin 根和子项目固定以上五项 Apple 参数，拒绝配方冲突；其
 
 引擎为 CMake 子项目提供 policy 下限 `3.5`、PIC `ON`、C++ 标准 `17` 的兜底值，通过原生 `CMAKE_ARGS` 传入，不向父级 cache 写默认值；不依赖 preset、IDE 设置或环境变量。根 configure 的 `-D` 或 toolchain 中已定义的值可覆盖兜底值，模块显式 cache 优先于父级值；修改公共值后重新 configure/build。已有 cache 条目保留为父级输入，不自动删除。policy 下限不降低上游较高声明，旧声明被提高后的兼容性仍须实际验证。IDE 可沿用已有编译器和配置。
 
-默认发现全部配方版本，安装到 `3rdparty/<包名>/<版本>/`。`BUILD_LIST` 用逗号分隔 `包名@版本`；裸名只读包级 `package.toml` 的 `latest`，不排序或改写版本。依赖闭包自动补齐。裸名 eigen 选 3.4.0，显式可选 5.0.1；PCL 固定依赖 `eigen@3.4.0`。根 BUILD_LIST 不传入 OpenCV。configure 输出工具链、安装目录与模块摘要，build 执行获取和安装。
+默认发现全部配方版本并过滤平台不支持的根，显式请求不支持时失败；Darwin 仅 queue/lz4 声明支持。安装到 `3rdparty/<包名>/<版本>/`。`BUILD_LIST` 用逗号分隔 `包名@版本`；裸名只读包级 `package.toml` 的 `latest`，不排序或改写版本。依赖闭包自动补齐。裸名 eigen 选 3.4.0，显式可选 5.0.1；PCL 固定依赖 `eigen@3.4.0`。根 BUILD_LIST 不传入 OpenCV。configure 输出工具链、安装目录与模块摘要，build 执行获取和安装。
 
 公共入口仅为 Go 子进程设置项目 SDK、缓存、`GOENV=off`、`GOWORK=off`、`GOTOOLCHAIN=local` 和 `CGO_ENABLED=0`，不修改全局环境或用户 Go 配置。只读模块模式分别编译宿主 builder 和 importer，宿主不随 C++ 目标架构改变；go.mod 固定依赖、go.sum 校验内容。每份工作副本统一用 build，不跨平台混用产物。子项目固定 Release，沿用父生成器、平台、完整工具集和 instance；父显式 CRT 原值传递，未指定时 MSVC Release 使用 `/MD`，静态库不自动改为 `/MT`。
 
@@ -54,7 +55,7 @@ Git 主来源复用 `git/<包名>/<版本>/`，资源复用 `git/_resources/<包
 
 自定义安装根在 configure 前设置环境变量 `AUTOLIB_INSTALL_ROOT`，不是同名 `-D` 参数；相对值以顶层源码目录解析，含空格路径须保持完整。更换根需重新 configure。消费安装根须包含 `autolib.cmake`、宿主 importer 和 `<包名>/<版本>/`，不要求先打包。
 
-下游通过绝对路径直接 include 安装根的 `autolib.cmake`，再调用 `autolib_import(TARGET app PRIVATE queue flann)`，不复制入口或包到另一缓存。所需精确闭包完整时消费不联网；缺工具或包时，本地入口明确失败。Windows importer 为 `autolib-importer-windows-x86_64.exe`，Linux 按宿主架构命名且须可执行。没有 adapter 的模块不能快捷导入。
+下游通过绝对路径直接 include 安装根的 `autolib.cmake`，再调用 `autolib_import(TARGET app PRIVATE queue flann)`，不复制入口或包到另一缓存。所需精确闭包完整时消费不联网；缺工具或包时，本地入口明确失败。Windows importer 为 `autolib-importer-windows-x86_64.exe`，Linux/Darwin 按宿主架构命名且须可执行；Darwin 消费者传入上述 Apple 参数及 Make。没有 adapter 的模块不能快捷导入。
 
 现有配方均有 adapter；新增或修改按[五类基准与编写步骤](../.agents/skills/add-third-party-module/references/adapter-baselines.md)核对安装并完成[消费验证](testing.md#adapter-定向验证)，文件齐全不代表各包各平台均已实测。
 
@@ -76,7 +77,7 @@ Git 主来源复用 `git/<包名>/<版本>/`，资源复用 `git/_resources/<包
 
 ## CI 开发与运行
 
-[手动流水线](../.github/workflows/build-platform.yml)接受当前源码仓库的普通分支、拒绝 tag，检出事件提交；workflow 将 `GITHUB_REPOSITORY` 作为可信仓库传给运行、运输和汇总校验，支持 fork。平台默认 all。
+[手动流水线](../.github/workflows/build-platform.yml)接受当前源码仓库的普通分支、拒绝 tag，检出事件提交；workflow 将 `GITHUB_REPOSITORY` 作为可信仓库传给运行、运输和汇总校验，支持 fork。默认/all 仍为 Windows x86_64、Linux x86_64/aarch64；显式 Darwin 仅执行器支持，workflow 尚未接入。
 
 模块未提供或空字符串只准备 importer 和入口，原始输入严格等于 `all` 才发现全部合资格配方版本，也可选择 `eigen@3.4.0,eigen@5.0.1,queue,lz4,flann`。纯空白、混合或变形的 `all` 及单独 importer 选择均拒绝。缺自身或传递依赖 adapter 的根按资格过滤；计划与汇总分别展示请求根、有效根和过滤根，过滤不算警告或失败。
 
