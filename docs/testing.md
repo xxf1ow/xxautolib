@@ -98,7 +98,7 @@ ctest --test-dir build/check/opencv -C Release --output-on-failure
 
 librealsense 按[无相机验证说明](../tests/librealsense/README.md)运行两项检查，不替代实机取流。
 
-FreeType 使用真实归档构建安装，核对 `include/freetype2/ft2build.h`、`include/freetype2/freetype/freetype.h`、实际静态库、`lib/cmake/freetype/` 包文件与 `lib/pkgconfig/freetype2.pc`。两端分别检查 configure/cache 中 ZLIB、BZip2、PNG、HarfBuzz、BrotliDec 的发现结果及导出依赖、路径；不对静态归档运行 ldd 来证明自包含。沿用参考可选依赖探测，不承诺依赖隔离、静态自包含或包可搬迁。
+FreeType 使用真实归档构建安装，核对 `include/freetype2/ft2build.h`、`include/freetype2/freetype/freetype.h`、静态库、`lib/cmake/freetype/` 与 `lib/pkgconfig/freetype2.pc`。检查仓库zlib链接输入、`FT_REQUIRE_ZLIB=ON`、`FT_DISABLE_HARFBUZZ=ON` 和 `HB_HAVE_FREETYPE=ON`；能力取舍见[配方注释](../src/dependencies/freetype/2.13.2/module.toml)。BZip2、PNG、BrotliDec 检查实际发现结果及导出依赖、路径；不对静态归档运行ldd证明自包含，不以配置成功代替中文绘制及打包搬迁验收。
 
 lz4 从根入口真实构建安装，检查公开头文件、Windows `lib/lz4.lib` 或 Linux `lib/liblz4.a`、`lib/cmake/lz4/` 和 `lib/pkgconfig/liblz4.pc`。ONNX Runtime 检查完整归档内容、实际库名、版本、许可证和运行库依赖；Linux 检查共享库名称可解析且无缺失依赖。安装后重新 configure/build 应显示 cached；跨 build 输入复用由隔离测试区分于 sentinel 短路，不删除真实安装。平台证据与限制见[本地复用设计](agent-notes/implemented/architecture/2026-10-20-local-reuse-and-platform-inputs.md)。
 

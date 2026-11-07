@@ -40,6 +40,8 @@ SDL3 已补查原三平台均未启用 libusb 后端。用户批准在公共 cac
 
 libzmq 已补查原三平台均因未找到 GnuTLS 而不启用 WSS。用户批准在公共 cache 显式设置 `WITH_TLS=false`，供原三平台与 Darwin 同步使用，保留普通 WS 及其他原配置；这是原平台配方冻结规则的另一具名例外。不新增 GnuTLS 系统依赖或修改静动态形态，完成 macOS 功能查询、直接及搬迁消费验收后提交。
 
+字体依赖链允许全平台统一修复 FreeType/HarfBuzz 的集成方向及仓库 zlib 接线；具体能力取舍和理由由 [FreeType 配方注释](../../../../src/dependencies/freetype/2.13.2/module.toml)及 [HarfBuzz 配方注释](../../../../src/dependencies/harfbuzz/8.5.0/module.toml)拥有。OpenCV 保留字体模块并声明其 pkg-config 查找所需的仓库 zlib。FreeType 的 PNG、BZip2、Brotli 等其余可选能力保留上游自动检测，允许随平台环境产生差异；这是字体链的另一具名例外，不扩展到其他包。OpenCV 其余后端基线继续沿用原规则。验收覆盖四个平台的字体链原生构建、实际中文字形绘制和打包搬迁消费；完成前不解除这三个包的 Darwin 阻断。
+
 ### 字段规范所有者与实现职责
 
 实现时以 `docs/subsystems/module-recipes.md` 作为当前字段参考的唯一所有者，完整列出类型、默认值、必填条件、适用类型、路径基准、覆盖方式、互斥条件、实际效果和校验时机。本记录保存设计、理由和验收要求；架构文档解释组件职责，开发及测试指南拥有命令，接入技能引用字段参考。
@@ -392,7 +394,7 @@ FLANN 保留仓库 lz4 和已证实的 OpenMP，Darwin 仅声明 libomp 并安�
 
 | 精确版本 | 原因与证据 | 重新尝试条件 |
 |---|---|---|
-| `freetype@2.13.2` | [原平台验证记录](../../implemented/architecture/2026-10-20-flann-opencv-dependencies.md#验证结果)中，Windows 无额外 private 依赖，Linux ARM 启用系统 zlib/PNG，原平台实际能力已有差异；旧 Darwin 试编还探测系统 HarfBuzz，与仓库 HarfBuzz→FreeType 形成循环 | 用户确定 Darwin 能力基线；仓库已有库的接线及循环方案获得明确决定 |
+| `freetype@2.13.2` | [原平台验证记录](../../implemented/architecture/2026-10-20-flann-opencv-dependencies.md#验证结果)中，Windows 无额外 private 依赖，Linux ARM 启用系统 zlib/PNG，原平台实际能力已有差异；旧 Darwin 试编还探测系统 HarfBuzz | 按配方确定的单向集成、仓库 zlib 接线及其余可选能力自动检测规则验收 |
 | `harfbuzz@8.5.0` | 固定依赖仓库 FreeType，后者 Darwin 基线尚未确定 | FreeType 阻断解除后按既定 HB_HAVE_FREETYPE=ON 验收 |
 | `opencv@4.14.0` | 既有 freetype 模块依赖上述 FreeType/HarfBuzz；不能关闭模块取得成功 | 两个字体库完成同步后，保留既有模块与后端要求验证 |
 | `libzmq@4.3.5` | 固定 Git 来源的 WSS 由 GnuTLS 自动探测；阶段审查时缺少原三平台 WSS 状态证据，Gitee 也没有该包资产。旧 Darwin 构建/进程内消息通过，但 GnuTLS 绝对路径未满足交付要求 | 取得原平台配置或成品能力证据（查询使用 `zmq_has("WSS")`），或用户明确决定 Darwin WSS 目标后再处理必要交付 |

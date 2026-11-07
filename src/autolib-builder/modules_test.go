@@ -97,7 +97,7 @@ func TestRealModuleDeclarations(t *testing.T) {
 			}
 			want := 32
 			if slot[0] == "Darwin" {
-				want = 28
+				want = 32
 			}
 			if len(description.Roots) != want || len(description.FilteredRoots) != 32-want {
 				t.Fatalf("roots=%v filtered=%v", description.Roots, description.FilteredRoots)
@@ -199,7 +199,7 @@ func TestRealModuleDeclarations(t *testing.T) {
 			check(ft.ConfigDir, "lib/cmake/freetype")
 			check(ft.PkgconfigDir, "lib/pkgconfig")
 			check(cv.Version, "4.14.0")
-			check(cv.Depends, []string{"freetype@2.13.2", "harfbuzz@8.5.0"})
+			check(cv.Depends, []string{"freetype@2.13.2", "harfbuzz@8.5.0", "zlib@1.3.1"})
 			check(cv.PackageName, "OpenCV")
 			config, sentinel := "lib/cmake/opencv4", "lib/cmake/opencv4/OpenCVConfig.cmake"
 			if slot.system == "Windows" {

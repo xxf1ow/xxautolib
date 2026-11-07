@@ -1,0 +1,400 @@
+name: Validate font chain and Chinese drawing
+
+on:
+  push:
+    branches:
+      - audit/font-chain-20261107
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.repository }}-font-chain-acceptance
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      linux: ${{ steps.plan.outputs.linux }}
+      windows: ${{ steps.plan.outputs.windows }}
+      darwin: ${{ steps.plan.outputs.darwin }}
+      linux_matrix: ${{ steps.plan.outputs.linux_matrix }}
+      linux_image: ${{ steps.plan.outputs.linux_image }}
+    steps:
+      - name: Require branch ref
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" != refs/heads/?* ]]; then
+            echo "CI requires a branch ref; tags are not supported." >&2
+            exit 1
+          fi
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Plan selected work
+        id: plan
+        shell: bash
+        env:
+          SELECTED_PLATFORMS: all
+          SELECTED_MODULES: freetype@2.13.2,harfbuzz@8.5.0,opencv@4.14.0
+        run: |
+          set -euo pipefail
+          mkdir -p build/ci-input build/tools
+          cmake -P src/autolib-builder/go-sdk.cmake -- build -mod=readonly -trimpath -o build/tools/autolib-builder ./src/autolib-builder
+          cmake -P src/autolib-builder/go-sdk.cmake -- build -mod=readonly -trimpath -o build/tools/autolib-ci ./src/autolib-ci
+          build/tools/autolib-ci plan --source-root "$GITHUB_WORKSPACE" --builder-file "$GITHUB_WORKSPACE/build/tools/autolib-builder" --output build/ci-input/plan.json --platforms "$SELECTED_PLATFORMS" --modules "$SELECTED_MODULES"
+          jq -n --arg repository "$GITHUB_REPOSITORY" --arg ref "$GITHUB_REF" --arg sha "$GITHUB_SHA" --arg checkout "$(git rev-parse HEAD)" --arg run "$GITHUB_RUN_ID" --arg attempt "$GITHUB_RUN_ATTEMPT" '{repository:$repository,ref:$ref,sha:$sha,checkout_sha:$checkout,run_id:$run,attempt:$attempt}' > build/ci-input/run.json
+          jq -cr '"darwin=" + (any(.platforms[]; .id == "darwin-aarch64")|tostring), "windows=" + (any(.platforms[]; .id == "windows-x86_64")|tostring), "linux=" + (any(.platforms[]; .id|startswith("linux-"))|tostring), "linux_matrix=" + ({include:[.platforms[] | select(.id|startswith("linux-")) | {platform:.id,runner:({"linux-x86_64":"ubuntu-24.04","linux-aarch64":"ubuntu-24.04-arm"}[.id])}]}|tojson)' build/ci-input/plan.json >> "$GITHUB_OUTPUT"
+          echo "linux_image=$(jq -er '.ubuntu.image' .github/ci-tools.json)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ci-plan-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build/ci-input/*.json
+          if-no-files-found: error
+
+  linux:
+    needs: plan
+    if: ${{ needs.plan.outputs.linux == 'true' }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.linux_matrix) }}
+    container:
+      image: ${{ needs.plan.outputs.linux_image }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      LC_ALL: C.UTF-8
+      PLATFORM: ${{ matrix.platform }}
+      WORK_ROOT: ${{ github.workspace }}/build/ci/${{ github.run_id }}-${{ github.run_attempt }}/${{ matrix.platform }}
+    steps:
+      - name: Bootstrap container
+        run: |
+          set -euo pipefail
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates curl git jq python3
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: ci-plan-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build/ci-input
+      - name: Prepare native environment and tools
+        id: environment
+        run: |
+          set -euo pipefail
+          bash .github/scripts/prepare-linux.sh --config .github/ci-tools.json --plan build/ci-input/plan.json --platform "$PLATFORM" --work-root "$WORK_ROOT" > build/ci-input/environment.json
+          jq -r 'to_entries[] | "\(.key)=\(.value)"' build/ci-input/environment.json >> "$GITHUB_OUTPUT"
+      - name: Prepare platform
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+          MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
+          BUDGET: ${{ steps.environment.outputs.budget }}
+        run: >-
+          "$WORK_ROOT/autolib-ci" run --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer prepare --work-root "$WORK_ROOT" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
+      - name: Produce dependency layers
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+          MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
+          BUDGET: ${{ steps.environment.outputs.budget }}
+        run: |
+          set -euo pipefail
+          layers=$(jq -er --arg platform "$PLATFORM" '.platforms[] | select(.id == $platform) | .layers | length' build/ci-input/plan.json)
+          for ((index=0; index<layers; index++)); do
+            "$WORK_ROOT/autolib-ci" run --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer "layer$index" --work-root "$WORK_ROOT" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
+          done
+      - name: Check font capabilities and render Chinese
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+          MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
+        run: python3 .github/scripts/validate-font-chain.py direct
+      - name: Verify selected work
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+          MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
+          BUDGET: ${{ steps.environment.outputs.budget }}
+        run: >-
+          "$WORK_ROOT/autolib-ci" run --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer verify --work-root "$WORK_ROOT" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
+      - name: Package and transport verified artifacts
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+        run: >-
+          "$WORK_ROOT/autolib-ci" transport --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --work-root "$WORK_ROOT" --cmake-command "$CMAKE_COMMAND" --output "$WORK_ROOT/transport.tar"
+      - name: Render Chinese after relocation
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+          MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
+        run: python3 .github/scripts/validate-font-chain.py relocated
+      - name: Retain packaged artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-package-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.platform }}
+          path: build/ci/${{ github.run_id }}-${{ github.run_attempt }}/${{ matrix.platform }}/transport.tar
+          if-no-files-found: error
+      - name: Retain platform result
+        if: ${{ always() && !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-result-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.platform }}
+          path: ${{ env.WORK_ROOT }}/results/*.json
+          if-no-files-found: warn
+      - name: Retain diagnostics
+        if: ${{ always() && !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-evidence-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.platform }}
+          path: |
+            build/ci/${{ github.run_id }}-${{ github.run_attempt }}/${{ matrix.platform }}/logs/
+            build/ci/${{ github.run_id }}-${{ github.run_attempt }}/${{ matrix.platform }}/evidence/**/*.json
+            build/ci/${{ github.run_id }}-${{ github.run_attempt }}/${{ matrix.platform }}/evidence/**/*.log
+            build/ci/${{ github.run_id }}-${{ github.run_attempt }}/${{ matrix.platform }}/evidence/**/*.txt
+            build/ci/${{ github.run_id }}-${{ github.run_attempt }}/${{ matrix.platform }}/jobserver.json
+          if-no-files-found: warn
+      - name: Retain font acceptance evidence
+        if: ${{ always() && !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: font-evidence-${{ github.run_id }}-${{ github.run_attempt }}-${{ env.PLATFORM }}
+          path: |
+            ${{ env.WORK_ROOT }}/font-acceptance/**/*.json
+            ${{ env.WORK_ROOT }}/font-acceptance/**/*.log
+            ${{ env.WORK_ROOT }}/font-acceptance/**/*.pgm
+          if-no-files-found: warn
+
+  darwin:
+    needs: plan
+    if: ${{ needs.plan.outputs.darwin == 'true' }}
+    runs-on: macos-15
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash
+    env:
+      PLATFORM: darwin-aarch64
+      WORK_ROOT: ${{ github.workspace }}/build/ci/${{ github.run_id }}-${{ github.run_attempt }}/darwin-aarch64
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: ci-plan-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build/ci-input
+      - name: Require native macOS 15
+        run: |
+          set -euo pipefail
+          [[ "$(uname -m)" == arm64 && "$(sw_vers -productVersion)" == 15.* ]] || { echo 'CI requires native arm64 macOS 15.' >&2; exit 1; }
+          mkdir -p "$WORK_ROOT"
+          { sw_vers; uname -m; printf 'ImageOS=%s\nImageVersion=%s\n' "${ImageOS:-}" "${ImageVersion:-}"; } > "$WORK_ROOT/runner.log"
+      - name: Prepare native environment and tools
+        id: environment
+        run: |
+          set -euo pipefail
+          bash .github/scripts/prepare-darwin.sh --config .github/ci-tools.json --plan build/ci-input/plan.json --platform "$PLATFORM" --work-root "$WORK_ROOT" > build/ci-input/environment.json 2> >(tee "$WORK_ROOT/environment.log" >&2)
+          jq -r 'to_entries[] | "\(.key)=\(.value)"' build/ci-input/environment.json >> "$GITHUB_OUTPUT"
+      - name: Prepare platform
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+          MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
+          BUDGET: ${{ steps.environment.outputs.budget }}
+        run: >-
+          "$WORK_ROOT/autolib-ci" run --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer prepare --work-root "$WORK_ROOT" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
+      - name: Produce dependency layers
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+          MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
+          BUDGET: ${{ steps.environment.outputs.budget }}
+        run: |
+          set -euo pipefail
+          layers=$(jq -er --arg platform "$PLATFORM" '.platforms[] | select(.id == $platform) | .layers | length' build/ci-input/plan.json)
+          for ((index=0; index<layers; index++)); do
+            "$WORK_ROOT/autolib-ci" run --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer "layer$index" --work-root "$WORK_ROOT" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
+          done
+      - name: Check font capabilities and render Chinese
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+          MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
+        run: python3 .github/scripts/validate-font-chain.py direct
+      - name: Verify selected work
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+          MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
+          BUDGET: ${{ steps.environment.outputs.budget }}
+        run: >-
+          "$WORK_ROOT/autolib-ci" run --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer verify --work-root "$WORK_ROOT" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
+      - name: Package and transport verified artifacts
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+        run: >-
+          "$WORK_ROOT/autolib-ci" transport --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --work-root "$WORK_ROOT" --cmake-command "$CMAKE_COMMAND" --output "$WORK_ROOT/transport.tar"
+      - name: Render Chinese after relocation
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+          MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
+        run: python3 .github/scripts/validate-font-chain.py relocated
+      - name: Retain packaged artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-package-${{ github.run_id }}-${{ github.run_attempt }}-darwin-aarch64
+          path: build/ci/${{ github.run_id }}-${{ github.run_attempt }}/darwin-aarch64/transport.tar
+          if-no-files-found: error
+      - name: Retain platform result
+        if: ${{ always() && !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-result-${{ github.run_id }}-${{ github.run_attempt }}-darwin-aarch64
+          path: ${{ env.WORK_ROOT }}/results/*.json
+          if-no-files-found: warn
+      - name: Retain diagnostics
+        if: ${{ always() && !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-evidence-${{ github.run_id }}-${{ github.run_attempt }}-darwin-aarch64
+          path: |
+            ${{ env.WORK_ROOT }}/runner.log
+            ${{ env.WORK_ROOT }}/environment.log
+            build/ci/${{ github.run_id }}-${{ github.run_attempt }}/darwin-aarch64/logs/
+            build/ci/${{ github.run_id }}-${{ github.run_attempt }}/darwin-aarch64/evidence/**/*.json
+            build/ci/${{ github.run_id }}-${{ github.run_attempt }}/darwin-aarch64/evidence/**/*.log
+            build/ci/${{ github.run_id }}-${{ github.run_attempt }}/darwin-aarch64/evidence/**/*.txt
+            build/ci/${{ github.run_id }}-${{ github.run_attempt }}/darwin-aarch64/jobserver.json
+          if-no-files-found: warn
+      - name: Retain font acceptance evidence
+        if: ${{ always() && !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: font-evidence-${{ github.run_id }}-${{ github.run_attempt }}-${{ env.PLATFORM }}
+          path: |
+            ${{ env.WORK_ROOT }}/font-acceptance/**/*.json
+            ${{ env.WORK_ROOT }}/font-acceptance/**/*.log
+            ${{ env.WORK_ROOT }}/font-acceptance/**/*.pgm
+          if-no-files-found: warn
+
+  windows:
+    needs: plan
+    if: ${{ needs.plan.outputs.windows == 'true' }}
+    runs-on: windows-2022
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      PLATFORM: windows-x86_64
+      WORK_ROOT: ${{ github.workspace }}/build/ci/${{ github.run_id }}-${{ github.run_attempt }}/windows-x86_64
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: ci-plan-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build/ci-input
+      - name: Prepare native environment and tools
+        id: environment
+        run: |
+          $settings = ./.github/scripts/prepare-windows.ps1 -Config .github/ci-tools.json -Plan build/ci-input/plan.json -Platform windows-x86_64 -WorkRoot $env:WORK_ROOT | ConvertFrom-Json
+          "cmake_command=$($settings.cmake_command)" >> $env:GITHUB_OUTPUT
+      - name: Prepare platform
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+        run: >-
+          & "$env:WORK_ROOT/autolib-ci.exe" run --repository $env:GITHUB_REPOSITORY --source-root $env:GITHUB_WORKSPACE --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform windows-x86_64 --layer prepare --work-root $env:WORK_ROOT --importer-file "$env:WORK_ROOT/install/autolib-importer-windows-x86_64.exe" --cmake-command $env:CMAKE_COMMAND
+      - name: Produce dependency layers
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+        run: |
+          $plan = Get-Content build/ci-input/plan.json -Raw | ConvertFrom-Json
+          $platform = @($plan.platforms | Where-Object id -eq 'windows-x86_64')[0]
+          for ($index = 0; $index -lt $platform.layers.Count; $index++) {
+            & "$env:WORK_ROOT/autolib-ci.exe" run --repository $env:GITHUB_REPOSITORY --source-root $env:GITHUB_WORKSPACE --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform windows-x86_64 --layer "layer$index" --work-root $env:WORK_ROOT --importer-file "$env:WORK_ROOT/install/autolib-importer-windows-x86_64.exe" --cmake-command $env:CMAKE_COMMAND
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+      - name: Check font capabilities and render Chinese
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+          MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
+        run: python .github/scripts/validate-font-chain.py direct
+      - name: Verify selected work
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+        run: >-
+          & "$env:WORK_ROOT/autolib-ci.exe" run --repository $env:GITHUB_REPOSITORY --source-root $env:GITHUB_WORKSPACE --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform windows-x86_64 --layer verify --work-root $env:WORK_ROOT --importer-file "$env:WORK_ROOT/install/autolib-importer-windows-x86_64.exe" --cmake-command $env:CMAKE_COMMAND
+      - name: Package and transport verified artifacts
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+        run: >-
+          & "$env:WORK_ROOT/autolib-ci.exe" transport --repository $env:GITHUB_REPOSITORY --source-root $env:GITHUB_WORKSPACE --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform windows-x86_64 --work-root $env:WORK_ROOT --cmake-command $env:CMAKE_COMMAND --output "$env:WORK_ROOT/transport.tar"
+      - name: Render Chinese after relocation
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+          MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
+        run: python .github/scripts/validate-font-chain.py relocated
+      - name: Retain packaged artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-package-${{ github.run_id }}-${{ github.run_attempt }}-windows-x86_64
+          path: ${{ env.WORK_ROOT }}/transport.tar
+          if-no-files-found: error
+      - name: Retain platform result
+        if: ${{ always() && !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-result-${{ github.run_id }}-${{ github.run_attempt }}-windows-x86_64
+          path: ${{ env.WORK_ROOT }}/results/*.json
+          if-no-files-found: warn
+      - name: Retain diagnostics
+        if: ${{ always() && !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-evidence-${{ github.run_id }}-${{ github.run_attempt }}-windows-x86_64
+          path: |
+            ${{ env.WORK_ROOT }}/logs/
+            ${{ env.WORK_ROOT }}/evidence/**/*.json
+            ${{ env.WORK_ROOT }}/evidence/**/*.log
+            ${{ env.WORK_ROOT }}/evidence/**/*.txt
+          if-no-files-found: warn
+      - name: Retain font acceptance evidence
+        if: ${{ always() && !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: font-evidence-${{ github.run_id }}-${{ github.run_attempt }}-${{ env.PLATFORM }}
+          path: |
+            ${{ env.WORK_ROOT }}/font-acceptance/**/*.json
+            ${{ env.WORK_ROOT }}/font-acceptance/**/*.log
+            ${{ env.WORK_ROOT }}/font-acceptance/**/*.pgm
+          if-no-files-found: warn
+
+  finalize:
+    needs: [plan, linux, windows, darwin]
+    if: ${{ !cancelled() && needs.plan.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: ci-plan-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build/ci-input
+      - name: Collect available results
+        if: ${{ needs.plan.outputs.linux == 'true' || needs.plan.outputs.windows == 'true' || needs.plan.outputs.darwin == 'true' }}
+        uses: actions/download-artifact@v8
+        with:
+          pattern: ci-result-${{ github.run_id }}-${{ github.run_attempt }}-*
+          path: build/ci-results
+          merge-multiple: true
+      - name: Build CI tool
+        run: cmake -P src/autolib-builder/go-sdk.cmake -- build -mod=readonly -trimpath -o build/tools/autolib-ci ./src/autolib-ci
+      - name: Summarize selected work
+        run: build/tools/autolib-ci finalize --repository "$GITHUB_REPOSITORY" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --results build/ci-results
