@@ -287,7 +287,7 @@ runner 预装的 Homebrew 库可能改变可选功能探测、动态链接及最
 
 ### 第二阶段：macOS 逐包验收
 
-31 份版本配方中，25 份通过已实现的 API smoke、打包及搬迁消费，其余 6 份按下述规则继续评估。试验中的 Darwin 声明不计为通过，过滤也不计为验证成功。原样 example 已真实通过；下述未验包与硬件能力仍保留，第二阶段尚未验收，本记录保持 proposed。
+31 份版本配方中，26 份通过已实现的 API smoke、打包及搬迁消费，其余 5 份按下述规则继续评估。试验中的 Darwin 声明不计为通过，过滤也不计为验证成功。原样 example 已真实通过；下述未验包与硬件能力仍保留，第二阶段尚未验收，本记录保持 proposed。
 
 此前执行将“已有配方的库使用仓库版本”扩大为“所有第三方库均须有仓库配方”，据此禁止 brew 提供库依赖并暂缓相关包。这是执行解释错误。正确规则允许仓库没有配方的库使用系统依赖机制；既有 23 个成功版本和 Eigen 跨平台证据继续有效，仅重新验证受误判影响的包及下游。困难问题仍先报告，不擅自改变功能或版本。
 
@@ -297,7 +297,7 @@ HarfBuzz 8.5.0、OpenCV 4.14.0 的 Darwin 验收随此依赖链暂缓，尚无�
 
 `boost@1.87.0` 保留四种压缩能力和仓库 zlib 1.3.1，bzip2/liblzma 使用 Apple SDK，zstd 由声明的 brew formula 提供。包级安装复制 zstd 的头文件、静态/共享目标所需库、上游 Config 和许可证，Boost.Iostreams Config 固定查找包内 zstd；仅重写安装副本的 dylib ID 并签名。源码 `926f606810d864fd87c5a9c345cd4bbd28c2ffad` 的 [macOS 15 run 42338067624，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42338067624/job/128299399197) 完成构建、包含实际 zstd 压缩解压的直接/搬迁 CTest、Mach-O 检查和打包。三份 transport 资产的身份与摘要均已核对；包内 zstd 1.5.7 为 arm64、minos 15.0，仅引用自身的 `@rpath` ID 与系统 libSystem，没有 Homebrew load path。证据保存在 `build/stage2-runs/42338067624-attempt1/`。SDK 链接输入检查仅接受当前选定 SDK 中解析后位于 `usr/lib` 或 `System/Library` 的 `.tbd`，不放宽运行时或 Homebrew 路径规则。
 
-WebSocket++ 4dfe1be74e68 在源码 `1884d454f61e8ccd3934e20b8d1999470d6ff5b2` 的 [macOS 15 run 42337354961，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42337354961) 消费编译失败：固定版本使用的 Asio `io_service`、旧 strand API 和 `expires_from_now` 不存在于仓库 Boost 1.87.0。该作业中 Boost 自身的实际压缩 smoke 和 Mach-O 检查已通过，WebSocket++ 不能再仅归为依赖尚未就绪。按困难问题暂缓的要求，保留 any-any 载荷身份，记录版本兼容阻断；重试需先确定固定版本范围内的 API 适配，不擅自升级或换用系统 Boost。PCL pcl-1.15.1 独立于 WebSocket++，其 Darwin 候选另行验收；原有三个平台的 Linux Eigen 归档组合证据见下节。
+WebSocket++ 4dfe1be74e68 在源码 `1884d454f61e8ccd3934e20b8d1999470d6ff5b2` 的 [macOS 15 run 42337354961，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42337354961) 消费编译失败：固定版本使用的 Asio `io_service`、旧 strand API 和 `expires_from_now` 不存在于仓库 Boost 1.87.0。该作业中 Boost 自身的实际压缩 smoke 和 Mach-O 检查已通过，WebSocket++ 不能再仅归为依赖尚未就绪。按困难问题暂缓的要求，保留 any-any 载荷身份，记录版本兼容阻断；重试需先确定固定版本范围内的 API 适配，不擅自升级或换用系统 Boost。PCL pcl-1.15.1 独立于 WebSocket++，其 Darwin 验收及原有三个平台的 Linux Eigen 归档组合证据见下节。
 
 `libzmq@4.3.5` 在源码 `c8eec1ec11a8464cd8af03a9dd953bcb35740eec` 的 [macOS 15 验收 run 42260213354，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42260213354/job/128037859553) 完成构建及进程内消息收发，但 Mach-O 检查拒绝 `/opt/homebrew/opt/gnutls/lib/libgnutls.30.dylib`。导出的静态、动态目标都依赖 Homebrew GnuTLS。仓库没有对应配方，可声明 brew `gnutls`；原先要求新增仓库配方的阻断撤销。该版本恢复待重试，保留功能并完成其传递动态库交付、许可证及搬迁验证后再恢复 Darwin 声明。 本机 brew GnuTLS 3.8.13_2 的 `otool -L` 显示其依赖 `/usr/lib/libz.1.dylib`，还依赖 Homebrew gettext、p11-kit、libidn2、libunistring、libtasn1、nettle 和 gmp。仓库 zlib 1.3.1 当前交付静态库，复制这些 dylib 不能将 GnuTLS 的系统 zlib 调用改为仓库版本；该本机 bottle 也不能替代 macOS 15 验收。按难题先报告的要求，libzmq 维持暂缓，后续需解决 GnuTLS 的仓库 zlib 接线及完整交付，再在 macos-15 重验；不关闭 GnuTLS 功能、不新增通用收集框架。
 
@@ -334,7 +334,7 @@ WebSocket++ 4dfe1be74e68 在源码 `1884d454f61e8ccd3934e20b8d1999470d6ff5b2` �
 | `oneTBB@628c90df6867` | 通过 / 42251612424 | `61abcbc72be90bd3486d5ed114291993c874cd1b83e6e604e3884a0b3ca272de` |
 | `onnxruntime@1.24.4` | 通过 / 42260213354 | `1a328c640b48bb5005cfbeb25adfe332b2f0bb4cb0be750f7f968fa561165030` |
 | `opencv@4.14.0` | 依赖闭包暂缓 / FreeType/HarfBuzz | — |
-| `pcl@pcl-1.15.1` | 闭包待重试 / Boost/FLANN | — |
+| `pcl@pcl-1.15.1` | 通过 / 42341486257 | `e5a22c508bedc638563b8317f002925f1cbd808834e7fce274d3b730e9a88f2c` |
 | `portaudio@v190700_20210406` | 通过 / 42260213354 | `ec0c7881e25626dd4711dff243307cd724c84484f7954f93478da33e1c782c95` |
 | `pybind11@2.13.6` | 通过 / 42257137133 | `eb4dbd606cdd9d4c88c48b593e544efd48c9fb0607d752676dfea82ee326859c` |
 | `queue@45db9a8b4431` | 通过 / 42251612424 | `e7d91ecb0a6645dd99eea04b0a181d9d0930722c495dd216bd3c88ffd512a7d5` |
@@ -351,7 +351,7 @@ WebSocket++ 4dfe1be74e68 在源码 `1884d454f61e8ccd3934e20b8d1999470d6ff5b2` �
 
 源码 `d8ffda6a51e0a427a8ddec6fd508ff61c564625c` 的 [独立验收 run 42264057220，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42264057220) 在固定 Ubuntu 20.04 x86_64 容器生产两版 Eigen，经现有 CI verify/transport 取得原始 any-any 归档，未重新打包。Eigen 3.4.0 原件 SHA256 为 `be0dcfb8cd69556b00edeb541fbacff0ac4f9d9167ac75f47546bdf00923a2c4`，5.0.1 为 `9d71707429eeff4186b5993e3caff52fe76c33f6f8afb66f2801dcbb0831d578`。
 
-Windows 2022 x86_64 和 macos-15 ARM64 各从同一 producer artifact 解包原件，不原生重建 Eigen；每版分别通过独立的 Config 导入、矩阵运算及搬迁消费，共八次 CTest 通过。下载证据中的输入摘要与 Linux 原件逐字一致，生产及消费的仓库、源码 SHA 相同。Darwin PCL 因 Boost/FLANN 闭包阻断未参加，不能由 Eigen 的 macOS 成功推断该组合已通过。
+Windows 2022 x86_64 和 macos-15 ARM64 各从同一 producer artifact 解包原件，不原生重建 Eigen；每版分别通过独立的 Config 导入、矩阵运算及搬迁消费，共八次 CTest 通过。下载证据中的输入摘要与 Linux 原件逐字一致，生产及消费的仓库、源码 SHA 相同。Darwin PCL 的组合验收使用同一 producer 原件，结果见下文；Eigen 自身的成功不替代 PCL 组合证据。
 
 PCL 在源码 `74c68a74d04045af4b38424b5abfe42cac17575d` 的 [独立验收 run 42272676188，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42272676188) 通过 Windows x86_64、Linux x86_64 和 Linux aarch64 三个原有平台。各平台先预置同一 Linux Eigen 3.4.0 原件，再通过普通流程构建 PCL 必要闭包并验证原安装；随后从经 staging 修正的原生 transport 归档建立隔离安装，重新预置该 Eigen 原件，直接及搬迁共六次 CTest 均通过。证据中的 `Eigen3::Eigen` include、准备目录及 PCL 依赖指向各自新根的 3.4.0，实际消费期间原生安装被隐藏，完成后恢复。生产与消费身份、两个 Eigen 原始摘要及三份 transport 中的全部资产摘要均已核对；没有重跑成功的 producer 或 Windows/macOS Eigen 消费。
 
@@ -360,6 +360,11 @@ PCL 在源码 `74c68a74d04045af4b38424b5abfe42cac17575d` 的 [独立验收 run 4
 | [windows-x86_64](https://github.com/xxf1ow/xxautolib/actions/runs/42272676188/job/128081152857) | `6016327d9a87d6a84c334af2ce2064ccd0289bed90b5a2147b4b04fd5cc8ae8e` |
 | [linux-x86_64](https://github.com/xxf1ow/xxautolib/actions/runs/42272676188/job/128081152837) | `0e1160a2704228e858e18df2a5f5c41e2c316efdc625e3cca80b2efcd7be861e` |
 | [linux-aarch64](https://github.com/xxf1ow/xxautolib/actions/runs/42272676188/job/128081152720) | `3e49535bab18369e5595c9ec5869c6f49950a1913ecff88f87c059dec739c428` |
+| [darwin-aarch64](https://github.com/xxf1ow/xxautolib/actions/runs/42341486257/job/128309925685) | `e5a22c508bedc638563b8317f002925f1cbd808834e7fce274d3b730e9a88f2c` |
+
+Darwin PCL 在源码 `c12a0e94926e503116f33130960a7ab12a8d161d` 的 [macOS 15 run 42341486257，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42341486257) 通过完整构建安装、直接消费、打包和归档搬迁。静态 PCL 启用上游混合依赖选项，使 Boost 的 SDK 压缩库可被查找；Darwin 补丁让构建目标与 PCL Config 都复用 FLANN 已交付的 `flann::openmp`，不在消费时重新查找 Homebrew OpenMP。前置 run 42338067624 的 BZip2 查找失败和 42339105092 的 Homebrew libomp 误用均有实际日志及局部 RED→GREEN 复现。
+
+该 Darwin 作业在普通构建前校验生产身份和摘要，将 run 42264057220 的 Linux Eigen 3.4.0 原件预置到安装根。原生 transport 完成后，既有同归档 driver 再以同一原件分别执行 PCL 近邻查询和 Eigen 运算的直接、搬迁消费，期间隐藏原生安装。原生验证与归档搬迁另各通过一次 CTest，共四次；包含 FLANN 的两次 smoke 均执行两个 OpenMP worker，实际运行库分别位于原安装或搬迁后的 FLANN 包内。生产与消费身份分别核对，两个 Eigen 原件摘要与已验 Linux 值一致，七份 transport 资产摘要逐项核对；包内四个 dylib 均为 arm64、minos 15.0，无 Homebrew 绝对加载路径，18 个 PCL 静态库均为 arm64。证据保存在 `build/stage2-runs/42341486257-attempt1/`，未重跑 Linux producer、原三平台 PCL 或已验 Eigen 独立消费。
 
 PCL smoke 的查询变量使用独立名称，避免与同时启用的 FLANN 检查重名。PCL 消费必须使用 CI transport 中的 staged 成品：直接复制构建安装树会保留 FLANN 导出中的 LZ4 绝对路径，不能作为成品搬迁证据。三平台曾因这两处新增验收代码缺陷失败，修复后的最终结果如上，不将其记为包支持阻断。
 
@@ -367,8 +372,8 @@ PCL smoke 的查询变量使用独立名称，避免与同时启用的 FLANN 检
 
 开发指南增加独立验收入口、无发布范围及 macOS 依赖来源规则，测试指南仅保留同归档定向命令和 example 阻断入口。详细证据仍由本记录拥有；精简后原 530/500 词预算仍缺少必要空间，将两页上限调整为 560/550，保留至少 5% 余量。
 
-第二阶段独立审查覆盖 `977e2ca..d8ffda6` 及当时四份文档工作区，未发现已证实的 Critical、Important 或 Minor。其后两处 PCL 验收代码修复由定向输入/隔离回归 7/7 和上述三平台实机结果验证，未再进行独立审查；共享消费者 5/5、macOS 配方 workflow 3/3 的未失效结果继续复用。文档及格式检查通过。审查时待定的 PCL 组合已有最终证据；依赖阻断、example 和硬件覆盖仍按上述范围保留。
+第二阶段独立审查覆盖 `977e2ca..d8ffda6` 及当时四份文档工作区，未发现已证实的 Critical、Important 或 Minor。其后两处 PCL 验收代码修复由定向输入/隔离回归 7/7 和上述三平台实机结果验证，未再进行独立审查；共享消费者 5/5、macOS 配方 workflow 3/3 的未失效结果继续复用。文档及格式检查通过。审查时待定的 PCL 组合已有最终证据；依赖阻断和硬件覆盖仍按上述范围保留，example 结果见上述快照。
 
 ### 第一阶段未覆盖的范围
 
-第一阶段没有推送、远端 Actions、发布或合并，本机闭环不能替代 macOS 15 或同归档跨平台证据。第二阶段的实际结果、具名阻断及重试条件见上述快照；example 已通过，Darwin PCL 和列出的硬件及后端能力仍待验。阶段验收不等于整体设计全部达标，本记录保持 proposed，未执行合并或 Gitee 发布。
+第一阶段没有推送、远端 Actions、发布或合并，本机闭环不能替代 macOS 15 或同归档跨平台证据。第二阶段的实际结果、具名阻断及重试条件见上述快照；example 与 Darwin PCL 已通过，FreeType/HarfBuzz、OpenCV、libzmq、WebSocket++ 的具名阻断及列出的硬件和后端覆盖缺口仍保留。阶段验收不等于整体设计全部达标，本记录保持 proposed，未执行合并或 Gitee 发布。
