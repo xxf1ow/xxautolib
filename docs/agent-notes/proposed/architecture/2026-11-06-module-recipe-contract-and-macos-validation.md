@@ -34,7 +34,9 @@ WebSocket++ 的发布安装与复制头文件不依赖 Boost 或 Asio。恢复�
 
 新增独立 `asio@1.24.0`，固定来源提交 `147f7225a96d45a2807a64e443177f621844e51c`，以 copy 从 `asio/include` 安装头文件，附带 `asio/LICENSE_1_0.txt`，身份为 `any-any`，不声明包依赖。原 `asio@8806a6803cde` 和包级 latest 不变，消费者显式选择版本。基线 31 份版本配方加此项后为 32 份；不替换原版本或自动降级。WebSocket++ 单包消费与它和 Asio 1.24.0 的 standalone 组合分别验收，后者检查直接及搬迁后的网络 transport 初始化。
 
-以上两项是用户已经单独批准的全平台例外，不构成修改其他原平台配方的授权。旧分支的其他全平台变更，例如 Taskflow 语言标准传播，先根据本分支既有消费契约核对必要性；若改变原平台要求，单独报告，不随 macOS 补丁一并带入。
+WebSocket++ 与 Asio 两项是用户已经单独批准的全平台例外，不构成修改其他原平台配方的授权。旧分支的其他全平台变更，例如 Taskflow 语言标准传播，先根据本分支既有消费契约核对必要性；若改变原平台要求，单独报告，不随 macOS 补丁一并带入。
+
+SDL3 已补查原三平台均未启用 libusb 后端。用户批准在公共 cache 显式设置 `SDL_HIDAPI_LIBUSB=false`，覆盖原三平台并供 Darwin 同步使用；这是对已证实关闭状态的固定，不新增或裁掉既有能力。该设置是原平台配方冻结规则的具名例外，其余 SDL3 配置、系统依赖及上游提交不变。SDL3 和 ImGui 在 Darwin 完成构建、直接消费及打包搬迁消费验收后，才提交本轮正式修改并进入下一阻断包。
 
 ### 字段规范所有者与实现职责
 
@@ -378,13 +380,13 @@ FLANN 保留仓库 lz4 和已证实的 OpenMP，Darwin 仅声明 libomp 并安�
 
 同次 Boost 原始归档 `boost-1.87.0-darwin-aarch64.tar.zst` 的 SHA256 为 `8c7f6632b806bc662a91eb57ca0757c94d94434a711a03a998355a3416c0f598`；PCL 原始归档 `pcl-pcl-1.15.1-darwin-aarch64.tar.zst` 为 `991ed0d16c4c3ebedc6783e1a64530ed3743945fd5576d59abdaf25e5fef50dc`。两者均已从该 run 的运输包下载并核对摘要，完整结果保存在 `build/darwin-sync-runs/42354393503-attempt1/`。
 
-最终支持声明下，真实 `autolib-ci plan --platforms all --modules all` 输出原三平台各 32 根、Darwin 26 根；Darwin 过滤项恰为下节六个阻断版本。26 个有效版本由上述 23 份可复用结果及 Boost、PCL、Taskflow 的新结果覆盖。10 个通用精确版本均仅由 Linux x86_64 发布，Eigen 与新增 Asio 的身份保持 any-any。既有构建、运输、唯一 publisher 和发布准备协议没有变化；独立验收不表示已正式发布到 Gitee。
+阶段审查时，真实 `autolib-ci plan --platforms all --modules all` 输出原三平台各 32 根、Darwin 26 根；当时 Darwin 过滤项恰为下节六个阻断版本。26 个有效版本由上述 23 份可复用结果及 Boost、PCL、Taskflow 的新结果覆盖。10 个通用精确版本均仅由 Linux x86_64 发布，Eigen 与新增 Asio 的身份保持 any-any。既有构建、运输、唯一 publisher 和发布准备协议没有变化；独立验收不表示已正式发布到 Gitee。
 
 新增及受影响检查已有 RED→GREEN：缺 smoke 拒绝、精确根及证据隔离、Boost 能力摘要匹配、库链接输入排除 imported executable、example 缺输入保护、同归档摘要及身份预检。当前定向结果为 workflow 9/9、消费入口 5/5、Eigen 预检 5/5，以及实际配方读取/生成、版本/latest 与 RealSense 依赖接线检查通过；没有全量 Go test/vet 或原平台全包重编。
 
-#### 已确认的六个阻断版本
+#### 阶段审查时的六个阻断版本
 
-用户确认本阶段将以下六个版本暂列阻断，保留原平台声明，不新增 Darwin，不修改原平台功能配置或为其安装额外后端。SDL3 与 ImGui 撤回本轮新增的 Darwin 声明。这是待后续决定的 macOS 支持缺口，不是上游全面不支持 macOS 的结论。
+阶段审查时，用户确认以下六个版本暂列阻断，当时保留原平台声明并撤回 SDL3、ImGui 的新增 Darwin 声明。下表保留该次阻断原因和重试条件；SDL3 与 ImGui 已在下文专项验收中解除阻断，当前剩余 FreeType、HarfBuzz、OpenCV 和 libzmq 四个版本。这些是仓库交付的支持缺口，不是上游全面不支持 macOS 的结论。
 
 | 精确版本 | 原因与证据 | 重新尝试条件 |
 |---|---|---|
@@ -392,15 +394,44 @@ FLANN 保留仓库 lz4 和已证实的 OpenMP，Darwin 仅声明 libomp 并安�
 | `harfbuzz@8.5.0` | 固定依赖仓库 FreeType，后者 Darwin 基线尚未确定 | FreeType 阻断解除后按既定 HB_HAVE_FREETYPE=ON 验收 |
 | `opencv@4.14.0` | 既有 freetype 模块依赖上述 FreeType/HarfBuzz；不能关闭模块取得成功 | 两个字体库完成同步后，保留既有模块与后端要求验证 |
 | `libzmq@4.3.5` | 固定 Git 来源的 WSS 由 GnuTLS 自动探测；现有原三平台缺少 WSS 状态证据，Gitee 也没有该包资产。旧 Darwin 构建/进程内消息通过，但 GnuTLS 绝对路径未满足交付要求 | 取得原平台配置或成品能力证据（查询使用 `zmq_has("WSS")`），或用户明确决定 Darwin WSS 目标后再处理必要交付 |
-| `sdl3@3.2.30` | [run 42251612424](https://github.com/xxf1ow/xxautolib/actions/runs/42251612424) 探测 Homebrew libusb 1.0.30，启用 SDL_HIDAPI_LIBUSB/SHARED；静态归档含 libusb 后端及 `libusb-1.0.dylib` 加载名，却未交付运行库或声明仓库 libusb 1.0.27。surface smoke 不覆盖这条设备路径，原平台该后端基线不足 | 确认原平台 USB 后端能力；按明确目标使用仓库 libusb 版本并验证必要运行依赖交付，或经确认后关闭基线以外的后端 |
+| `sdl3@3.2.30` | [run 42251612424](https://github.com/xxf1ow/xxautolib/actions/runs/42251612424) 探测 Homebrew libusb 1.0.30，启用 SDL_HIDAPI_LIBUSB/SHARED；静态归档含 libusb 后端及 `libusb-1.0.dylib` 加载名，却未交付运行库或声明仓库 libusb 1.0.27。surface smoke 不覆盖这条设备路径；原三平台补查均未启用 libusb 后端，详见下节 | 关闭基线以外的 libusb 后端，保留原生 HID 能力，再完成构建、消费和搬迁验收；结果见下文专项验收 |
 | `imgui@065f9e02695c` | 固定依赖仓库 SDL3；旧基础消费通过不能解除 SDL3 的依赖交付缺口 | SDL3 完成能力同步与交付后，保留既有 SDL3/OpenGL3 后端验证 |
 
 SDL3 调查归档来自源码 `03d5f5afd5c080f5bd5106bc4083906b68a2318d`、run 42251612424/attempt 1，SHA256 为 `116658d320c223d459df7ae2525933c8c6c8cf13a02418c57239def33d226097`；ImGui 来自 `c8eec1ec11a8464cd8af03a9dd953bcb35740eec`、[run 42260213354/attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42260213354)，SHA256 为 `af8f3931f11087e7d357db90b295ab0351db7c50e1ccdde1d18c56357a79f453`。两份归档保留为具名调查证据，不计入本分支支持结果。
+
+#### SDL3 原平台 libusb 后端补查
+
+[run 42041533183，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42041533183) 的源码为 `569acb0a012acb95ca07284b75c7d70516234711`。逐项解析 TOML、归一名称/版本字段迁移及 Windows 平台键后，该提交、冻结基线 `49df3fc` 与显式固定开关前的 `44df867` 的 SDL3 配方语义相同：来源提交、静态形态、cache、依赖及 apt 声明一致。该运行的三平台构建日志均显示未找到 LibUSB，SDL3 编译成功；结果 JSON 均记录该包 `built=true`。
+
+| 平台 | `SDL_HIDAPI` / `SDL_HIDAPI_JOYSTICK` | `SDL_HIDAPI_LIBUSB` / `SDL_HIDAPI_LIBUSB_SHARED` | 构建日志行号 |
+|---|---|---|---|
+| Windows x86_64 | ON / ON | OFF / OFF | 100、151–154 |
+| Linux x86_64 | ON / ON | OFF / OFF | 495、564–567 |
+| Linux aarch64 | ON / ON | OFF / OFF | 479、548–551 |
+
+各平台日志位于对应 `ci-evidence-42041533183-1-<平台>` artifact 的 `logs/layer0/19/build.log`。该运行整体失败：Linux x86_64 完成 SDL3 消费验证，Windows 因 HarfBuzz 消费失败、Linux ARM64 因后续构建失败而未完成 SDL3 消费验证。历史 Linux 使用 GCC 9.4，当前冻结基线为 GCC 10.5；这些日志用于确认既有后端状态，不代替当前工具链的完整验收或真实 USB 设备测试。
+
+补查时 Gitee 没有 SDL3 发布资产；已有日志足以确定原三平台的 libusb 后端均未启用，因此未新触发 CI。原始计划、结果、诊断及日志摘要保存在 `build/stage2-sdl-audit/`，`audit.json` 记录各平台日志 SHA256 和具体行号。此证据确定了关闭额外 libusb 后端、保留 HIDAPI 及 joystick 的同步目标，不需要为 SDL3 新增仓库 libusb 依赖。随后按用户决定，在公共 cache 固定关闭该后端，原三平台其他配置不变；Darwin 专项结果见下节。
+
+#### SDL3 与 ImGui 专项验收
+
+公共 cache 显式设置 `SDL_HIDAPI_LIBUSB=false`，覆盖 Windows x86_64、Linux x86_64/aarch64 和 Darwin ARM64。两个包恢复 `darwin-aarch64` 支持声明，其余源码、cache、依赖、apt 和 adapter 均不变。真实 builder 四平台生成结果均包含 `-DSDL_HIDAPI_LIBUSB:BOOL=OFF`；原三平台复用上述已关闭后端的编译证据，不重复编译。
+
+独立测试快照 `93b9b2229639a3b194ecbbf33963f35d3bb78a94` 的 [run 42360397659，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42360397659) 全部通过。测试入口只选择 SDL3 和 ImGui，使用相同的仓库生产及消费流程；未触发 Gitee 发布。正式分支的两份配方与该快照逐字节一致，测试快照身份与成品摘要保留原值。
+
+runner 为 macOS 15.8.2/arm64、Apple Clang 17.0.0，CMake 3.31.12，部署目标 15.0。SDL3 实际摘要为 HIDAPI/joystick ON、LIBUSB/SHARED OFF；原始归档解出后的静态库没有 `LIBUSB_hid_*` 符号或 `libusb-1.0.dylib` 加载名。ImGui 静态库包含 `ImGui_ImplSDL3_InitForOpenGL` 与 `ImGui_ImplOpenGL3_Init` 的定义，SDL3/OpenGL3 后端仍被编译。两个独立根的直接 API 消费各 1/1 通过，同归档搬迁后的组合消费 1/1 通过；原安装在搬迁消费期间被移走。覆盖限于 SDL surface 和 ImGui context/颜色转换，未验证交互窗口、OpenGL 上下文或真实 HID/USB 设备。
+
+| 原始归档 | SHA256 |
+|---|---|
+| `sdl3-3.2.30-darwin-aarch64.tar.zst` | `742d9835ffa4d4effb147e03d0def07a3762fb995df4741a320988ff21eb9143` |
+| `imgui-065f9e02695c-darwin-aarch64.tar.zst` | `106c55764e54c49647bbdcc214c7add39d646fb5b70bebee4768b18ff9f6d9f8` |
+
+已下载运输包并逐项核对归档摘要、run/attempt、源码身份、两根 `verified=true` 及完整结果。原始日志、结果和成品保存在 `build/sdl3-imgui-acceptance/42360397659-attempt1/`。最终真实 `all` 计划保留原三平台各 32 根，Darwin 为 28 根；只过滤 FreeType、HarfBuzz、OpenCV 和 libzmq 四个版本。SDL3、ImGui 的后端交付阻断解除，原三平台的唯一显式配置调整是已批准的 libusb 后端关闭值。
 
 #### 同归档与功能覆盖缺口
 
 两份 Linux Eigen 原件及 `producer.json` 已核对为 run 42264057220/attempt 1、源码 `d8ffda6a51e0a427a8ddec6fd508ff61c564625c`：3.4.0 SHA256 为 `be0dcfb8cd69556b00edeb541fbacff0ac4f9d9167ac75f47546bdf00923a2c4`，5.0.1 为 `9d71707429eeff4186b5993e3caff52fe76c33f6f8afb66f2801dcbb0831d578`。复用 Windows/macOS 两版直接及搬迁共八次消费，以及 run 42272676188 的原三平台 PCL 组合；没有重新生产或改写旧身份。同归档消费始终使用这两份原件，不使用本轮 transport 中重新打包的 Eigen 替代。Darwin PCL 在上述新运行中完成同一 Linux 3.4.0 Config 组合，直接及搬迁各 1/1 通过；已下载核对原摘要、生产身份及实际 Eigen3_DIR，均指向对应隔离安装的 3.4.0 Config。
 
-实际覆盖限于有效 API smoke。RealSense 验证 SDK/API 和搬迁，未验相机取流；固定上游另有 Viewer/IMU/USB 权限限制。PortAudio 未验音频设备；暂列阻断的 SDL3 旧记录只验证内存 surface，未验交互图形或 HID/USB，ImGui 旧记录未验窗口；Native File Dialog 未调用交互对话框；libusb 未验设备；ONNX Runtime 创建并释放 CPU 环境，未验模型推理。pybind11 包含编译扩展并由匹配 Python 实际调用。构建消费通过不扩大这些覆盖。
+实际覆盖限于有效 API smoke。RealSense 验证 SDK/API 和搬迁，未验相机取流；固定上游另有 Viewer/IMU/USB 权限限制。PortAudio 未验音频设备；SDL3 验证内存 surface，未验交互图形或 HID/USB，ImGui 验证 context 与颜色转换，未验窗口；Native File Dialog 未调用交互对话框；libusb 未验设备；ONNX Runtime 创建并释放 CPU 环境，未验模型推理。pybind11 包含编译扩展并由匹配 Python 实际调用。构建消费通过不扩大这些覆盖。
 
 阶段末独立审查覆盖 `49df3fc..0a3cd6c` 及待提交文档，发现 SDL3/libusb 一项 Important，ImGui 随依赖受到影响；用户确认暂列两包阻断后撤回新增 Darwin 声明。真实 plan 检查先复现两包仍被选中，修正声明后验证过滤，原三平台配置保持不变。没有其他已证实的 Critical/Important 或待处理 Minor。阶段实现及增量验收已完成，整体结果待用户验收；未执行主分支合并或正式发布。
