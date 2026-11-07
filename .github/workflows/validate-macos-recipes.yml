@@ -29,7 +29,6 @@ jobs:
       fail-fast: false
       matrix:
         root:
-          - boost@1.87.0
           - pcl@pcl-1.15.1
     defaults:
       run:

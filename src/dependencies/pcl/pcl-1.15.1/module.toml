@@ -14,6 +14,10 @@ GIT_TAG = "3346843ea6b97697a1577293aa9cdf236b5c7ffb"
 config_dir = "cmake"
 sentinel = "cmake/PCLConfig.cmake"
 
+[platforms.darwin-aarch64.cmake.cache]
+# 静态 PCL 同时使用共享 FLANN 与 Boost 的 SDK 压缩库，不能只查找 .a。
+PCL_ALLOW_BOTH_SHARED_AND_STATIC_DEPENDENCIES = true
+
 [cmake.cache] # 保留参考静态 PCL、共享 FLANN、OpenMP 及功能裁剪，不扩展可选后端。
 PCL_SHARED_LIBS = false
 PCL_FLANN_REQUIRED_TYPE = "SHARED"

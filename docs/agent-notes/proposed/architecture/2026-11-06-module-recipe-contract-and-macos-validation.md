@@ -287,7 +287,7 @@ runner 预装的 Homebrew 库可能改变可选功能探测、动态链接及最
 
 ### 第二阶段：macOS 逐包验收
 
-31 份版本配方中，24 份通过已实现的 API smoke、打包及搬迁消费，其余 7 份按下述规则继续评估。试验中的 Darwin 声明不计为通过，过滤也不计为验证成功。原样 example 已真实通过；下述未验包与硬件能力仍保留，第二阶段尚未验收，本记录保持 proposed。
+31 份版本配方中，25 份通过已实现的 API smoke、打包及搬迁消费，其余 6 份按下述规则继续评估。试验中的 Darwin 声明不计为通过，过滤也不计为验证成功。原样 example 已真实通过；下述未验包与硬件能力仍保留，第二阶段尚未验收，本记录保持 proposed。
 
 此前执行将“已有配方的库使用仓库版本”扩大为“所有第三方库均须有仓库配方”，据此禁止 brew 提供库依赖并暂缓相关包。这是执行解释错误。正确规则允许仓库没有配方的库使用系统依赖机制；既有 23 个成功版本和 Eigen 跨平台证据继续有效，仅重新验证受误判影响的包及下游。困难问题仍先报告，不擅自改变功能或版本。
 
@@ -295,9 +295,9 @@ runner 预装的 Homebrew 库可能改变可选功能探测、动态链接及最
 
 HarfBuzz 8.5.0、OpenCV 4.14.0 的 Darwin 验收随此依赖链暂缓，尚无独立构建结论。重试需要先明确 FreeType/HarfBuzz 的无环构建方式和功能要求，补齐仓库 zlib 与允许的系统依赖接线；难解的循环后续处理，不为使用 brew 库新增配方前置要求。
 
-`boost@1.87.0` 在源码 `d07d8c06dc930ac2cb897e22bdf4e6df87579749` 的 [macOS 15 验收 run 42257137133，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42257137133/job/128027205076) 完成静态构建及消费 API 检查，但 Mach-O 拒绝 Homebrew zstd 1.5.7 的 `libzstd.1.dylib`。实际 Boost::iostreams 元数据同时依赖 SDK bzip2、liblzma，zlib 则正确使用仓库 1.3.1。zstd、bzip2 和 xz/liblzma 均可通过 brew 提供；原先以缺少仓库配方为由暂缓的结论撤销。该版本恢复待重试，需声明系统依赖、保留仓库 zlib 并完成非系统动态库交付及搬迁验证；尚不能计为通过。
+`boost@1.87.0` 保留四种压缩能力和仓库 zlib 1.3.1，bzip2/liblzma 使用 Apple SDK，zstd 由声明的 brew formula 提供。包级安装复制 zstd 的头文件、静态/共享目标所需库、上游 Config 和许可证，Boost.Iostreams Config 固定查找包内 zstd；仅重写安装副本的 dylib ID 并签名。源码 `926f606810d864fd87c5a9c345cd4bbd28c2ffad` 的 [macOS 15 run 42338067624，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42338067624/job/128299399197) 完成构建、包含实际 zstd 压缩解压的直接/搬迁 CTest、Mach-O 检查和打包。三份 transport 资产的身份与摘要均已核对；包内 zstd 1.5.7 为 arm64、minos 15.0，仅引用自身的 `@rpath` ID 与系统 libSystem，没有 Homebrew load path。证据保存在 `build/stage2-runs/42338067624-attempt1/`。SDK 链接输入检查仅接受当前选定 SDK 中解析后位于 `usr/lib` 或 `System/Library` 的 `.tbd`，不放宽运行时或 Homebrew 路径规则。
 
-WebSocket++ 4dfe1be74e68、PCL pcl-1.15.1 随 Boost/FLANN 恢复为闭包待重试，尚无这两个根的独立 Darwin 构建结论。WebSocket++ 保持 any-any 载荷身份，Darwin 资格取决于 Boost 闭包验收；PCL 原有三个平台的 Linux Eigen 归档组合证据见下节。
+WebSocket++ 4dfe1be74e68 在源码 `1884d454f61e8ccd3934e20b8d1999470d6ff5b2` 的 [macOS 15 run 42337354961，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42337354961) 消费编译失败：固定版本使用的 Asio `io_service`、旧 strand API 和 `expires_from_now` 不存在于仓库 Boost 1.87.0。该作业中 Boost 自身的实际压缩 smoke 和 Mach-O 检查已通过，WebSocket++ 不能再仅归为依赖尚未就绪。按困难问题暂缓的要求，保留 any-any 载荷身份，记录版本兼容阻断；重试需先确定固定版本范围内的 API 适配，不擅自升级或换用系统 Boost。PCL pcl-1.15.1 独立于 WebSocket++，其 Darwin 候选另行验收；原有三个平台的 Linux Eigen 归档组合证据见下节。
 
 `libzmq@4.3.5` 在源码 `c8eec1ec11a8464cd8af03a9dd953bcb35740eec` 的 [macOS 15 验收 run 42260213354，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42260213354/job/128037859553) 完成构建及进程内消息收发，但 Mach-O 检查拒绝 `/opt/homebrew/opt/gnutls/lib/libgnutls.30.dylib`。导出的静态、动态目标都依赖 Homebrew GnuTLS。仓库没有对应配方，可声明 brew `gnutls`；原先要求新增仓库配方的阻断撤销。该版本恢复待重试，保留功能并完成其传递动态库交付、许可证及搬迁验证后再恢复 Darwin 声明。 本机 brew GnuTLS 3.8.13_2 的 `otool -L` 显示其依赖 `/usr/lib/libz.1.dylib`，还依赖 Homebrew gettext、p11-kit、libidn2、libunistring、libtasn1、nettle 和 gmp。仓库 zlib 1.3.1 当前交付静态库，复制这些 dylib 不能将 GnuTLS 的系统 zlib 调用改为仓库版本；该本机 bottle 也不能替代 macOS 15 验收。按难题先报告的要求，libzmq 维持暂缓，后续需解决 GnuTLS 的仓库 zlib 接线及完整交付，再在 macos-15 重验；不关闭 GnuTLS 功能、不新增通用收集框架。
 
@@ -314,7 +314,7 @@ WebSocket++ 4dfe1be74e68、PCL pcl-1.15.1 随 Boost/FLANN 恢复为闭包待重�
 | 精确版本 | 结论与证据 run | 原始归档 SHA256 |
 |---|---|---|
 | `asio@8806a6803cde` | 通过 / 42251612424 | `331bb64fdb8973a4efba04a2bfbfaf005e6aaf06384c02f6eeaf2a965e05d827` |
-| `boost@1.87.0` | 待重试 / 42257137133 / brew 压缩依赖与交付 | — |
+| `boost@1.87.0` | 通过 / 42338067624 | `2a51568abf4e3f8d22ba5d7b20ff162c53bf57fd7ab3ee1d3adacaefc9f515d5` |
 | `clipper2@1.5.4` | 通过 / 42251612424 | `a295b1c3cba844db372056be276391010d43611bfa2dc4c25e64fe0fb0932f19` |
 | `cpp-httplib@88956ccad838` | 通过 / 42251612424 | `6a132b0d77acc8f4e0336baebbfd0dcb90291bbe8096eef870647cbda361a056` |
 | `eigen@3.4.0` | 通过 / 42260213354 | `d596afb529434130ff3c2e22ff5f406ca10e70b59d841e72987b548a9bc58170` |
@@ -341,7 +341,7 @@ WebSocket++ 4dfe1be74e68、PCL pcl-1.15.1 随 Boost/FLANN 恢复为闭包待重�
 | `sdl3@3.2.30` | 通过 / 42251612424 | `116658d320c223d459df7ae2525933c8c6c8cf13a02418c57239def33d226097` |
 | `spdlog@1.17.0` | 通过 / 42251612424 | `edfe516678412688dc90415a7a1ba6ce14aeced1e51e87cebe0505d8c24b1153` |
 | `taskflow@83f90a279aaa` | 通过 / 42257137133 | `370cb340dc92a5d1b8c50d3f86fb49f2a3f1292c1d08e0ebf2b94dc3b7d1529d` |
-| `websocketpp@4dfe1be74e68` | 闭包待重试 / Boost | — |
+| `websocketpp@4dfe1be74e68` | 暂缓 / 42337354961 / 固定版本与 Boost 1.87 Asio API 不兼容 | — |
 | `yaml-cpp@2decf96e915d` | 通过 / 42251612424 | `61674b68034ae2a917e4622841fd59954ab25a64f6dc35f93f4f3acabdb723c3` |
 | `zlib@1.3.1` | 通过 / 42251612424 | `f5d86230d8abb59f97fff177dd351df89261ffaccef5957ead480e0c33bc05a1` |
 
@@ -371,4 +371,4 @@ PCL smoke 的查询变量使用独立名称，避免与同时启用的 FLANN 检
 
 ### 第一阶段未覆盖的范围
 
-第一阶段没有推送、远端 Actions、发布或合并，本机闭环不能替代 macOS 15 或同归档跨平台证据。第二阶段的实际结果、具名阻断及重试条件见上述快照；example、Darwin PCL 和列出的硬件及后端能力仍未验。阶段验收不等于整体设计全部达标，本记录保持 proposed，未执行合并或 Gitee 发布。
+第一阶段没有推送、远端 Actions、发布或合并，本机闭环不能替代 macOS 15 或同归档跨平台证据。第二阶段的实际结果、具名阻断及重试条件见上述快照；example 已通过，Darwin PCL 和列出的硬件及后端能力仍待验。阶段验收不等于整体设计全部达标，本记录保持 proposed，未执行合并或 Gitee 发布。
