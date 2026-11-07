@@ -60,9 +60,9 @@ def capabilities():
         values = dict(re.findall(r'^([^/#\n][^:=\n]*):[^=\n]+=(.*)$', cache, re.M))
         assert values.get('FT_DISABLE_HARFBUZZ') in ('ON', 'TRUE'), str(file)
         assert values.get('FT_REQUIRE_ZLIB') in ('ON', 'TRUE'), str(file)
-        selected = [value for key, value in values.items() if key.startswith('ZLIB_LIBRARY') and
+        selected = [value for key, value in values.items() if key in ('ZLIB_LIBRARY', 'ZLIB_LIBRARY_RELEASE', 'ZLIB_LIBRARY_DEBUG') and
                     value and not value.endswith('-NOTFOUND') and value not in ('Release', 'Debug')]
-        expected = str(work / 'install/zlib/1.3.1').replace('\\', '/').lower()
+        expected = (values['CMAKE_INSTALL_PREFIX'].replace('\\', '/').rsplit('/', 2)[0] + '/zlib/1.3.1').lower()
         assert selected, values
         for value in selected:
             for part in value.split(';'):
