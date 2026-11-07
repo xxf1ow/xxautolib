@@ -8,6 +8,8 @@ on:
       - src/dependencies/flann/**
       - src/dependencies/boost/**
       - src/dependencies/websocketpp/**
+      - src/autolib-ci/validate_macho.go
+      - src/autolib-ci/validate.go
       - tests/autolib/smoke.cpp
       - .github/workflows/validate-macos-recipes.yml
 

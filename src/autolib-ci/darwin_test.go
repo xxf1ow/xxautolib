@@ -238,12 +238,50 @@ func TestCIDarwinMachO(t *testing.T) {
 	}
 	writeCIFixture(t, run, "build/autolib_smoke", string(original))
 	writeCIFixture(t, run, "build/link-inputs-Release.txt", "/opt/homebrew/lib/libaccidental.a\n")
-	if err := verifyDarwinPackageInputs(run, []string{pkg}, "15.0"); err == nil || !strings.Contains(err.Error(), "Darwin consumer link input") {
+	if err := verifyDarwinPackageInputs(run, []string{pkg}, "15.0", ""); err == nil || !strings.Contains(err.Error(), "Darwin consumer link input") {
 		t.Fatal("Homebrew input did not reach path validation", err)
 	}
 	writeCIFixture(t, run, "build/link-inputs-Release.txt", filepath.Join(run, "production/libbad.a")+"\n")
-	if err := verifyDarwinPackageInputs(run, []string{pkg}, "15.0"); err == nil || !strings.Contains(err.Error(), "Darwin consumer link input") {
+	if err := verifyDarwinPackageInputs(run, []string{pkg}, "15.0", ""); err == nil || !strings.Contains(err.Error(), "Darwin consumer link input") {
 		t.Fatal("producer input did not reach path validation", err)
+	}
+	sdkOutput, err := exec.Command("xcrun", "--sdk", "macosx", "--show-sdk-path").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sdk := strings.TrimSpace(string(sdkOutput))
+	writeCIFixture(t, run, "build/link-inputs-Release.txt", filepath.Join(sdk, "usr/lib/libbz2.tbd")+"\n")
+	if err := verifyDarwinPackageInputs(run, []string{pkg}, "15.0", sdk); err != nil {
+		t.Fatal("selected SDK system library must be accepted", err)
+	}
+}
+
+func TestCIDarwinSDKLinkBoundary(t *testing.T) {
+	root := t.TempDir()
+	sdk := filepath.Join(root, "selected SDK")
+	fixture := func(base, name, contents string) string {
+		writeCIFixture(t, base, name, contents)
+		return filepath.Join(base, name)
+	}
+	valid := fixture(sdk, "usr/lib/libbz2.tbd", "stub")
+	framework := fixture(sdk, "System/Library/Frameworks/Sample.framework/Sample.tbd", "stub")
+	outside := fixture(root, "brew/lib/libexternal.tbd", "stub")
+	link := filepath.Join(sdk, "usr/lib/escaped.tbd")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Fatal(err)
+	}
+	nonSystem := fixture(sdk, "usr/local/lib/libexternal.tbd", "stub")
+	dylib := fixture(sdk, "usr/lib/libbinary.dylib", "binary")
+	for _, test := range []struct {
+		path, sdk string
+		want      bool
+	}{
+		{valid, sdk, true}, {framework, sdk, true}, {outside, sdk, false},
+		{link, sdk, false}, {nonSystem, sdk, false}, {dylib, sdk, false}, {valid, "", false},
+	} {
+		if got := darwinSDKLinkInput(test.path, test.sdk); got != test.want {
+			t.Errorf("path %q SDK %q: got %v, want %v", test.path, test.sdk, got, test.want)
+		}
 	}
 }
 

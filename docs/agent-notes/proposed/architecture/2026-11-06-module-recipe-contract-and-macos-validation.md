@@ -297,9 +297,9 @@ HarfBuzz 8.5.0、OpenCV 4.14.0 的 Darwin 验收随此依赖链暂缓，尚无�
 
 `boost@1.87.0` 在源码 `d07d8c06dc930ac2cb897e22bdf4e6df87579749` 的 [macOS 15 验收 run 42257137133，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42257137133/job/128027205076) 完成静态构建及消费 API 检查，但 Mach-O 拒绝 Homebrew zstd 1.5.7 的 `libzstd.1.dylib`。实际 Boost::iostreams 元数据同时依赖 SDK bzip2、liblzma，zlib 则正确使用仓库 1.3.1。zstd、bzip2 和 xz/liblzma 均可通过 brew 提供；原先以缺少仓库配方为由暂缓的结论撤销。该版本恢复待重试，需声明系统依赖、保留仓库 zlib 并完成非系统动态库交付及搬迁验证；尚不能计为通过。
 
-WebSocket++ 4dfe1be74e68、PCL pcl-1.15.1 随 Boost/FLANN 恢复为闭包待重试，尚无这两个根的独立 Darwin 构建结论。WebSocket++ 保持 any-any 载荷身份，当前仍被 Boost 依赖资格过滤；PCL 原有三个平台的 Linux Eigen 归档组合证据见下节。
+WebSocket++ 4dfe1be74e68、PCL pcl-1.15.1 随 Boost/FLANN 恢复为闭包待重试，尚无这两个根的独立 Darwin 构建结论。WebSocket++ 保持 any-any 载荷身份，Darwin 资格取决于 Boost 闭包验收；PCL 原有三个平台的 Linux Eigen 归档组合证据见下节。
 
-`libzmq@4.3.5` 在源码 `c8eec1ec11a8464cd8af03a9dd953bcb35740eec` 的 [macOS 15 验收 run 42260213354，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42260213354/job/128037859553) 完成构建及进程内消息收发，但 Mach-O 检查拒绝 `/opt/homebrew/opt/gnutls/lib/libgnutls.30.dylib`。导出的静态、动态目标都依赖 Homebrew GnuTLS。仓库没有对应配方，可声明 brew `gnutls`；原先要求新增仓库配方的阻断撤销。该版本恢复待重试，保留功能并完成其传递动态库交付、许可证及搬迁验证后再恢复 Darwin 声明。
+`libzmq@4.3.5` 在源码 `c8eec1ec11a8464cd8af03a9dd953bcb35740eec` 的 [macOS 15 验收 run 42260213354，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42260213354/job/128037859553) 完成构建及进程内消息收发，但 Mach-O 检查拒绝 `/opt/homebrew/opt/gnutls/lib/libgnutls.30.dylib`。导出的静态、动态目标都依赖 Homebrew GnuTLS。仓库没有对应配方，可声明 brew `gnutls`；原先要求新增仓库配方的阻断撤销。该版本恢复待重试，保留功能并完成其传递动态库交付、许可证及搬迁验证后再恢复 Darwin 声明。 本机 brew GnuTLS 3.8.13_2 的 `otool -L` 显示其依赖 `/usr/lib/libz.1.dylib`，还依赖 Homebrew gettext、p11-kit、libidn2、libunistring、libtasn1、nettle 和 gmp。仓库 zlib 1.3.1 当前交付静态库，复制这些 dylib 不能将 GnuTLS 的系统 zlib 调用改为仓库版本；该本机 bottle 也不能替代 macOS 15 验收。按难题先报告的要求，libzmq 维持暂缓，后续需解决 GnuTLS 的仓库 zlib 接线及完整交付，再在 macos-15 重验；不关闭 GnuTLS 功能、不新增通用收集框架。
 
 `flann@f9caaf609d8b` 的早期 run 42260213354 虽完成构建，但未找到 OpenMP，且消费因裸 install name 无法加载。包级补丁保留 Apple Clang 与 OpenMP：通过声明的 brew `libomp` 探测完整使用要求，Config 导出编译选项、头文件和包内运行库，安装副本使用 `@rpath`/`@loader_path` 并重签名，附带 LLVM OpenMP 许可证，不改动 Homebrew 原文件。在源码 `a8ea348a89e1ace7a6cc425b3603d8a629751ae4` 的 [macOS 15 run 42335992231，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42335992231)，真实上游构建、直接与搬迁 CTest 均通过；两处 smoke 均执行两个 OpenMP worker，并确认实际运行库位于对应 FLANN 包内。原始归档与四份 transport 资产摘要已核对；包内三个 dylib 均为 arm64、minos 15.0，未引用 Homebrew 绝对路径。前置失败 run 42335035584 暴露旧 CMake policy 下 Apple Clang 标识差异，42335353810 暴露组合根名逗号进入 rpath；适配沿用公共入口编译器校验，验收目录按 job index 隔离。
 
@@ -327,7 +327,7 @@ WebSocket++ 4dfe1be74e68、PCL pcl-1.15.1 随 Boost/FLANN 恢复为闭包待重�
 | `imgui@065f9e02695c` | 通过 / 42260213354 | `af8f3931f11087e7d357db90b295ab0351db7c50e1ccdde1d18c56357a79f453` |
 | `librealsense@2.58.1` | 通过 / 42263227882 | `ace2fae72212280fad3aaadfdb8cf8d85b1e0937b7961fc65c93fd659b63d310` |
 | `libusb@1.0.27` | 通过 / 42257137133 | `0b131d2c44727f966e1edacc6b209b05a2a5c8714cd8b115fe0db6dcf5e7998a` |
-| `libzmq@4.3.5` | 待重试 / 42260213354 / brew GnuTLS 与交付 | — |
+| `libzmq@4.3.5` | 暂缓 / 42260213354 / GnuTLS 的仓库 zlib 接线及动态闭包 | — |
 | `lz4@1.10.0` | 通过 / 42251612424 | `b32d744bf837353f66d2f9f580bf69edf091c73f70354910db4a21a8df8beeb2` |
 | `nativefiledialog-extended@3cd252a8f7ca` | 通过 / 42251612424 | `efcadeb69ce4b804423ca60f6ef32e2420a9f43ae66f9d0977c38db8afeb439c` |
 | `nlohmann@3.12.0` | 通过 / 42251612424 | `4f24dc13816ab35c303143a92e21ea171647de043f2929695cfc5578347752a8` |

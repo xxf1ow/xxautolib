@@ -117,7 +117,7 @@ func validateCIRelease(ctx context.Context, o ciValidationOptions) (ciValidation
 			return ciValidationResult{EvidenceDirectory: roots.evidence}, err
 		}
 	} else if o.Context.OS == "darwin" {
-		if err := verifyDarwinPackageInputs(runRoot, packageRoots, environment.Production.Darwin.DeploymentTarget); err != nil {
+		if err := verifyDarwinPackageInputs(runRoot, packageRoots, environment.Production.Darwin.DeploymentTarget, o.Context.CMakeDefaults["CMAKE_OSX_SYSROOT"]); err != nil {
 			return ciValidationResult{EvidenceDirectory: roots.evidence}, err
 		}
 	} else {

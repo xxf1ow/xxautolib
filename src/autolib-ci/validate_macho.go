@@ -14,6 +14,22 @@ func darwinSystemPath(path string) bool {
 	return strings.HasPrefix(path, "/usr/lib/") || strings.HasPrefix(path, "/System/Library/")
 }
 
+func darwinSDKLinkInput(path, sdkRoot string) bool {
+	if !filepath.IsAbs(sdkRoot) || !strings.HasSuffix(path, ".tbd") {
+		return false
+	}
+	sdk, err := filepath.EvalSymlinks(sdkRoot)
+	if err != nil {
+		return false
+	}
+	actual, err := filepath.EvalSymlinks(path)
+	if err != nil || !strings.HasSuffix(actual, ".tbd") {
+		return false
+	}
+	relative, err := filepath.Rel(sdk, actual)
+	return err == nil && darwinSystemPath("/"+filepath.ToSlash(relative))
+}
+
 func darwinVersion(value string) (uint32, error) {
 	parts := strings.Split(value, ".")
 	if len(parts) < 2 || len(parts) > 3 {
@@ -150,7 +166,7 @@ func validateDarwinArchive(path, target string) error {
 	return nil
 }
 
-func verifyDarwinPackageInputs(runRoot string, packageRoots []string, deploymentTarget string) error {
+func verifyDarwinPackageInputs(runRoot string, packageRoots []string, deploymentTarget, sdkRoot string) error {
 	consumer := filepath.Join(runRoot, "build", "autolib_smoke")
 	if err := validateDarwinBinary(consumer, deploymentTarget, false); err != nil {
 		return err
@@ -161,7 +177,7 @@ func verifyDarwinPackageInputs(runRoot string, packageRoots []string, deployment
 	}
 	for _, input := range strings.Split(strings.TrimSpace(string(inputs)), "\n") {
 		input = strings.TrimSpace(input)
-		if input == "" || darwinSystemPath(input) {
+		if input == "" || darwinSystemPath(input) || darwinSDKLinkInput(input, sdkRoot) {
 			continue
 		}
 		if err := requireCIPathInPackages(packageRoots, input, "Darwin consumer link input"); err != nil {
