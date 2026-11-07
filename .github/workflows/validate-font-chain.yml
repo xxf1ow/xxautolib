@@ -38,7 +38,7 @@ jobs:
         id: plan
         shell: bash
         env:
-          SELECTED_PLATFORMS: windows-x86_64,darwin-aarch64
+          SELECTED_PLATFORMS: darwin-aarch64
           SELECTED_MODULES: freetype@2.13.2,harfbuzz@8.5.0,opencv@4.14.0
         run: |
           set -euo pipefail
@@ -276,6 +276,14 @@ jobs:
             ${{ env.WORK_ROOT }}/font-acceptance/**/*.json
             ${{ env.WORK_ROOT }}/font-acceptance/**/*.log
             ${{ env.WORK_ROOT }}/font-acceptance/**/*.pgm
+          if-no-files-found: warn
+
+      - name: Retain unverified installation for diagnosis
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: font-unverified-install-${{ github.run_id }}-darwin-aarch64
+          path: ${{ env.WORK_ROOT }}/install/
           if-no-files-found: warn
 
   windows:
