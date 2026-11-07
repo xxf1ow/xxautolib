@@ -1,6 +1,6 @@
 # libzmq：ZeroMQ 消息引擎，保留上游默认静动态产物。
 type = "cmake"
-package_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
+package_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64','darwin-aarch64']
 sentinel = "include/zmq.h"
 config_dir = "lib/cmake/ZeroMQ"
 package_name = "ZeroMQ"
@@ -8,6 +8,9 @@ package_name = "ZeroMQ"
 [source] # 固定迁移基线；升级时同步核对布局及导出接口。
 GIT_REPOSITORY = "https://github.com/zeromq/libzmq.git"
 GIT_TAG = "622fc6dde99ee172ebaa9c8628d85a7a1995a21d"
+
+[cmake.cache]
+WITH_TLS = false # 固定原三平台未启用的 WSS，保留普通 WS。
 
 [platforms.windows-x86_64]
 config_dir = "CMake"

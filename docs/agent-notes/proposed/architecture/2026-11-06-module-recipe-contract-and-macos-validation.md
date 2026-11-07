@@ -38,6 +38,8 @@ WebSocket++ 与 Asio 两项是用户已经单独批准的全平台例外，不�
 
 SDL3 已补查原三平台均未启用 libusb 后端。用户批准在公共 cache 显式设置 `SDL_HIDAPI_LIBUSB=false`，覆盖原三平台并供 Darwin 同步使用；这是对已证实关闭状态的固定，不新增或裁掉既有能力。该设置是原平台配方冻结规则的具名例外，其余 SDL3 配置、系统依赖及上游提交不变。SDL3 和 ImGui 在 Darwin 完成构建、直接消费及打包搬迁消费验收后，才提交本轮正式修改并进入下一阻断包。
 
+libzmq 已补查原三平台均因未找到 GnuTLS 而不启用 WSS。用户批准在公共 cache 显式设置 `WITH_TLS=false`，供原三平台与 Darwin 同步使用，保留普通 WS 及其他原配置；这是原平台配方冻结规则的另一具名例外。不新增 GnuTLS 系统依赖或修改静动态形态，完成 macOS 功能查询、直接及搬迁消费验收后提交。
+
 ### 字段规范所有者与实现职责
 
 实现时以 `docs/subsystems/module-recipes.md` 作为当前字段参考的唯一所有者，完整列出类型、默认值、必填条件、适用类型、路径基准、覆盖方式、互斥条件、实际效果和校验时机。本记录保存设计、理由和验收要求；架构文档解释组件职责，开发及测试指南拥有命令，接入技能引用字段参考。
@@ -386,14 +388,14 @@ FLANN 保留仓库 lz4 和已证实的 OpenMP，Darwin 仅声明 libomp 并安�
 
 #### 阶段审查时的六个阻断版本
 
-阶段审查时，用户确认以下六个版本暂列阻断，当时保留原平台声明并撤回 SDL3、ImGui 的新增 Darwin 声明。下表保留该次阻断原因和重试条件；SDL3 与 ImGui 已在下文专项验收中解除阻断，当前剩余 FreeType、HarfBuzz、OpenCV 和 libzmq 四个版本。这些是仓库交付的支持缺口，不是上游全面不支持 macOS 的结论。
+阶段审查时，用户确认以下六个版本暂列阻断，当时保留原平台声明并撤回 SDL3、ImGui 的新增 Darwin 声明。下表保留该次阻断原因和重试条件；SDL3、ImGui 与 libzmq 已在下文专项验收中解除阻断，当前剩余 FreeType、HarfBuzz 和 OpenCV 三个版本。这些是仓库交付的支持缺口，不是上游全面不支持 macOS 的结论。
 
 | 精确版本 | 原因与证据 | 重新尝试条件 |
 |---|---|---|
 | `freetype@2.13.2` | [原平台验证记录](../../implemented/architecture/2026-10-20-flann-opencv-dependencies.md#验证结果)中，Windows 无额外 private 依赖，Linux ARM 启用系统 zlib/PNG，原平台实际能力已有差异；旧 Darwin 试编还探测系统 HarfBuzz，与仓库 HarfBuzz→FreeType 形成循环 | 用户确定 Darwin 能力基线；仓库已有库的接线及循环方案获得明确决定 |
 | `harfbuzz@8.5.0` | 固定依赖仓库 FreeType，后者 Darwin 基线尚未确定 | FreeType 阻断解除后按既定 HB_HAVE_FREETYPE=ON 验收 |
 | `opencv@4.14.0` | 既有 freetype 模块依赖上述 FreeType/HarfBuzz；不能关闭模块取得成功 | 两个字体库完成同步后，保留既有模块与后端要求验证 |
-| `libzmq@4.3.5` | 固定 Git 来源的 WSS 由 GnuTLS 自动探测；现有原三平台缺少 WSS 状态证据，Gitee 也没有该包资产。旧 Darwin 构建/进程内消息通过，但 GnuTLS 绝对路径未满足交付要求 | 取得原平台配置或成品能力证据（查询使用 `zmq_has("WSS")`），或用户明确决定 Darwin WSS 目标后再处理必要交付 |
+| `libzmq@4.3.5` | 固定 Git 来源的 WSS 由 GnuTLS 自动探测；阶段审查时缺少原三平台 WSS 状态证据，Gitee 也没有该包资产。旧 Darwin 构建/进程内消息通过，但 GnuTLS 绝对路径未满足交付要求 | 取得原平台配置或成品能力证据（查询使用 `zmq_has("WSS")`），或用户明确决定 Darwin WSS 目标后再处理必要交付 |
 | `sdl3@3.2.30` | [run 42251612424](https://github.com/xxf1ow/xxautolib/actions/runs/42251612424) 探测 Homebrew libusb 1.0.30，启用 SDL_HIDAPI_LIBUSB/SHARED；静态归档含 libusb 后端及 `libusb-1.0.dylib` 加载名，却未交付运行库或声明仓库 libusb 1.0.27。surface smoke 不覆盖这条设备路径；原三平台补查均未启用 libusb 后端，详见下节 | 关闭基线以外的 libusb 后端，保留原生 HID 能力，再完成构建、消费和搬迁验收；结果见下文专项验收 |
 | `imgui@065f9e02695c` | 固定依赖仓库 SDL3；旧基础消费通过不能解除 SDL3 的依赖交付缺口 | SDL3 完成能力同步与交付后，保留既有 SDL3/OpenGL3 后端验证 |
 
@@ -426,7 +428,19 @@ runner 为 macOS 15.8.2/arm64、Apple Clang 17.0.0，CMake 3.31.12，部署目�
 | `sdl3-3.2.30-darwin-aarch64.tar.zst` | `742d9835ffa4d4effb147e03d0def07a3762fb995df4741a320988ff21eb9143` |
 | `imgui-065f9e02695c-darwin-aarch64.tar.zst` | `106c55764e54c49647bbdcc214c7add39d646fb5b70bebee4768b18ff9f6d9f8` |
 
-已下载运输包并逐项核对归档摘要、run/attempt、源码身份、两根 `verified=true` 及完整结果。原始日志、结果和成品保存在 `build/sdl3-imgui-acceptance/42360397659-attempt1/`。最终真实 `all` 计划保留原三平台各 32 根，Darwin 为 28 根；只过滤 FreeType、HarfBuzz、OpenCV 和 libzmq 四个版本。SDL3、ImGui 的后端交付阻断解除，原三平台的唯一显式配置调整是已批准的 libusb 后端关闭值。
+已下载运输包并逐项核对归档摘要、run/attempt、源码身份、两根 `verified=true` 及完整结果。原始日志、结果和成品保存在 `build/sdl3-imgui-acceptance/42360397659-attempt1/`。该次真实 `all` 计划保留原三平台各 32 根，Darwin 为 28 根；当时只过滤 FreeType、HarfBuzz、OpenCV 和 libzmq 四个版本。SDL3、ImGui 的后端交付阻断解除，原三平台的唯一显式配置调整是已批准的 libusb 后端关闭值。
+
+#### libzmq 原平台补查与专项验收
+
+[run 42041533183，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42041533183) 的固定源码、libzmq 功能配方及依赖声明与 `49df3fc` 和显式固定开关前的 `039e800` 一致。三平台 `ci-evidence-42041533183-1-<平台>` artifact 的 `logs/layer0/10/build.log` 均报告未找到 GnuTLS、`No WSS support`：Windows 位于 98、100 行，Linux x86_64/aarch64 均位于 82、84 行。日志确认原平台未启用 WSS，不用缺少发布包推断功能。历史 Linux 工具链的 GCC 9.4 与当前 10.5 差异仍按上述限制保留。
+
+公共 cache 显式设置 `WITH_TLS=false`，四平台生成结果均包含 `-DWITH_TLS:BOOL=OFF`；只新增 Darwin 支持声明，其他来源、功能 cache、静动态形态、系统依赖及 adapter 不变。固定上游的 `WITH_TLS` 仅控制 WS 下的 GnuTLS/WSS 接线，保留 `ENABLE_WS` 和其他传输配置；不增加 brew 依赖。原三平台复用已关闭 WSS 的历史证据，不重新编译。
+
+独立测试快照 `5b0c1504bcaacc9537ebf6cffacd2b256c58cc3b` 的 [run 42361601058，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42361601058) 全部通过。实际环境为 macOS 15.8.2/arm64、Apple Clang 17.0.0、CMake 3.31.12，部署目标 15.0。直接安装与同归档搬迁后的动态库分别实际查询到 `zmq_has("WS")==1`、`zmq_has("WSS")==0`；两份 `otool -L` 仅包含自身 `@rpath` ID、系统 libc++ 和 libSystem，没有 GnuTLS 或 Homebrew 依赖。直接及搬迁后的 inproc 消息收发测试各 1/1 通过，搬迁测试期间原安装已移走。WS 查询证明该传输被编入，未验证网络 WS 握手。
+
+原始归档 `libzmq-4.3.5-darwin-aarch64.tar.zst` 的 SHA256 为 `0680d4772d7a910914281485907b4e12f7d8beefc1bc5dd5ed86d81ac07db8d0`。已下载运输包并逐项核对摘要、生产身份、`complete=true` 和独立根 `verified=true`，从下载归档再次检查动态库依赖及 WS/WSS 查询。原始结果、日志、`ws-direct.json`、`ws-relocated.json` 和成品位于 `build/libzmq-acceptance/42361601058-attempt1/`。正式分支配方与测试快照逐字节相同，未重标旧产物身份，也未触发 Gitee 发布。
+
+libzmq 的 WSS 基线与交付阻断解除。最终真实 `all` 计划保留原三平台各 32 根，Darwin 为 29 根；只过滤 FreeType、HarfBuzz 和 OpenCV 三个字体依赖链版本。
 
 #### 同归档与功能覆盖缺口
 
