@@ -1,8 +1,6 @@
 # FLANN 的头文件执行 OpenMP 调用，Config 消费者也须获得编译参数和包内运行库。
-cmake_policy(PUSH)
-cmake_policy(SET CMP0079 NEW)
-if(NOT USE_OPENMP OR NOT CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
-    message(FATAL_ERROR "Darwin FLANN requires Apple Clang and OpenMP")
+if(NOT USE_OPENMP)
+    message(FATAL_ERROR "Darwin FLANN requires OpenMP")
 endif()
 list(LENGTH OpenMP_CXX_LIBRARIES runtime_count)
 if(NOT runtime_count EQUAL 1)
@@ -53,4 +51,3 @@ install(CODE "
     execute_process(COMMAND codesign --force --sign - \"\${CMAKE_INSTALL_PREFIX}/lib/libomp.dylib\"
         COMMAND_ERROR_IS_FATAL ANY)
 ")
-cmake_policy(POP)
