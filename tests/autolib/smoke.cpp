@@ -101,6 +101,12 @@ TEST(AutolibPackage, AssertionRuns) { EXPECT_EQ(6 * 7, 42); }
 #ifdef AUTOLIB_TEST_BOOST
 #include <boost/filesystem/path.hpp>
 #include <boost/regex.hpp>
+#ifdef __APPLE__
+#include <boost/iostreams/copy.hpp>
+#include <boost/iostreams/filter/zstd.hpp>
+#include <boost/iostreams/filtering_stream.hpp>
+#include <sstream>
+#endif
 #endif
 #ifdef AUTOLIB_TEST_WEBSOCKETPP
 #include <websocketpp/config/asio_no_tls_client.hpp>
@@ -165,6 +171,24 @@ int main()
     if (!boost::regex_match(std::string("answer42"), boost::regex("answer[0-9]+"))
         || boost::filesystem::path("/one/../two").lexically_normal().generic_string() != "/two")
         return 42;
+#ifdef __APPLE__
+    const std::string boost_input = "Boost Iostreams zstd delivery";
+    std::ostringstream compressed;
+    {
+        boost::iostreams::filtering_ostream encoder;
+        encoder.push(boost::iostreams::zstd_compressor());
+        encoder.push(compressed);
+        encoder << boost_input;
+    }
+    std::istringstream encoded(compressed.str());
+    boost::iostreams::filtering_istream decoder;
+    decoder.push(boost::iostreams::zstd_decompressor());
+    decoder.push(encoded);
+    std::ostringstream restored;
+    boost::iostreams::copy(decoder, restored);
+    if (restored.str() != boost_input)
+        return 48;
+#endif
 #endif
 #ifdef AUTOLIB_TEST_WEBSOCKETPP
     websocketpp::client<websocketpp::config::asio_client> client;

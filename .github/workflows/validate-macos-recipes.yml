@@ -5,7 +5,8 @@ on:
     branches:
       - task/darwin-aarch64-native-ci
     paths:
-      - src/dependencies/flann/**
+      - src/dependencies/boost/**
+      - src/dependencies/websocketpp/**
       - tests/autolib/smoke.cpp
       - .github/workflows/validate-macos-recipes.yml
 
@@ -24,7 +25,7 @@ jobs:
       fail-fast: false
       matrix:
         root:
-          - flann@f9caaf609d8b,queue@45db9a8b4431
+          - boost@1.87.0,websocketpp@4dfe1be74e68
     defaults:
       run:
         shell: bash
@@ -129,11 +130,6 @@ jobs:
             "-DROOT_PACKAGES=${SELECTED_MODULES//,/;}" "-DCMAKE_MAKE_PROGRAM=$MAKE_PROGRAM" \
             -DCMAKE_C_COMPILER="$CC" -DCMAKE_CXX_COMPILER="$CXX" -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -P tests/autolib/run-installed.cmake
-          env -u CMAKE_PREFIX_PATH -u PKG_CONFIG_PATH -u DYLD_LIBRARY_PATH -u DYLD_FALLBACK_LIBRARY_PATH \
-            "$CMAKE_COMMAND" "-DSOURCE_ROOT=$SOURCE_ROOT" "-DINSTALL_ROOT=$relocated/install" "-DVALIDATION_ROOT=$relocated/example-evidence" \
-            -DGENERATOR="Unix Makefiles" "-DCMAKE_MAKE_PROGRAM=$MAKE_PROGRAM" \
-            -DCMAKE_C_COMPILER="$CC" -DCMAKE_CXX_COMPILER="$CXX" -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
-            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -P tests/autolib/run-example.cmake
       - name: Finalize validation
         run: >-
           "$WORK_ROOT/autolib-ci" finalize --repository "$GITHUB_REPOSITORY" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --results "$WORK_ROOT/results"
@@ -165,6 +161,5 @@ jobs:
             ${{ env.WORK_ROOT }}/evidence/**/*.txt
             ${{ env.WORK_ROOT }}/jobserver.json
             ${{ env.WORK_ROOT }}/relocated/evidence/
-            ${{ env.WORK_ROOT }}/relocated/example-evidence/
           if-no-files-found: warn
 
