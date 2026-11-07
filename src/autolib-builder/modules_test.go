@@ -97,7 +97,7 @@ func TestRealModuleDeclarations(t *testing.T) {
 			}
 			want := 32
 			if slot[0] == "Darwin" {
-				want = 11
+				want = 28
 			}
 			if len(description.Roots) != want || len(description.FilteredRoots) != 32-want {
 				t.Fatalf("roots=%v filtered=%v", description.Roots, description.FilteredRoots)

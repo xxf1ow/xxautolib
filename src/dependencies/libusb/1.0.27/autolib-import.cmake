@@ -14,6 +14,8 @@ target_include_directories(autolib::libusb INTERFACE "${CMAKE_CURRENT_LIST_DIR}/
 target_link_libraries(autolib::libusb INTERFACE "${_autolib_libusb_library}")
 if(WIN32)
     target_link_libraries(autolib::libusb INTERFACE windowsapp)
+elseif(APPLE)
+    target_link_libraries(autolib::libusb INTERFACE "-framework Foundation" "-framework IOKit" "-framework Security")
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     if(NOT TARGET Threads::Threads)
         find_package(Threads REQUIRED)

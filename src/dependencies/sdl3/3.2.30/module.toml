@@ -1,6 +1,6 @@
 # sdl3：跨平台多媒体底层，安装启用 OpenGL/OpenGLES 的静态库。
 type = "cmake"
-package_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
+package_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64','darwin-aarch64']
 sentinel = "include/SDL3/SDL.h"
 config_dir = "lib/cmake/SDL3"
 package_name = "SDL3"

@@ -1,6 +1,6 @@
 # oneTBB：任务并行运行库，构建共享库、内存分配器及其代理。
 type = "cmake"
-package_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
+package_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64','darwin-aarch64']
 package_name = "TBB"
 config_dir = "lib/cmake/TBB"
 sentinel = "include/tbb/tbb.h"

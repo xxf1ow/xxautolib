@@ -1,6 +1,6 @@
 # pybind11：Python/C++ 绑定头文件及 CMake 配置，构建期不探测 Python。
 type = "cmake"
-package_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
+package_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64','darwin-aarch64']
 sentinel = "include/pybind11/pybind11.h"
 config_dir = "share/cmake/pybind11"
 
