@@ -18,6 +18,10 @@ sentinel = "cmake/PCLConfig.cmake"
 # 静态 PCL 同时使用共享 FLANN 与 Boost 的 SDK 压缩库，不能只查找 .a。
 PCL_ALLOW_BOTH_SHARED_AND_STATIC_DEPENDENCIES = true
 
+# FLANN 已交付 OpenMP；PCL 构建目标与 Config 消费复用同一运行库。
+[[platforms.darwin-aarch64.patches]]
+file = "darwin-openmp.patch"
+
 [cmake.cache] # 保留参考静态 PCL、共享 FLANN、OpenMP 及功能裁剪，不扩展可选后端。
 PCL_SHARED_LIBS = false
 PCL_FLANN_REQUIRED_TYPE = "SHARED"
