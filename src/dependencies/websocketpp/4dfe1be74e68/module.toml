@@ -1,7 +1,6 @@
 # websocketpp：WebSocket 协议库，仅安装头文件。
 package_platforms = ['any-any']
 type = "copy"
-depends = ["boost@1.87.0"] # 上游默认 Asio transport 使用 Boost；不强制切换到 standalone Asio。
 sentinel = "include/websocketpp/version.hpp"
 
 [source] # 固定迁移基线；升级时同步核对布局及导出接口。

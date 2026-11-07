@@ -83,8 +83,8 @@ func TestRealModuleDeclarations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(refs) != 31 {
-		t.Fatalf("want 31 recipe versions, got %d", len(refs))
+	if len(refs) != 32 {
+		t.Fatalf("want 32 recipe versions, got %d", len(refs))
 	}
 	for _, slot := range [][2]string{{"Windows", "x86_64"}, {"Linux", "x86_64"}, {"Linux", "aarch64"}, {"Darwin", "aarch64"}} {
 		t.Run("all-versions/"+slot[0]+"/"+slot[1], func(t *testing.T) {
@@ -92,14 +92,14 @@ func TestRealModuleDeclarations(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(description.RequestedRoots) != 31 {
+			if len(description.RequestedRoots) != 32 {
 				t.Fatal(description.RequestedRoots)
 			}
-			want := 31
+			want := 32
 			if slot[0] == "Darwin" {
-				want = 9
+				want = 11
 			}
-			if len(description.Roots) != want || len(description.FilteredRoots) != 31-want {
+			if len(description.Roots) != want || len(description.FilteredRoots) != 32-want {
 				t.Fatalf("roots=%v filtered=%v", description.Roots, description.FilteredRoots)
 			}
 			byRef := map[string]*moduleDefinition{}
@@ -128,14 +128,12 @@ func TestRealModuleDeclarations(t *testing.T) {
 					}
 					continue
 				}
-				if platform == "darwin-aarch64" && ref.Name == "websocketpp" {
-					if err != nil || len(selection.FilteredRoots) != 1 || selection.FilteredRoots[0].Code != "unsupported_dependency_platform" || !reflect.DeepEqual(selection.FilteredRoots[0].Chain, []string{"websocketpp@4dfe1be74e68", "boost@1.87.0"}) {
-						t.Fatalf("lost dependency filtering: %+v %v", selection, err)
-					}
-					continue
-				}
+
 				if err != nil {
 					t.Fatal(err)
+				}
+				if strings.Contains(" asio cpp-httplib eigen expected nlohmann pybind11 queue taskflow websocketpp ", " "+ref.Name+" ") && len(selection.Modules) != 1 {
+					t.Fatalf("header package %s must have an independent publication closure: %+v", ref, selection.Modules)
 				}
 				for _, effective := range selection.Modules {
 					deps := []*moduleDefinition{}
@@ -286,8 +284,8 @@ func TestVersionedRealDeclarations(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(modules) != 31 {
-				t.Fatalf("want 31 versions, got %d", len(modules))
+			if len(modules) != 32 {
+				t.Fatalf("want 32 versions, got %d", len(modules))
 			}
 			byRef := map[string]*moduleDefinition{}
 			for _, m := range modules {
@@ -301,6 +299,9 @@ func TestVersionedRealDeclarations(t *testing.T) {
 				if byRef[name+"@"+version] == nil {
 					t.Fatal("missing recipe", name, version)
 				}
+			}
+			if byRef["asio@1.24.0"] == nil {
+				t.Fatal("missing explicit Asio 1.24.0")
 			}
 			if byRef["eigen@5.0.1"] == nil {
 				t.Fatal("missing explicit Eigen 5.0.1")

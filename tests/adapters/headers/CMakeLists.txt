@@ -5,8 +5,7 @@ enable_testing()
 get_filename_component(repository "${CMAKE_CURRENT_LIST_DIR}/../../.." ABSOLUTE)
 set(EIGEN_VERSION "3.4.0" CACHE STRING "Eigen version to check in this independent consumer")
 
-# 依赖包由统一入口先准备；此夹具只验证头文件 wrapper 的依赖接线。
-add_library(autolib::boost INTERFACE IMPORTED GLOBAL)
+# 此夹具验证头文件 wrapper 的包含路径、系统使用要求和跨目录可见性。
 set(cases
     "asio|8806a6803cde"
     "cpp-httplib|88956ccad838"
@@ -57,8 +56,6 @@ foreach(case IN LISTS cases)
     endif()
     if(name STREQUAL "asio" OR name STREQUAL "cpp-httplib" OR name STREQUAL "taskflow")
         set(dependency Threads::Threads)
-    elseif(name STREQUAL "websocketpp")
-        set(dependency autolib::boost)
     else()
         set(dependency "")
     endif()

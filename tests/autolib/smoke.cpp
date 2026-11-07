@@ -1,3 +1,14 @@
+#ifdef AUTOLIB_TEST_ASIO
+#include <asio.hpp>
+#endif
+#ifdef AUTOLIB_TEST_WEBSOCKETPP
+#ifdef AUTOLIB_TEST_WEBSOCKETPP_ASIO
+#include <websocketpp/config/asio_no_tls_client.hpp>
+#else
+#include <websocketpp/config/core_client.hpp>
+#endif
+#include <websocketpp/client.hpp>
+#endif
 #ifdef AUTOLIB_TEST_QUEUE
 #include <queue/readerwriterqueue.h>
 #endif
@@ -87,6 +98,26 @@ bool check_runtime(const char *name, const void *address, const char *expected_r
 
 int main()
 {
+#ifdef AUTOLIB_TEST_ASIO
+    asio::io_context io;
+    int posted_value = 0;
+    asio::post(io, [&] { posted_value = 42; });
+    if (io.run() != 1 || posted_value != 42)
+        return 21;
+#endif
+#ifdef AUTOLIB_TEST_WEBSOCKETPP
+#ifdef AUTOLIB_TEST_WEBSOCKETPP_ASIO
+    websocketpp::client<websocketpp::config::asio_client> client;
+    client.init_asio();
+#else
+    websocketpp::client<websocketpp::config::core_client> client;
+#endif
+    websocketpp::lib::error_code connection_error;
+    const auto connection = client.get_connection("ws://127.0.0.1:1/acceptance", connection_error);
+    if (connection_error || !connection || connection->get_uri()->get_resource() != "/acceptance")
+        return 43;
+#endif
+
 #ifdef AUTOLIB_TEST_FREETYPE
     FT_Library font_library = nullptr;
     if (FT_Init_FreeType(&font_library) != 0)
