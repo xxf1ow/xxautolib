@@ -91,6 +91,23 @@ jobs:
           BUDGET: ${{ steps.environment.outputs.budget }}
         run: >-
           "$WORK_ROOT/autolib-ci" run --repository "$GITHUB_REPOSITORY" --source-root "$SOURCE_ROOT" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer prepare --work-root "$WORK_ROOT" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
+      - name: Preseed original Linux Eigen for PCL
+        if: startsWith(matrix.root, 'pcl@')
+        shell: python3 {0}
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+          EXPECTED_PRODUCER_SHA: d8ffda6a51e0a427a8ddec6fd508ff61c564625c
+        run: |
+          import hashlib, json, os, shutil, subprocess
+          from pathlib import Path
+          root=Path(os.environ['SOURCE_ROOT']).resolve();install=Path(os.environ['WORK_ROOT'])/'install';raw=root/'build/linux-eigen'
+          manifest=json.loads((raw/'manifest.json').read_text());item=manifest['3.4.0'];archive=raw/item['filename']
+          producer=json.loads((raw/'producer.json').read_text())
+          if producer['repository']!=os.environ['GITHUB_REPOSITORY'] or producer['sha']!=os.environ['EXPECTED_PRODUCER_SHA']:raise SystemExit('Linux Eigen source identity mismatch')
+          if hashlib.sha256(archive.read_bytes()).hexdigest()!=item['sha256']:raise SystemExit('Linux Eigen SHA256 mismatch')
+          install.mkdir(parents=True,exist_ok=True)
+          subprocess.run([os.environ['CMAKE_COMMAND'],'-E','tar','xf',str(archive)],cwd=install,check=True)
+          shutil.copy2(root/'src/dependencies/eigen/package.toml',install/'eigen/package.toml')
       - name: Produce dependency layers
         env:
           CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
