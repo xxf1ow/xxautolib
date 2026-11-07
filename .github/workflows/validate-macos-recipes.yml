@@ -7,7 +7,7 @@ on:
     paths:
       - src/dependencies/flann/**
       - src/dependencies/boost/**
-      - src/dependencies/websocketpp/**
+      - src/dependencies/pcl/**
       - src/autolib-ci/validate_macho.go
       - src/autolib-ci/validate.go
       - tests/autolib/smoke.cpp
@@ -15,6 +15,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: ${{ github.repository }}-macos-recipes-${{ github.ref }}
@@ -28,7 +29,8 @@ jobs:
       fail-fast: false
       matrix:
         root:
-          - boost@1.87.0,websocketpp@4dfe1be74e68
+          - boost@1.87.0
+          - pcl@pcl-1.15.1
     defaults:
       run:
         shell: bash
@@ -44,6 +46,13 @@ jobs:
           ref: ${{ github.sha }}
           path: recipe-${{ strategy.job-index }}
           persist-credentials: false
+      - uses: actions/download-artifact@v8
+        if: startsWith(matrix.root, 'pcl@')
+        with:
+          name: linux-eigen-42264057220-1
+          run-id: '42264057220'
+          github-token: ${{ github.token }}
+          path: ${{ env.SOURCE_ROOT }}/build/linux-eigen
       - name: Require native macOS 15
         run: |
           set -euo pipefail
@@ -106,6 +115,34 @@ jobs:
           CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
         run: >-
           "$WORK_ROOT/autolib-ci" transport --repository "$GITHUB_REPOSITORY" --source-root "$SOURCE_ROOT" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --work-root "$WORK_ROOT" --cmake-command "$CMAKE_COMMAND" --output "$WORK_ROOT/transport.tar"
+      - name: Consume original Linux Eigen with PCL
+        if: startsWith(matrix.root, 'pcl@')
+        shell: python3 {0}
+        env:
+          EXPECTED_PRODUCER_SHA: d8ffda6a51e0a427a8ddec6fd508ff61c564625c
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+          MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
+          BUDGET: ${{ steps.environment.outputs.budget }}
+          GENERATOR: Unix Makefiles
+          CMAKE_MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
+          CMAKE_OSX_ARCHITECTURES: arm64
+          CMAKE_OSX_DEPLOYMENT_TARGET: 15.0
+        run: |
+          import json, os, subprocess
+          from pathlib import Path
+          root=Path(os.environ['SOURCE_ROOT']).resolve();work=Path(os.environ['WORK_ROOT']);raw=root/'build/linux-eigen'
+          manifest=json.loads((raw/'manifest.json').read_text())
+          args=[os.environ['CMAKE_COMMAND'],f'-DSOURCE_ROOT={root}',f'-DINSTALL_ROOT={work}/install',f'-DVALIDATION_ROOT={root}/build/portability/{os.environ["PLATFORM"]}/pcl',f'-DPLATFORM={os.environ["PLATFORM"]}',f'-DGENERATOR={os.environ["GENERATOR"]}',f'-DPRODUCER_IDENTITY={raw}/producer.json',f'-DCONSUMER_IDENTITY={root}/build/ci-input/run.json']
+          for version,label in [('3.4.0','340'),('5.0.1','501')]:
+              item=manifest[version]
+              args += [f'-DEIGEN_{label}_ARCHIVE={raw/item["filename"]}',f'-DEIGEN_{label}_SHA256={item["sha256"]}']
+          args.append(f'-DEXPECTED_PRODUCER_SHA={os.environ["EXPECTED_PRODUCER_SHA"]}')
+          args += ['-DPCL_VERSION=pcl-1.15.1',f'-DNATIVE_TRANSPORT={work}/transport.tar']
+          os.environ['CMAKE_C_COMPILER']=os.environ['CC'];os.environ['CMAKE_CXX_COMPILER']=os.environ['CXX']
+          for key in ['CMAKE_MAKE_PROGRAM','CMAKE_C_COMPILER','CMAKE_CXX_COMPILER','CMAKE_OSX_ARCHITECTURES','CMAKE_OSX_DEPLOYMENT_TARGET','CMAKE_OSX_SYSROOT','GENERATOR_PLATFORM','GENERATOR_TOOLSET','CMAKE_MSVC_RUNTIME_LIBRARY']:
+              if os.environ.get(key):args.append(f'-D{key}={os.environ[key]}')
+          args += ['-DCMAKE_POLICY_VERSION_MINIMUM=3.5','-P',str(root/'tests/autolib/run-eigen-portability.cmake')]
+          subprocess.run(args,check=True)
       - name: Verify relocated archives
         env:
           CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
@@ -172,5 +209,6 @@ jobs:
             ${{ env.WORK_ROOT }}/jobserver.json
             ${{ env.WORK_ROOT }}/relocated/evidence/
             ${{ env.WORK_ROOT }}/relocated/example-evidence/
+            ${{ env.SOURCE_ROOT }}/build/portability/
           if-no-files-found: warn
 

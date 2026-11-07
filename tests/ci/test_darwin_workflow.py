@@ -61,7 +61,9 @@ class DarwinWorkflowTests(unittest.TestCase):
         self.assertGreaterEqual(len(roots), 1)
         roots = ['flann@f9caaf609d8b,queue@45db9a8b4431', 'boost@1.87.0']
         work_template = re.search(r'^      WORK_ROOT: (.+)$', native, re.M)[1]
-        artifact_templates = re.findall(r'^          name: (.+)$', native, re.M)
+        artifact_templates = [re.search(r'^          name: (.+)$', step, re.M)[1]
+                              for step in native.split('\n      - ')
+                              if 'uses: actions/upload-artifact@' in step]
         self.assertEqual(len(artifact_templates), 3)
         records = []
         with tempfile.TemporaryDirectory(prefix='isolated recipes ') as temporary:

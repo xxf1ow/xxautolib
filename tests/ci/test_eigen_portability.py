@@ -99,7 +99,8 @@ class EigenPortabilityTests(unittest.TestCase):
                                      ("darwin", "darwin-aarch64", "eigen"),
                                      ("windows", "windows-x86_64", "pcl"),
                                      ("linux-pcl", "linux-x86_64", "pcl"),
-                                     ("linux-pcl", "linux-aarch64", "pcl")):
+                                     ("linux-pcl", "linux-aarch64", "pcl"),
+                                     ("validate", "darwin-aarch64", "pcl")):
             with self.subTest(platform=platform, kind=kind), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
                 raw = root / "build/linux-eigen"
@@ -173,8 +174,12 @@ endif()
 file(MAKE_DIRECTORY "${VALIDATION_ROOT}")
 file(WRITE "${VALIDATION_ROOT}/checked.txt" "${payload}")
 ''')
-                script = step_script(job(workflow.read_text(), name), "Consume original Linux archives")
-                env = dict(os.environ, GITHUB_WORKSPACE=str(root), WORK_ROOT=str(native), PLATFORM=platform,
+                selected_workflow = ROOT / ".github/workflows/validate-macos-recipes.yml" if name == "validate" else workflow
+                step = "Consume original Linux Eigen with PCL" if name == "validate" else "Consume original Linux archives"
+                if step not in selected_workflow.read_text():
+                    self.fail("Darwin PCL must consume the pinned Linux Eigen archives")
+                script = step_script(job(selected_workflow.read_text(), name), step)
+                env = dict(os.environ, GITHUB_WORKSPACE=str(root.parent if name == "validate" else root), SOURCE_ROOT=str(root), WORK_ROOT=str(native), PLATFORM=platform,
                            VALIDATION_KIND=kind, CMAKE_COMMAND=shutil.which("cmake"), GENERATOR="Unix Makefiles",
                            CC="unused-fixture-compiler", CXX="unused-fixture-compiler",
                            EXPECTED_PRODUCER_SHA=producer_identity["sha"])
