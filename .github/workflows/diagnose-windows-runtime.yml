@@ -1,0 +1,24 @@
+name: Diagnose Windows import address
+on:
+  push:
+    branches: [audit/font-chain-20261107]
+    paths: [.github/workflows/diagnose-windows-runtime.yml, tests/diagnostics/windows-runtime/**]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Build and verify import address diagnosis
+        shell: pwsh
+        run: |
+          cmake -S tests/diagnostics/windows-runtime -B build/runtime-probe -A x64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build build/runtime-probe --config Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ctest --test-dir build/runtime-probe -C Release -V
+          exit $LASTEXITCODE
