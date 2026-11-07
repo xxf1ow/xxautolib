@@ -39,11 +39,14 @@ int main(int argc, char **argv)
 
     auto renderer = cv::freetype::createFreeType2();
     renderer->loadFontData(argv[1], 0);
-    cv::Mat image = cv::Mat::zeros(100, 220, CV_8UC1);
+    cv::Mat image = cv::Mat::zeros(180, 220, CV_8UC1);
     renderer->putText(image, text, cv::Point(8, 80), 56, cv::Scalar(255), -1, cv::LINE_AA, false);
     const int pixels = cv::countNonZero(image);
     if (pixels < 50)
         return 5;
+    const auto bounds = cv::boundingRect(image);
+    if (bounds.x <= 0 || bounds.y <= 0 || bounds.br().x >= image.cols || bounds.br().y >= image.rows)
+        return 7;
     std::ofstream output(argv[2], std::ios::binary);
     output << "P5\n" << image.cols << ' ' << image.rows << "\n255\n";
     output.write(reinterpret_cast<const char *>(image.data), static_cast<std::streamsize>(image.total()));

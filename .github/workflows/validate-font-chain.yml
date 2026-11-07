@@ -3,7 +3,7 @@ name: Validate font chain and Chinese drawing
 on:
   push:
     branches:
-      - audit/font-chain-20261107
+      - audit/font-native-only
 
 permissions:
   contents: read

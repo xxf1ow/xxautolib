@@ -1,0 +1,123 @@
+name: Validate archived font consumers
+
+on:
+  push:
+    branches: [audit/font-chain-20261107]
+    paths:
+      - .github/workflows/validate-font-consumer.yml
+      - tests/opencv/chinese/**
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  linux:
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x86_64
+            runner: ubuntu-24.04
+          - platform: linux-aarch64
+            runner: ubuntu-24.04-arm
+    container:
+      image: ubuntu:20.04@sha256:8feb4d8ca5354def3d8fce243717141ce31e2c428701f6682bd2fafe15388214
+    defaults:
+      run:
+        shell: bash
+    env:
+      LC_ALL: C.UTF-8
+      PLATFORM: ${{ matrix.platform }}
+      WORK_ROOT: ${{ github.workspace }}/build/font-consumers/${{ matrix.platform }}
+    steps:
+      - name: Bootstrap container
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates curl git jq python3
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          github-token: ${{ github.token }}
+          run-id: 42381747989
+          name: ci-plan-42381747989-1
+          path: build/ci-input
+      - name: Prepare native environment and tools
+        id: environment
+        run: |
+          bash .github/scripts/prepare-linux.sh --config .github/ci-tools.json --plan build/ci-input/plan.json --platform "$PLATFORM" --work-root "$WORK_ROOT" > build/ci-input/environment.json
+          jq -r 'to_entries[] | "\(.key)=\(.value)"' build/ci-input/environment.json >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v8
+        with:
+          github-token: ${{ github.token }}
+          run-id: 42381747989
+          name: ci-package-42381747989-1-${{ matrix.platform }}
+          path: build/font-consumers/${{ matrix.platform }}
+      - name: Render complete Chinese glyphs from original archives
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+          MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
+        run: |
+          mkdir -p "$WORK_ROOT/install"
+          python3 .github/scripts/validate-font-chain.py relocated
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: font-consumer-${{ matrix.platform }}
+          path: |
+            build/font-consumers/${{ matrix.platform }}/font-acceptance/**/*.json
+            build/font-consumers/${{ matrix.platform }}/font-acceptance/**/*.log
+            build/font-consumers/${{ matrix.platform }}/font-acceptance/**/*.pgm
+
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      PLATFORM: windows-x86_64
+      WORK_ROOT: ${{ github.workspace }}/build/font-consumers/windows-x86_64
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Require successful native Windows production
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run watch 42382843480 --exit-status --interval 60
+      - uses: actions/download-artifact@v8
+        with:
+          github-token: ${{ github.token }}
+          run-id: 42382843480
+          name: ci-plan-42382843480-1
+          path: build/ci-input
+      - name: Prepare native environment and tools
+        id: environment
+        run: |
+          $settings = ./.github/scripts/prepare-windows.ps1 -Config .github/ci-tools.json -Plan build/ci-input/plan.json -Platform windows-x86_64 -WorkRoot $env:WORK_ROOT | ConvertFrom-Json
+          "cmake_command=$($settings.cmake_command)" >> $env:GITHUB_OUTPUT
+      - uses: actions/download-artifact@v8
+        with:
+          github-token: ${{ github.token }}
+          run-id: 42382843480
+          name: ci-package-42382843480-1-windows-x86_64
+          path: build/font-consumers/windows-x86_64
+      - name: Render complete Chinese glyphs from original archives
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+        run: |
+          New-Item -ItemType Directory -Force "$env:WORK_ROOT/install" | Out-Null
+          python .github/scripts/validate-font-chain.py relocated
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: font-consumer-windows-x86_64
+          path: |
+            build/font-consumers/windows-x86_64/font-acceptance/**/*.json
+            build/font-consumers/windows-x86_64/font-acceptance/**/*.log
+            build/font-consumers/windows-x86_64/font-acceptance/**/*.pgm
