@@ -119,6 +119,22 @@ class DarwinWorkflowTests(unittest.TestCase):
             self.assertTrue(set(records[0][1]).isdisjoint(records[1][1]))
             self.assertNotEqual(records[0][0].parent, records[1][0].parent)
 
+    def test_boost_capabilities_match_original_platforms(self):
+        native = job((ROOT / '.github/workflows/validate-macos-recipes.yml').read_text(), 'validate')
+        self.assertIn('- name: Check Boost Iostreams capabilities', native)
+        script = step_script(native, 'Check Boost Iostreams capabilities')
+        for summary, expected in [('-- Boost.Iostreams: ZLIB ON, BZip2 OFF, LZMA OFF, Zstd OFF', 0),
+                                  ('-- Boost.Iostreams: ZLIB ON, BZip2 ON, LZMA OFF, Zstd OFF', 1),
+                                  ('', 1)]:
+            with self.subTest(summary=summary), tempfile.TemporaryDirectory() as temporary:
+                work = Path(temporary)
+                log = work / 'logs/layer1/1/build.log'
+                log.parent.mkdir(parents=True)
+                log.write_text(summary + '\n')
+                result = subprocess.run([sys.executable, '-c', script],
+                                        env=dict(os.environ, WORK_ROOT=str(work)), text=True, capture_output=True)
+                self.assertEqual(result.returncode, expected, result.stderr)
+
     def test_recipe_roots_must_survive_filtering(self):
         source = (ROOT / '.github/workflows/validate-macos-recipes.yml').read_text()
         script = step_script(job(source, 'validate'), 'Require all requested roots')
