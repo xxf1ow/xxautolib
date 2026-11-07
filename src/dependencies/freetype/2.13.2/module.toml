@@ -21,4 +21,8 @@ FT_REQUIRE_ZLIB = true # 各平台统一使用 depends 声明的仓库 zlib，�
 # 关闭 FreeType 借助 HarfBuzz 改善自动微调的可选功能，避免循环依赖及系统 HarfBuzz 混入。
 # OpenCV freetype 模块的文本整形由 HarfBuzz 自身负责，不依赖这项自动微调增强。
 FT_DISABLE_HARFBUZZ = true
-# PNG、BZip2、Brotli 保持上游自动探测；不强制开启或关闭这些可选能力。
+# 这些可选字体格式依赖并非各目标系统默认具备；统一关闭，避免产物依赖构建机的额外安装。
+# OpenCV 的 PNG 图像编解码不受 FreeType 字体格式开关影响。
+FT_DISABLE_PNG = true
+FT_DISABLE_BZIP2 = true
+FT_DISABLE_BROTLI = true

@@ -49,23 +49,22 @@ def capabilities():
     enabled = lambda name: bool(re.search(r'^\s*#\s*define\s+' + name + r'\b', options, re.M))
     assert enabled('FT_CONFIG_OPTION_SYSTEM_ZLIB'), 'External zlib was not enabled'
     assert not enabled('FT_CONFIG_OPTION_USE_HARFBUZZ'), 'FreeType must not use HarfBuzz'
+    for name in ('PNG', 'BZIP2', 'BROTLI'):
+        assert not enabled('FT_CONFIG_OPTION_USE_' + name), name + ' must be disabled'
     pc = (prefix / 'lib/pkgconfig/freetype2.pc').read_text()
     assert 'harfbuzz' not in pc.lower(), pc
     assert 'zlib' in pc, pc
     caches = []
     for file in (root / 'build').rglob('CMakeCache.txt'):
         cache = file.read_text(errors='replace')
-        if not re.search(r'^CMAKE_PROJECT_NAME:STATIC=(freetype|OpenCV)$', cache, re.M):
+        if not re.search(r'^CMAKE_PROJECT_NAME:STATIC=freetype$', cache, re.M):
             continue
         values = dict(re.findall(r'^([^/#\n][^:=\n]*):[^=\n]+=(.*)$', cache, re.M))
-        if values['CMAKE_PROJECT_NAME'] == 'freetype':
-            assert values.get('FT_DISABLE_HARFBUZZ') in ('ON', 'TRUE'), str(file)
-            assert values.get('FT_REQUIRE_ZLIB') in ('ON', 'TRUE'), str(file)
-        else:
-            assert values.get('BUILD_ZLIB') in ('OFF', 'FALSE'), str(file)
-        selected = [value for key, value in values.items() if key in ('ZLIB_LIBRARY', 'ZLIB_LIBRARY_RELEASE', 'ZLIB_LIBRARY_DEBUG') and
+        assert values.get('FT_DISABLE_HARFBUZZ') in ('ON', 'TRUE'), str(file)
+        assert values.get('FT_REQUIRE_ZLIB') in ('ON', 'TRUE'), str(file)
+        selected = [value for key, value in values.items() if key.startswith('ZLIB_LIBRARY') and
                     value and not value.endswith('-NOTFOUND') and value not in ('Release', 'Debug')]
-        expected = (values['CMAKE_INSTALL_PREFIX'].replace('\\', '/').rsplit('/', 2)[0] + '/zlib/1.3.1').lower()
+        expected = str(work / 'install/zlib/1.3.1').replace('\\', '/').lower()
         assert selected, values
         for value in selected:
             for part in value.split(';'):
