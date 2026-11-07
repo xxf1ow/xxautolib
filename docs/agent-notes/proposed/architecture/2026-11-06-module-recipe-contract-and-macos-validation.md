@@ -297,7 +297,9 @@ HarfBuzz 8.5.0、OpenCV 4.14.0 的 Darwin 验收随此依赖链暂缓，尚无�
 
 `boost@1.87.0` 保留四种压缩能力和仓库 zlib 1.3.1，bzip2/liblzma 使用 Apple SDK，zstd 由声明的 brew formula 提供。包级安装复制 zstd 的头文件、静态/共享目标所需库、上游 Config 和许可证，Boost.Iostreams Config 固定查找包内 zstd；仅重写安装副本的 dylib ID 并签名。源码 `926f606810d864fd87c5a9c345cd4bbd28c2ffad` 的 [macOS 15 run 42338067624，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42338067624/job/128299399197) 完成构建、包含实际 zstd 压缩解压的直接/搬迁 CTest、Mach-O 检查和打包。三份 transport 资产的身份与摘要均已核对；包内 zstd 1.5.7 为 arm64、minos 15.0，仅引用自身的 `@rpath` ID 与系统 libSystem，没有 Homebrew load path。证据保存在 `build/stage2-runs/42338067624-attempt1/`。SDK 链接输入检查仅接受当前选定 SDK 中解析后位于 `usr/lib` 或 `System/Library` 的 `.tbd`，不放宽运行时或 Homebrew 路径规则。
 
-WebSocket++ 4dfe1be74e68 在源码 `1884d454f61e8ccd3934e20b8d1999470d6ff5b2` 的 [macOS 15 run 42337354961，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42337354961) 消费编译失败：固定版本使用的 Asio `io_service`、旧 strand API 和 `expires_from_now` 不存在于仓库 Boost 1.87.0。该作业中 Boost 自身的实际压缩 smoke 和 Mach-O 检查已通过，WebSocket++ 不能再仅归为依赖尚未就绪。按困难问题暂缓的要求，保留 any-any 载荷身份，记录版本兼容阻断；重试需先确定固定版本范围内的 API 适配，不擅自升级或换用系统 Boost。PCL pcl-1.15.1 独立于 WebSocket++，其 Darwin 验收及原有三个平台的 Linux Eigen 归档组合证据见下节。
+WebSocket++ 4dfe1be74e68 的复制安装和基础消费不依赖其他包，配方不声明 Boost 或 Asio，adapter 只暴露头文件。消费者选择 standalone Asio 时显式导入仓库 `asio@8806a6803cde` 并定义 `ASIO_STANDALONE`；不将具体传输后端固化为发布依赖。单包 smoke 使用上游自带的 iostream transport 创建客户端并解析连接；显式组合 WebSocket++ 与 Asio 的 smoke 保留网络后端初始化检查。源码 `1884d454f61e8ccd3934e20b8d1999470d6ff5b2` 的 [macOS 15 run 42337354961，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42337354961) 验证的是错误绑定的 Boost 1.87 Asio 组合，不能据此否定头文件包本身。固定 Asio 提交实际为 1.38.2，本机最小 standalone 客户端编译也因 `io_service`、旧 strand 和 `expires_from_now` 等已移除 API 失败；这是版本 API 兼容问题，尚无修复及 macOS 15 组合验收证据。按困难问题暂缓的要求，不升级或展开 API 改造，保留具名阻断和该组合测试。PCL 的既有验收证据不受影响。
+
+纯头文件依赖审计覆盖 Asio、cpp-httplib、两个 Eigen 版本、expected、nlohmann、pybind11、queue、Taskflow、WebSocket++ 共 10 份配方及其 adapter。四个目标的逐包有效闭包均只含自身，没有仓库包或系统安装包依赖。Asio、cpp-httplib、Taskflow 保留实际线程使用要求；pybind11 的 Python 开发环境由绑定消费者提供。Eigen adapter 复用本包 `Eigen3::Eigen`，不构成外部包依赖；其 CMake 安装与 Config 导入保持不变。其他按编译库交付的配方不因上游提供可选头文件模式而改为纯头文件包。 本机正常根入口仅构建安装 WebSocket++，直接消费的 `local_binary_smoke` 通过，prepared packages 仅为 `websocketpp`；无 Boost 目标的 adapter 跨目录消费也通过。四平台只读闭包、根构建、直接消费和 standalone 编译阻断证据位于 `build/header-dependency-audit/`，本机结果不替代 macOS 15 验收。
 
 `libzmq@4.3.5` 在源码 `c8eec1ec11a8464cd8af03a9dd953bcb35740eec` 的 [macOS 15 验收 run 42260213354，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42260213354/job/128037859553) 完成构建及进程内消息收发，但 Mach-O 检查拒绝 `/opt/homebrew/opt/gnutls/lib/libgnutls.30.dylib`。导出的静态、动态目标都依赖 Homebrew GnuTLS。仓库没有对应配方，可声明 brew `gnutls`；原先要求新增仓库配方的阻断撤销。该版本恢复待重试，保留功能并完成其传递动态库交付、许可证及搬迁验证后再恢复 Darwin 声明。 本机 brew GnuTLS 3.8.13_2 的 `otool -L` 显示其依赖 `/usr/lib/libz.1.dylib`，还依赖 Homebrew gettext、p11-kit、libidn2、libunistring、libtasn1、nettle 和 gmp。仓库 zlib 1.3.1 当前交付静态库，复制这些 dylib 不能将 GnuTLS 的系统 zlib 调用改为仓库版本；该本机 bottle 也不能替代 macOS 15 验收。按难题先报告的要求，libzmq 维持暂缓，后续需解决 GnuTLS 的仓库 zlib 接线及完整交付，再在 macos-15 重验；不关闭 GnuTLS 功能、不新增通用收集框架。
 
@@ -341,7 +343,7 @@ WebSocket++ 4dfe1be74e68 在源码 `1884d454f61e8ccd3934e20b8d1999470d6ff5b2` �
 | `sdl3@3.2.30` | 通过 / 42251612424 | `116658d320c223d459df7ae2525933c8c6c8cf13a02418c57239def33d226097` |
 | `spdlog@1.17.0` | 通过 / 42251612424 | `edfe516678412688dc90415a7a1ba6ce14aeced1e51e87cebe0505d8c24b1153` |
 | `taskflow@83f90a279aaa` | 通过 / 42257137133 | `370cb340dc92a5d1b8c50d3f86fb49f2a3f1292c1d08e0ebf2b94dc3b7d1529d` |
-| `websocketpp@4dfe1be74e68` | 暂缓 / 42337354961 / 固定版本与 Boost 1.87 Asio API 不兼容 | — |
+| `websocketpp@4dfe1be74e68` | 单包待复验；standalone Asio 1.38.2 客户端组合暂缓 / 旧 API 不兼容 | — |
 | `yaml-cpp@2decf96e915d` | 通过 / 42251612424 | `61674b68034ae2a917e4622841fd59954ab25a64f6dc35f93f4f3acabdb723c3` |
 | `zlib@1.3.1` | 通过 / 42251612424 | `f5d86230d8abb59f97fff177dd351df89261ffaccef5957ead480e0c33bc05a1` |
 

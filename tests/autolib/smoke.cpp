@@ -109,7 +109,11 @@ TEST(AutolibPackage, AssertionRuns) { EXPECT_EQ(6 * 7, 42); }
 #endif
 #endif
 #ifdef AUTOLIB_TEST_WEBSOCKETPP
+#ifdef AUTOLIB_TEST_WEBSOCKETPP_ASIO
 #include <websocketpp/config/asio_no_tls_client.hpp>
+#else
+#include <websocketpp/config/core_client.hpp>
+#endif
 #include <websocketpp/client.hpp>
 #endif
 #ifdef AUTOLIB_TEST_IMGUI
@@ -193,8 +197,12 @@ int main()
 #endif
 #endif
 #ifdef AUTOLIB_TEST_WEBSOCKETPP
+#ifdef AUTOLIB_TEST_WEBSOCKETPP_ASIO
     websocketpp::client<websocketpp::config::asio_client> client;
     client.init_asio();
+#else
+    websocketpp::client<websocketpp::config::core_client> client;
+#endif
     websocketpp::lib::error_code connection_error;
     const auto connection = client.get_connection("ws://127.0.0.1:1/acceptance", connection_error);
     if (connection_error || !connection || connection->get_uri()->get_resource() != "/acceptance")

@@ -5,11 +5,10 @@ on:
     branches:
       - task/darwin-aarch64-native-ci
     paths:
-      - src/dependencies/flann/**
-      - src/dependencies/boost/**
-      - src/dependencies/pcl/**
+      - src/dependencies/websocketpp/**
       - src/autolib-ci/validate_macho.go
       - src/autolib-ci/validate.go
+      - tests/autolib/CMakeLists.txt
       - tests/autolib/smoke.cpp
       - .github/workflows/validate-macos-recipes.yml
 
@@ -29,7 +28,7 @@ jobs:
       fail-fast: false
       matrix:
         root:
-          - pcl@pcl-1.15.1
+          - websocketpp@4dfe1be74e68
     defaults:
       run:
         shell: bash
