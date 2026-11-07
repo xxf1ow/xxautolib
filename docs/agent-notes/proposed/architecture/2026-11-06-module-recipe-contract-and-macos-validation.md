@@ -26,6 +26,12 @@ Eigen 的 C++ 模板 API 是纯头文件，但上游还提供可选的 BLAS/LAPA
 
 解析需要区分原始声明、目标覆盖后的有效配方及执行上下文。同一套解析结果供生成和描述使用；这些职责可在现有 builder 内实现，不为分层复制多套同义模型，不引入通用 schema 引擎或插件系统。
 
+### Asio 1.24.0 的兼容版本补充
+
+为复用现有项目的 WebSocket++ 0.8.2 与 standalone Asio 组合，新增独立 `asio@1.24.0`，固定上游标签对应提交 `147f7225a96d45a2807a64e443177f621844e51c`，从 `asio/include` 复制头文件，以 any-any 交付，不声明包依赖。现有 `asio@8806a6803cde` 及包级 latest 保留，消费者显式选择版本；不修改 WebSocket++ 的包依赖或 backend 选择。此项补充使配方版本数增至 32，不将旧版本替换为兼容性别名。验收复用正常根安装及 standalone 客户端 smoke，仅验证新增版本和组合的直接、打包及搬迁消费；不重复其他包的有效结果。
+
+本机普通根入口安装的新版本包含 Asio 1.24.0 头文件、Boost Software License 和无包依赖的消费元数据。直接运行验收 workflow 的组合消费脚本后，`ASIO_STANDALONE` 与 Asio 客户端分支均已启用，CTest 通过；原安装和来源保留，证据位于 `build/asio-124-validation/`。macOS 15 打包及搬迁结果另行记录。
+
 ### 名称、版本与依赖
 
 | 字段或位置 | 规则 |
@@ -297,7 +303,7 @@ HarfBuzz 8.5.0、OpenCV 4.14.0 的 Darwin 验收随此依赖链暂缓，尚无�
 
 `boost@1.87.0` 保留四种压缩能力和仓库 zlib 1.3.1，bzip2/liblzma 使用 Apple SDK，zstd 由声明的 brew formula 提供。包级安装复制 zstd 的头文件、静态/共享目标所需库、上游 Config 和许可证，Boost.Iostreams Config 固定查找包内 zstd；仅重写安装副本的 dylib ID 并签名。源码 `926f606810d864fd87c5a9c345cd4bbd28c2ffad` 的 [macOS 15 run 42338067624，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42338067624/job/128299399197) 完成构建、包含实际 zstd 压缩解压的直接/搬迁 CTest、Mach-O 检查和打包。三份 transport 资产的身份与摘要均已核对；包内 zstd 1.5.7 为 arm64、minos 15.0，仅引用自身的 `@rpath` ID 与系统 libSystem，没有 Homebrew load path。证据保存在 `build/stage2-runs/42338067624-attempt1/`。SDK 链接输入检查仅接受当前选定 SDK 中解析后位于 `usr/lib` 或 `System/Library` 的 `.tbd`，不放宽运行时或 Homebrew 路径规则。
 
-WebSocket++ 4dfe1be74e68 的复制安装和基础消费不依赖其他包，配方不声明 Boost 或 Asio，adapter 只暴露头文件。消费者选择 standalone Asio 时显式导入仓库 `asio@8806a6803cde` 并定义 `ASIO_STANDALONE`；不将具体传输后端固化为发布依赖。单包 smoke 使用上游自带的 iostream transport 创建客户端并解析连接；显式组合 WebSocket++ 与 Asio 的 smoke 保留网络后端初始化检查。源码 `1884d454f61e8ccd3934e20b8d1999470d6ff5b2` 的 [macOS 15 run 42337354961，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42337354961) 验证的是错误绑定的 Boost 1.87 Asio 组合，不能据此否定头文件包本身。固定 Asio 提交实际为 1.38.2，本机最小 standalone 客户端编译也因 `io_service`、旧 strand 和 `expires_from_now` 等已移除 API 失败；这是版本 API 兼容问题，尚无修复及 macOS 15 组合验收证据。按困难问题暂缓的要求，不升级或展开 API 改造，保留具名阻断和该组合测试。PCL 的既有验收证据不受影响。
+WebSocket++ 4dfe1be74e68 的复制安装和基础消费不依赖其他包，配方不声明 Boost 或 Asio，adapter 只暴露头文件。消费者选择已确认兼容的 standalone Asio 组合时显式导入仓库 `asio@1.24.0` 并定义 `ASIO_STANDALONE`；不将具体传输后端固化为发布依赖。单包 smoke 使用上游自带的 iostream transport 创建客户端并解析连接；显式组合 WebSocket++ 与 Asio 的 smoke 保留网络后端初始化检查。源码 `1884d454f61e8ccd3934e20b8d1999470d6ff5b2` 的 [macOS 15 run 42337354961，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42337354961) 验证的是错误绑定的 Boost 1.87 Asio 组合，不能据此否定头文件包本身。固定 Asio 提交实际为 1.38.2，本机最小 standalone 客户端编译也因 `io_service`、旧 strand 和 `expires_from_now` 等已移除 API 失败；这是版本 API 兼容问题，尚无修复及 macOS 15 组合验收证据。按困难问题暂缓的要求，不升级或展开 API 改造，保留具名阻断和该组合测试。PCL 的既有验收证据不受影响。
 
 纯头文件依赖审计覆盖 Asio、cpp-httplib、两个 Eigen 版本、expected、nlohmann、pybind11、queue、Taskflow、WebSocket++ 共 10 份配方及其 adapter。四个目标的逐包有效闭包均只含自身，没有仓库包或系统安装包依赖。Asio、cpp-httplib、Taskflow 保留实际线程使用要求；pybind11 的 Python 开发环境由绑定消费者提供。Eigen adapter 复用本包 `Eigen3::Eigen`，不构成外部包依赖；其 CMake 安装与 Config 导入保持不变。其他按编译库交付的配方不因上游提供可选头文件模式而改为纯头文件包。 本机正常根入口仅构建安装 WebSocket++，直接消费的 `local_binary_smoke` 通过，prepared packages 仅为 `websocketpp`；无 Boost 目标的 adapter 跨目录消费也通过。四平台只读闭包、根构建、直接消费和 standalone 编译阻断证据位于 `build/header-dependency-audit/`，本机结果不替代 macOS 15 验收。
 

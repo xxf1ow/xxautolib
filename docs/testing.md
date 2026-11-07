@@ -28,7 +28,7 @@ cmake -P src/autolib-builder/go-sdk.cmake -- test -mod=readonly ./src/autolib-im
 
 ### Adapter 定向验证
 
-[头文件定向工程](../tests/adapters/headers/CMakeLists.txt)覆盖重复导入和跨目录使用；受控载荷不代表真实 API。 WebSocket++ 单包 smoke 使用内置 iostream transport；同时在 `MODULES`、`ROOT_PACKAGES` 显式选择 `websocketpp@4dfe1be74e68;asio@8806a6803cde` 时，消费者定义 `ASIO_STANDALONE` 并验证 Asio 客户端。固定版本组合的兼容阻断见[配方验收记录](agent-notes/proposed/architecture/2026-11-06-module-recipe-contract-and-macos-validation.md)。
+[头文件定向工程](../tests/adapters/headers/CMakeLists.txt)覆盖重复导入和跨目录使用；受控载荷不代表真实 API。 WebSocket++ 单包 smoke 使用内置 iostream transport；同时在 `MODULES`、`ROOT_PACKAGES` 显式选择 `websocketpp@4dfe1be74e68;asio@1.24.0` 时，消费者定义 `ASIO_STANDALONE` 并验证 Asio 客户端。固定版本组合的兼容阻断见[配方验收记录](agent-notes/proposed/architecture/2026-11-06-module-recipe-contract-and-macos-validation.md)。
 
 真实七包[smoke](../tests/autolib/smoke.cpp)使用 `ROOT_PACKAGES=opencv@4.14.0;librealsense@2.58.1;onnxruntime@1.24.4`、`MODULES=freetype;harfbuzz;libusb;nlohmann;lz4;opencv;librealsense;onnxruntime`。两个消费driver在Windows上将已准备精确闭包内的DLL目录加入CTest进程PATH；直接运行smoke时自行设置PATH。含双版本 Eigen 的结果与未测范围见[导入适配记录](agent-notes/implemented/architecture/2026-11-04-package-adapter-standardization.md#验证结果)。
 

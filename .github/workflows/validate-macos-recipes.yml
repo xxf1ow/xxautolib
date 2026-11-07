@@ -5,6 +5,7 @@ on:
     branches:
       - task/darwin-aarch64-native-ci
     paths:
+      - src/dependencies/asio/**
       - src/dependencies/websocketpp/**
       - src/autolib-ci/validate_macho.go
       - src/autolib-ci/validate.go
@@ -28,7 +29,7 @@ jobs:
       fail-fast: false
       matrix:
         root:
-          - websocketpp@4dfe1be74e68
+          - websocketpp@4dfe1be74e68,asio@1.24.0
     defaults:
       run:
         shell: bash
@@ -125,6 +126,17 @@ jobs:
           BUDGET: ${{ steps.environment.outputs.budget }}
         run: |
           "$WORK_ROOT/autolib-ci" run --repository "$GITHUB_REPOSITORY" --source-root "$SOURCE_ROOT" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer verify --work-root "$WORK_ROOT" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
+      - name: Verify standalone Asio client
+        if: contains(matrix.root, 'websocketpp@') && contains(matrix.root, 'asio@')
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+          MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
+        run: |
+          "$CMAKE_COMMAND" "-DSOURCE_ROOT=$SOURCE_ROOT" "-DINSTALL_ROOT=$WORK_ROOT/install" "-DVALIDATION_ROOT=$WORK_ROOT/combined-evidence" \
+            -DGENERATOR="Unix Makefiles" "-DMODULES=${SELECTED_MODULES//,/;}" "-DROOT_PACKAGES=${SELECTED_MODULES//,/;}" \
+            "-DCMAKE_MAKE_PROGRAM=$MAKE_PROGRAM" -DCMAKE_C_COMPILER="$CC" -DCMAKE_CXX_COMPILER="$CXX" \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -P tests/autolib/run-installed.cmake
       - name: Package and transport verified artifacts
         env:
           CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
@@ -223,6 +235,7 @@ jobs:
             ${{ env.WORK_ROOT }}/evidence/**/*.txt
             ${{ env.WORK_ROOT }}/jobserver.json
             ${{ env.WORK_ROOT }}/relocated/evidence/
+            ${{ env.WORK_ROOT }}/combined-evidence/
             ${{ env.WORK_ROOT }}/relocated/example-evidence/
             ${{ env.SOURCE_ROOT }}/build/portability/
           if-no-files-found: warn
