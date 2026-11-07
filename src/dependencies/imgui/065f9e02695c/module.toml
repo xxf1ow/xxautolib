@@ -1,6 +1,6 @@
 # ImGui：即时模式图形界面，安装核心及 SDL3/OpenGL3 后端的静态库。
 type = "cmake"
-package_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64','darwin-aarch64']
+package_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
 depends = ["sdl3@3.2.30"]
 sentinel = "include/ImGui/imgui.h"
 

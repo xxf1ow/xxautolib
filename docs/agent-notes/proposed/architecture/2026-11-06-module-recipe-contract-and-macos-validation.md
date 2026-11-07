@@ -332,6 +332,75 @@ Homebrew 及其传递依赖可改变可选功能探测、动态链接及最低�
 
 Gitee FLANN 原包的 SHA256 分别为：Linux x86_64 `890781eff8f8d14df56630b6e3212359dee6fc15062bee40cf1c2f422461c358`、Linux aarch64 `4a081fb344d21452fd7b09c956461441c5a5f4a22b1eba1b8ee70df367afa53c`、Windows x86_64 `c71a1d25e1889500103d4f73b75f981594b3d90035ad32bceb208c5202a7ad42`。检查是归档和二进制符号核对，没有在 macOS 上执行 ELF/PE 产物；能力及原生消费的覆盖不能由字符串检查替代。详细附件列表、检查摘要及 Boost/PCL 日志路径保存在 `build/libzmq-platform-audit/audit.json`。
 
-### 新分支尚未覆盖
+### 新分支第二阶段验证
 
-`task/darwin-aarch64-sync` 当前只建立分支及修订设计、计划，未执行第二阶段实现、push、Actions、合并或发布。旧分支有效证据需要按上节判断适用性；旧归档继续属于其原提交。完成标准还包括修订配置下的受影响 Darwin 产物、支持声明及既有发布链路接线，必要的同归档/PCL/example 消费，以及硬件和上游功能的明确覆盖缺口。失败候选的具名阻断与重试条件继续由本记录保存，不能以平台过滤或 CI 成功代替。
+`task/darwin-aarch64-sync` 从 `49df3fc` 保留第一阶段，在 `639eae4` 提交修订设计。原平台配方对照核验覆盖全部 31 份：移除 Darwin 专用声明后，源码、公共及原平台 cache、依赖和 apt/choco 均保持基线，仅 WebSocket++ 按批准删除 Boost 依赖。原 package.toml/latest 全部不变；Asio 1.24.0 独立追加。Taskflow adapter 与基线逐字节一致，C++20 由 smoke 应用显式选择，不传播为新的全平台包要求。
+
+独立入口提交 `424ac651d39c367050c6df9c802181723a960981` 的 [run 42353199898，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42353199898) 通过 queue 真实生产、导入、API 消费、打包运输和汇总；runner 为 macOS 15.8.2/arm64、Apple Clang 17.0.0，CMake 3.31.12，部署目标 15.0。目录使用作业序号，不把精确根或逗号列表放入工作路径；实际 Gitee 监听和发布入口均未运行。
+
+#### 输入等价的旧证据
+
+下表 23 个版本逐一核对到原始结果中的源码提交，其完整版本目录（配方、adapter、补丁及专用脚本）与新分支逐字节一致。对应的构建工具、功能配置、依赖及消费 API 未因本次修订改变，因此复用原 macos-15 交付及搬迁证据，不重新编译；归档摘要和 run 始终指向原生产提交。SDL3 与 ImGui 的旧结果因未闭合的 libusb 后端不作为支持依据，另见阻断记录。两个 Eigen 的 Linux 原件跨平台证据另见下节，不能用此处 Darwin 归档替代。源码完整提交与消费记录可由具名 run 的结果身份解析，关键包限制保留在正文。
+
+| 精确版本 | 原生产提交 / run（attempt 1） | 原始归档 SHA256 |
+|---|---|---|
+| `asio@1.24.0` | `22d38a4a751e35cecd9b1d81432410e20caacdc7` / [run 42348042330](https://github.com/xxf1ow/xxautolib/actions/runs/42348042330) | `faa545790c7debfdb2c415eef77270ad960ef507472b2984a43d3880109975bc` |
+| `asio@8806a6803cde` | `03d5f5afd5c080f5bd5106bc4083906b68a2318d` / [run 42251612424](https://github.com/xxf1ow/xxautolib/actions/runs/42251612424) | `331bb64fdb8973a4efba04a2bfbfaf005e6aaf06384c02f6eeaf2a965e05d827` |
+| `clipper2@1.5.4` | `03d5f5afd5c080f5bd5106bc4083906b68a2318d` / [run 42251612424](https://github.com/xxf1ow/xxautolib/actions/runs/42251612424) | `a295b1c3cba844db372056be276391010d43611bfa2dc4c25e64fe0fb0932f19` |
+| `cpp-httplib@88956ccad838` | `03d5f5afd5c080f5bd5106bc4083906b68a2318d` / [run 42251612424](https://github.com/xxf1ow/xxautolib/actions/runs/42251612424) | `6a132b0d77acc8f4e0336baebbfd0dcb90291bbe8096eef870647cbda361a056` |
+| `eigen@3.4.0` | `c8eec1ec11a8464cd8af03a9dd953bcb35740eec` / [run 42260213354](https://github.com/xxf1ow/xxautolib/actions/runs/42260213354) | `d596afb529434130ff3c2e22ff5f406ca10e70b59d841e72987b548a9bc58170` |
+| `eigen@5.0.1` | `03d5f5afd5c080f5bd5106bc4083906b68a2318d` / [run 42251612424](https://github.com/xxf1ow/xxautolib/actions/runs/42251612424) | `b964eadcd30e8b241f02dfb8625d830acc29a2990c1f3bb092a34504654ae1b3` |
+| `expected@1.3.1` | `03d5f5afd5c080f5bd5106bc4083906b68a2318d` / [run 42251612424](https://github.com/xxf1ow/xxautolib/actions/runs/42251612424) | `71abad84a720aa862e0d91ebf4f098e89d37ac952716a6da60327933efcac7a7` |
+| `flann@f9caaf609d8b` | `a8ea348a89e1ace7a6cc425b3603d8a629751ae4` / [run 42335992231](https://github.com/xxf1ow/xxautolib/actions/runs/42335992231) | `c817fbb1736a5f4e8d2bd0a1138d6d3a36d4e6987378f8af4c4d302a622ee9ca` |
+| `gtest@1.17.0` | `03d5f5afd5c080f5bd5106bc4083906b68a2318d` / [run 42251612424](https://github.com/xxf1ow/xxautolib/actions/runs/42251612424) | `86b965d2374257f1c96838b7cfbd332329074f8b01c70535f8af13f2bac851bd` |
+| `librealsense@2.58.1` | `04842df170604bbd1f2d60725524bdd817334ea4` / [run 42263227882](https://github.com/xxf1ow/xxautolib/actions/runs/42263227882) | `ace2fae72212280fad3aaadfdb8cf8d85b1e0937b7961fc65c93fd659b63d310` |
+| `libusb@1.0.27` | `d07d8c06dc930ac2cb897e22bdf4e6df87579749` / [run 42257137133](https://github.com/xxf1ow/xxautolib/actions/runs/42257137133) | `0b131d2c44727f966e1edacc6b209b05a2a5c8714cd8b115fe0db6dcf5e7998a` |
+| `lz4@1.10.0` | `03d5f5afd5c080f5bd5106bc4083906b68a2318d` / [run 42251612424](https://github.com/xxf1ow/xxautolib/actions/runs/42251612424) | `b32d744bf837353f66d2f9f580bf69edf091c73f70354910db4a21a8df8beeb2` |
+| `nativefiledialog-extended@3cd252a8f7ca` | `03d5f5afd5c080f5bd5106bc4083906b68a2318d` / [run 42251612424](https://github.com/xxf1ow/xxautolib/actions/runs/42251612424) | `efcadeb69ce4b804423ca60f6ef32e2420a9f43ae66f9d0977c38db8afeb439c` |
+| `nlohmann@3.12.0` | `03d5f5afd5c080f5bd5106bc4083906b68a2318d` / [run 42251612424](https://github.com/xxf1ow/xxautolib/actions/runs/42251612424) | `4f24dc13816ab35c303143a92e21ea171647de043f2929695cfc5578347752a8` |
+| `oneTBB@628c90df6867` | `03d5f5afd5c080f5bd5106bc4083906b68a2318d` / [run 42251612424](https://github.com/xxf1ow/xxautolib/actions/runs/42251612424) | `61abcbc72be90bd3486d5ed114291993c874cd1b83e6e604e3884a0b3ca272de` |
+| `onnxruntime@1.24.4` | `c8eec1ec11a8464cd8af03a9dd953bcb35740eec` / [run 42260213354](https://github.com/xxf1ow/xxautolib/actions/runs/42260213354) | `1a328c640b48bb5005cfbeb25adfe332b2f0bb4cb0be750f7f968fa561165030` |
+| `portaudio@v190700_20210406` | `c8eec1ec11a8464cd8af03a9dd953bcb35740eec` / [run 42260213354](https://github.com/xxf1ow/xxautolib/actions/runs/42260213354) | `ec0c7881e25626dd4711dff243307cd724c84484f7954f93478da33e1c782c95` |
+| `pybind11@2.13.6` | `d07d8c06dc930ac2cb897e22bdf4e6df87579749` / [run 42257137133](https://github.com/xxf1ow/xxautolib/actions/runs/42257137133) | `eb4dbd606cdd9d4c88c48b593e544efd48c9fb0607d752676dfea82ee326859c` |
+| `queue@45db9a8b4431` | `03d5f5afd5c080f5bd5106bc4083906b68a2318d` / [run 42251612424](https://github.com/xxf1ow/xxautolib/actions/runs/42251612424) | `e7d91ecb0a6645dd99eea04b0a181d9d0930722c495dd216bd3c88ffd512a7d5` |
+| `spdlog@1.17.0` | `03d5f5afd5c080f5bd5106bc4083906b68a2318d` / [run 42251612424](https://github.com/xxf1ow/xxautolib/actions/runs/42251612424) | `edfe516678412688dc90415a7a1ba6ce14aeced1e51e87cebe0505d8c24b1153` |
+| `websocketpp@4dfe1be74e68` | `13214746bfe092cc4ceb631847ca31272d1324f8` / [run 42345772457](https://github.com/xxf1ow/xxautolib/actions/runs/42345772457) | `354e608fa0127eb75b50099beff465e7975de61287aa89c89364f521cd4ab359` |
+| `yaml-cpp@2decf96e915d` | `03d5f5afd5c080f5bd5106bc4083906b68a2318d` / [run 42251612424](https://github.com/xxf1ow/xxautolib/actions/runs/42251612424) | `61674b68034ae2a917e4622841fd59954ab25a64f6dc35f93f4f3acabdb723c3` |
+| `zlib@1.3.1` | `03d5f5afd5c080f5bd5106bc4083906b68a2318d` / [run 42251612424](https://github.com/xxf1ow/xxautolib/actions/runs/42251612424) | `f5d86230d8abb59f97fff177dd351df89261ffaccef5957ead480e0c33bc05a1` |
+
+FLANN 保留仓库 lz4 和已证实的 OpenMP，Darwin 仅声明 libomp 并安装其运行库、公开编译要求与许可证；不使用系统 lz4，也不改 Homebrew 原文件。原样 example 的源码和 driver 与 [run 42335992231](https://github.com/xxf1ow/xxautolib/actions/runs/42335992231) 的输入一致，复用其 queue/lz4/FLANN 导入、编译、链接及运行和搬迁结果；未修改用户 example/3rdparty。WebSocket++ 的单包 iostream 与 Asio 1.24.0 standalone 组合仍分别引用 run 42345772457 和 42348042330，旧 Asio 1.38.2 API 兼容限制不因此消失。
+
+#### 受影响的补验与既有发布准备
+
+`7da790a` 的 Darwin 适配不包含旧 Boost 的 zstd 补丁、brew 增强或 Taskflow adapter C++20 变更。补验提交 `0a3cd6c1a0e443358a136e4b7a2b08bd12826e35` 的 [run 42354393503，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42354393503) 全部通过。实际 Boost 摘要为 ZLIB ON、BZip2/LZMA/Zstd OFF；PCL 构建子系统清单与原平台的 19 项逐项一致，保留五个精确依赖及 Eigen 3.4.0 Config。没有加入混合静动态依赖开关。直接、搬迁及同归档组合共七次 API 消费均通过。
+
+该 run 的 Taskflow 原始归档为 `taskflow-83f90a279aaa-any-any.tar.zst`，SHA256 为 `5bbcd7c7cae5ea6787ff402d71f84fc1b23d9736e03353b9cc5af709bb6b941e`；已下载运输包逐项核对摘要，直接及搬迁 API 测试各为 1/1 通过。
+
+同次 Boost 原始归档 `boost-1.87.0-darwin-aarch64.tar.zst` 的 SHA256 为 `8c7f6632b806bc662a91eb57ca0757c94d94434a711a03a998355a3416c0f598`；PCL 原始归档 `pcl-pcl-1.15.1-darwin-aarch64.tar.zst` 为 `991ed0d16c4c3ebedc6783e1a64530ed3743945fd5576d59abdaf25e5fef50dc`。两者均已从该 run 的运输包下载并核对摘要，完整结果保存在 `build/darwin-sync-runs/42354393503-attempt1/`。
+
+最终支持声明下，真实 `autolib-ci plan --platforms all --modules all` 输出原三平台各 32 根、Darwin 26 根；Darwin 过滤项恰为下节六个阻断版本。26 个有效版本由上述 23 份可复用结果及 Boost、PCL、Taskflow 的新结果覆盖。10 个通用精确版本均仅由 Linux x86_64 发布，Eigen 与新增 Asio 的身份保持 any-any。既有构建、运输、唯一 publisher 和发布准备协议没有变化；独立验收不表示已正式发布到 Gitee。
+
+新增及受影响检查已有 RED→GREEN：缺 smoke 拒绝、精确根及证据隔离、Boost 能力摘要匹配、库链接输入排除 imported executable、example 缺输入保护、同归档摘要及身份预检。当前定向结果为 workflow 9/9、消费入口 5/5、Eigen 预检 5/5，以及实际配方读取/生成、版本/latest 与 RealSense 依赖接线检查通过；没有全量 Go test/vet 或原平台全包重编。
+
+#### 已确认的六个阻断版本
+
+用户确认本阶段将以下六个版本暂列阻断，保留原平台声明，不新增 Darwin，不修改原平台功能配置或为其安装额外后端。SDL3 与 ImGui 撤回本轮新增的 Darwin 声明。这是待后续决定的 macOS 支持缺口，不是上游全面不支持 macOS 的结论。
+
+| 精确版本 | 原因与证据 | 重新尝试条件 |
+|---|---|---|
+| `freetype@2.13.2` | [原平台验证记录](../../implemented/architecture/2026-10-20-flann-opencv-dependencies.md#验证结果)中，Windows 无额外 private 依赖，Linux ARM 启用系统 zlib/PNG，原平台实际能力已有差异；旧 Darwin 试编还探测系统 HarfBuzz，与仓库 HarfBuzz→FreeType 形成循环 | 用户确定 Darwin 能力基线；仓库已有库的接线及循环方案获得明确决定 |
+| `harfbuzz@8.5.0` | 固定依赖仓库 FreeType，后者 Darwin 基线尚未确定 | FreeType 阻断解除后按既定 HB_HAVE_FREETYPE=ON 验收 |
+| `opencv@4.14.0` | 既有 freetype 模块依赖上述 FreeType/HarfBuzz；不能关闭模块取得成功 | 两个字体库完成同步后，保留既有模块与后端要求验证 |
+| `libzmq@4.3.5` | 固定 Git 来源的 WSS 由 GnuTLS 自动探测；现有原三平台缺少 WSS 状态证据，Gitee 也没有该包资产。旧 Darwin 构建/进程内消息通过，但 GnuTLS 绝对路径未满足交付要求 | 取得原平台配置或成品能力证据（查询使用 `zmq_has("WSS")`），或用户明确决定 Darwin WSS 目标后再处理必要交付 |
+| `sdl3@3.2.30` | [run 42251612424](https://github.com/xxf1ow/xxautolib/actions/runs/42251612424) 探测 Homebrew libusb 1.0.30，启用 SDL_HIDAPI_LIBUSB/SHARED；静态归档含 libusb 后端及 `libusb-1.0.dylib` 加载名，却未交付运行库或声明仓库 libusb 1.0.27。surface smoke 不覆盖这条设备路径，原平台该后端基线不足 | 确认原平台 USB 后端能力；按明确目标使用仓库 libusb 版本并验证必要运行依赖交付，或经确认后关闭基线以外的后端 |
+| `imgui@065f9e02695c` | 固定依赖仓库 SDL3；旧基础消费通过不能解除 SDL3 的依赖交付缺口 | SDL3 完成能力同步与交付后，保留既有 SDL3/OpenGL3 后端验证 |
+
+SDL3 调查归档来自源码 `03d5f5afd5c080f5bd5106bc4083906b68a2318d`、run 42251612424/attempt 1，SHA256 为 `116658d320c223d459df7ae2525933c8c6c8cf13a02418c57239def33d226097`；ImGui 来自 `c8eec1ec11a8464cd8af03a9dd953bcb35740eec`、[run 42260213354/attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42260213354)，SHA256 为 `af8f3931f11087e7d357db90b295ab0351db7c50e1ccdde1d18c56357a79f453`。两份归档保留为具名调查证据，不计入本分支支持结果。
+
+#### 同归档与功能覆盖缺口
+
+两份 Linux Eigen 原件及 `producer.json` 已核对为 run 42264057220/attempt 1、源码 `d8ffda6a51e0a427a8ddec6fd508ff61c564625c`：3.4.0 SHA256 为 `be0dcfb8cd69556b00edeb541fbacff0ac4f9d9167ac75f47546bdf00923a2c4`，5.0.1 为 `9d71707429eeff4186b5993e3caff52fe76c33f6f8afb66f2801dcbb0831d578`。复用 Windows/macOS 两版直接及搬迁共八次消费，以及 run 42272676188 的原三平台 PCL 组合；没有重新生产或改写旧身份。同归档消费始终使用这两份原件，不使用本轮 transport 中重新打包的 Eigen 替代。Darwin PCL 在上述新运行中完成同一 Linux 3.4.0 Config 组合，直接及搬迁各 1/1 通过；已下载核对原摘要、生产身份及实际 Eigen3_DIR，均指向对应隔离安装的 3.4.0 Config。
+
+实际覆盖限于有效 API smoke。RealSense 验证 SDK/API 和搬迁，未验相机取流；固定上游另有 Viewer/IMU/USB 权限限制。PortAudio 未验音频设备；暂列阻断的 SDL3 旧记录只验证内存 surface，未验交互图形或 HID/USB，ImGui 旧记录未验窗口；Native File Dialog 未调用交互对话框；libusb 未验设备；ONNX Runtime 创建并释放 CPU 环境，未验模型推理。pybind11 包含编译扩展并由匹配 Python 实际调用。构建消费通过不扩大这些覆盖。
+
+阶段末独立审查覆盖 `49df3fc..0a3cd6c` 及待提交文档，发现 SDL3/libusb 一项 Important，ImGui 随依赖受到影响；用户确认暂列两包阻断后撤回新增 Darwin 声明。真实 plan 检查先复现两包仍被选中，修正声明后验证过滤，原三平台配置保持不变。没有其他已证实的 Critical/Important 或待处理 Minor。阶段实现及增量验收已完成，整体结果待用户验收；未执行主分支合并或正式发布。

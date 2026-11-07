@@ -48,6 +48,8 @@ Darwin 实机 queue/lz4 的生产、直接及搬迁消费、Mach-O 与 FIFO 证�
 
 Darwin 工具准备及 workflow 的受控检查分别执行 `python3.12 -B -m unittest discover -s tests/ci -p test_darwin_preparation.py -v`、`python3.12 -B -m unittest discover -s tests/ci -p test_darwin_workflow.py -v`。四平台选择、精确成品与元数据的增量证据见[第二阶段本地验证](agent-notes/implemented/architecture/2026-11-05-darwin-aarch64-native-build-and-ci.md#第二阶段本地验证)。这些既有证据不要求补跑 Linux 实机；原样 example 依赖当时未支持 Darwin 的 FLANN，未纳入该轮验收。统一配方的[阶段证据与缺口](agent-notes/proposed/architecture/2026-11-06-module-recipe-contract-and-macos-validation.md#验证结果)分别记录本机闭环和后续 macos-15、同 Linux Eigen 归档跨平台、PCL/example 验收。
 
+新增消费入口与同归档预检分别选择 `test_consumer_runtime.py`、`test_eigen_portability.py`，沿用上述命令按需验证。
+
 [CI 测试](../src/autolib-ci/main_test.go)覆盖精确计划、独立根验证、原生 builder 打包、成品摘要与数量、运输安全及所选平台完整性；workflow 定向测试核对事件条件、参数与接线。本地 fixture 和 workflow 片段执行不替代真实 Actions 验收。109的工具构建命令：
 
 ```text
