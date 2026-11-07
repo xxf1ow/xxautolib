@@ -38,7 +38,7 @@ jobs:
         id: plan
         shell: bash
         env:
-          SELECTED_PLATFORMS: all
+          SELECTED_PLATFORMS: windows-x86_64
           SELECTED_MODULES: freetype@2.13.2,harfbuzz@8.5.0,opencv@4.14.0
         run: |
           set -euo pipefail
