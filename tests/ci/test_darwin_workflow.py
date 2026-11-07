@@ -57,7 +57,7 @@ class DarwinWorkflowTests(unittest.TestCase):
     def test_recipe_jobs_keep_separate_roots_and_evidence(self):
         native = job((ROOT / '.github/workflows/validate-macos-recipes.yml').read_text(), 'validate')
         self.assertIn('fail-fast: false', native)
-        roots = re.findall(r'^          - ([\w.+-]+@[\w.+-]+)$', native, re.M)
+        roots = re.findall(r'^          - ([\w.+,@-]+)$', native, re.M)
         self.assertGreaterEqual(len(roots), 1)
         roots = ['queue@45db9a8b4431', 'lz4@1.10.0']
         work_template = re.search(r'^      WORK_ROOT: (.+)$', native, re.M)[1]

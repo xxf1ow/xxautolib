@@ -14,6 +14,12 @@ PYBIND11_MODULE(autolib_binding, module)
 #ifdef AUTOLIB_TEST_FLANN
 #include <flann/flann.h>
 #include <flann/flann.hpp>
+#ifdef __APPLE__
+#ifndef _OPENMP
+#error "Darwin FLANN must expose its OpenMP compile requirements"
+#endif
+#include <omp.h>
+#endif
 #endif
 
 #ifdef AUTOLIB_TEST_LZ4
@@ -391,6 +397,13 @@ int main()
 #endif
 
 #ifdef AUTOLIB_TEST_FLANN
+#ifdef __APPLE__
+    int workers = 0;
+#pragma omp parallel num_threads(2) reduction(+:workers)
+    workers += 1;
+    if (workers != 2 || !check_runtime("flann OpenMP", reinterpret_cast<const void *>(&omp_get_max_threads), AUTOLIB_EXPECT_FLANN_ROOT))
+        return 9;
+#endif
     float dataset[] = {0, 0, 1, 1, 2, 2};
     float speedup = 0;
     auto parameters = DEFAULT_FLANN_PARAMETERS;

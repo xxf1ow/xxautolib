@@ -1,7 +1,7 @@
 # FLANN：近似最近邻搜索库，构建并安装 C/C++ 库；压缩依赖复用本仓库 lz4。
 type = "cmake"
 # 固定提交而非 release tag；升级时重新验证 lz4 探测及安装布局。
-package_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
+package_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64','darwin-aarch64']
 depends = ["lz4@1.10.0"]
 config_dir = "lib/cmake/flann"
 pkgconfig_dir = "lib/pkgconfig"
@@ -10,6 +10,7 @@ sentinel = "include/flann/flann.hpp"
 [system_dependencies]
 apt = ["pkg-config", "libgomp1"]
 choco = ["pkgconfiglite"]
+brew = ["libomp"]
 
 [source]
 GIT_REPOSITORY = "https://github.com/flann-lib/flann.git"
@@ -25,3 +26,15 @@ BUILD_TESTS = false            # 禁用测试。
 BUILD_DOC = false              # 禁用文档生成。
 USE_OPENMP = true              # 启用 OpenMP 多线程并行。
 USE_MPI = false                # 禁用 MPI 分布式并行。
+
+# Apple Clang 使用已声明的 libomp；保留 OpenMP 并随包交付运行库与公开编译要求。
+[[platforms.darwin-aarch64.patches]]
+file = "darwin-openmp.patch"
+
+[[platforms.darwin-aarch64.steps]]
+name = "prepare-darwin-runtime"
+DEPENDEES = ["patch"]
+DEPENDERS = ["configure"]
+WORKING_DIRECTORY = "."
+DEPENDS = ["darwin-runtime.cmake"]
+COMMAND = [["cmake", "-E", "copy_if_different", "darwin-runtime.cmake", "<SOURCE_DIR>/darwin-runtime.cmake"]]
