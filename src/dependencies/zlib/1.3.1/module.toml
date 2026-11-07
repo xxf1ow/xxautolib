@@ -13,3 +13,6 @@ ZLIB_BUILD_EXAMPLES = false # 只构建库，不构建上游示例程序。
 
 [[patches]]
 file = "zlib-v1.3.1-static-only.patch" # 移除动态库目标及其安装规则，不能仅依靠 BUILD_SHARED_LIBS=OFF。
+
+[[patches]]
+file = "static-pkgconfig.patch" # .pc 必须引用实际静态库名：Windows 为 zlibstatic，其余平台为 z。

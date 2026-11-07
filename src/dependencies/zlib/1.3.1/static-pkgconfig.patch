@@ -1,0 +1,22 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -77,6 +77,10 @@
+   endif()
+ endif()
+ 
++set(ZLIB_PC_LIB z)
++if(WIN32 AND NOT UNIX)
++    set(ZLIB_PC_LIB zlibstatic)
++endif()
+ set(ZLIB_PC ${CMAKE_CURRENT_BINARY_DIR}/zlib.pc)
+ configure_file( ${CMAKE_CURRENT_SOURCE_DIR}/zlib.pc.cmakein
+ 		${ZLIB_PC} @ONLY)
+--- a/zlib.pc.cmakein
++++ b/zlib.pc.cmakein
+@@ -9,5 +9,5 @@
+ Version: @VERSION@
+ 
+ Requires:
+-Libs: -L${libdir} -L${sharedlibdir} -lz
++Libs: -L${libdir} -L${sharedlibdir} -l@ZLIB_PC_LIB@
+ Cflags: -I${includedir}
