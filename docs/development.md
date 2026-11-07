@@ -83,7 +83,7 @@ Git 主来源复用 `git/<包名>/<版本>/`，资源复用 `git/_resources/<包
 
 零有效库仍保留所选平台，真实验证工具与入口，但不执行库构建或消费；普通根的空 `BUILD_LIST` 仍发现全部配方。非空库逐根验证精确闭包，随后打包运输成品、候选及原样入口，协议见[成品交接](agent-notes/implemented/architecture/2026-11-04-ci-packaged-artifact-handoff.md)。最终汇总不写 Release。环境见[CI 设计](agent-notes/implemented/architecture/2026-10-20-ci-system.md)，证据见[测试指南](testing.md#ci-验证)。
 
-任务分支的 [macOS 配方验收](../.github/workflows/validate-macos-recipes.yml)按明确根隔离执行；[Eigen 跨平台验收](../.github/workflows/validate-eigen-portability.yml)传递 Linux 原始归档给原生消费者，并构建 PCL 的必要闭包。两者由限定路径的分支 push 触发，不发布 Gitee。macOS 第三方库依赖只使用仓库固定构建，brew 仅提供声明的构建工具，Apple SDK Framework 和原生运行时由平台提供；具名阻断与覆盖范围见[逐版本验收](agent-notes/proposed/architecture/2026-11-06-module-recipe-contract-and-macos-validation.md#macos-逐版本快照)。
+任务分支的 [macOS 配方验收](../.github/workflows/validate-macos-recipes.yml)按明确根隔离执行；[Eigen 跨平台验收](../.github/workflows/validate-eigen-portability.yml)传递 Linux 原始归档给原生消费者，并构建 PCL 的必要闭包。两者由限定路径的分支 push 触发，不发布 Gitee。已有配方的依赖库使用仓库版本，其余库和工具可通过声明的 apt/choco/brew 包提供；macOS 动态库仍须满足交付及搬迁要求，Apple SDK Framework 和原生运行时由平台提供；具名阻断与覆盖范围见[逐版本验收](agent-notes/proposed/architecture/2026-11-06-module-recipe-contract-and-macos-validation.md#macos-逐版本快照)。
 
 ### 独立 Gitee 发布
 

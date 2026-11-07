@@ -154,6 +154,8 @@ cache 和步骤支持 `<SOURCE_DIR>`、`<BINARY_DIR>`、`<INSTALL_DIR>`，以及
 
 包名按包管理器校验并拒绝空项、命令选项及命令片段，builder 与准备脚本使用一致规则。brew 仅安装声明的 formula，不引入 cask、自动加 tap 或无需求的全局升级。Darwin 脚本从计划读取 formula，安装后记录实际包版本；只在已声明依赖需要时补充相应查找路径，不全局强塞 Homebrew 的所有库。
 
+仓库已有配方的依赖库必须使用仓库声明的版本并通过包依赖接线，不能由系统包替代或在失败后回退。仓库没有配方的依赖可通过 `system_dependencies` 声明 apt、choco 或 brew 包；系统包既可提供构建工具，也可提供实际库依赖，不要求先为它们新增仓库配方。
+
 builder 不自行调用包管理器。本地和 CI 使用同一构建流程；本地维护者准备描述中列出的系统依赖，CI 在构建前安装。下载包消费端不自动执行 brew 或其他系统包安装命令。brew 安装成功不代表运行产物通过验收；Apple Clang、arm64、SDK 和 deployment target 仍由 Native 入口控制。
 
 ### builder 描述、CI 与唯一发布者
@@ -204,9 +206,9 @@ PCL 保留明确的 Eigen 3.4.0 依赖及 config 查找，不为通用身份修�
 
 每个版本的结果包含获取、构建或复制、安装、导入、链接和必要运行结论，使用的 brew formula、补丁、上游限制、提交及 run/attempt 证据。简单消费复用现有 driver；现有 smoke 未实际调用到的包，补充最小有效 API 使用，不以空 main 或仅创建目标计为运行通过。设备、图形界面等无法在 runner 完成的功能明确列为未验，不将可构建等同于全部功能支持。
 
-保留现有 Mach-O 的 arm64、部署版本、动态依赖和搬迁路径要求，不把 `/opt/homebrew` 整体加入系统路径豁免。macOS 包的第三方库依赖必须使用本仓库固定并编译的版本，禁止链接或捆绑 Homebrew、runner 及其他系统预装的第三方库；Apple SDK 的系统 Framework 和原生运行时继续由平台提供。brew 可用于已声明的构建工具，不能补齐运行库闭包。需要随包交付的仓库动态库按具体包核对传递依赖、install name/rpath、许可证和最低系统要求；修正只发生在隔离安装或 staging 中。搬迁后实际导入、链接及运行不得依赖构建机 Homebrew 前缀。
+保留现有 Mach-O 的 arm64、部署版本、动态依赖和搬迁路径要求，不把 `/opt/homebrew` 整体加入系统路径豁免。仓库已有配方的第三方依赖必须复用仓库版本；仓库没有配方的依赖可通过已声明的 Homebrew formula 提供。Apple SDK 的系统 Framework 和原生运行时继续由平台提供。需要随包交付的非系统动态库，按具体包核对传递依赖闭包、必要 dylib 收集、install name/rpath、许可证和最低系统要求；修正发生在隔离安装或 staging 中，不修改 Homebrew 原文件。同一实际运行依赖已由仓库包提供时复用该包，不重复私自附带另一版本。搬迁后实际导入、链接及运行不得依赖构建机 Homebrew 前缀。
 
-按包修正仓库动态库属于可交付性适配，不预建通用动态库收集框架。缺少仓库依赖、存在依赖循环或无法满足系统基线时先报告具名阻断，保留后续处理条件，不为当前试验扩展方案；涉及改变功能、版本、运行依赖承诺或既定产物要求时暂停受影响包，提出最小修订。不得通过静默关闭原功能、升级上游、提高最低系统版本或更换编译器取得绿灯。
+按包收集与修正动态库属于可交付性适配，不预建通用动态库收集框架。缺少仓库配方本身不是阻断理由，可使用系统依赖机制；已有仓库依赖的循环、无法合法交付或无法满足系统基线等难题先报告具名阻断，保留后续处理条件，不为当前试验扩展方案。涉及改变功能、版本、运行依赖承诺或既定产物要求时暂停受影响包，提出最小修订。不得通过静默关闭原功能、升级上游、提高最低系统版本或更换编译器取得绿灯。
 
 RealSense 和 ONNX Runtime 也列入调查与验收，不能仅因当前无 Darwin 声明跳过。RealSense 区分 SDK 构建消费与实际相机功能；ONNX Runtime 核对当前版本官方 Darwin ARM64 产物、来源摘要及运行能力，不混入 Intel 包，也不无依据改为另一套预编译来源。FLANN 通过后，现有 `example/` 必须使用本轮产物完成导入、编译、链接和运行；验证可预置本轮入口及包，避免改写示例的业务代码或依赖旧远端产物。
 
@@ -249,7 +251,7 @@ RealSense 和 ONNX Runtime 也列入调查与验收，不能仅因当前无 Darw
 1. 全部现有版本配方使用同一字段契约，旧身份及平台字段、旧平台层级和一维 COMMAND 均拒绝；实际配方可完整解析、描述并生成，未选分支的坏语法不能隐藏。
 2. 定向正负例覆盖依赖固定、平台及依赖过滤、有效覆盖、来源互斥及提交格式、无效类型字段、路径及占位符、保留参数、步骤关系和目录验证。两种安装类型均拒绝通用包中的已知目标二进制载荷；合法头文件和可重定位元数据仍可交付。断言保护真实输入效果，不只检查内部结构。
 3. 本地生成、describe、CI、安装身份及发布准备使用一致的包身份和确定版本依赖；异构有效平台集合的通用包各有唯一正确 publisher，错误来源、重复、缺失和失败不接管均可观察。
-4. brew 的选择、安装和记录由当前有效闭包决定；与 apt/choco 的声明及执行校验一致。独立验收 CI 可通过限定任务分支的 push 完成逐包试验，不依赖未验证的 dispatch，不被 Gitee 正式发布监听；过滤候选不能形成包成功结果。macOS 第三方运行依赖来自本仓库，完成必要的闭包、重定位及搬迁运行验证，不使用或附带系统预装的第三方库。
+4. brew 的选择、安装和记录由当前有效闭包决定；与 apt/choco 的声明及执行校验一致。独立验收 CI 可通过限定任务分支的 push 完成逐包试验，不依赖未验证的 dispatch，不被 Gitee 正式发布监听；过滤候选不能形成包成功结果。仓库已有配方的依赖使用仓库版本，其余库可由声明的系统包提供；macOS 产物完成必要的动态库闭包、重定位及搬迁运行验证。
 5. 两个 Eigen 版本保留头文件与查找元数据，通过 config 目标完成真实安装、直接及搬迁消费；同一 Linux 归档在 Windows/macOS 使用，有 PCL 组合的实际消费证据，不能回退系统 Eigen。
 6. 31 份配方均有 macOS 15 实际结果或经人工确认的具名阻断及覆盖缺口。补丁、系统依赖、导入运行及功能限制有可追溯且受 Git 跟踪的结果记录，CI 日志过期后仍能理解关键结论、长期阻断及重试条件；支持列表与最终结论一致。example 完成实际消费，硬件未验不计为全功能成功。
 7. 字段参考、架构、开发和测试文档、接入技能及关联记录同步，无相互冲突的现行字段标准；完成受影响检查及文档验证，保留既有数据且无未授权远端发布。
@@ -260,7 +262,7 @@ RealSense 和 ONNX Runtime 也列入调查与验收，不能仅因当前无 Darw
 
 `any-any` 是对交付物的维护者声明，不保证所有编译器、语言标准或外部后端均可用。元数据可能携带生产路径和版本检查，只有实际同归档跨平台消费能证明所需场景；不能以各平台独立安装代替。
 
-runner 预装的 Homebrew 库可能改变可选功能探测、动态链接及最低运行要求。逐包检查实际链接，拒绝用系统预装的第三方库替代仓库闭包；保持 Apple Clang 和部署基线，不以放宽产物路径检查替代可交付性。
+runner 预装的 Homebrew 库可能改变可选功能探测、动态链接及最低运行要求。逐包检查实际链接，拒绝用系统预装库替代已有仓库配方的依赖；保持 Apple Clang 和部署基线，不以放宽产物路径检查替代可交付性。
 
 第三方固定版本可能存在上游 macOS 限制，设备和图形功能也可能缺少执行条件。本任务要求完成调查及范围内最小修复，不预先保证所有包都能保留全部功能；具名阻断需要证据及人工确认，不能以过滤、关闭功能或换版本结束试验。
 
@@ -285,21 +287,21 @@ runner 预装的 Homebrew 库可能改变可选功能探测、动态链接及最
 
 ### 第二阶段：macOS 逐包验收
 
-31 份版本配方中，23 份通过已实现的 API smoke、打包及搬迁消费，4 份因仓库第三方依赖问题直接暂缓，另 4 份随依赖闭包暂缓。当前 Darwin 描述的 23 个有效根与成功快照一致，其余 8 个根被过滤；过滤不计为验证成功。原样 example 的真实执行及下述硬件能力仍未验，本记录保持 proposed，等待阶段验收。
+31 份版本配方中，23 份通过已实现的 API smoke、打包及搬迁消费，其余 8 份需按下述纠正后的依赖规则继续评估。当前 Darwin 描述仍为 23 个有效根、8 个过滤根；支持声明在实际通过后更新，过滤不计为验证成功。原样 example 的真实执行及下述硬件能力仍未验，第二阶段尚未验收，本记录保持 proposed。
 
-用户在执行中收紧第三方库来源：macOS 依赖只使用本仓库固定并编译的版本，不使用或捆绑 Homebrew、runner 及其他系统预装的第三方库。困难依赖先报告并留待后续处理，不为当前试验改变版本、关闭功能或扩展依赖方案。Apple SDK Framework 和原生运行时仍按 Native 要求使用。
+此前执行将“已有配方的库使用仓库版本”扩大为“所有第三方库均须有仓库配方”，据此禁止 brew 提供库依赖并暂缓相关包。这是执行解释错误。正确规则允许仓库没有配方的库使用系统依赖机制；既有 23 个成功版本和 Eigen 跨平台证据继续有效，仅重新验证受误判影响的包及下游。困难问题仍先报告，不擅自改变功能或版本。
 
-`FreeType@2.13.2` 在源码 `03d5f5afd5c080f5bd5106bc4083906b68a2318d` 的 [macOS 15 验收 run 42251612424，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42251612424/job/128007885621) 完成静态构建和 API 调用，但 Mach-O 检查拒绝 `/opt/homebrew/opt/libpng/lib/libpng16.16.dylib`。实际导入元数据同时包含 Homebrew HarfBuzz 15.0.0_1、Brotli 1.2.1，以及 SDK 的 zlib/bzip2。仓库 HarfBuzz 8.5.0 已依赖 FreeType，补反向依赖会形成循环；当前仓库没有 PNG、Brotli、bzip2 配方，FreeType 也未声明仓库 zlib。关闭可选功能未获批准，系统或 Homebrew 版本不可替代仓库闭包。因此撤回临时 Darwin 声明，保留其他平台现状；这表示当前配方的 macOS 交付暂缓，不表示上游不支持 macOS。
+`FreeType@2.13.2` 在源码 `03d5f5afd5c080f5bd5106bc4083906b68a2318d` 的 [macOS 15 验收 run 42251612424，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42251612424/job/128007885621) 完成静态构建和 API 调用，但 Mach-O 检查拒绝 `/opt/homebrew/opt/libpng/lib/libpng16.16.dylib`。实际导入元数据同时包含 Homebrew HarfBuzz 15.0.0_1、Brotli 1.2.1，以及 SDK 的 zlib/bzip2。仓库 HarfBuzz 8.5.0 已依赖 FreeType，补反向依赖会形成循环；PNG、Brotli、bzip2 可通过 brew 提供，缺少它们的仓库配方不是阻断理由。FreeType 仍须接入仓库 zlib，并解决与仓库 HarfBuzz 的循环；不能使用 Homebrew HarfBuzz 替代已有仓库版本。关闭可选功能未获批准，因此该循环仍保留为具名暂缓，临时 Darwin 声明尚未恢复，不表示上游不支持 macOS。
 
-HarfBuzz 8.5.0、OpenCV 4.14.0 的 Darwin 验收随此依赖链暂缓，尚无独立构建结论。重试需要先明确 FreeType/HarfBuzz 的无环构建方式、其余第三方依赖的仓库配方和功能要求，并批准相应依赖声明；本轮不实施这些后续方案。
+HarfBuzz 8.5.0、OpenCV 4.14.0 的 Darwin 验收随此依赖链暂缓，尚无独立构建结论。重试需要先明确 FreeType/HarfBuzz 的无环构建方式和功能要求，补齐仓库 zlib 与允许的系统依赖接线；难解的循环后续处理，不为使用 brew 库新增配方前置要求。
 
-`boost@1.87.0` 在源码 `d07d8c06dc930ac2cb897e22bdf4e6df87579749` 的 [macOS 15 验收 run 42257137133，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42257137133/job/128027205076) 完成静态构建及消费 API 检查，但 Mach-O 拒绝 Homebrew zstd 1.5.7 的 `libzstd.1.dylib`。实际 Boost::iostreams 元数据同时依赖 SDK bzip2、liblzma，zlib 则正确使用仓库 1.3.1。仓库缺少 zstd、bzip2 和 xz/liblzma 配方；不关闭压缩功能、不使用系统版本，暂缓该版本 Darwin 交付并撤回临时声明。重新试验需要先批准并建立这些仓库依赖及接线。
+`boost@1.87.0` 在源码 `d07d8c06dc930ac2cb897e22bdf4e6df87579749` 的 [macOS 15 验收 run 42257137133，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42257137133/job/128027205076) 完成静态构建及消费 API 检查，但 Mach-O 拒绝 Homebrew zstd 1.5.7 的 `libzstd.1.dylib`。实际 Boost::iostreams 元数据同时依赖 SDK bzip2、liblzma，zlib 则正确使用仓库 1.3.1。zstd、bzip2 和 xz/liblzma 均可通过 brew 提供；原先以缺少仓库配方为由暂缓的结论撤销。该版本恢复待重试，需声明系统依赖、保留仓库 zlib 并完成非系统动态库交付及搬迁验证；尚不能计为通过。
 
-WebSocket++ 4dfe1be74e68、PCL pcl-1.15.1 的 Darwin 验收因 Boost 闭包缺失暂缓，尚无这两个根的独立构建结论；WebSocket++ 保持 any-any 载荷身份，其目标资格继续由 Boost 依赖过滤。PCL 在原有三个平台的 Linux Eigen 归档组合验收仍属于本阶段范围。
+WebSocket++ 4dfe1be74e68、PCL pcl-1.15.1 随 Boost/FLANN 恢复为闭包待重试，尚无这两个根的独立 Darwin 构建结论。WebSocket++ 保持 any-any 载荷身份，当前仍被 Boost 依赖资格过滤；PCL 原有三个平台的 Linux Eigen 归档组合证据见下节。
 
-`libzmq@4.3.5` 在源码 `c8eec1ec11a8464cd8af03a9dd953bcb35740eec` 的 [macOS 15 验收 run 42260213354，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42260213354/job/128037859553) 完成构建及进程内消息收发，但 Mach-O 检查拒绝 `/opt/homebrew/opt/gnutls/lib/libgnutls.30.dylib`。导出的静态、动态目标都依赖 Homebrew GnuTLS，仓库没有对应配方。保留功能并撤回临时 Darwin 声明；重试需要先批准并建立仓库 GnuTLS 及其必要依赖。
+`libzmq@4.3.5` 在源码 `c8eec1ec11a8464cd8af03a9dd953bcb35740eec` 的 [macOS 15 验收 run 42260213354，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42260213354/job/128037859553) 完成构建及进程内消息收发，但 Mach-O 检查拒绝 `/opt/homebrew/opt/gnutls/lib/libgnutls.30.dylib`。导出的静态、动态目标都依赖 Homebrew GnuTLS。仓库没有对应配方，可声明 brew `gnutls`；原先要求新增仓库配方的阻断撤销。该版本恢复待重试，保留功能并完成其传递动态库交付、许可证及搬迁验证后再恢复 Darwin 声明。
 
-`flann@f9caaf609d8b` 在同一源码的 [macOS 15 验收 run 42260213354，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42260213354/job/128037859606) 使用仓库 lz4 完成构建安装，但配置明确报告 `OpenMP NOT found`，未满足配方 `USE_OPENMP=true` 的既定要求；实际消费还因裸 install name `libflann_cpp.1.9.dylib` 无法加载而失败。仓库没有 Apple Clang 所需的 OpenMP 运行库，不能用 Homebrew libomp、关闭 OpenMP 或替换编译器绕过。因此撤回临时 Darwin 声明；重试需要先解决仓库 OpenMP 依赖及 Mach-O install name/rpath，再验证实际运行和搬迁。PCL 的 Darwin 闭包同时受此影响。
+`flann@f9caaf609d8b` 在同一源码的 [macOS 15 验收 run 42260213354，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42260213354/job/128037859606) 使用仓库 lz4 完成构建安装，但配置明确报告 `OpenMP NOT found`，未满足配方 `USE_OPENMP=true` 的既定要求；实际消费还因裸 install name `libflann_cpp.1.9.dylib` 无法加载而失败。仓库没有 OpenMP 配方，可声明 brew `libomp` 并保持 Apple Clang 和现有 OpenMP 要求。原先禁止 Homebrew libomp 的结论撤销；该版本恢复待重试，仍需完成探测接线、运行库交付及 Mach-O install name/rpath 修正，再验证实际运行和搬迁。PCL Darwin 及原样 example 随此恢复待验。
 
 原样 `example/` 的隔离 driver 已有缺输入及数据保护检查，但本轮 macos-15 未完成真实导入、编译和运行：其 FLANN 依赖尚未合格。这是阶段验收缺口，不能以其他库的 smoke 通过代替。
 
@@ -312,34 +314,34 @@ WebSocket++ 4dfe1be74e68、PCL pcl-1.15.1 的 Darwin 验收因 Boost 闭包缺�
 | 精确版本 | 结论与证据 run | 原始归档 SHA256 |
 |---|---|---|
 | `asio@8806a6803cde` | 通过 / 42251612424 | `331bb64fdb8973a4efba04a2bfbfaf005e6aaf06384c02f6eeaf2a965e05d827` |
-| `boost@1.87.0` | 暂缓 / 42257137133 / 压缩依赖缺失 | — |
+| `boost@1.87.0` | 待重试 / 42257137133 / brew 压缩依赖与交付 | — |
 | `clipper2@1.5.4` | 通过 / 42251612424 | `a295b1c3cba844db372056be276391010d43611bfa2dc4c25e64fe0fb0932f19` |
 | `cpp-httplib@88956ccad838` | 通过 / 42251612424 | `6a132b0d77acc8f4e0336baebbfd0dcb90291bbe8096eef870647cbda361a056` |
 | `eigen@3.4.0` | 通过 / 42260213354 | `d596afb529434130ff3c2e22ff5f406ca10e70b59d841e72987b548a9bc58170` |
 | `eigen@5.0.1` | 通过 / 42251612424 | `b964eadcd30e8b241f02dfb8625d830acc29a2990c1f3bb092a34504654ae1b3` |
 | `expected@1.3.1` | 通过 / 42251612424 | `71abad84a720aa862e0d91ebf4f098e89d37ac952716a6da60327933efcac7a7` |
-| `flann@f9caaf609d8b` | 暂缓 / 42260213354 / OpenMP 缺失、动态库加载失败 | — |
-| `freetype@2.13.2` | 暂缓 / 42251612424 / 字体依赖闭包及循环 | — |
+| `flann@f9caaf609d8b` | 待重试 / 42260213354 / brew libomp、动态库加载修正 | — |
+| `freetype@2.13.2` | 暂缓 / 42251612424 / 仓库 HarfBuzz 循环及 zlib 接线 | — |
 | `gtest@1.17.0` | 通过 / 42251612424 | `86b965d2374257f1c96838b7cfbd332329074f8b01c70535f8af13f2bac851bd` |
 | `harfbuzz@8.5.0` | 依赖闭包暂缓 / FreeType | — |
 | `imgui@065f9e02695c` | 通过 / 42260213354 | `af8f3931f11087e7d357db90b295ab0351db7c50e1ccdde1d18c56357a79f453` |
 | `librealsense@2.58.1` | 通过 / 42263227882 | `ace2fae72212280fad3aaadfdb8cf8d85b1e0937b7961fc65c93fd659b63d310` |
 | `libusb@1.0.27` | 通过 / 42257137133 | `0b131d2c44727f966e1edacc6b209b05a2a5c8714cd8b115fe0db6dcf5e7998a` |
-| `libzmq@4.3.5` | 暂缓 / 42260213354 / GnuTLS 缺失 | — |
+| `libzmq@4.3.5` | 待重试 / 42260213354 / brew GnuTLS 与交付 | — |
 | `lz4@1.10.0` | 通过 / 42251612424 | `b32d744bf837353f66d2f9f580bf69edf091c73f70354910db4a21a8df8beeb2` |
 | `nativefiledialog-extended@3cd252a8f7ca` | 通过 / 42251612424 | `efcadeb69ce4b804423ca60f6ef32e2420a9f43ae66f9d0977c38db8afeb439c` |
 | `nlohmann@3.12.0` | 通过 / 42251612424 | `4f24dc13816ab35c303143a92e21ea171647de043f2929695cfc5578347752a8` |
 | `oneTBB@628c90df6867` | 通过 / 42251612424 | `61abcbc72be90bd3486d5ed114291993c874cd1b83e6e604e3884a0b3ca272de` |
 | `onnxruntime@1.24.4` | 通过 / 42260213354 | `1a328c640b48bb5005cfbeb25adfe332b2f0bb4cb0be750f7f968fa561165030` |
 | `opencv@4.14.0` | 依赖闭包暂缓 / FreeType/HarfBuzz | — |
-| `pcl@pcl-1.15.1` | 依赖闭包暂缓 / Boost/FLANN | — |
+| `pcl@pcl-1.15.1` | 闭包待重试 / Boost/FLANN | — |
 | `portaudio@v190700_20210406` | 通过 / 42260213354 | `ec0c7881e25626dd4711dff243307cd724c84484f7954f93478da33e1c782c95` |
 | `pybind11@2.13.6` | 通过 / 42257137133 | `eb4dbd606cdd9d4c88c48b593e544efd48c9fb0607d752676dfea82ee326859c` |
 | `queue@45db9a8b4431` | 通过 / 42251612424 | `e7d91ecb0a6645dd99eea04b0a181d9d0930722c495dd216bd3c88ffd512a7d5` |
 | `sdl3@3.2.30` | 通过 / 42251612424 | `116658d320c223d459df7ae2525933c8c6c8cf13a02418c57239def33d226097` |
 | `spdlog@1.17.0` | 通过 / 42251612424 | `edfe516678412688dc90415a7a1ba6ce14aeced1e51e87cebe0505d8c24b1153` |
 | `taskflow@83f90a279aaa` | 通过 / 42257137133 | `370cb340dc92a5d1b8c50d3f86fb49f2a3f1292c1d08e0ebf2b94dc3b7d1529d` |
-| `websocketpp@4dfe1be74e68` | 依赖闭包暂缓 / Boost | — |
+| `websocketpp@4dfe1be74e68` | 闭包待重试 / Boost | — |
 | `yaml-cpp@2decf96e915d` | 通过 / 42251612424 | `61674b68034ae2a917e4622841fd59954ab25a64f6dc35f93f4f3acabdb723c3` |
 | `zlib@1.3.1` | 通过 / 42251612424 | `f5d86230d8abb59f97fff177dd351df89261ffaccef5957ead480e0c33bc05a1` |
 
