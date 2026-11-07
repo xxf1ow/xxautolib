@@ -40,6 +40,8 @@ SDL3 已补查原三平台均未启用 libusb 后端。用户批准在公共 cac
 
 libzmq 已补查原三平台均因未找到 GnuTLS 而不启用 WSS。用户批准在公共 cache 显式设置 `WITH_TLS=false`，供原三平台与 Darwin 同步使用，保留普通 WS 及其他原配置；这是原平台配方冻结规则的另一具名例外。不新增 GnuTLS 系统依赖或修改静动态形态，完成 macOS 功能查询、直接及搬迁消费验收后提交。
 
+字体依赖链允许全平台统一修复 FreeType/HarfBuzz 的集成方向及仓库 zlib 接线；具体能力取舍和理由由 [FreeType 配方注释](../../../../src/dependencies/freetype/2.13.2/module.toml)及 [HarfBuzz 配方注释](../../../../src/dependencies/harfbuzz/8.5.0/module.toml)拥有。OpenCV 保留字体模块并声明其 pkg-config 查找所需的仓库 zlib。FreeType 对 PNG、BZip2、Brotli 三项可选字体格式依赖在所有平台显式关闭，避免引入非各目标系统默认具备的库；不影响 OpenCV 的 PNG 图像编解码。OpenCV 其余后端基线继续沿用原规则。验收覆盖四个平台的字体链原生构建、实际中文字形绘制和打包搬迁消费；完成前不解除这三个包的 Darwin 阻断。
+
 ### 字段规范所有者与实现职责
 
 实现时以 `docs/subsystems/module-recipes.md` 作为当前字段参考的唯一所有者，完整列出类型、默认值、必填条件、适用类型、路径基准、覆盖方式、互斥条件、实际效果和校验时机。本记录保存设计、理由和验收要求；架构文档解释组件职责，开发及测试指南拥有命令，接入技能引用字段参考。
@@ -283,7 +285,7 @@ RealSense 和 ONNX Runtime 也列入调查与验收，不能仅因当前无 Darw
 3. 本地生成、describe、CI、安装身份及发布准备使用一致的包身份和确定版本依赖；异构有效平台集合的通用包各有唯一正确 publisher，错误来源、重复、缺失和失败不接管均可观察。
 4. brew 的选择、安装和记录由当前有效闭包及已确认同步能力决定；原 apt/choco 声明不变。仓库已有库使用仓库版本，其余必要库可使用声明的系统包。独立验收 CI 可通过限定任务分支的 push 完成逐包试验，不依赖未验证的 dispatch，不被 Gitee 正式发布监听；过滤候选不能形成包成功结果。需要随包交付的 Homebrew 动态依赖完成闭包、重定位及搬迁运行验证。
 5. 两个 Eigen 版本保留头文件与查找元数据，通过 config 目标完成真实安装、直接及搬迁消费；同一 Linux 归档在 Windows/macOS 使用，有 PCL 组合的实际消费证据，不能回退系统 Eigen。
-6. 基线 31 份配方及追加的 Asio 1.24.0 均有可适用于本分支的 macOS 15 实际结果或经人工确认的具名阻断及覆盖缺口。原平台配置与 `49df3fc` 相比保持不变，例外仅为已单独批准的头文件包依赖修复和兼容版本。受影响的可选后端、模块和依赖结果与确认基线一致，不能只验证编译及搬迁。补丁、系统依赖、导入运行及功能限制有可追溯且受 Git 跟踪的结果记录，CI 日志过期后仍能理解关键结论、长期阻断及重试条件；支持列表与最终结论一致。example 完成实际消费，硬件未验不计为全功能成功。
+6. 基线 31 份配方及追加的 Asio 1.24.0 均有可适用于本分支的 macOS 15 实际结果或经人工确认的具名阻断及覆盖缺口。原平台配置与 `49df3fc` 的差异须属于本记录已明确批准的具名例外。受影响的可选后端、模块和依赖结果与确认基线一致，不能只验证编译及搬迁。补丁、系统依赖、导入运行及功能限制有可追溯且受 Git 跟踪的结果记录，CI 日志过期后仍能理解关键结论、长期阻断及重试条件；支持列表与最终结论一致。example 完成实际消费，硬件未验不计为全功能成功。
 7. 字段参考、架构、开发和测试文档、接入技能及关联记录同步，无相互冲突的现行字段标准；新增 Darwin 包在既有生产计划的 `all` 和运输、发布准备中保持正确资格、身份和唯一性，不修改原平台功能配置。完成受影响检查及文档验证，保留既有数据且无未授权远端发布。
 
 ## 风险
@@ -388,11 +390,11 @@ FLANN 保留仓库 lz4 和已证实的 OpenMP，Darwin 仅声明 libomp 并安�
 
 #### 阶段审查时的六个阻断版本
 
-阶段审查时，用户确认以下六个版本暂列阻断，当时保留原平台声明并撤回 SDL3、ImGui 的新增 Darwin 声明。下表保留该次阻断原因和重试条件；SDL3、ImGui 与 libzmq 已在下文专项验收中解除阻断，当前剩余 FreeType、HarfBuzz 和 OpenCV 三个版本。这些是仓库交付的支持缺口，不是上游全面不支持 macOS 的结论。
+阶段审查时，用户确认以下六个版本暂列阻断，当时保留原平台声明并撤回 SDL3、ImGui 的新增 Darwin 声明。下表保留该次阻断原因和重试条件；六个版本均已在下文专项验收中解除阻断。当时的阻断属于仓库交付缺口，不表示上游全面不支持 macOS。
 
 | 精确版本 | 原因与证据 | 重新尝试条件 |
 |---|---|---|
-| `freetype@2.13.2` | [原平台验证记录](../../implemented/architecture/2026-10-20-flann-opencv-dependencies.md#验证结果)中，Windows 无额外 private 依赖，Linux ARM 启用系统 zlib/PNG，原平台实际能力已有差异；旧 Darwin 试编还探测系统 HarfBuzz，与仓库 HarfBuzz→FreeType 形成循环 | 用户确定 Darwin 能力基线；仓库已有库的接线及循环方案获得明确决定 |
+| `freetype@2.13.2` | [原平台验证记录](../../implemented/architecture/2026-10-20-flann-opencv-dependencies.md#验证结果)中，Windows 无额外 private 依赖，Linux ARM 启用系统 zlib/PNG，原平台实际能力已有差异；旧 Darwin 试编还探测系统 HarfBuzz | 按配方确定的单向集成、仓库 zlib 接线及三个可选字体格式依赖统一关闭的规则验收 |
 | `harfbuzz@8.5.0` | 固定依赖仓库 FreeType，后者 Darwin 基线尚未确定 | FreeType 阻断解除后按既定 HB_HAVE_FREETYPE=ON 验收 |
 | `opencv@4.14.0` | 既有 freetype 模块依赖上述 FreeType/HarfBuzz；不能关闭模块取得成功 | 两个字体库完成同步后，保留既有模块与后端要求验证 |
 | `libzmq@4.3.5` | 固定 Git 来源的 WSS 由 GnuTLS 自动探测；阶段审查时缺少原三平台 WSS 状态证据，Gitee 也没有该包资产。旧 Darwin 构建/进程内消息通过，但 GnuTLS 绝对路径未满足交付要求 | 取得原平台配置或成品能力证据（查询使用 `zmq_has("WSS")`），或用户明确决定 Darwin WSS 目标后再处理必要交付 |
@@ -440,7 +442,29 @@ runner 为 macOS 15.8.2/arm64、Apple Clang 17.0.0，CMake 3.31.12，部署目�
 
 原始归档 `libzmq-4.3.5-darwin-aarch64.tar.zst` 的 SHA256 为 `0680d4772d7a910914281485907b4e12f7d8beefc1bc5dd5ed86d81ac07db8d0`。已下载运输包并逐项核对摘要、生产身份、`complete=true` 和独立根 `verified=true`，从下载归档再次检查动态库依赖及 WS/WSS 查询。原始结果、日志、`ws-direct.json`、`ws-relocated.json` 和成品位于 `build/libzmq-acceptance/42361601058-attempt1/`。正式分支配方与测试快照逐字节相同，未重标旧产物身份，也未触发 Gitee 发布。
 
-libzmq 的 WSS 基线与交付阻断解除。最终真实 `all` 计划保留原三平台各 32 根，Darwin 为 29 根；只过滤 FreeType、HarfBuzz 和 OpenCV 三个字体依赖链版本。
+libzmq 的 WSS 基线与交付阻断解除。该次真实 `all` 计划保留原三平台各 32 根，Darwin 为 29 根；当时只过滤 FreeType、HarfBuzz 和 OpenCV 三个字体依赖链版本。
+
+#### 字体依赖链专项验收
+
+FreeType 的单向集成和可选能力规则由配方注释拥有。OpenCV 显式设置 `BUILD_ZLIB=false`，实际图像编解码与字体链都查找仓库 zlib 1.3.1，避免 Windows/macOS 默认自建内置 1.3.2。独立字体链在 Windows 需要 HarfBuzz 配方声明 `pkgconfiglite`；zlib 的静态 pkg-config 补丁使 Windows 的 `-lzlibstatic` 与实际 `zlibstatic.lib` 一致，Unix 仍为 `-lz`。这些修正保留源码版本及库的静动态形态。
+
+原生快照 `9053976d67a9084f0ced7e7b1eccc0efbbc08514` 的 [run 42381747989，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42381747989) 中，Linux x86_64/aarch64 两个作业均成功：四库闭包完成构建、三个独立根消费、运输及搬迁。该 run 整体取消，仅停止了尚未完成、仍使用错误 Windows 静态库元数据的 Windows 作业；不把整个 run 记为成功。两个 Linux 平台的 FreeType 均只发现仓库 zlib，其余 PNG/BZip2/Brotli 未启用。
+
+同次 Darwin 四库均构建成功，FreeType 与 OpenCV 的实际 zlib 路径均位于仓库安装树；FreeType 自动启用 PNG、BZip2、Brotli。独立消费的 Mach-O 检查拒绝 `/opt/homebrew/opt/libpng/lib/libpng16.16.dylib`，结果为 `complete=false`。链接输入还包含 Homebrew Brotli；该次快照保留自动检测，没有豁免 Homebrew 路径。macOS 的 BZip2 来自系统 SDK，PNG 与 Brotli 来自 Homebrew；三者并非所有目标系统默认具备。公共配方统一关闭这三项可选字体格式依赖，最终结果见下文补验。Darwin 未生成合格 transport，搬迁验收未执行。
+
+修正静态库元数据后的快照 `82a16079eab25b83aa0f43c0d67309f48de9b78c` 的 [run 42382843480，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42382843480) 仅复验 Windows。四库均构建成功，FreeType/HarfBuzz 独立根消费通过；OpenCV 的 API 检查完成后，运行库来源检查将 `cv::getTickCount` 的地址定位到消费者 EXE，未落在包目录内，导致验收失败。OpenCV 配置摘要为动态库开启；故障原因和来源探针修复见下文最小原生诊断。该平台未打包，搬迁验收未执行。
+
+Windows 最小原生诊断的 [run 42398648019，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42398648019) 复用来源检查函数，实际构建和调用 DLL：不带 `dllimport` 的函数地址定位到消费者 EXE，已加载 DLL 的导出地址定位到 DLL，错误包目录仍被拒绝。OpenCV 4.14.0 的 Windows 消费声明不带 `dllimport`，与该机制一致。Windows OpenCV smoke 从已加载的 `opencv_core` 目标 DLL 查询 `cvGetTickCount` 导出，再保留原包目录校验；不额外加载 DLL，不修改库的静动态形态。实际 OpenCV 产物及搬迁结果见下文 Windows 验收。
+
+初次[中文绘制测试](../../../../tests/opencv/chinese/CMakeLists.txt)的 100 像素高画布裁切了文字，278 个非零像素不构成完整中文字形验收。测试改为 180 像素高，并拒绝非零像素接触画布边缘。快照 `c1ace7addc53210ff41bb724b39929f42bd7465b` 的 [run 42384398252，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42384398252) 原样使用上述两个 Linux transport，仅编译消费者，未重新编译库。两平台均实际完成 HarfBuzz 8.5.0 整形和 OpenCV 完整“中文”绘制，得到两个非零字形、1811 个非零像素，边界检查及 CTest 各 1/1 通过。归档解压前逐项核对 SHA256，新 runner 没有生产安装可回退。Windows 作业因其原生生产验收失败而停止，未取得合格归档；截至该快照，Windows 和 Darwin 的完整画布测试未验收。
+
+快照 `812a56aabb237d156bb73d7ae124cba41560cd09` 的 [run 42398984550，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42398984550) 中，Darwin 四库构建和完整中文绘制通过（两个字形、1811 个非零像素、边界检查通过），PNG/BZip2/Brotli 均为关闭，FreeType `.pc` 仅保留仓库 zlib。FreeType 独立根消费通过，HarfBuzz 独立根在链接时缺少 CoreText/CoreFoundation 符号：上游 `.pc` 的静态参数包含 `-framework ApplicationServices`，普通 pkg-config 导入目标未传递该项。adapter 补齐 macOS 系统 framework，不关闭 CoreText；该次未产生合格 transport，未执行搬迁。
+
+同一 run 42398984550 的 Windows 作业成功，四库均 `built=true/verified=true`，三个独立根、运输及搬迁均通过，平台结果 `complete=true`。修正后的运行库来源为仓库包内 `x64/vc17/bin/opencv_world4140.dll`；FreeType 和 OpenCV 的 zlib 均为仓库 `zlibstatic.lib`，三个可选能力关闭，FreeType `.pc` 只要求 zlib。直接和搬迁的中文绘制均为两个字形、1811 个非零像素，绘图 SHA256 与两份 Linux 原归档消费结果一致：`b313a5267bdce636b43ebe1a955dc6afb0ead9716cbb69bfc56477200d786939`。Windows transport SHA256 为 `f6008f7a216f46922590fd8d4525a07e673ab1d002c502e33a14b903aaa0fda9`，内含五个资产的摘要均已逐项核对。该 run 整体因 Darwin 作业失败而失败，不记为全平台通过。
+
+快照 `a019657fe45c33b875686093e0b96b6e1a856fbb` 的 [run 42400038170，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42400038170) 仅复验 Darwin，整体成功。四库均完成构建、三个独立根消费、Mach-O 检查、运输及搬迁，平台结果 `complete=true`。保留 HarfBuzz 的 CoreText 能力并传递系统 ApplicationServices；FreeType 的 PNG/BZip2/Brotli 均关闭，FreeType/OpenCV 均使用仓库 `libz.a`。直接和搬迁的完整中文字形检查各 1/1 通过，绘图与上述 Windows/Linux 文件字节相同。Darwin transport SHA256 为 `25bc5c02c90024bb9b9299e33b9ec1ca85f6f29210ae6538806e7065180754b2`，五个资产摘要均已核对。CI 快照与正式配方、adapter、消费者内容一致；两份 Linux 既有产物的三项可选能力均未启用，复用已通过的原生构建、归档和完整中文消费证据，不重复编译。
+
+原始结果、能力 JSON、完整步骤日志、逐资产摘要和实际绘图保存在 `build/font-integration-review/`。FreeType、HarfBuzz、OpenCV 的 Darwin 阻断解除，正式配方加入 `darwin-aarch64`；四个平台的全部 32 个版本均可选择，原有精确版本和通用包 publisher 规则不变。独立验收没有触发正式发布。
 
 #### 同归档与功能覆盖缺口
 

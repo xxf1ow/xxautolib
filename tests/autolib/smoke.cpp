@@ -372,7 +372,15 @@ int main()
     const auto font = cv::freetype::createFreeType2();
     if (font.empty() || cv::countNonZero(cv::Mat::eye(2, 2, CV_8U)) != 2)
         return 16;
-    if (!check_runtime("opencv", reinterpret_cast<const void *>(&cv::getTickCount), AUTOLIB_EXPECT_OPENCV_ROOT))
+#ifdef _WIN32
+    // OpenCV 的导入声明不带 dllimport，取函数地址可能得到 EXE 中的跳板。
+    // 仅查询已加载的目标 DLL，不通过加载指定路径掩盖运行库来源错误。
+    const auto opencv_module = GetModuleHandleW(AUTOLIB_OPENCV_DLL);
+    const auto opencv_address = opencv_module ? GetProcAddress(opencv_module, "cvGetTickCount") : nullptr;
+#else
+    const auto opencv_address = &cv::getTickCount;
+#endif
+    if (!opencv_address || !check_runtime("opencv", reinterpret_cast<const void *>(opencv_address), AUTOLIB_EXPECT_OPENCV_ROOT))
         return 17;
 #endif
 #ifdef AUTOLIB_TEST_LIBREALSENSE

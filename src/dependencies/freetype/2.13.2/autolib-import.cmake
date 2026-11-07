@@ -12,4 +12,4 @@ find_package(freetype CONFIG REQUIRED)
 set_property(TARGET freetype PROPERTY IMPORTED_GLOBAL TRUE)
 
 add_library(autolib::freetype INTERFACE IMPORTED GLOBAL)
-target_link_libraries(autolib::freetype INTERFACE freetype)
+target_link_libraries(autolib::freetype INTERFACE freetype autolib::zlib)
