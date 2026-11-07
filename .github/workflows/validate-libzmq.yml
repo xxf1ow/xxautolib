@@ -1,0 +1,217 @@
+name: Validate libzmq without WSS
+
+on:
+  push:
+    branches:
+      - audit/darwin-libzmq-20261107
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ${{ github.repository }}-macos-recipes-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: macos-15
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        root:
+          - libzmq@4.3.5
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ github.workspace }}/recipe-${{ strategy.job-index }}
+    env:
+      SOURCE_ROOT: ${{ github.workspace }}/recipe-${{ strategy.job-index }}
+      PLATFORM: darwin-aarch64
+      SELECTED_MODULES: ${{ matrix.root }}
+      WORK_ROOT: ${{ github.workspace }}/recipe-${{ strategy.job-index }}/build/ci/${{ github.run_id }}-${{ github.run_attempt }}/darwin-aarch64
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          path: recipe-${{ strategy.job-index }}
+          persist-credentials: false
+      - name: Require native macOS 15
+        run: |
+          set -euo pipefail
+          [[ "$(uname -m)" == arm64 && "$(sw_vers -productVersion)" == 15.* ]] || { echo 'CI requires native arm64 macOS 15.' >&2; exit 1; }
+          mkdir -p "$WORK_ROOT"
+          { sw_vers; uname -m; printf 'ImageOS=%s\nImageVersion=%s\n' "${ImageOS:-}" "${ImageVersion:-}"; } > "$WORK_ROOT/runner.log"
+      - name: Plan recipe validation
+        run: |
+          set -euo pipefail
+          mkdir -p build/ci-input build/tools
+          cmake -P src/autolib-builder/go-sdk.cmake -- build -mod=readonly -trimpath -o build/tools/autolib-builder ./src/autolib-builder
+          cmake -P src/autolib-builder/go-sdk.cmake -- build -mod=readonly -trimpath -o build/tools/autolib-ci ./src/autolib-ci
+          build/tools/autolib-ci plan --source-root "$SOURCE_ROOT" --builder-file "$SOURCE_ROOT/build/tools/autolib-builder" --output build/ci-input/plan.json --platforms "$PLATFORM" --modules "$SELECTED_MODULES"
+          jq -n --arg repository "$GITHUB_REPOSITORY" --arg ref "$GITHUB_REF" --arg sha "$GITHUB_SHA" --arg checkout "$(git rev-parse HEAD)" --arg run "$GITHUB_RUN_ID" --arg attempt "$GITHUB_RUN_ATTEMPT" '{repository:$repository,ref:$ref,sha:$sha,checkout_sha:$checkout,run_id:$run,attempt:$attempt}' > build/ci-input/run.json
+      - name: Require all requested roots
+        run: |
+          set -euo pipefail
+          jq -e --arg platform "$PLATFORM" --arg modules "$SELECTED_MODULES" '
+            [.platforms[] | select(.id == $platform)] |
+            length == 1 and (.[0] |
+              (.roots | length > 0) and (.filtered_roots | length == 0) and
+              ((.requested_roots | sort) == (.roots | sort)) and
+              ((.roots | sort) == ($modules | split(",") | sort)))' build/ci-input/plan.json >/dev/null || {
+            echo 'Every requested recipe must survive platform and adapter filtering.' >&2
+            exit 1
+          }
+      - name: Prepare native environment and tools
+        id: environment
+        run: |
+          set -euo pipefail
+          bash .github/scripts/prepare-darwin.sh --config .github/ci-tools.json --plan build/ci-input/plan.json --platform "$PLATFORM" --work-root "$WORK_ROOT" > build/ci-input/environment.json 2> >(tee "$WORK_ROOT/environment.log" >&2)
+          jq -r 'to_entries[] | "\(.key)=\(.value)"' build/ci-input/environment.json >> "$GITHUB_OUTPUT"
+      - name: Prepare platform
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+          MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
+          BUDGET: ${{ steps.environment.outputs.budget }}
+        run: >-
+          "$WORK_ROOT/autolib-ci" run --repository "$GITHUB_REPOSITORY" --source-root "$SOURCE_ROOT" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer prepare --work-root "$WORK_ROOT" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
+      - name: Produce dependency layers
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+          MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
+          BUDGET: ${{ steps.environment.outputs.budget }}
+        run: |
+          set -euo pipefail
+          layers=$(jq -er --arg platform "$PLATFORM" '.platforms[] | select(.id == $platform) | .layers | length' build/ci-input/plan.json)
+          for ((index=0; index<layers; index++)); do
+            "$WORK_ROOT/autolib-ci" run --repository "$GITHUB_REPOSITORY" --source-root "$SOURCE_ROOT" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer "layer$index" --work-root "$WORK_ROOT" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
+          done
+      - name: Check direct WS capabilities
+        shell: python3 {0}
+        env:
+          LIBZMQ_PREFIX: ${{ env.WORK_ROOT }}/install
+          CAPABILITY_LABEL: direct
+        run: |
+          import ctypes, json, os, subprocess
+          from pathlib import Path
+          prefix = Path(os.environ['LIBZMQ_PREFIX']) / 'libzmq/4.3.5'
+          library = prefix / 'lib/libzmq.dylib'
+          loaded = ctypes.CDLL(str(library.resolve()))
+          loaded.zmq_has.argtypes = [ctypes.c_char_p]
+          loaded.zmq_has.restype = ctypes.c_int
+          capabilities = {key: loaded.zmq_has(key.encode()) for key in ['WS', 'WSS']}
+          if capabilities != {'WS': 1, 'WSS': 0}:
+              raise SystemExit(f'Unexpected libzmq capabilities: {capabilities}')
+          dependencies = subprocess.run(['otool', '-L', str(library)], check=True, capture_output=True, text=True).stdout
+          if 'gnutls' in dependencies.lower():
+              raise SystemExit(f'Unexpected GnuTLS dependency: {dependencies}')
+          print(json.dumps(capabilities))
+          print(dependencies)
+          evidence = Path(os.environ['WORK_ROOT']) / 'evidence'
+          evidence.mkdir(exist_ok=True)
+          (evidence / ('ws-' + os.environ['CAPABILITY_LABEL'] + '.json')).write_text(json.dumps({'library': str(library), 'capabilities': capabilities, 'dependencies': dependencies}, indent=2))
+      - name: Verify selected work
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+          MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
+          BUDGET: ${{ steps.environment.outputs.budget }}
+        run: >-
+          "$WORK_ROOT/autolib-ci" run --repository "$GITHUB_REPOSITORY" --source-root "$SOURCE_ROOT" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer verify --work-root "$WORK_ROOT" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
+      - name: Package and transport verified artifacts
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+        run: >-
+          "$WORK_ROOT/autolib-ci" transport --repository "$GITHUB_REPOSITORY" --source-root "$SOURCE_ROOT" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --work-root "$WORK_ROOT" --cmake-command "$CMAKE_COMMAND" --output "$WORK_ROOT/transport.tar"
+      - name: Verify relocated archives
+        env:
+          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+          MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
+          BUDGET: ${{ steps.environment.outputs.budget }}
+        run: |
+          set -euo pipefail
+          relocated="$WORK_ROOT/relocated"
+          mkdir -p "$relocated/transport" "$relocated/install"
+          (cd "$relocated/transport" && "$CMAKE_COMMAND" -E tar xf "$WORK_ROOT/transport.tar")
+          cp "$relocated/transport/autolib.cmake" "$relocated/install/"
+          while IFS=$'\t' read -r asset digest; do
+            archive="$relocated/transport/$asset"
+            [[ "$(shasum -a 256 "$archive" | cut -d ' ' -f 1)" == "$digest" ]]
+            (cd "$relocated/install" && "$CMAKE_COMMAND" -E tar xf "$archive")
+          done < <(jq -r '.assets[] | [.path,.sha256] | @tsv' "$relocated/transport/transport.json")
+          for candidate in "$relocated/transport/candidates/"*; do
+            cp "$candidate/package.toml" "$relocated/install/$(basename "$candidate")/package.toml"
+          done
+          mv "$WORK_ROOT/install" "$WORK_ROOT/original-install"
+          trap 'mv "$WORK_ROOT/original-install" "$WORK_ROOT/install"' EXIT
+          env -u CMAKE_PREFIX_PATH -u PKG_CONFIG_PATH -u DYLD_LIBRARY_PATH -u DYLD_FALLBACK_LIBRARY_PATH \
+            "$CMAKE_COMMAND" "-DSOURCE_ROOT=$SOURCE_ROOT" "-DINSTALL_ROOT=$relocated/install" "-DVALIDATION_ROOT=$relocated/evidence" \
+            -DGENERATOR="Unix Makefiles" "-DMODULES=$(jq -r '.platforms[0].description.modules | map(.name + "@" + .version) | join(";")' build/ci-input/plan.json)" \
+            "-DROOT_PACKAGES=${SELECTED_MODULES//,/;}" "-DCMAKE_MAKE_PROGRAM=$MAKE_PROGRAM" \
+            -DCMAKE_C_COMPILER="$CC" -DCMAKE_CXX_COMPILER="$CXX" -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -P tests/autolib/run-installed.cmake
+          if [[ "$SELECTED_MODULES" == flann@* ]]; then
+            env -u CMAKE_PREFIX_PATH -u PKG_CONFIG_PATH -u DYLD_LIBRARY_PATH -u DYLD_FALLBACK_LIBRARY_PATH \
+              "$CMAKE_COMMAND" "-DSOURCE_ROOT=$SOURCE_ROOT" "-DINSTALL_ROOT=$relocated/install" "-DVALIDATION_ROOT=$relocated/example-evidence" \
+              -DGENERATOR="Unix Makefiles" "-DCMAKE_MAKE_PROGRAM=$MAKE_PROGRAM" \
+              -DCMAKE_C_COMPILER="$CC" -DCMAKE_CXX_COMPILER="$CXX" -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
+              -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -P tests/autolib/run-example.cmake
+          fi
+      - name: Check relocated WS capabilities
+        shell: python3 {0}
+        env:
+          LIBZMQ_PREFIX: ${{ env.WORK_ROOT }}/relocated/install
+          CAPABILITY_LABEL: relocated
+        run: |
+          import ctypes, json, os, subprocess
+          from pathlib import Path
+          prefix = Path(os.environ['LIBZMQ_PREFIX']) / 'libzmq/4.3.5'
+          library = prefix / 'lib/libzmq.dylib'
+          loaded = ctypes.CDLL(str(library.resolve()))
+          loaded.zmq_has.argtypes = [ctypes.c_char_p]
+          loaded.zmq_has.restype = ctypes.c_int
+          capabilities = {key: loaded.zmq_has(key.encode()) for key in ['WS', 'WSS']}
+          if capabilities != {'WS': 1, 'WSS': 0}:
+              raise SystemExit(f'Unexpected libzmq capabilities: {capabilities}')
+          dependencies = subprocess.run(['otool', '-L', str(library)], check=True, capture_output=True, text=True).stdout
+          if 'gnutls' in dependencies.lower():
+              raise SystemExit(f'Unexpected GnuTLS dependency: {dependencies}')
+          print(json.dumps(capabilities))
+          print(dependencies)
+          evidence = Path(os.environ['WORK_ROOT']) / 'evidence'
+          evidence.mkdir(exist_ok=True)
+          (evidence / ('ws-' + os.environ['CAPABILITY_LABEL'] + '.json')).write_text(json.dumps({'library': str(library), 'capabilities': capabilities, 'dependencies': dependencies}, indent=2))
+      - name: Finalize validation
+        run: >-
+          "$WORK_ROOT/autolib-ci" finalize --repository "$GITHUB_REPOSITORY" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --results "$WORK_ROOT/results"
+      - name: Retain packaged artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-package-${{ github.run_id }}-${{ github.run_attempt }}-darwin-aarch64-${{ strategy.job-index }}
+          path: ${{ env.WORK_ROOT }}/transport.tar
+          if-no-files-found: error
+      - name: Retain platform result
+        if: ${{ always() && !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-result-${{ github.run_id }}-${{ github.run_attempt }}-darwin-aarch64-${{ strategy.job-index }}
+          path: ${{ env.WORK_ROOT }}/results/*.json
+          if-no-files-found: warn
+      - name: Retain diagnostics
+        if: ${{ always() && !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-evidence-${{ github.run_id }}-${{ github.run_attempt }}-darwin-aarch64-${{ strategy.job-index }}
+          path: |
+            ${{ env.SOURCE_ROOT }}/build/ci-input/*.json
+            ${{ env.WORK_ROOT }}/runner.log
+            ${{ env.WORK_ROOT }}/environment.log
+            ${{ env.WORK_ROOT }}/logs/
+            ${{ env.WORK_ROOT }}/evidence/**/*.json
+            ${{ env.WORK_ROOT }}/evidence/**/*.log
+            ${{ env.WORK_ROOT }}/evidence/**/*.txt
+            ${{ env.WORK_ROOT }}/jobserver.json
+            ${{ env.WORK_ROOT }}/relocated/evidence/
+            ${{ env.WORK_ROOT }}/relocated/example-evidence/
+            ${{ env.SOURCE_ROOT }}/build/portability/
+          if-no-files-found: warn
