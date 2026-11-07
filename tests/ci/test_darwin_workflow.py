@@ -32,12 +32,12 @@ class DarwinWorkflowTests(unittest.TestCase):
     def test_recipe_validation_entry(self):
         source = (ROOT / '.github/workflows/validate-macos-recipes.yml').read_text()
         self.assertIn('name: Validate macOS recipes', source)
-        self.assertRegex(source, r'(?s)on:\n  push:\n    branches:\n      - task/darwin-aarch64-native-ci\n')
+        self.assertRegex(source, r'(?s)on:\n  push:\n    branches:\n      - task/darwin-aarch64-sync\n')
         self.assertIn('contents: read', source)
         self.assertNotIn('workflow_dispatch:', source)
         native = job(source, 'validate')
         self.assertIn('runs-on: macos-15', native)
-        self.assertIn('SELECTED_MODULES: queue@45db9a8b4431,lz4@1.10.0', native)
+        self.assertIn('SELECTED_MODULES: ${{ matrix.root }}', native)
         self.assertIn('ref: ${{ github.sha }}', native)
         self.assertIn('persist-credentials: false', native)
         guard = step_script(native, 'Require native macOS 15')
@@ -53,6 +53,71 @@ class DarwinWorkflowTests(unittest.TestCase):
         listener = (ROOT / '.github/workflows/publish-artifacts.yml').read_text()
         self.assertIn('Representative releases', listener)
         self.assertNotIn('Validate macOS recipes', listener)
+
+    def test_recipe_jobs_keep_separate_roots_and_evidence(self):
+        native = job((ROOT / '.github/workflows/validate-macos-recipes.yml').read_text(), 'validate')
+        self.assertIn('fail-fast: false', native)
+        roots = re.findall(r'^          - ([\w.+,@-]+)$', native, re.M)
+        self.assertGreaterEqual(len(roots), 1)
+        roots = ['flann@f9caaf609d8b,queue@45db9a8b4431', 'boost@1.87.0']
+        work_template = re.search(r'^      WORK_ROOT: (.+)$', native, re.M)[1]
+        artifact_templates = [re.search(r'^          name: (.+)$', step, re.M)[1]
+                              for step in native.split('\n      - ')
+                              if 'uses: actions/upload-artifact@' in step]
+        self.assertEqual(len(artifact_templates), 3)
+        records = []
+        with tempfile.TemporaryDirectory(prefix='isolated recipes ') as temporary:
+            for index, selected in enumerate(roots[:2]):
+                workspace = Path(temporary) / str(index)
+                root = workspace / f"recipe-{index}"
+                root.mkdir(parents=True)
+                replacements = {'github.workspace': str(workspace), 'github.run_id': '123',
+                                'github.run_attempt': '2', 'matrix.root': selected, 'strategy.job-index': str(index)}
+                def expand(value):
+                    return re.sub(r'\$\{\{ ([\w.-]+) \}\}', lambda m: replacements[m[1]], value)
+                work = Path(expand(work_template))
+                self.assertEqual(work, root / 'build/ci/123-2/darwin-aarch64')
+                work.mkdir(parents=True)
+                (work / 'results').mkdir()
+                (work / 'results/darwin-aarch64.json').write_text('{}')
+                tools = root / 'build/tools'
+                tools.mkdir(parents=True)
+                cmake = tools / 'cmake'
+                cmake.write_text('#!/bin/sh\nexit 0\n')
+                cmake.chmod(0o755)
+                cli = tools / 'autolib-ci'
+                (tools / 'autolib-builder').write_text('fixture builder')
+                cli.write_text('#!' + sys.executable + '\n' + textwrap.dedent('''
+                    import json, sys
+                    from pathlib import Path
+                    args = sys.argv[1:]
+                    options = dict(zip(args[1::2], args[2::2]))
+                    assert Path(options['--builder-file']).is_file(), options['--builder-file']
+                    Path(options['--output']).write_text(json.dumps({'platforms': [{
+                        'id': options['--platforms'], 'requested_roots': options['--modules'].split(','),
+                        'roots': options['--modules'].split(','), 'filtered_roots': []}]}))
+                '''))
+                cli.chmod(0o755)
+                env = dict(os.environ, PATH=str(tools) + os.pathsep + os.environ['PATH'],
+                           WORK_ROOT=str(work), SELECTED_MODULES=selected, PLATFORM='darwin-aarch64',
+                           GITHUB_WORKSPACE=str(workspace), SOURCE_ROOT=str(root), GITHUB_REPOSITORY='fixture/repo', GITHUB_REF='refs/heads/task',
+                           GITHUB_SHA='abc', GITHUB_RUN_ID='123', GITHUB_RUN_ATTEMPT='2')
+                script = step_script(native, 'Plan recipe validation') + '\n' + step_script(native, 'Require all requested roots')
+                result = subprocess.run(['/bin/bash', '-euc', script], cwd=root, env=env, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                plan = json.loads((root / 'build/ci-input/plan.json').read_text())
+                self.assertEqual(plan['platforms'][0]['roots'], selected.split(','))
+                self.assertEqual(json.loads((root / 'build/ci-input/run.json').read_text())['sha'], 'abc')
+                # A failed first root retains its record while the second succeeds.
+                (work / 'autolib-ci').write_text('#!/bin/sh\nprintf "%s\\n" "$SELECTED_MODULES" > "$WORK_ROOT/result"\nexit ' + str(index == 0 and 1 or 0) + '\n')
+                (work / 'autolib-ci').chmod(0o755)
+                env.update(CMAKE_COMMAND='cmake', MAKE_PROGRAM='make', BUDGET='2')
+                result = subprocess.run(['/bin/bash', '-euc', step_script(native, 'Verify selected work')], cwd=root, env=env, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 1 if index == 0 else 0, result.stderr)
+                records.append((work / 'result', [expand(t) for t in artifact_templates]))
+            self.assertEqual([p.read_text().strip() for p, _ in records], roots[:2])
+            self.assertTrue(set(records[0][1]).isdisjoint(records[1][1]))
+            self.assertNotEqual(records[0][0].parent, records[1][0].parent)
 
     def test_recipe_roots_must_survive_filtering(self):
         source = (ROOT / '.github/workflows/validate-macos-recipes.yml').read_text()

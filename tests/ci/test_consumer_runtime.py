@@ -15,6 +15,22 @@ class ConsumerRuntimeTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         return result.stdout
 
+    def test_unknown_smoke_module_is_rejected(self):
+        with tempfile.TemporaryDirectory(prefix="unknown consumer ") as temporary:
+            root = Path(temporary)
+            entry = root / "entry.cmake"
+            entry.write_text('''function(autolib_import)
+  set(AUTOLIB_PREPARED_PACKAGES untested PARENT_SCOPE)
+  set(AUTOLIB_PACKAGE_VERSION_untested 1 PARENT_SCOPE)
+endfunction()
+''')
+            result = subprocess.run(
+                ["cmake", "-S", str(ROOT / "tests/autolib"), "-B", str(root / "build"),
+                 f"-DAUTOLIB_ENTRY={entry}", "-DMODULES=untested@1"],
+                text=True, capture_output=True)
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("No API smoke implementation for untested", result.stdout + result.stderr)
+
     def test_selected_package_dll_directories_are_recorded(self):
         with tempfile.TemporaryDirectory(prefix="consumer runtime ") as temporary:
             root = Path(temporary)

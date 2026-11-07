@@ -3,7 +3,7 @@ name: Validate macOS recipes
 on:
   push:
     branches:
-      - task/darwin-aarch64-native-ci
+      - task/darwin-aarch64-sync
 
 permissions:
   contents: read
@@ -16,17 +16,25 @@ jobs:
   validate:
     runs-on: macos-15
     timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        root:
+          - queue@45db9a8b4431
     defaults:
       run:
         shell: bash
+        working-directory: ${{ github.workspace }}/recipe-${{ strategy.job-index }}
     env:
+      SOURCE_ROOT: ${{ github.workspace }}/recipe-${{ strategy.job-index }}
       PLATFORM: darwin-aarch64
-      SELECTED_MODULES: queue@45db9a8b4431,lz4@1.10.0
-      WORK_ROOT: ${{ github.workspace }}/build/ci/${{ github.run_id }}-${{ github.run_attempt }}/darwin-aarch64
+      SELECTED_MODULES: ${{ matrix.root }}
+      WORK_ROOT: ${{ github.workspace }}/recipe-${{ strategy.job-index }}/build/ci/${{ github.run_id }}-${{ github.run_attempt }}/darwin-aarch64
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
+          path: recipe-${{ strategy.job-index }}
           persist-credentials: false
       - name: Require native macOS 15
         run: |
@@ -40,7 +48,7 @@ jobs:
           mkdir -p build/ci-input build/tools
           cmake -P src/autolib-builder/go-sdk.cmake -- build -mod=readonly -trimpath -o build/tools/autolib-builder ./src/autolib-builder
           cmake -P src/autolib-builder/go-sdk.cmake -- build -mod=readonly -trimpath -o build/tools/autolib-ci ./src/autolib-ci
-          build/tools/autolib-ci plan --source-root "$GITHUB_WORKSPACE" --builder-file "$GITHUB_WORKSPACE/build/tools/autolib-builder" --output build/ci-input/plan.json --platforms "$PLATFORM" --modules "$SELECTED_MODULES"
+          build/tools/autolib-ci plan --source-root "$SOURCE_ROOT" --builder-file "$SOURCE_ROOT/build/tools/autolib-builder" --output build/ci-input/plan.json --platforms "$PLATFORM" --modules "$SELECTED_MODULES"
           jq -n --arg repository "$GITHUB_REPOSITORY" --arg ref "$GITHUB_REF" --arg sha "$GITHUB_SHA" --arg checkout "$(git rev-parse HEAD)" --arg run "$GITHUB_RUN_ID" --arg attempt "$GITHUB_RUN_ATTEMPT" '{repository:$repository,ref:$ref,sha:$sha,checkout_sha:$checkout,run_id:$run,attempt:$attempt}' > build/ci-input/run.json
       - name: Require all requested roots
         run: |
@@ -66,7 +74,7 @@ jobs:
           MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
           BUDGET: ${{ steps.environment.outputs.budget }}
         run: >-
-          "$WORK_ROOT/autolib-ci" run --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer prepare --work-root "$WORK_ROOT" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
+          "$WORK_ROOT/autolib-ci" run --repository "$GITHUB_REPOSITORY" --source-root "$SOURCE_ROOT" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer prepare --work-root "$WORK_ROOT" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
       - name: Produce dependency layers
         env:
           CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
@@ -76,7 +84,7 @@ jobs:
           set -euo pipefail
           layers=$(jq -er --arg platform "$PLATFORM" '.platforms[] | select(.id == $platform) | .layers | length' build/ci-input/plan.json)
           for ((index=0; index<layers; index++)); do
-            "$WORK_ROOT/autolib-ci" run --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer "layer$index" --work-root "$WORK_ROOT" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
+            "$WORK_ROOT/autolib-ci" run --repository "$GITHUB_REPOSITORY" --source-root "$SOURCE_ROOT" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer "layer$index" --work-root "$WORK_ROOT" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
           done
       - name: Verify selected work
         env:
@@ -84,41 +92,41 @@ jobs:
           MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
           BUDGET: ${{ steps.environment.outputs.budget }}
         run: >-
-          "$WORK_ROOT/autolib-ci" run --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer verify --work-root "$WORK_ROOT" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
+          "$WORK_ROOT/autolib-ci" run --repository "$GITHUB_REPOSITORY" --source-root "$SOURCE_ROOT" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer verify --work-root "$WORK_ROOT" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
       - name: Package and transport verified artifacts
         env:
           CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
         run: >-
-          "$WORK_ROOT/autolib-ci" transport --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --work-root "$WORK_ROOT" --cmake-command "$CMAKE_COMMAND" --output "$WORK_ROOT/transport.tar"
+          "$WORK_ROOT/autolib-ci" transport --repository "$GITHUB_REPOSITORY" --source-root "$SOURCE_ROOT" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --work-root "$WORK_ROOT" --cmake-command "$CMAKE_COMMAND" --output "$WORK_ROOT/transport.tar"
       - name: Finalize validation
         run: >-
           "$WORK_ROOT/autolib-ci" finalize --repository "$GITHUB_REPOSITORY" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --results "$WORK_ROOT/results"
       - name: Retain packaged artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: ci-package-${{ github.run_id }}-${{ github.run_attempt }}-darwin-aarch64
-          path: build/ci/${{ github.run_id }}-${{ github.run_attempt }}/darwin-aarch64/transport.tar
+          name: ci-package-${{ github.run_id }}-${{ github.run_attempt }}-darwin-aarch64-${{ strategy.job-index }}
+          path: ${{ env.WORK_ROOT }}/transport.tar
           if-no-files-found: error
       - name: Retain platform result
         if: ${{ always() && !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
-          name: ci-result-${{ github.run_id }}-${{ github.run_attempt }}-darwin-aarch64
+          name: ci-result-${{ github.run_id }}-${{ github.run_attempt }}-darwin-aarch64-${{ strategy.job-index }}
           path: ${{ env.WORK_ROOT }}/results/*.json
           if-no-files-found: warn
       - name: Retain diagnostics
         if: ${{ always() && !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
-          name: ci-evidence-${{ github.run_id }}-${{ github.run_attempt }}-darwin-aarch64
+          name: ci-evidence-${{ github.run_id }}-${{ github.run_attempt }}-darwin-aarch64-${{ strategy.job-index }}
           path: |
-            build/ci-input/*.json
+            ${{ env.SOURCE_ROOT }}/build/ci-input/*.json
             ${{ env.WORK_ROOT }}/runner.log
             ${{ env.WORK_ROOT }}/environment.log
-            build/ci/${{ github.run_id }}-${{ github.run_attempt }}/darwin-aarch64/logs/
-            build/ci/${{ github.run_id }}-${{ github.run_attempt }}/darwin-aarch64/evidence/**/*.json
-            build/ci/${{ github.run_id }}-${{ github.run_attempt }}/darwin-aarch64/evidence/**/*.log
-            build/ci/${{ github.run_id }}-${{ github.run_attempt }}/darwin-aarch64/evidence/**/*.txt
-            build/ci/${{ github.run_id }}-${{ github.run_attempt }}/darwin-aarch64/jobserver.json
+            ${{ env.WORK_ROOT }}/logs/
+            ${{ env.WORK_ROOT }}/evidence/**/*.json
+            ${{ env.WORK_ROOT }}/evidence/**/*.log
+            ${{ env.WORK_ROOT }}/evidence/**/*.txt
+            ${{ env.WORK_ROOT }}/jobserver.json
           if-no-files-found: warn
 
