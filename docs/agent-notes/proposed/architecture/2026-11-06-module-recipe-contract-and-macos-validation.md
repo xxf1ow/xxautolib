@@ -287,7 +287,7 @@ runner 预装的 Homebrew 库可能改变可选功能探测、动态链接及最
 
 ### 第二阶段：macOS 逐包验收
 
-31 份版本配方中，23 份通过已实现的 API smoke、打包及搬迁消费，其余 8 份需按下述纠正后的依赖规则继续评估。当前 Darwin 描述仍为 23 个有效根、8 个过滤根；支持声明在实际通过后更新，过滤不计为验证成功。原样 example 的真实执行及下述硬件能力仍未验，第二阶段尚未验收，本记录保持 proposed。
+31 份版本配方中，24 份通过已实现的 API smoke、打包及搬迁消费，其余 7 份按下述规则继续评估。试验中的 Darwin 声明不计为通过，过滤也不计为验证成功。原样 example 已真实通过；下述未验包与硬件能力仍保留，第二阶段尚未验收，本记录保持 proposed。
 
 此前执行将“已有配方的库使用仓库版本”扩大为“所有第三方库均须有仓库配方”，据此禁止 brew 提供库依赖并暂缓相关包。这是执行解释错误。正确规则允许仓库没有配方的库使用系统依赖机制；既有 23 个成功版本和 Eigen 跨平台证据继续有效，仅重新验证受误判影响的包及下游。困难问题仍先报告，不擅自改变功能或版本。
 
@@ -301,9 +301,9 @@ WebSocket++ 4dfe1be74e68、PCL pcl-1.15.1 随 Boost/FLANN 恢复为闭包待重�
 
 `libzmq@4.3.5` 在源码 `c8eec1ec11a8464cd8af03a9dd953bcb35740eec` 的 [macOS 15 验收 run 42260213354，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42260213354/job/128037859553) 完成构建及进程内消息收发，但 Mach-O 检查拒绝 `/opt/homebrew/opt/gnutls/lib/libgnutls.30.dylib`。导出的静态、动态目标都依赖 Homebrew GnuTLS。仓库没有对应配方，可声明 brew `gnutls`；原先要求新增仓库配方的阻断撤销。该版本恢复待重试，保留功能并完成其传递动态库交付、许可证及搬迁验证后再恢复 Darwin 声明。
 
-`flann@f9caaf609d8b` 在同一源码的 [macOS 15 验收 run 42260213354，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42260213354/job/128037859606) 使用仓库 lz4 完成构建安装，但配置明确报告 `OpenMP NOT found`，未满足配方 `USE_OPENMP=true` 的既定要求；实际消费还因裸 install name `libflann_cpp.1.9.dylib` 无法加载而失败。仓库没有 OpenMP 配方，可声明 brew `libomp` 并保持 Apple Clang 和现有 OpenMP 要求。原先禁止 Homebrew libomp 的结论撤销；该版本恢复待重试，仍需完成探测接线、运行库交付及 Mach-O install name/rpath 修正，再验证实际运行和搬迁。PCL Darwin 及原样 example 随此恢复待验。
+`flann@f9caaf609d8b` 的早期 run 42260213354 虽完成构建，但未找到 OpenMP，且消费因裸 install name 无法加载。包级补丁保留 Apple Clang 与 OpenMP：通过声明的 brew `libomp` 探测完整使用要求，Config 导出编译选项、头文件和包内运行库，安装副本使用 `@rpath`/`@loader_path` 并重签名，附带 LLVM OpenMP 许可证，不改动 Homebrew 原文件。在源码 `a8ea348a89e1ace7a6cc425b3603d8a629751ae4` 的 [macOS 15 run 42335992231，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42335992231)，真实上游构建、直接与搬迁 CTest 均通过；两处 smoke 均执行两个 OpenMP worker，并确认实际运行库位于对应 FLANN 包内。原始归档与四份 transport 资产摘要已核对；包内三个 dylib 均为 arm64、minos 15.0，未引用 Homebrew 绝对路径。前置失败 run 42335035584 暴露旧 CMake policy 下 Apple Clang 标识差异，42335353810 暴露组合根名逗号进入 rpath；适配沿用公共入口编译器校验，验收目录按 job index 隔离。
 
-原样 `example/` 的隔离 driver 已有缺输入及数据保护检查，但本轮 macos-15 未完成真实导入、编译和运行：其 FLANN 依赖尚未合格。这是阶段验收缺口，不能以其他库的 smoke 通过代替。
+同一 run 从已搬迁归档复制入口与精确包，在隐藏原安装的条件下，通过隔离 driver 原样导入、编译并运行 `example/`，输出 `queue: OK`、`lz4: OK`、`flann: OK`。此证据不改动 example 业务代码；相关归档、运行身份、直接/搬迁和 example 日志保存在 `build/stage2-runs/42335992231-attempt1/`。
 
 `librealsense@2.58.1` 在 [macOS 15 验收 run 42260213354，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42260213354/job/128037859866) 编译到最终共享库链接，因静态 libusb 的 `SecTaskCreateFromSelf`、`SecTaskCopyValueForEntitlement` 未解析失败。包级本地依赖补丁补齐与 libusb 固定上游相同的 Foundation、IOKit、Security Framework；本机使用实际仓库 libusb 的链接及 API probe 先失败后通过。修复后源码 `04842df170604bbd1f2d60725524bdd817334ea4` 的 [macOS 15 验收 run 42263227882，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42263227882) 完成构建、创建 SDK config 并关闭流配置、打包及直接/搬迁消费，原始归档摘要核对一致；无相机环境不能验证取流。固定上游版本的 macOS 安装说明还明确列出 Viewer 不支持、IMU 禁用及 USB 访问通常需要提升权限；本轮 SDK smoke 不覆盖这些设备能力，也未改变上游设置。
 
@@ -320,7 +320,7 @@ WebSocket++ 4dfe1be74e68、PCL pcl-1.15.1 随 Boost/FLANN 恢复为闭包待重�
 | `eigen@3.4.0` | 通过 / 42260213354 | `d596afb529434130ff3c2e22ff5f406ca10e70b59d841e72987b548a9bc58170` |
 | `eigen@5.0.1` | 通过 / 42251612424 | `b964eadcd30e8b241f02dfb8625d830acc29a2990c1f3bb092a34504654ae1b3` |
 | `expected@1.3.1` | 通过 / 42251612424 | `71abad84a720aa862e0d91ebf4f098e89d37ac952716a6da60327933efcac7a7` |
-| `flann@f9caaf609d8b` | 待重试 / 42260213354 / brew libomp、动态库加载修正 | — |
+| `flann@f9caaf609d8b` | 通过 / 42335992231 | `c817fbb1736a5f4e8d2bd0a1138d6d3a36d4e6987378f8af4c4d302a622ee9ca` |
 | `freetype@2.13.2` | 暂缓 / 42251612424 / 仓库 HarfBuzz 循环及 zlib 接线 | — |
 | `gtest@1.17.0` | 通过 / 42251612424 | `86b965d2374257f1c96838b7cfbd332329074f8b01c70535f8af13f2bac851bd` |
 | `harfbuzz@8.5.0` | 依赖闭包暂缓 / FreeType | — |

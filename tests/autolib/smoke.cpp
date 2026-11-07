@@ -172,22 +172,24 @@ int main()
         || boost::filesystem::path("/one/../two").lexically_normal().generic_string() != "/two")
         return 42;
 #ifdef __APPLE__
-    const std::string boost_input = "Boost Iostreams zstd delivery";
-    std::ostringstream compressed;
     {
-        boost::iostreams::filtering_ostream encoder;
-        encoder.push(boost::iostreams::zstd_compressor());
-        encoder.push(compressed);
-        encoder << boost_input;
+        const std::string boost_input = "Boost Iostreams zstd delivery";
+        std::ostringstream compressed;
+        {
+            boost::iostreams::filtering_ostream encoder;
+            encoder.push(boost::iostreams::zstd_compressor());
+            encoder.push(compressed);
+            encoder << boost_input;
+        }
+        std::istringstream encoded(compressed.str());
+        boost::iostreams::filtering_istream decoder;
+        decoder.push(boost::iostreams::zstd_decompressor());
+        decoder.push(encoded);
+        std::ostringstream restored;
+        boost::iostreams::copy(decoder, restored);
+        if (restored.str() != boost_input)
+            return 48;
     }
-    std::istringstream encoded(compressed.str());
-    boost::iostreams::filtering_istream decoder;
-    decoder.push(boost::iostreams::zstd_decompressor());
-    decoder.push(encoded);
-    std::ostringstream restored;
-    boost::iostreams::copy(decoder, restored);
-    if (restored.str() != boost_input)
-        return 48;
 #endif
 #endif
 #ifdef AUTOLIB_TEST_WEBSOCKETPP

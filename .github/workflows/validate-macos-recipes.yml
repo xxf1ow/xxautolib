@@ -27,7 +27,6 @@ jobs:
       matrix:
         root:
           - boost@1.87.0,websocketpp@4dfe1be74e68
-          - flann@f9caaf609d8b,queue@45db9a8b4431
     defaults:
       run:
         shell: bash
