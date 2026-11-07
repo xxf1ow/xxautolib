@@ -59,7 +59,7 @@ class DarwinWorkflowTests(unittest.TestCase):
         self.assertIn('fail-fast: false', native)
         roots = re.findall(r'^          - ([\w.+,@-]+)$', native, re.M)
         self.assertGreaterEqual(len(roots), 1)
-        roots = ['queue@45db9a8b4431', 'lz4@1.10.0']
+        roots = ['flann@f9caaf609d8b,queue@45db9a8b4431', 'boost@1.87.0']
         work_template = re.search(r'^      WORK_ROOT: (.+)$', native, re.M)[1]
         artifact_templates = re.findall(r'^          name: (.+)$', native, re.M)
         self.assertEqual(len(artifact_templates), 3)
@@ -67,12 +67,12 @@ class DarwinWorkflowTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='isolated recipes ') as temporary:
             for index, selected in enumerate(roots[:2]):
                 workspace = Path(temporary) / str(index)
-                root = workspace / selected
+                root = workspace / f"recipe-{index}"
                 root.mkdir(parents=True)
                 replacements = {'github.workspace': str(workspace), 'github.run_id': '123',
-                                'github.run_attempt': '2', 'matrix.root': selected}
+                                'github.run_attempt': '2', 'matrix.root': selected, 'strategy.job-index': str(index)}
                 def expand(value):
-                    return re.sub(r'\$\{\{ ([\w.]+) \}\}', lambda m: replacements[m[1]], value)
+                    return re.sub(r'\$\{\{ ([\w.-]+) \}\}', lambda m: replacements[m[1]], value)
                 work = Path(expand(work_template))
                 self.assertEqual(work, root / 'build/ci/123-2/darwin-aarch64')
                 work.mkdir(parents=True)
@@ -92,8 +92,8 @@ class DarwinWorkflowTests(unittest.TestCase):
                     options = dict(zip(args[1::2], args[2::2]))
                     assert Path(options['--builder-file']).is_file(), options['--builder-file']
                     Path(options['--output']).write_text(json.dumps({'platforms': [{
-                        'id': options['--platforms'], 'requested_roots': [options['--modules']],
-                        'roots': [options['--modules']], 'filtered_roots': []}]}))
+                        'id': options['--platforms'], 'requested_roots': options['--modules'].split(','),
+                        'roots': options['--modules'].split(','), 'filtered_roots': []}]}))
                 '''))
                 cli.chmod(0o755)
                 env = dict(os.environ, PATH=str(tools) + os.pathsep + os.environ['PATH'],
@@ -104,7 +104,7 @@ class DarwinWorkflowTests(unittest.TestCase):
                 result = subprocess.run(['/bin/bash', '-euc', script], cwd=root, env=env, capture_output=True, text=True)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 plan = json.loads((root / 'build/ci-input/plan.json').read_text())
-                self.assertEqual(plan['platforms'][0]['roots'], [selected])
+                self.assertEqual(plan['platforms'][0]['roots'], selected.split(','))
                 self.assertEqual(json.loads((root / 'build/ci-input/run.json').read_text())['sha'], 'abc')
                 # A failed first root retains its record while the second succeeds.
                 (work / 'autolib-ci').write_text('#!/bin/sh\nprintf "%s\\n" "$SELECTED_MODULES" > "$WORK_ROOT/result"\nexit ' + str(index == 0 and 1 or 0) + '\n')

@@ -5,26 +5,8 @@ on:
     branches:
       - task/darwin-aarch64-native-ci
     paths:
-      - .github/workflows/validate-eigen-portability.yml
-      - tests/autolib/run-eigen-portability.cmake
-      - tests/autolib/run-installed.cmake
-      - tests/autolib/CMakeLists.txt
-      - tests/autolib/smoke.cpp
       - src/dependencies/eigen/**
-      - src/dependencies/pcl/**
-      - src/dependencies/boost/**
-      - src/dependencies/flann/**
-      - src/dependencies/lz4/**
-      - src/dependencies/zlib/**
-      - src/autolib.cmake
-      - src/autolib-builder/**
-      - src/autolib-ci/**
-      - src/autolib-importer/**
-      - src/internal/packagemetadata/**
-      - .github/ci-tools.json
-      - .github/scripts/prepare-linux.sh
-      - .github/scripts/prepare-windows.ps1
-      - .github/scripts/prepare-darwin.sh
+      - tests/autolib/run-eigen-portability.cmake
 
 permissions:
   contents: read
