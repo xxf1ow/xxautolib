@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -80,6 +81,45 @@ endfunction()
             inputs = (build / "link-inputs-Release.txt").read_text().splitlines()
             self.assertIn(library.as_posix(), inputs)
             self.assertNotIn(program.as_posix(), inputs)
+
+    def test_package_link_inputs_exclude_python_found_for_binding_smoke(self):
+        with tempfile.TemporaryDirectory(prefix="binding environment ") as temporary:
+            root = Path(temporary)
+            consumer = root / "consumer"
+            consumer.mkdir()
+            shutil.copyfile(ROOT / "tests/autolib/CMakeLists.txt", consumer / "CMakeLists.txt")
+            (consumer / "smoke.cpp").write_text("int main() { return 0; }\n")
+            library = root / "package/libfixture.a"
+            python_dll = root / "python/python315.dll"
+            python_lib = root / "python/python315.lib"
+            entry = root / "entry.cmake"
+            entry.write_text(f'''add_library(Fixture::Library STATIC IMPORTED GLOBAL)
+set_property(TARGET Fixture::Library PROPERTY IMPORTED_LOCATION [==[{library.as_posix()}]==])
+add_library(autolib::pybind11 INTERFACE IMPORTED GLOBAL)
+function(autolib_import)
+  set(AUTOLIB_PREPARED_PACKAGES pybind11 PARENT_SCOPE)
+  set(AUTOLIB_PACKAGE_VERSION_pybind11 1 PARENT_SCOPE)
+endfunction()
+''')
+            # FindPython3 exposes a DLL target on Windows; Unix normally uses an interface target.
+            (root / "FindPython3.cmake").write_text(f'''set(Python3_EXECUTABLE [==[{Path(sys.executable).as_posix()}]==])
+add_library(Python3::Module SHARED IMPORTED GLOBAL)
+set_target_properties(Python3::Module PROPERTIES
+  IMPORTED_LOCATION [==[{python_dll.as_posix()}]==]
+  IMPORTED_IMPLIB [==[{python_lib.as_posix()}]==])
+function(Python3_add_library target)
+  add_library(${{target}} MODULE smoke.cpp)
+  target_link_libraries(${{target}} PRIVATE Python3::Module)
+endfunction()
+''')
+            build = root / "build"
+            self.cmake("-S", consumer, "-B", build, f"-DAUTOLIB_ENTRY={entry}",
+                       "-DMODULES=pybind11", "-DCMAKE_BUILD_TYPE=Release",
+                       f"-DCMAKE_MODULE_PATH={root}")
+            inputs = (build / "link-inputs-Release.txt").read_text().splitlines()
+            self.assertIn(library.as_posix(), inputs)
+            self.assertNotIn(python_dll.as_posix(), inputs)
+            self.assertNotIn(python_lib.as_posix(), inputs)
 
     def test_example_driver_preserves_existing_data_when_input_is_missing(self):
         with tempfile.TemporaryDirectory(prefix="original example ") as temporary:
