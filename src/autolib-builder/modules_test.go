@@ -83,8 +83,8 @@ func TestRealModuleDeclarations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(refs) != 32 {
-		t.Fatalf("want 32 recipe versions, got %d", len(refs))
+	if len(refs) != 33 {
+		t.Fatalf("want 33 recipe versions, got %d", len(refs))
 	}
 	for _, slot := range [][2]string{{"Windows", "x86_64"}, {"Linux", "x86_64"}, {"Linux", "aarch64"}, {"Darwin", "aarch64"}} {
 		t.Run("all-versions/"+slot[0]+"/"+slot[1], func(t *testing.T) {
@@ -92,10 +92,10 @@ func TestRealModuleDeclarations(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(description.RequestedRoots) != 32 {
+			if len(description.RequestedRoots) != 33 {
 				t.Fatal(description.RequestedRoots)
 			}
-			if len(description.Roots) != 32 || len(description.FilteredRoots) != 0 {
+			if len(description.Roots) != 33 || len(description.FilteredRoots) != 0 {
 				t.Fatalf("roots=%v filtered=%v", description.Roots, description.FilteredRoots)
 			}
 			byRef := map[string]*moduleDefinition{}
@@ -147,7 +147,7 @@ func TestRealModuleDeclarations(t *testing.T) {
 			}
 		})
 	}
-	names := []string{"flann", "freetype", "harfbuzz", "librealsense", "libusb", "lz4", "nlohmann", "onnxruntime", "opencv", "queue", "zlib"}
+	names := []string{"flann", "freetype", "harfbuzz", "librealsense", "libusb", "lz4", "nlohmann", "onnxruntime", "opencv", "queue", "visp", "zlib"}
 	for _, slot := range []struct{ system, arch, onnx string }{
 		{"Windows", "x64", "onnxruntime-win-x64-1.24.4.zip"},
 		{"Linux", "x86_64", "onnxruntime-linux-x64-1.24.4.tgz"},
@@ -272,7 +272,7 @@ func TestVersionedRealDeclarations(t *testing.T) {
 		"imgui": "065f9e02695c", "librealsense": "2.58.1", "libusb": "1.0.27", "libzmq": "4.3.5", "lz4": "1.10.0",
 		"nativefiledialog-extended": "3cd252a8f7ca", "nlohmann": "3.12.0", "oneTBB": "628c90df6867", "onnxruntime": "1.24.4", "opencv": "4.14.0",
 		"pcl": "pcl-1.15.1", "portaudio": "v190700_20210406", "pybind11": "2.13.6", "queue": "45db9a8b4431",
-		"sdl3": "3.2.30", "spdlog": "1.17.0", "taskflow": "83f90a279aaa", "websocketpp": "4dfe1be74e68", "yaml-cpp": "2decf96e915d", "zlib": "1.3.1",
+		"sdl3": "3.2.30", "spdlog": "1.17.0", "taskflow": "83f90a279aaa", "visp": "3.7.0", "websocketpp": "4dfe1be74e68", "yaml-cpp": "2decf96e915d", "zlib": "1.3.1",
 	}
 	for _, slot := range []struct{ system, arch string }{{"Windows", "x86_64"}, {"Linux", "x86_64"}, {"Linux", "aarch64"}} {
 		t.Run(slot.system+"/"+slot.arch, func(t *testing.T) {
@@ -280,8 +280,8 @@ func TestVersionedRealDeclarations(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(modules) != 32 {
-				t.Fatalf("want 32 versions, got %d", len(modules))
+			if len(modules) != 33 {
+				t.Fatalf("want 33 versions, got %d", len(modules))
 			}
 			byRef := map[string]*moduleDefinition{}
 			for _, m := range modules {

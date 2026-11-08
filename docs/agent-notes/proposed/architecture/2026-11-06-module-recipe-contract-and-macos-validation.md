@@ -16,7 +16,7 @@ Eigen 的 C++ 模板 API 是纯头文件，但上游还提供可选的 BLAS/LAPA
 
 第一阶段以 `05ad42949ec1ec1d6f9113cdc7e538263836215d` 为起点，其实现和验收修复保留到 `49df3fc45041861fdd251e30b10b4106e3f1a65d`。第二阶段从该收口提交分叉到普通任务分支 `task/darwin-aarch64-sync`，保留 GCC 10.5、HarfBuzz 修复及已确认的字段、通用包和执行基础。旧分支 `task/darwin-aarch64-native-ci` 保留在 `b0e30938c1830fcfa9ddc7015799330e28f8bf43`，作为调查和产物证据来源；不整体合并或批量移植其第二阶段实现，不 reset、改写或删除旧历史，不创建 worktree，也不把 master 合入任务分支。
 
-第一阶段已覆盖全部现有配方的字段迁移、相关引擎和 JSON 消费者、安装及消费准备、配方接入技能和对应文档。第二阶段的产品目标是在既有构建、运输及发布链路中增加 macOS 产物，使 `all` 包含已确认的 Darwin 包；独立 workflow 用于验收，不另建发布系统。第二阶段只增加必要的 Darwin 来源、支持声明、系统依赖和构建交付适配，不全面重构独立 CI 工具配置或其他 workflow 输入，不顺带升级上游或调整原平台功能。新增版本仅限下文已单独批准的 Asio 1.24.0。
+第一阶段已覆盖全部现有配方的字段迁移、相关引擎和 JSON 消费者、安装及消费准备、配方接入技能和对应文档。第二阶段的产品目标是在既有构建、运输及发布链路中增加 macOS 产物，使 `all` 包含已确认的 Darwin 包；独立 workflow 用于验收，不另建发布系统。第二阶段只增加必要的 Darwin 来源、支持声明、系统依赖和构建交付适配，不全面重构独立 CI 工具配置或其他 workflow 输入，不顺带升级上游或调整原平台功能。新增版本包括下文已单独批准的 Asio 1.24.0，以及从独立提交迁入的 ViSP 3.7.0。
 
 ### 原平台基线与 macOS 同步范围
 
@@ -41,6 +41,10 @@ SDL3 已补查原三平台均未启用 libusb 后端。用户批准在公共 cac
 libzmq 已补查原三平台均因未找到 GnuTLS 而不启用 WSS。用户批准在公共 cache 显式设置 `WITH_TLS=false`，供原三平台与 Darwin 同步使用，保留普通 WS 及其他原配置；这是原平台配方冻结规则的另一具名例外。不新增 GnuTLS 系统依赖或修改静动态形态，完成 macOS 功能查询、直接及搬迁消费验收后提交。
 
 字体依赖链允许全平台统一修复 FreeType/HarfBuzz 的集成方向及仓库 zlib 接线；具体能力取舍和理由由 [FreeType 配方注释](../../../../src/dependencies/freetype/2.13.2/module.toml)及 [HarfBuzz 配方注释](../../../../src/dependencies/harfbuzz/8.5.0/module.toml)拥有。OpenCV 保留字体模块并声明其 pkg-config 查找所需的仓库 zlib。FreeType 对 PNG、BZip2、Brotli 三项可选字体格式依赖在所有平台显式关闭，避免引入非各目标系统默认具备的库；不影响 OpenCV 的 PNG 图像编解码。OpenCV 其余后端基线继续沿用原规则。验收覆盖四个平台的字体链原生构建、实际中文字形绘制和打包搬迁消费；完成前不解除这三个包的 Darwin 阻断。
+
+### ViSP 独立接入
+
+ViSP 3.7.0 从 `fdde64b8bfc5e7d4ce057e3eb85ce84b9ac8b213` 迁入当前开发分支，保留该提交的源码摘要、七个公开模块、内置 LAPACK、OpenCV 精确依赖、OpenMP 和其他功能选项；不借迁入修改现有包的配方。新增 Config adapter 提供 `autolib::visp`，封装本包全部公开模块并链接仓库 OpenCV。Darwin 使用 Apple Clang 和已声明的 brew libomp；运行库、公开头文件及许可随 ViSP 交付，Config 和 Mach-O 引用使用包内位置。完整接入在 macos-15 完成构建、公共入口重复导入和跨目录使用、混合跟踪及视觉伺服、打包搬迁消费后，一次提交到正式开发分支。
 
 ### 字段规范所有者与实现职责
 
@@ -465,6 +469,14 @@ Windows 最小原生诊断的 [run 42398648019，attempt 1](https://github.com/x
 快照 `a019657fe45c33b875686093e0b96b6e1a856fbb` 的 [run 42400038170，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42400038170) 仅复验 Darwin，整体成功。四库均完成构建、三个独立根消费、Mach-O 检查、运输及搬迁，平台结果 `complete=true`。保留 HarfBuzz 的 CoreText 能力并传递系统 ApplicationServices；FreeType 的 PNG/BZip2/Brotli 均关闭，FreeType/OpenCV 均使用仓库 `libz.a`。直接和搬迁的完整中文字形检查各 1/1 通过，绘图与上述 Windows/Linux 文件字节相同。Darwin transport SHA256 为 `25bc5c02c90024bb9b9299e33b9ec1ca85f6f29210ae6538806e7065180754b2`，五个资产摘要均已核对。CI 快照与正式配方、adapter、消费者内容一致；两份 Linux 既有产物的三项可选能力均未启用，复用已通过的原生构建、归档和完整中文消费证据，不重复编译。
 
 原始结果、能力 JSON、完整步骤日志、逐资产摘要和实际绘图保存在 `build/font-integration-review/`。FreeType、HarfBuzz、OpenCV 的 Darwin 阻断解除，正式配方加入 `darwin-aarch64`；四个平台的全部 32 个版本均可选择，原有精确版本和通用包 publisher 规则不变。独立验收没有触发正式发布。
+
+#### ViSP 专项验收
+
+独立快照 `8efe406df43fdc8e34936954543d51fc53ec53cd` 的 [run 42449899414，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42449899414) 整体成功。环境为 macOS 15.8.2/arm64、Apple Clang 17.0.0、CMake 3.31.12，部署目标 15.0。五包闭包从当前配方完成构建，ViSP 独立根、Mach-O 检查、运输和汇总通过，结果为 `complete=true`；本地轻量夹具另验证了 `CMP0082` 安装顺序及安装后运行库修补，不能代替 macOS 15 验收。
+
+公共入口重复导入、兄弟目录消费及完整混合跟踪/视觉伺服在原安装和搬迁归档上各 1/1 通过；两次均取得 edge=156、klt=334、dense=361、normal=3。标准 API smoke 的直接与搬迁检查也各 1/1 通过，搬迁消费期间原安装被移走。成品包含七个公开模块、libomp、omp.h 及许可证；实际 ViSP 动态库以 `@loader_path/libomp.dylib` 加载包内运行库，后者最低系统版本为 15.0。覆盖不包含真实相机、设备控制或应用现场跟踪。
+
+ViSP 原始归档 `visp-3.7.0-darwin-aarch64.tar.zst` 的 SHA256 为 `64d02250edef76929e9abea03b8999ed8282d6b08a164dbcc6c92d8f24cbaab5`，transport SHA256 为 `d28c4446414e64433eedd52e814c772be1330a8cd4a9189789e1e21d9e395746`。已下载并逐项核对六个资产的大小、摘要及生产身份；正式产品文件与测试快照逐字节一致。证据和成品保存在 `build/visp-acceptance/42449899414-attempt1/`。真实 `all` 计划四平台各 33 根、0 过滤；原 Windows/Linux 三平台配方语义与迁入提交一致，本次未重编这些平台。独立验收未触发正式发布。
 
 #### 同归档与功能覆盖缺口
 

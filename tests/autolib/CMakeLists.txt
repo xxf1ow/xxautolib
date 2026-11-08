@@ -9,7 +9,7 @@ endif()
 set(module_names "")
 set(smoke_modules queue lz4 flann eigen freetype harfbuzz libusb nlohmann opencv librealsense onnxruntime
     asio clipper2 cpp-httplib expected gtest libzmq nativefiledialog-extended oneTBB portaudio pybind11 sdl3 spdlog taskflow yaml-cpp zlib
-    boost websocketpp imgui pcl)
+    boost websocketpp imgui pcl visp)
 foreach(ref IN LISTS MODULES)
     if(NOT ref MATCHES "^([A-Za-z0-9][A-Za-z0-9_.+\\-]*)(@([A-Za-z0-9][A-Za-z0-9_.+\\-]*))?$")
         message(FATAL_ERROR "invalid consumer module ${ref}")

@@ -5,6 +5,12 @@ PYBIND11_MODULE(autolib_binding, module)
     module.def("add", [](int left, int right) { return left + right; });
 }
 #else
+#ifdef AUTOLIB_TEST_VISP
+#include <cmath>
+#include <visp3/core/vpHomogeneousMatrix.h>
+#include <visp3/visual_features/vpFeatureTranslation.h>
+#include <visp3/vs/vpServo.h>
+#endif
 #ifdef AUTOLIB_TEST_QUEUE
 #include <queue/readerwriterqueue.h>
 #endif
@@ -230,6 +236,18 @@ int main()
     if (tree.nearestKSearch((*cloud)[1], 1, pcl_neighbors, pcl_distances) != 1
         || pcl_neighbors[0] != 1 || pcl_distances[0] != 0)
         return 46;
+#endif
+#ifdef AUTOLIB_TEST_VISP
+    vpFeatureTranslation translation(vpFeatureTranslation::cdMc), desired_translation(vpFeatureTranslation::cdMc);
+    translation.buildFrom(vpHomogeneousMatrix(0.01, 0, 0, 0, 0, 0));
+    vpServo servo;
+    servo.setServo(vpServo::EYEINHAND_CAMERA);
+    servo.setInteractionMatrixType(vpServo::CURRENT);
+    servo.setLambda(0.5);
+    servo.addFeature(translation, desired_translation);
+    const auto velocity = servo.computeControlLaw();
+    if (velocity.size() != 6 || !std::isfinite(velocity[0]) || std::abs(velocity[0] + 0.005) > 1e-9)
+        return 47;
 #endif
 #ifdef AUTOLIB_TEST_ASIO
     asio::io_context io;

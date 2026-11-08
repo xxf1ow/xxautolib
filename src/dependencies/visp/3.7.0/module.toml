@@ -1,0 +1,148 @@
+# ViSP：构建边缘/KLT/深度混合模型跟踪与视觉伺服动态库；采集、配置和设备控制由应用负责。
+type = "cmake"
+package_platforms = ["windows-x86_64", "linux-x86_64", "linux-aarch64", "darwin-aarch64"]
+depends = ["opencv@4.14.0"]
+package_name = "VISP"
+config_dir = "lib/cmake/visp"
+sentinel = "lib/cmake/visp/VISPConfig.cmake"
+
+[system_dependencies]
+brew = ["libomp"] # Apple Clang 的 OpenMP 支持由 libomp 提供。
+
+[source] # 固定 v3.7.0 对应提交；升级须重新核对模块、内置依赖与 OpenCV 组件。
+URL = ["https://codeload.github.com/lagadic/visp/tar.gz/7ba10de1217603b0593f6aa8346fdbad738c7c4c"]
+URL_HASH = "SHA256=f7ea8cfc60ae641b7ab80c3c046af6df58dcf53e50b8b84107d9abae2b6387f1"
+DOWNLOAD_NAME = "visp-3.7.0-7ba10de.tar.gz"
+
+[cmake.cache]
+BUILD_SHARED_LIBS = true
+USE_OPENCV = true # KLT 使用 OpenCV 的 imgproc/video；位置由精确直接依赖注入。
+USE_OPENMP = true
+USE_THREADS = true
+WITH_CLIPPER = true # 保留上游内置 Clipper 6.4.2，不替换为不兼容的 Clipper2。
+WITH_PUGIXML = true # 保留上游默认的私有 XML 支持，不引入外部 XML 库。
+WITH_SIMDLIB = true
+WITH_LAPACK = true
+# 固定为内置 LAPACK，避免机器上的数值库改变实际依赖。
+CMAKE_DISABLE_FIND_PACKAGE_MKL = true
+CMAKE_DISABLE_FIND_PACKAGE_OpenBLAS = true
+CMAKE_DISABLE_FIND_PACKAGE_Atlas = true
+CMAKE_DISABLE_FIND_PACKAGE_GSL = true
+CMAKE_DISABLE_FIND_PACKAGE_Netlib = true
+
+# 跟踪与视觉伺服所需模块；深度跟踪包含在 mbt 中，不需要 PCL。
+BUILD_MODULE_visp_core = true
+BUILD_MODULE_visp_me = true
+BUILD_MODULE_visp_klt = true
+BUILD_MODULE_visp_mbt = true
+BUILD_MODULE_visp_vision = true
+BUILD_MODULE_visp_visual_features = true
+BUILD_MODULE_visp_vs = true
+BUILD_MODULE_visp_ar = false
+BUILD_MODULE_visp_blob = false
+BUILD_MODULE_visp_detection = false
+BUILD_MODULE_visp_gui = false
+BUILD_MODULE_visp_imgproc = false
+BUILD_MODULE_visp_io = false
+BUILD_MODULE_visp_robot = false
+BUILD_MODULE_visp_sensor = false
+BUILD_MODULE_visp_tt = false
+BUILD_MODULE_visp_tt_mi = false
+
+# 关闭上游示例、测试及语言绑定；保留原生库安装流程。
+BUILD_EXAMPLES = false
+BUILD_DEMOS = false
+BUILD_TUTORIALS = false
+BUILD_TESTS = false
+BUILD_APPS = false
+BUILD_JAVA = false
+BUILD_MODULE_visp_java_bindings_generator = false
+BUILD_PYTHON_BINDINGS = false
+USE_PYBIND11 = false
+WITH_CATCH2 = false
+
+# 应用传入图像/点云、通过 setter 配置，并独立显示和控制设备。
+USE_REALSENSE2 = false
+USE_LIBUSB_1 = false
+USE_LIBFREENECT = false
+USE_OCCIPITAL_STRUCTURE = false
+USE_EIGEN3 = false
+USE_PCL = false
+USE_NLOHMANN_JSON = false
+USE_XML2 = false
+USE_ICONV = false
+USE_ZLIB = false
+USE_JPEG = false
+USE_PNG = false
+USE_X11 = false
+USE_GTK2 = false
+USE_GDI = false
+USE_DIRECT3D = false
+USE_COIN3D = false
+USE_PANDA3D = false
+USE_OGRE = false
+USE_OIS = false
+USE_SOWIN = false
+USE_SOQT = false
+USE_SOXT = false
+USE_QT = false
+USE_YARP = false
+USE_TENSORRT = false
+USE_ZBAR = false
+USE_DMTX = false
+USE_AFMA6 = false
+USE_VIPER650 = false
+USE_VIPER850 = false
+USE_UR_RTDE = false
+USE_FRANKA = false
+USE_JACOSDK = false
+USE_VIRTUOSE = false
+USE_ARSDK = false
+USE_MAVSDK = false
+USE_ARIA = false
+USE_DC1394 = false
+USE_V4L2 = false
+USE_FLYCAPTURE = false
+USE_PYLON = false
+USE_UEYE = false
+USE_COMEDI = false
+USE_FTIITSDK = false
+USE_BICLOPS = false
+USE_PTU46 = false
+USE_FLIRPTUSDK = false
+USE_CMU1394 = false
+USE_QUALISYS = false
+USE_VICON = false
+WITH_APRILTAG = false
+WITH_ATIDAQ = false
+WITH_QBDEVICE = false
+WITH_TAKKTILE2 = false
+WITH_POLOLU = false
+WITH_MINIZ = false
+WITH_STBIMAGE = false
+WITH_TINYEXR = false
+
+[platforms.linux-x86_64]
+pkgconfig_dir = "lib/pkgconfig"
+
+[platforms.linux-aarch64]
+pkgconfig_dir = "lib/pkgconfig"
+
+# 保持 OpenMP 能力；Config 传播包内头文件、编译参数与运行库。
+[[platforms.darwin-aarch64.patches]]
+file = "darwin-openmp.patch"
+
+[[platforms.darwin-aarch64.steps]]
+name = "prepare-darwin-runtime"
+DEPENDEES = ["patch"]
+DEPENDERS = ["configure"]
+WORKING_DIRECTORY = "."
+DEPENDS = ["darwin-runtime.cmake"]
+COMMAND = [["cmake", "-E", "copy_if_different", "darwin-runtime.cmake", "<SOURCE_DIR>/darwin-runtime.cmake"]]
+
+[platforms.windows-x86_64]
+config_dir = "." # ViSP 的 Windows 包配置安装在前缀根目录。
+sentinel = "VISPConfig.cmake"
+
+[platforms.windows-x86_64.cmake.cache]
+BUILD_WITH_STATIC_CRT = false # 上游不得把公共入口选择的 /MD 改为 /MT。
