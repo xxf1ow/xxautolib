@@ -142,6 +142,15 @@ TEST(AutolibPackage, AssertionRuns) { EXPECT_EQ(6 * 7, 42); }
 #if defined(AUTOLIB_TEST_FLANN) || defined(AUTOLIB_TEST_OPENCV) || defined(AUTOLIB_TEST_LIBREALSENSE) || defined(AUTOLIB_TEST_ONNXRUNTIME)
 namespace
 {
+#ifdef _WIN32
+// 未声明 dllimport 的 API 可能返回 EXE 跳板；仅查询已加载 DLL 的导出，不额外加载运行库。
+FARPROC loaded_export(const wchar_t *library, const char *symbol)
+{
+    const auto module = GetModuleHandleW(library);
+    return module ? GetProcAddress(module, symbol) : nullptr;
+}
+#endif
+
 bool check_runtime(const char *name, const void *address, const char *expected_root)
 {
     std::filesystem::path module_path;
@@ -392,10 +401,7 @@ int main()
     if (font.empty() || cv::countNonZero(cv::Mat::eye(2, 2, CV_8U)) != 2)
         return 16;
 #ifdef _WIN32
-    // OpenCV 的导入声明不带 dllimport，取函数地址可能得到 EXE 中的跳板。
-    // 仅查询已加载的目标 DLL，不通过加载指定路径掩盖运行库来源错误。
-    const auto opencv_module = GetModuleHandleW(AUTOLIB_OPENCV_DLL);
-    const auto opencv_address = opencv_module ? GetProcAddress(opencv_module, "cvGetTickCount") : nullptr;
+    const auto opencv_address = loaded_export(AUTOLIB_OPENCV_DLL, "cvGetTickCount");
 #else
     const auto opencv_address = &cv::getTickCount;
 #endif
@@ -405,7 +411,12 @@ int main()
 #ifdef AUTOLIB_TEST_LIBREALSENSE
     rs2::config camera_config;
     camera_config.disable_all_streams();
-    if (!check_runtime("librealsense", reinterpret_cast<const void *>(&rs2_get_api_version), AUTOLIB_EXPECT_LIBREALSENSE_ROOT))
+#ifdef _WIN32
+    const auto realsense_address = loaded_export(AUTOLIB_LIBREALSENSE_DLL, "rs2_get_api_version");
+#else
+    const auto realsense_address = &rs2_get_api_version;
+#endif
+    if (!realsense_address || !check_runtime("librealsense", reinterpret_cast<const void *>(realsense_address), AUTOLIB_EXPECT_LIBREALSENSE_ROOT))
         return 18;
 #endif
 #ifdef AUTOLIB_TEST_ONNXRUNTIME

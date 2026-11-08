@@ -117,6 +117,38 @@ endif()
 ''')
             self.cmake("-P", check)
 
+    def test_windows_runtime_probes_use_selected_dll_and_import_declaration(self):
+        with tempfile.TemporaryDirectory(prefix="consumer DLL probes ") as temporary:
+            root = Path(temporary)
+            consumer = root / "consumer"
+            consumer.mkdir()
+            shutil.copyfile(ROOT / "tests/autolib/CMakeLists.txt", consumer / "CMakeLists.txt")
+            (consumer / "smoke.cpp").write_text("int main() { return 0; }\n")
+            entry = root / "entry.cmake"
+            entry.write_text('''add_library(opencv_core SHARED IMPORTED GLOBAL)
+set_property(TARGET opencv_core PROPERTY IMPORTED_LOCATION "${CMAKE_CURRENT_LIST_DIR}/opencv-selected.dll")
+add_library(realsense2::realsense2 SHARED IMPORTED GLOBAL)
+set_property(TARGET realsense2::realsense2 PROPERTY IMPORTED_LOCATION "${CMAKE_CURRENT_LIST_DIR}/realsense-selected.dll")
+function(autolib_import)
+  foreach(name IN ITEMS opencv librealsense onnxruntime)
+    set(AUTOLIB_PACKAGE_VERSION_${name} 1 PARENT_SCOPE)
+    set(AUTOLIB_PACKAGE_DIR_${name} "${CMAKE_CURRENT_LIST_DIR}" PARENT_SCOPE)
+  endforeach()
+  file(GENERATE OUTPUT "${CMAKE_BINARY_DIR}/definitions.txt"
+    CONTENT "$<TARGET_GENEX_EVAL:autolib_smoke,$<TARGET_PROPERTY:autolib_smoke,COMPILE_DEFINITIONS>>")
+endfunction()
+''')
+            windows = root / "windows.cmake"
+            windows.write_text("set(WIN32 TRUE)\n")
+            build = root / "build"
+            self.cmake("-S", consumer, "-B", build, f"-DAUTOLIB_ENTRY={entry}",
+                       "-DMODULES=opencv;librealsense;onnxruntime", "-DCMAKE_BUILD_TYPE=Release",
+                       f"-DCMAKE_PROJECT_autolib_smoke_INCLUDE={windows}")
+            definitions = (build / "definitions.txt").read_text().split(";")
+            self.assertIn('AUTOLIB_OPENCV_DLL=L"opencv-selected.dll"', definitions)
+            self.assertIn('AUTOLIB_LIBREALSENSE_DLL=L"realsense-selected.dll"', definitions)
+            self.assertIn("ORT_DLL_IMPORT", definitions)
+
     def test_both_drivers_pass_dll_directories_to_ctest(self):
         for driver in ("run-installed.cmake", "run-github.cmake"):
             with self.subTest(driver=driver), tempfile.TemporaryDirectory(prefix="driver runtime ") as temporary:
