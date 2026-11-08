@@ -61,7 +61,7 @@ GitHub 下载阶段已经验收，其证据与 Gitee 后置安排保留在按目
 
 消费准备只写 builder 负责的生成文件，不在原安装树中重写上游 CMake Config、pkg-config 或库文件。没有 adapter 的模块仍正常构建安装，不生成虚假的可消费声明；有 adapter 的包若声明依赖没有 adapter 的模块，消费准备失败并指出依赖，不能交付无法导入的闭包。本次不补 adapter，代表集继续使用 queue、lz4、flann。
 
-通用包在消费准备、复用及 staging 均接受实际载荷检查，缺少历史包头不豁免。两种安装类型可交付通用包，共用按内容识别的目标二进制拒绝规则；copy 额外核对声明映射与来源字节，不再限定 include-only。builder 负责的消费文件不计入上游复制集合。完整规则见[字段参考](../../../subsystems/module-recipes.md)，资格及验证理由见[统一模块配方设计](../../proposed/architecture/2026-11-06-module-recipe-contract-and-macos-validation.md)；本记录继续拥有安装时序与原数据保护。
+通用包在消费准备、复用及 staging 均接受实际载荷检查，缺少历史包头不豁免。两种安装类型可交付通用包，共用按内容识别的目标二进制拒绝规则；copy 额外核对声明映射与来源字节，不再限定 include-only。builder 负责的消费文件不计入上游复制集合。完整规则见[字段参考](../../../subsystems/module-recipes.md)，资格及验证理由见[统一模块配方设计](../../implemented/architecture/2026-11-06-module-recipe-contract-and-macos-validation.md)；本记录继续拥有安装时序与原数据保护。
 
 ### 本地构建输出宿主 importer
 

@@ -56,11 +56,11 @@ sherpa 只通过模块局部补丁适配本仓库运行库位置，保留参考 
 
 ### 接入与交付
 
-配方字段、通用包资格及 macOS 验收见[统一模块配方字段与 macOS 全包验收](2026-11-06-module-recipe-contract-and-macos-validation.md)，本记录的模块来源、功能范围及既有验证证据继续有效。
+配方字段、通用包资格及 macOS 验收见[统一模块配方字段与 macOS 全包验收](../../implemented/architecture/2026-11-06-module-recipe-contract-and-macos-validation.md)，本记录的模块来源、功能范围及既有验证证据继续有效。
 
 首批及第二批各库使用现有 `src/dependencies/<name>/module.toml` 和同目录 `autolib-import.cmake`。版本、归档摘要、库特定选项及补丁保持参考基线；Git 标签或分支解析为迁移时确认的完整提交，不顺带升级版本或改变功能开关。源码构建、头文件复制、源码子目录、平台覆盖和系统依赖沿用已有能力。第三批 sherpa-onnx 及其 onnxruntime 依赖不适用保留参考版本的约束，升级范围由上文拥有。
 
-通用交付使用单一 `package_platforms=["any-any"]`，两种安装类型均可声明；copy 核对映射集合和来源字节，两种类型共用目标二进制内容检查。字段细目见[字段参考](../../../subsystems/module-recipes.md)，职责及后续 macOS 验收见[统一模块配方设计](2026-11-06-module-recipe-contract-and-macos-validation.md)。平台无关性由配方维护者确认，字节核对不代替真实消费。Clipper2 1.5.4 对 GCC 9 使用模块局部补丁：移除其不识别的 `-Wno-c++20-compat`，仅将 Clipper2Z 的 sign-conversion 保留为警告；其他告警仍按上游 `-Werror` 处理，不修改算法或关闭 Z 坐标库。
+通用交付使用单一 `package_platforms=["any-any"]`，两种安装类型均可声明；copy 核对映射集合和来源字节，两种类型共用目标二进制内容检查。字段细目见[字段参考](../../../subsystems/module-recipes.md)，职责及后续 macOS 验收见[统一模块配方设计](../../implemented/architecture/2026-11-06-module-recipe-contract-and-macos-validation.md)。平台无关性由配方维护者确认，字节核对不代替真实消费。Clipper2 1.5.4 对 GCC 9 使用模块局部补丁：移除其不识别的 `-Wno-c++20-compat`，仅将 Clipper2Z 的 sign-conversion 保留为警告；其他告警仍按上游 `-Werror` 处理，不修改算法或关闭 Z 坐标库。
 
 每包提供唯一的 `autolib::<name>` 公共目标，封装参考支持的上游组件及实际直接依赖，不回退系统同名包，不在 adapter 下载或构建。WebSocket++ 沿用默认 Boost 后端，声明 `websocketpp → boost → zlib` 闭包；Asio、cpp-httplib、Taskflow 传递系统 `Threads::Threads`。纯头文件包只有在内容确实平台无关时才使用通用槽位；通用头文件可声明平台包依赖，importer 按消费平台准备该依赖。沿用现有自动发现、打包和 CI 规则，不新增逐库发布编排。
 

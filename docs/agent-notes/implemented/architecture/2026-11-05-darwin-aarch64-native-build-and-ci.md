@@ -36,7 +36,7 @@ CI 使用 `Unix Makefiles` 和仓库已固定的 GNU Make 4.4.1，同一平台�
 
 ### 每个配方版本显式声明平台资格
 
-当前单一 `package_platforms`、通用资格及平铺覆盖规则由[字段参考](../../../subsystems/module-recipes.md)拥有，职责与全包验收由[统一模块配方设计](../../proposed/architecture/2026-11-06-module-recipe-contract-and-macos-validation.md)拥有。具体包列出支持的完整平台 ID；通用包单独声明 any-any，各项依赖仍按目标判断资格。builder 与 CI 共用版本配方，不维护包名排除表，也不从来源或头文件属性推断具体平台支持。
+当前单一 `package_platforms`、通用资格及平铺覆盖规则由[字段参考](../../../subsystems/module-recipes.md)拥有，职责与全包验收由[统一模块配方设计](../../implemented/architecture/2026-11-06-module-recipe-contract-and-macos-validation.md)拥有。具体包列出支持的完整平台 ID；通用包单独声明 any-any，各项依赖仍按目标判断资格。builder 与 CI 共用版本配方，不维护包名排除表，也不从来源或头文件属性推断具体平台支持。
 
 本记录的 queue/lz4 首轮执行基础及以下验证证据保持原范围。统一字段后的两个 Eigen 版本使用上游 CMake 安装并交付通用头文件与元数据；其他通用配方按依赖资格判断。未适配的机器码包不自动增加 Darwin，包括 librealsense@2.58.1 和 onnxruntime@1.24.4。macos-15 全包构建调查和 PCL/example 实机消费留待统一设计第二阶段。
 

@@ -14,7 +14,7 @@ zlib 和 queue 能验证本地基础流水线，但不能代表 URL 归档、预
 
 FLANN、HarfBuzz 与 OpenCV 4.14.0 已验证的依赖声明、安装查找位置及资源修改由[依赖与复杂资源决定](../../implemented/architecture/2026-10-20-flann-opencv-dependencies.md)拥有；本文保留其他模块的总体约束。
 
-来源、安装、平台覆盖及系统依赖字段的职责决定与后续验收见[统一模块配方字段与 macOS 全包验收](2026-11-06-module-recipe-contract-and-macos-validation.md)；本文的参考迁移边界及 FreeType 功能基线继续有效。
+来源、安装、平台覆盖及系统依赖字段的职责决定与后续验收见[统一模块配方字段与 macOS 全包验收](../../implemented/architecture/2026-11-06-module-recipe-contract-and-macos-validation.md)；本文的参考迁移边界及 FreeType 功能基线继续有效。
 
 ### 首批目标与范围
 

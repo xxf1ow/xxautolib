@@ -12,7 +12,7 @@ Status: implemented
 
 `flann`、`harfbuzz`、`opencv` 是三个 `cmake` 模块，复用 lz4 1.10.0 与 FreeType 2.13.2。沿用[模块扩展总体约束](../../proposed/architecture/2026-10-20-module-expansion.md)，本文拥有具体依赖字段、资源消费及版本配置；来源与复用语义仍由[流水线记录](2026-10-19-toml-externalproject-zlib.md)和[本地复用记录](2026-10-20-local-reuse-and-platform-inputs.md)拥有。
 
-固定版本依赖、资源字段及参数冲突规则见[统一模块配方字段与 macOS 全包验收](../../proposed/architecture/2026-11-06-module-recipe-contract-and-macos-validation.md)；本文继续拥有依赖接线、库功能基线及既有验证理由。
+固定版本依赖、资源字段及参数冲突规则见[统一模块配方字段与 macOS 全包验收](../../implemented/architecture/2026-11-06-module-recipe-contract-and-macos-validation.md)；本文继续拥有依赖接线、库功能基线及既有验证理由。
 
 ### 范围与参考基线
 

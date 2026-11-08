@@ -18,7 +18,7 @@ Status: implemented
 
 生成器的语言与运行环境由 [Go 工具层设计](../../proposed/architecture/2026-10-21-go-tooling-and-offline-import.md)替代原 Python 实现；本文保留纯声明、原生执行、模块归属及失败保护的决定，以下机制与路径对应当前 Go builder。
 
-当前字段身份、平台覆盖、安装类型适用性和步骤格式由[字段参考](../../../subsystems/module-recipes.md)拥有，统一职责及 macOS 后续验收见[统一模块配方设计](../../proposed/architecture/2026-11-06-module-recipe-contract-and-macos-validation.md)；本文继续拥有纯声明与原生执行的职责决定。
+当前字段身份、平台覆盖、安装类型适用性和步骤格式由[字段参考](../../../subsystems/module-recipes.md)拥有，统一职责及 macOS 验收结果见[统一模块配方设计](../../implemented/architecture/2026-11-06-module-recipe-contract-and-macos-validation.md)；本文继续拥有纯声明与原生执行的职责决定。
 
 ### 职责与执行流程
 

@@ -46,7 +46,7 @@ cmake -P src/autolib-builder/go-sdk.cmake -- test -mod=readonly ./src/autolib-im
 
 Darwin 实机 queue/lz4 的生产、直接及搬迁消费、Mach-O 与 FIFO 证据和未测项见[Darwin 验证](agent-notes/implemented/architecture/2026-11-05-darwin-aarch64-native-build-and-ci.md#第一阶段验证证据)。工具专用及代表库的 macos-15 运行已通过，见[CI 实机验收](agent-notes/implemented/architecture/2026-11-05-darwin-aarch64-native-build-and-ci.md#macos-15-实机验收)；Gitee 自动同步仍由默认分支旧平台校验拒绝。Go 定向检查的 PATH 前置固定 CMake/Make。
 
-Darwin 工具准备及 workflow 的受控检查分别执行 `python3.12 -B -m unittest discover -s tests/ci -p test_darwin_preparation.py -v`、`python3.12 -B -m unittest discover -s tests/ci -p test_darwin_workflow.py -v`。四平台选择、精确成品与元数据的增量证据见[第二阶段本地验证](agent-notes/implemented/architecture/2026-11-05-darwin-aarch64-native-build-and-ci.md#第二阶段本地验证)。这些既有证据不要求补跑 Linux 实机；原样 example 依赖当时未支持 Darwin 的 FLANN，未纳入该轮验收。统一配方的[阶段证据与缺口](agent-notes/proposed/architecture/2026-11-06-module-recipe-contract-and-macos-validation.md#验证结果)分别记录本机闭环和后续 macos-15、同 Linux Eigen 归档跨平台、PCL/example 验收。
+Darwin 工具准备及 workflow 的受控检查分别执行 `python3.12 -B -m unittest discover -s tests/ci -p test_darwin_preparation.py -v`、`python3.12 -B -m unittest discover -s tests/ci -p test_darwin_workflow.py -v`。四平台选择、精确成品与元数据的增量证据见[第二阶段本地验证](agent-notes/implemented/architecture/2026-11-05-darwin-aarch64-native-build-and-ci.md#第二阶段本地验证)。这些既有证据不要求补跑 Linux 实机；原样 example 依赖当时未支持 Darwin 的 FLANN，未纳入该轮验收。统一配方的[阶段证据与缺口](agent-notes/implemented/architecture/2026-11-06-module-recipe-contract-and-macos-validation.md#验证结果)分别记录本机闭环和后续 macos-15、同 Linux Eigen 归档跨平台、PCL/example 验收。
 
 新增消费入口与同归档预检分别选择 `test_consumer_runtime.py`、`test_eigen_portability.py`，沿用上述命令按需验证。
 
