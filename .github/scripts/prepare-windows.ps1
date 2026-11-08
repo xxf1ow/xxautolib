@@ -31,7 +31,7 @@ $tools = Join-Path $WorkRoot 'ci-tools'
 $bin = Join-Path $tools 'bin'
 New-Item -ItemType Directory -Force -Path $bin | Out-Null
 $archive = Join-Path $WorkRoot $asset[0].filename
-Invoke-WebRequest -Uri $asset[0].url -OutFile $archive
+Invoke-WebRequest -Uri $asset[0].url -OutFile $archive -MaximumRetryCount 2 -RetryIntervalSec 5
 $actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($actual -ne $asset[0].sha256) { throw "CMake SHA256 mismatch: $actual" }
 Expand-Archive -LiteralPath $archive -DestinationPath $tools -Force
