@@ -482,6 +482,6 @@ ViSP 原始归档 `visp-3.7.0-darwin-aarch64.tar.zst` 的 SHA256 为 `64d02250ed
 
 两份 Linux Eigen 原件及 `producer.json` 已核对为 run 42264057220/attempt 1、源码 `d8ffda6a51e0a427a8ddec6fd508ff61c564625c`：3.4.0 SHA256 为 `be0dcfb8cd69556b00edeb541fbacff0ac4f9d9167ac75f47546bdf00923a2c4`，5.0.1 为 `9d71707429eeff4186b5993e3caff52fe76c33f6f8afb66f2801dcbb0831d578`。复用 Windows/macOS 两版直接及搬迁共八次消费，以及 run 42272676188 的原三平台 PCL 组合；没有重新生产或改写旧身份。同归档消费始终使用这两份原件，不使用本轮 transport 中重新打包的 Eigen 替代。Darwin PCL 在上述新运行中完成同一 Linux 3.4.0 Config 组合，直接及搬迁各 1/1 通过；已下载核对原摘要、生产身份及实际 Eigen3_DIR，均指向对应隔离安装的 3.4.0 Config。
 
-实际覆盖限于有效 API smoke。RealSense 验证 SDK/API 和搬迁，未验相机取流；固定上游另有 Viewer/IMU/USB 权限限制。PortAudio 未验音频设备；SDL3 验证内存 surface，未验交互图形或 HID/USB，ImGui 验证 context 与颜色转换，未验窗口；Native File Dialog 未调用交互对话框；libusb 未验设备；ONNX Runtime 创建并释放 CPU 环境，未验模型推理。pybind11 包含编译扩展并由匹配 Python 实际调用。构建消费通过不扩大这些覆盖。
+实际覆盖限于有效 API smoke。RealSense 验证 SDK/API 和搬迁，未验相机取流；固定上游另有 Viewer/IMU/USB 权限限制。PortAudio 未验音频设备；SDL3 验证内存 surface，未验交互图形或 HID/USB，ImGui 验证 context 与颜色转换，未验窗口；Native File Dialog 只验证错误状态 API，不要求显示服务，未验图形初始化或交互对话框；libusb 未验设备；ONNX Runtime 创建并释放 CPU 环境，未验模型推理。pybind11 包含编译扩展并由匹配 Python 实际调用。构建消费通过不扩大这些覆盖。
 
 第二阶段首轮独立审查覆盖 `49df3fc..0a3cd6c` 及对应文档，发现 SDL3/libusb 一项 Important，ImGui 随依赖受到影响；用户确认暂列两包阻断后撤回新增 Darwin 声明。真实 plan 检查先复现两包仍被选中，修正声明后验证过滤，原三平台配置保持不变。没有其他已证实的 Critical/Important 或待处理 Minor。后续 SDL3、libzmq、字体链和 ViSP 的补验结果见各专项章节；正式发布与分支清理独立记录，不由包验收成功推定。
