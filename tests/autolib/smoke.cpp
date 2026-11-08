@@ -95,9 +95,6 @@ TEST(AutolibPackage, AssertionRuns) { EXPECT_EQ(6 * 7, 42); }
 #include <spdlog/sinks/ostream_sink.h>
 #include <sstream>
 #endif
-#ifdef AUTOLIB_TEST_TASKFLOW
-#include <taskflow/taskflow.hpp>
-#endif
 #ifdef AUTOLIB_TEST_YAML_CPP
 #include <yaml-cpp/yaml.h>
 #endif
@@ -345,17 +342,6 @@ int main()
     logger.flush();
     if (logged.str() != "answer 42\n")
         return 36;
-#endif
-#ifdef AUTOLIB_TEST_TASKFLOW
-    tf::Executor executor(2);
-    tf::Taskflow taskflow;
-    int task_value = 0;
-    auto first = taskflow.emplace([&] { task_value = 20; });
-    auto second = taskflow.emplace([&] { task_value += 22; });
-    first.precede(second);
-    executor.run(taskflow).get();
-    if (task_value != 42)
-        return 37;
 #endif
 #ifdef AUTOLIB_TEST_YAML_CPP
     const auto yaml = YAML::Load("answer: 42\nvalues: [1, 2, 3]\n");

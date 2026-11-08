@@ -31,6 +31,30 @@ endfunction()
             self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("No API smoke implementation for untested", result.stdout + result.stderr)
 
+    def test_taskflow_import_does_not_compile_its_cxx20_headers(self):
+        with tempfile.TemporaryDirectory(prefix="taskflow install check ") as temporary:
+            root = Path(temporary)
+            headers = root / "include/taskflow"
+            headers.mkdir(parents=True)
+            (headers / "taskflow.hpp").write_text('#error "Taskflow API smoke must be skipped"\n')
+            entry = root / "entry.cmake"
+            entry.write_text('''add_library(autolib::taskflow INTERFACE IMPORTED GLOBAL)
+set_property(TARGET autolib::taskflow PROPERTY INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_LIST_DIR}/include")
+function(autolib_import)
+  target_link_libraries(autolib_smoke PRIVATE autolib::taskflow)
+  set(AUTOLIB_PREPARED_PACKAGES taskflow PARENT_SCOPE)
+  set(AUTOLIB_PACKAGE_VERSION_taskflow 1 PARENT_SCOPE)
+endfunction()
+''')
+            build = root / "build"
+            self.cmake("-S", ROOT / "tests/autolib", "-B", build,
+                       f"-DAUTOLIB_ENTRY={entry}", "-DMODULES=taskflow@1")
+            self.assertEqual((build / "prepared-packages.txt").read_text(), "taskflow")
+            self.cmake("--build", build)
+            result = subprocess.run(["ctest", "--test-dir", str(build), "--output-on-failure"],
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_link_input_evidence_keeps_libraries_and_excludes_imported_programs(self):
         with tempfile.TemporaryDirectory(prefix="consumer link inputs ") as temporary:
             root = Path(temporary)

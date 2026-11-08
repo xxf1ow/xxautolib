@@ -34,7 +34,7 @@ WebSocket++ 的发布安装与复制头文件不依赖 Boost 或 Asio。恢复�
 
 新增独立 `asio@1.24.0`，固定来源提交 `147f7225a96d45a2807a64e443177f621844e51c`，以 copy 从 `asio/include` 安装头文件，附带 `asio/LICENSE_1_0.txt`，身份为 `any-any`，不声明包依赖。原 `asio@8806a6803cde` 和包级 latest 不变，消费者显式选择版本。基线 31 份版本配方加此项后为 32 份；不替换原版本或自动降级。WebSocket++ 单包消费与它和 Asio 1.24.0 的 standalone 组合分别验收，后者检查直接及搬迁后的网络 transport 初始化。
 
-WebSocket++ 与 Asio 两项是用户已经单独批准的全平台例外，不构成修改其他原平台配方的授权。旧分支的其他全平台变更，例如 Taskflow 语言标准传播，先根据本分支既有消费契约核对必要性；若改变原平台要求，单独报告，不随 macOS 补丁一并带入。
+WebSocket++ 与 Asio 两项是用户已经单独批准的全平台例外，不构成修改其他原平台配方的授权。Taskflow 保持固定源码、`any-any` 身份及原 adapter，不提高生产工具链要求。其上游 API 需要 C++20 和 GCC 至少 11.0；当前 C++17 消费验收跳过 Taskflow API 的编译运行，保留真实头文件安装、公共入口导入、通用载荷检查和打包运输。该例外只适用于 Taskflow，不取消其他头文件包的 API 验收，也不证明 Taskflow 可由 C++17 项目使用。
 
 SDL3 已补查原三平台均未启用 libusb 后端。用户批准在公共 cache 显式设置 `SDL_HIDAPI_LIBUSB=false`，覆盖原三平台并供 Darwin 同步使用；这是对已证实关闭状态的固定，不新增或裁掉既有能力。该设置是原平台配方冻结规则的具名例外，其余 SDL3 配置、系统依赖及上游提交不变。SDL3 和 ImGui 在 Darwin 完成构建、直接消费及打包搬迁消费验收后，才提交本轮正式修改并进入下一阻断包。
 
@@ -477,6 +477,22 @@ Windows 最小原生诊断的 [run 42398648019，attempt 1](https://github.com/x
 公共入口重复导入、兄弟目录消费及完整混合跟踪/视觉伺服在原安装和搬迁归档上各 1/1 通过；两次均取得 edge=156、klt=334、dense=361、normal=3。标准 API smoke 的直接与搬迁检查也各 1/1 通过，搬迁消费期间原安装被移走。成品包含七个公开模块、libomp、omp.h 及许可证；实际 ViSP 动态库以 `@loader_path/libomp.dylib` 加载包内运行库，后者最低系统版本为 15.0。覆盖不包含真实相机、设备控制或应用现场跟踪。
 
 ViSP 原始归档 `visp-3.7.0-darwin-aarch64.tar.zst` 的 SHA256 为 `64d02250edef76929e9abea03b8999ed8282d6b08a164dbcc6c92d8f24cbaab5`，transport SHA256 为 `d28c4446414e64433eedd52e814c772be1330a8cd4a9189789e1e21d9e395746`。已下载并逐项核对六个资产的大小、摘要及生产身份；正式产品文件与测试快照逐字节一致。证据和成品保存在 `build/visp-acceptance/42449899414-attempt1/`。真实 `all` 计划四平台各 33 根、0 过滤；原 Windows/Linux 三平台配方语义与迁入提交一致，本次未重编这些平台。独立验收未触发正式发布。
+
+#### 完整正式发布验收
+
+首轮正式生产使用提交 `d0d4c17afaec7a2c03a5c9b4bfa4ab78331ad575`，[run 42453374801，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42453374801) 选择四平台 `all/all`，各 33 个版本、零过滤。十个通用版本的 publisher 均为 Linux x86_64；完整清单为 102 个库归档、四个工具归档和一个入口。四个平台的 33 包构建均成功，但运行整体因消费验收失败而失败，未用于正式发布。
+
+Darwin 全部 33 个独立根、来源检查、运输和搬迁成功，结果为 `complete=true`。已下载原始 transport 并逐项核对 24 个归档的大小和 SHA256；其中不含由 Linux 发布的十个通用归档。原始计划、结果、归档及核对清单位于 `build/release-closure-20261108/`，保留原 run 和生产提交身份。
+
+两个 Linux 平台均在 24 个独立根消费通过后，因缺少 `Python3_INCLUDE_DIRS` 和 `Development.Module` 而无法配置 pybind11 扩展测试。Linux 验证步骤仅在有效闭包含 pybind11 时安装 `python3-dev`，安装发生在全部库构建结束后，避免改变构建期自动探测；pybind11 配方仍以 `PYBIND11_NOPYTHON=true` 安装，Python 依赖由实际绑定消费者决定。真实 workflow 脚本的两个架构、有无 pybind11 四场景先复现缺失前置条件，再通过修复；受影响 workflow 检查共 10 项通过。
+
+Windows 在 13 个独立根通过后，RealSense 来源探针把 `rs2_get_api_version` 的地址定位到消费者 EXE。固定上游声明不带 `dllimport`，与上述 OpenCV 原生跳板诊断相同；来源检查改用已加载目标 DLL 的导出地址，仍严格拒绝包目录外的运行库，不额外加载 DLL。ONNX Runtime 消费者按官方头文件要求定义 `ORT_DLL_IMPORT`。真实生成参数回归先失败后通过，消费入口六项检查通过；这些定向检查不替代原生 Windows 运行。
+
+修复提交 `c1f1a19cab8410962914dbb52e864e72da681bf4` 的[完整重试 run 42457018775，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42457018775) 使用同一四平台、全部版本选择。Darwin 全部 33 包、33 个独立根及运输搬迁通过，结果为 `complete=true`；已下载原始 transport 并经正式发布校验器核对 24 个归档的身份、大小和 SHA256，transport SHA256 为 `4c15d5c79ccd3ba670c12f7a483f4b7e59f9c6ff0c883597b28243b8059a30c3`。
+
+两个 Linux 平台均完成 33 包构建及 28 个独立根消费，pybind11 已通过；随后 Taskflow 消费因 GCC 10.5 的标准库缺少 `<latch>` 失败。固定上游的 README 和 CMakeLists 明确要求 GNU GCC 至少 11.0、C++20。这不是 Taskflow 头文件安装失败；当前生产及消费者工具链与其实际要求存在冲突。用户决定保留当前工具链并跳过 Taskflow 的 C++20 API 验收；当前入口只检查该包的安装导入，配方、adapter 和版本不变。Windows 完成 33 包构建及 20 个独立根消费后，在 ONNX Runtime 的消费者运行阶段失败；RealSense 来源检查已通过。ONNX 消费者已编译链接成功，现有 CTest 日志无程序输出或具体退出原因，诊断尚未完成。
+
+正式发布要求原运行整体成功，不混合不同 run/attempt 或重标旧归档身份。本轮尚不满足发布条件，Gitee 完整发布和临时分支删除均未执行。六个任务临时分支已保存在 `build/branch-cleanup-20261108/temporary-branches.bundle`；bundle 大小 1659969 字节、SHA256 为 `f562c7de8dcd32dde0ef2a4644bbdc439b152ea90657ac91d765e46ecb7f27d1`，11 条本地及远端引用已通过独立恢复核对。
 
 #### 同归档与功能覆盖缺口
 

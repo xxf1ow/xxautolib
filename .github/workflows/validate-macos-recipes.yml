@@ -22,7 +22,6 @@ jobs:
       matrix:
         root:
           - pcl@pcl-1.15.1,boost@1.87.0
-          - taskflow@83f90a279aaa
     defaults:
       run:
         shell: bash
