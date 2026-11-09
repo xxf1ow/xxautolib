@@ -3,6 +3,8 @@
 import hashlib
 import json
 from pathlib import Path, PurePosixPath
+from urllib.parse import quote
+import unicodedata
 import re
 import stat
 
@@ -224,3 +226,18 @@ def load_publication(path: Path, *, source_repository: str) -> dict:
     if set(document['initial_latest']) != packages:
         raise ValueError('initial latest must match selected library packages')
     return document
+
+
+def inject_release_root(source: bytes, repository: str, tag: str) -> bytes:
+    """在上传副本中注入目标；除唯一空来源赋值外，原始字节保持不变。"""
+    if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*', repository):
+        raise ValueError('invalid entry repository')
+    if not isinstance(tag, str) or not tag or any(c.isspace() or unicodedata.category(c) == 'Cc' for c in tag):
+        raise ValueError('invalid entry tag')
+    empty = b'set(_autolib_release_root "")'
+    assignments = re.findall(rb'(?m)^[ \t]*set[ \t]*\([ \t]*_autolib_release_root\b[^\r\n]*', source)
+    if assignments != [empty] or not re.search(rb'(?m)^' + re.escape(empty) + rb'(?=\n|\Z)', source):
+        raise ValueError('entry requires exactly one complete empty release-root assignment')
+    root = 'https://gitee.com/' + repository + '/releases/download/' + quote(tag, safe='-._~$&+:=@')
+    return re.sub(rb'(?m)^' + re.escape(empty) + rb'(?=\n|\Z)',
+                  ('set(_autolib_release_root "' + root + '")').encode('ascii'), source, count=1)

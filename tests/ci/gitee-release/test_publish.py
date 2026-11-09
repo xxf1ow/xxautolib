@@ -267,7 +267,8 @@ class PublishTests(unittest.TestCase):
         self.remote()
         fast,slow=self.asset('fast'),self.asset('slow')
         entered,release,confirmed=threading.Event(),threading.Event(),threading.Event()
-        original=self.module.commit_metadata
+        import sync_scheduler
+        original=sync_scheduler.commit_metadata
         def confirm(repo,digests,latest,**kwargs):
             head=original(repo,digests,latest,**kwargs)
             if any(p.startswith('fast/') for p in digests):confirmed.set()
@@ -279,7 +280,7 @@ class PublishTests(unittest.TestCase):
             return fast['path'] if asset['name']==fast['name'] else slow['path']
         config=self.config([slow,fast]);config['fetch_asset']=fetch
         results=[]
-        with patch('publish.commit_metadata',side_effect=confirm):
+        with patch('sync_scheduler.commit_metadata',side_effect=confirm):
             thread=threading.Thread(target=lambda:results.append(self.run_release(config)))
             thread.start()
             try:

@@ -1,6 +1,5 @@
 """从源码及有效 Release 缓存同步，信任 Git 摘要并逐项确认。"""
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
 import json
 import os
@@ -11,12 +10,10 @@ import stat
 import subprocess
 import sys
 import tempfile
-import threading
 import time
 from typing import Mapping
 import unicodedata
 
-from cleanup import execute_cleanup, plan_cleanup
 from gitee_api import GiteeAPI, GiteeAPIError
 from metadata_repository import commit_metadata, open_repository
 from publication_rules import _object, choose_source_latest, latest_mapping, metadata_path
@@ -160,7 +157,10 @@ def publish_one(api: GiteeAPI, release_id: int, asset: dict, initial_matches: li
                     _log('retry', name, retry=attempt + 1, delay_seconds=delay, **error.diagnostic())
                     time.sleep(delay)
             operation = 'metadata_commit'
-            confirm_item(asset)
+            confirmed = confirm_item(asset)
+            if confirmed is False:
+                _log('uploaded_pending_entry', name)
+                return {'name': name, 'metadata_path': digest_path, 'sha256': digest, 'status': 'awaiting_entry'}
             _log('success', name)
             return {'name': name, 'metadata_path': digest_path, 'sha256': digest, 'status': 'uploaded'}
     except GiteeAPIError as error:
@@ -190,58 +190,10 @@ def publish_release(config: dict) -> dict:
     try:
         repository = open_repository(config, api, Path(config['work_root']))
         previous = repository['head']
-        source = config['source']
-        if config['mode'] == 'latest':
-            existing = {k: v for k, v in repository['existing_latest'].items() if k in config['explicit_latest']}
-            latest, removed, errors = choose_source_latest(existing, {}, source, set(), config['explicit_latest'])
-            result['errors'].update(errors)
-            commit_metadata(repository, {}, latest, remove_paths=tuple(name + '/package.toml' for name in removed))
-        else:
-            candidates = cache_candidates(source, config['cache'])
-            result['selected'] = len(candidates)
-            result['coverage'] = {name: config['cache']['record_errors'].get(name, 'pending build')
-                                  for name in source['inputs']['fingerprints']
-                                  if name not in {a['name'] for a in candidates}}
-            fetch, delete_cache = cache_callbacks(config)
-            lock, stopped = threading.Lock(), threading.Event()
-            operation = 'release'
-            release = api.target_release(config['tag'])
-            assets = list_assets(api, release['id']) if release else []
-            cleanup = execute_cleanup(plan_cleanup(source, config['cache'], repository, assets), delete_cache=delete_cache,
-                                      api=api, release_id=release['id'] if release else None, repository=repository, git_lock=lock)
-            result['errors'].update(cleanup['errors'])
-            deleted = set(cleanup['deleted'])
-            assets = [a for a in assets if a['name'] not in deleted]
-            pending = []
-            for asset in candidates:
-                if repository['existing_digests'].get(metadata_path(asset)) == asset['sha256']:
-                    result['items'].append({'name': asset['name'], 'status': 'skipped'})
-                    _log('skipped', asset['name'])
-                else:
-                    pending.append(asset)
-            if pending and release is None:
-                release = api.create_release(config['tag'], repository['head'])
-            def confirm(asset):
-                with lock:
-                    if stopped.is_set():
-                        raise RuntimeError('metadata writes stopped')
-                    try:
-                        candidates = {asset['package']['name']: asset['record']['latest_candidate']} if asset['kind'] == 'library' else {}
-                        latest, removed, errors = choose_source_latest(repository['existing_latest'], candidates, source, set(candidates), {})
-                        result['errors'].update(errors)
-                        commit_metadata(repository, {metadata_path(asset): asset['sha256']}, latest,
-                                        remove_paths=tuple(n + '/package.toml' for n in removed))
-                    except (OSError, ValueError, RuntimeError):
-                        stopped.set()
-                        raise
-            if pending:
-                cpu = len(os.sched_getaffinity(0)) if hasattr(os, 'sched_getaffinity') else os.cpu_count() or 1
-                with ThreadPoolExecutor(max_workers=min(len(pending), max(1, cpu * 2))) as pool:
-                    futures = [pool.submit(publish_one, api, release['id'], asset,
-                               [a for a in assets if a['name'] == asset['name']], fetch_asset=fetch, confirm_item=confirm) for asset in pending]
-                    result['items'].extend(f.result() for f in as_completed(futures))
-            if stopped.is_set():
-                result['errors']['metadata_commit'] = 'metadata writes stopped after unconfirmed push'
+        from sync_scheduler import run_sync
+        fetch, delete_cache = cache_callbacks(config)
+        result.update(run_sync(config, config['source'], config['cache'], api=api, repository=repository,
+                               fetch_asset=fetch, delete_cache=delete_cache))
         result['metadata_committed'] = repository['head'] != previous
     except (GiteeAPIError, OSError, RuntimeError, ValueError) as error:
         diagnostic = error.diagnostic() if isinstance(error, GiteeAPIError) else {'operation': operation, 'outcome': 'unconfirmed'}

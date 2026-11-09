@@ -25,6 +25,7 @@ type sourceVersion struct {
 	Error     string   `json:"error"`
 }
 type ciSyncSource struct {
+	Entry      ciCacheEntry        `json:"entry"`
 	Schema     int                 `json:"schema"`
 	Repository string              `json:"repository"`
 	Ref        string              `json:"ref"`
@@ -72,6 +73,12 @@ func prepareCISyncSource(ctx context.Context, sourceRoot, builderFile, repositor
 	if err != nil {
 		return result, err
 	}
+
+	entry, err := os.ReadFile(filepath.Join(sourceRoot, "src/autolib.cmake"))
+	if err != nil {
+		return result, err
+	}
+	result.Entry = ciCacheEntry{Bytes: entry, SHA256: ciSHA256(entry)}
 	result.Inputs, err = computeCIFingerprints(sourceRoot, result.Plan)
 	return result, err
 }

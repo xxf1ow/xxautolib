@@ -37,6 +37,9 @@ func TestCISyncSource(t *testing.T) {
 	if report.Schema != 1 || report.Ref != "refs/heads/feature/cache" || len(report.SHA) != 40 || len(report.Plan.Platforms) != 4 {
 		t.Fatalf("source identity: %+v", report)
 	}
+	if len(report.Entry.Bytes) == 0 || report.Entry.SHA256 != ciSHA256(report.Entry.Bytes) {
+		t.Fatal("fixed source entry missing")
+	}
 	if _, ok := report.Inputs.Fingerprints["d-1-any-any.tar.zst"]; !ok {
 		t.Fatal("healthy cache identity lost")
 	}
