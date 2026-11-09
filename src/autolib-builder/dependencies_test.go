@@ -26,9 +26,9 @@ func (f *fixture) child(name, body, metadata, subdir string, depends []string, f
 func TestDirectDependencies(t *testing.T) {
 	t.Setenv("PKG_CONFIG_PATH", "existing-pc-path")
 	f := newFixture(t)
-	shared := f.child("shared", "", "pkgconfig_dir='lib/pkgconfig'\n", "", nil, nil)
-	dep := f.child("dep", "install(FILES dep.h DESTINATION include)", "config_dir='lib/cmake/Dep'\npackage_name='Dep'\npkgconfig_dir='lib/pkgconfig'\n", "", []string{"shared"}, map[string]string{"dep.h": "#define DEP 17\n"})
-	sibling := f.child("sibling", "", "pkgconfig_dir='lib/pkgconfig'\n", "", nil, nil)
+	shared := f.child("shared", "install(DIRECTORY DESTINATION lib/pkgconfig)", "pkgconfig_dir='lib/pkgconfig'\n", "", nil, nil)
+	dep := f.child("dep", "install(FILES dep.h DESTINATION include)\ninstall(DIRECTORY DESTINATION lib/cmake/Dep)\ninstall(DIRECTORY DESTINATION lib/pkgconfig)", "config_dir='lib/cmake/Dep'\npackage_name='Dep'\npkgconfig_dir='lib/pkgconfig'\n", "", []string{"shared"}, map[string]string{"dep.h": "#define DEP 17\n"})
+	sibling := f.child("sibling", "install(DIRECTORY DESTINATION lib/pkgconfig)", "pkgconfig_dir='lib/pkgconfig'\n", "", nil, nil)
 	caller := putFile(t, filepath.Join(f.root, "caller include.cmake"), "file(WRITE \"${CMAKE_BINARY_DIR}/caller\" \"caller preserved\")\n")
 	leaf := f.child("leaf", `if(NOT EXISTS "`+filepath.ToSlash(f.installed("dep", "marker"))+`")
 message(FATAL_ERROR "dependency not installed")
@@ -68,6 +68,7 @@ install(FILES "${CMAKE_BINARY_DIR}/paths" "${CMAKE_BINARY_DIR}/args" "${CMAKE_BI
 		cached.Depends = []string{"dep"}
 		cached.Resources["unavailable"] = sourceDefinition{GitRepository: "unavailable", GitTag: "missing"}
 		putFile(t, f.installed("cached", "marker"), "cached")
+		putFile(t, f.installed("cached", "lib/cmake/Cached/CachedConfig.cmake"), "# config\n")
 		leaf := f.child("leaf", "if(NOT EXISTS \""+filepath.ToSlash(f.installed("dep", "marker"))+"\")\nmessage(FATAL_ERROR \"cached dependency order lost\")\nendif()\nif(NOT cached_DIR STREQUAL \""+filepath.ToSlash(f.installed("cached", "lib/cmake/Cached"))+"\")\nmessage(FATAL_ERROR \"cached metadata lost\")\nendif()", "", "", []string{"cached"}, nil)
 		f.project([]*moduleDefinition{dep, cached, leaf}, "")
 		f.build()

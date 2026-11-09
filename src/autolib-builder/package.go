@@ -39,7 +39,7 @@ func validatePackagePlatform(system, arch string) error {
 }
 
 func packagePlatform(m *moduleDefinition, system, arch string) (string, string) {
-	if m.PlatformIndependent {
+	if slices.Contains(m.PackagePlatforms, "any-any") {
 		return "any", "any"
 	}
 	return system, arch
@@ -191,6 +191,11 @@ func stagePackage(o stageOptions) (staged string, err error) {
 	if err = copyPackageTree(input, staged); err != nil {
 		return "", err
 	}
+	if metadata.OS == "any" && metadata.Arch == "any" {
+		if err = validateUniversalPayload(staged); err != nil {
+			return "", err
+		}
+	}
 	allowed := []string{o.Name + "/" + o.Version}
 	for _, dependency := range metadata.Dependencies {
 		ref, err := parseModuleRef(dependency)
@@ -214,14 +219,17 @@ func stagePackage(o stageOptions) (staged string, err error) {
 }
 
 func validateUniversalPackage(module *moduleDefinition, sourceRoot, installRoot string, adapter []byte) error {
-	if module.Kind != "copy" || len(adapter) == 0 {
-		return fmt.Errorf("universal package %s requires copy installation and a nonempty adapter", module.Name)
+	if len(adapter) == 0 {
+		return fmt.Errorf("universal package %s requires a nonempty adapter", module.Name)
+	}
+	if err := validateUniversalPayload(filepath.Join(installRoot, module.Name, module.Version)); err != nil {
+		return err
+	}
+	if module.Kind == "cmake" {
+		return nil
 	}
 	want := map[string]string{}
 	for _, mapping := range module.Copies {
-		if mapping.Destination != "include" && !strings.HasPrefix(filepath.ToSlash(mapping.Destination), "include/") {
-			return fmt.Errorf("universal package %s must copy its payload under include/", module.Name)
-		}
 		source := filepath.Join(sourceRoot, "git", module.Name, module.Version)
 		if mapping.Resource != "" {
 			source = filepath.Join(sourceRoot, "git", "_resources", module.Name, module.Version, mapping.Resource)

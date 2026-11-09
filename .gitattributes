@@ -22,6 +22,8 @@ uv.lock         text eol=lf
 *.md     text eol=lf
 # Unified diffs require a space on empty context lines.
 *.patch  text eol=lf whitespace=-blank-at-eol
+# ViSP 的根 CMakeLists 使用 CRLF；补丁上下文须保留上游换行。
+src/dependencies/visp/3.7.0/darwin-openmp.patch -text
 *.py     text eol=lf
 *.sh     text eol=lf
 *.toml   text eol=lf

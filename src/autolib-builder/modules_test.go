@@ -78,7 +78,76 @@ func TestRealModuleDeclarations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	names := []string{"flann", "freetype", "harfbuzz", "librealsense", "libusb", "lz4", "nlohmann", "onnxruntime", "opencv", "queue", "zlib"}
+
+	refs, err := discoverModuleRefs(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(refs) != 33 {
+		t.Fatalf("want 33 recipe versions, got %d", len(refs))
+	}
+	for _, slot := range [][2]string{{"Windows", "x86_64"}, {"Linux", "x86_64"}, {"Linux", "aarch64"}, {"Darwin", "aarch64"}} {
+		t.Run("all-versions/"+slot[0]+"/"+slot[1], func(t *testing.T) {
+			description, err := describeSelection(root, slot[0], slot[1], nil, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(description.RequestedRoots) != 33 {
+				t.Fatal(description.RequestedRoots)
+			}
+			if len(description.Roots) != 33 || len(description.FilteredRoots) != 0 {
+				t.Fatalf("roots=%v filtered=%v", description.Roots, description.FilteredRoots)
+			}
+			byRef := map[string]*moduleDefinition{}
+			for _, ref := range refs {
+				path := filepath.Join(root, "src/dependencies", ref.Name, ref.Version, "module.toml")
+				module, err := readDefinition(path, slot[0], slot[1], false)
+				if err != nil {
+					t.Fatal(err)
+				}
+				byRef[ref.String()] = module
+			}
+			if got := byRef["pcl@pcl-1.15.1"].Depends; !reflect.DeepEqual(got, []string{"lz4@1.10.0", "flann@f9caaf609d8b", "boost@1.87.0", "eigen@3.4.0", "zlib@1.3.1"}) {
+				t.Fatal(got)
+			}
+			platform, _ := buildPlatform(slot[0], slot[1])
+			for _, ref := range refs {
+				module := byRef[ref.String()]
+				supported := false
+				for _, value := range module.PackagePlatforms {
+					supported = supported || value == "any-any" || value == platform
+				}
+				selection, err := selectModuleClosure(root, []string{ref.String()}, slot[0], slot[1], false)
+				if !supported {
+					if err != nil || len(selection.FilteredRoots) != 1 || selection.FilteredRoots[0].Code != "unsupported_platform" {
+						t.Fatalf("%s accepted unsupported %s: %v", ref, platform, err)
+					}
+					continue
+				}
+
+				if err != nil {
+					t.Fatal(err)
+				}
+				if strings.Contains(" asio cpp-httplib eigen expected nlohmann pybind11 queue taskflow websocketpp ", " "+ref.Name+" ") && len(selection.Modules) != 1 {
+					t.Fatalf("header package %s must have an independent publication closure: %+v", ref, selection.Modules)
+				}
+				for _, effective := range selection.Modules {
+					deps := []*moduleDefinition{}
+					for _, dependency := range effective.Depends {
+						deps = append(deps, byRef[dependency])
+					}
+					ctx := buildContext{SourceRoot: root, BuildRoot: t.TempDir(), SystemName: slot[0], Architecture: slot[1], Generator: "Unix Makefiles", CMakeCommand: "cmake", GitExecutable: "git"}
+					if slot[0] == "Darwin" {
+						ctx.CMakeDefaults = map[string]string{"CMAKE_OSX_ARCHITECTURES": "arm64", "CMAKE_OSX_DEPLOYMENT_TARGET": "15.0", "CMAKE_OSX_SYSROOT": "/fixture/SDK", "CMAKE_C_COMPILER": "/fixture/clang", "CMAKE_CXX_COMPILER": "/fixture/clang++"}
+					}
+					if _, err := renderModule(effective, ctx, deps); err != nil {
+						t.Fatal(effective.Name, effective.Version, err)
+					}
+				}
+			}
+		})
+	}
+	names := []string{"flann", "freetype", "harfbuzz", "librealsense", "libusb", "lz4", "nlohmann", "onnxruntime", "opencv", "queue", "visp", "zlib"}
 	for _, slot := range []struct{ system, arch, onnx string }{
 		{"Windows", "x64", "onnxruntime-win-x64-1.24.4.zip"},
 		{"Linux", "x86_64", "onnxruntime-linux-x64-1.24.4.tgz"},
@@ -126,7 +195,7 @@ func TestRealModuleDeclarations(t *testing.T) {
 			check(ft.ConfigDir, "lib/cmake/freetype")
 			check(ft.PkgconfigDir, "lib/pkgconfig")
 			check(cv.Version, "4.14.0")
-			check(cv.Depends, []string{"freetype@2.13.2", "harfbuzz@8.5.0"})
+			check(cv.Depends, []string{"freetype@2.13.2", "harfbuzz@8.5.0", "zlib@1.3.1"})
 			check(cv.PackageName, "OpenCV")
 			config, sentinel := "lib/cmake/opencv4", "lib/cmake/opencv4/OpenCVConfig.cmake"
 			if slot.system == "Windows" {
@@ -203,7 +272,7 @@ func TestVersionedRealDeclarations(t *testing.T) {
 		"imgui": "065f9e02695c", "librealsense": "2.58.1", "libusb": "1.0.27", "libzmq": "4.3.5", "lz4": "1.10.0",
 		"nativefiledialog-extended": "3cd252a8f7ca", "nlohmann": "3.12.0", "oneTBB": "628c90df6867", "onnxruntime": "1.24.4", "opencv": "4.14.0",
 		"pcl": "pcl-1.15.1", "portaudio": "v190700_20210406", "pybind11": "2.13.6", "queue": "45db9a8b4431",
-		"sdl3": "3.2.30", "spdlog": "1.17.0", "taskflow": "83f90a279aaa", "websocketpp": "4dfe1be74e68", "yaml-cpp": "2decf96e915d", "zlib": "1.3.1",
+		"sdl3": "3.2.30", "spdlog": "1.17.0", "taskflow": "83f90a279aaa", "visp": "3.7.0", "websocketpp": "4dfe1be74e68", "yaml-cpp": "2decf96e915d", "zlib": "1.3.1",
 	}
 	for _, slot := range []struct{ system, arch string }{{"Windows", "x86_64"}, {"Linux", "x86_64"}, {"Linux", "aarch64"}} {
 		t.Run(slot.system+"/"+slot.arch, func(t *testing.T) {
@@ -211,8 +280,8 @@ func TestVersionedRealDeclarations(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(modules) != 31 {
-				t.Fatalf("want 31 versions, got %d", len(modules))
+			if len(modules) != 33 {
+				t.Fatalf("want 33 versions, got %d", len(modules))
 			}
 			byRef := map[string]*moduleDefinition{}
 			for _, m := range modules {
@@ -226,6 +295,9 @@ func TestVersionedRealDeclarations(t *testing.T) {
 				if byRef[name+"@"+version] == nil {
 					t.Fatal("missing recipe", name, version)
 				}
+			}
+			if byRef["asio@1.24.0"] == nil {
+				t.Fatal("missing explicit Asio 1.24.0")
 			}
 			if byRef["eigen@5.0.1"] == nil {
 				t.Fatal("missing explicit Eigen 5.0.1")

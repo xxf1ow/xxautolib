@@ -38,7 +38,7 @@ def load_module():
 
 def module(name, version, universal=False):
     return dict(name=name, version=version, target='fixture_' + name + version,
-                depends=[], platform_independent=universal)
+                depends=[], package_platform='any-any' if universal else 'linux-x86_64')
 
 
 def plan(platforms):
@@ -46,9 +46,9 @@ def plan(platforms):
                module('queue', '1.0')]
     return dict(platforms=[dict(id=p, requested_roots=['eigen@3.4.0', 'eigen@5.0.1', 'queue@1.0'],
                                filtered_roots=[], roots=['eigen@3.4.0', 'eigen@5.0.1', 'queue@1.0'],
-                               description=dict(modules=modules),
+                               description=dict(modules=[dict(m, package_platform='any-any' if m['package_platform'] == 'any-any' else p) for m in modules]),
                                layers=[['eigen@3.4.0', 'eigen@5.0.1', 'queue@1.0']])
-                           for p in platforms], requested_modules=[], publisher=platforms[0] if platforms else '')
+                           for p in platforms], requested_modules=[], publishers={m['name'] + '@' + m['version']: next(p for p in ['linux-x86_64', 'linux-aarch64', 'windows-x86_64', 'darwin-aarch64'] if p in platforms) for m in modules if m['package_platform'] == 'any-any'} if platforms else {})
 
 
 def tool(platform):
@@ -72,11 +72,11 @@ def make_transport(path, selected_plan, platform, mutate=None, extra=(), identit
     os_name, arch = platform.split('-', 1)
     native_plan = next(p for p in selected_plan['platforms'] if p['id'] == platform)
     for item in native_plan['description']['modules']:
-        universal = item['platform_independent']
+        universal = item['package_platform'] == 'any-any'
         packages.append(dict(name=item['name'], version=item['version'],
                              os='any' if universal else os_name,
                              arch='any' if universal else arch, dependencies=[],
-                             publish=not universal or selected_plan['publisher'] == platform))
+                             publish=not universal or selected_plan['publishers'][item['name'] + '@' + item['version']] == platform))
     assets = [dict(kind='library', name=f"{p['name']}-{p['version']}-{p['os']}-{p['arch']}.tar.zst",
                    package={k: p[k] for k in ['name', 'version', 'os', 'arch']})
               for p in packages if p['publish']]
@@ -120,6 +120,20 @@ class PreparationTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
+
+    def test_publishers_by_package(self):
+        selected = dict(platforms=[
+            dict(id='windows-x86_64', description=dict(modules=[module('b', '1', True)])),
+            dict(id='linux-x86_64', description=dict(modules=[module('a', '1', True)])),
+            dict(id='linux-aarch64', description=dict(modules=[module('a', '2', True)])),
+            dict(id='darwin-aarch64', description=dict(modules=[module('b', '1', True)]))],
+            publishers={'a@1': 'linux-x86_64', 'a@2': 'linux-aarch64', 'b@1': 'windows-x86_64'})
+        self.assertEqual(len(self.api._planned_platforms(selected)), 4)
+        for change in [None, {}, {'a': 'linux-x86_64'},
+                       dict(selected['publishers'], **{'b@1': 'darwin-aarch64'}),
+                       dict(selected['publishers'], **{'extra@1': 'linux-x86_64'})]:
+            with self.subTest(publishers=change), self.assertRaises(ValueError):
+                self.api._planned_platforms(dict(selected, publishers=change))
 
     def selection(self, platforms=PLATFORMS):
         selected_plan = plan(platforms)
@@ -334,7 +348,7 @@ class PreparationTests(unittest.TestCase):
             def queue_plan(url, token):
                 if '/artifacts/1/zip' in url:
                     selected = plan(platforms)
-                    selected['publisher'] = ''
+                    selected['publishers'] = {}
                     for p in selected['platforms']:
                         p['description']['modules'] = [module('queue', '1.0')]
                         p['roots'] = ['queue@1.0']
@@ -365,13 +379,13 @@ class PreparationTests(unittest.TestCase):
 
     def darwin_selection(self, platforms, empty=False, filtered=False):
         selected = self.selection(platforms)
-        selected['plan']['publisher'] = platforms[0] if not empty else ''
+        selected['plan']['publishers'] = {'queue@1.0': next(p for p in ['linux-x86_64', 'linux-aarch64', 'windows-x86_64', 'darwin-aarch64'] if p in platforms)} if not empty else {}
         for native in selected['plan']['platforms']:
             modules = [] if empty else [module('queue', '1.0', True), module('lz4', '1.10.0')]
             if native['id'].startswith('linux') and not empty:
                 modules.append(module('realsense', '2.58.1'))
             roots = [item['name'] + '@' + item['version'] for item in modules]
-            native.update(description=dict(modules=modules), roots=roots, layers=[roots] if roots else [],
+            native.update(description=dict(modules=[dict(m, package_platform='any-any' if m['package_platform'] == 'any-any' else native['id']) for m in modules]), roots=roots, layers=[roots] if roots else [],
                           requested_roots=roots + (['librealsense@2.58.1'] if filtered else []),
                           filtered_roots=['librealsense@2.58.1'] if filtered else [])
         return selected
@@ -495,7 +509,7 @@ class PreparationTests(unittest.TestCase):
 
     def test_tool_only_three_platforms_publish_all_tools_and_one_entry(self):
         selected = self.selection()
-        selected['plan']['publisher'] = ''
+        selected['plan']['publishers'] = {}
         for platform in selected['plan']['platforms']:
             platform.update(roots=[], requested_roots=[], filtered_roots=[], layers=[])
             platform['description']['modules'] = []
@@ -640,7 +654,7 @@ class PreparationTests(unittest.TestCase):
         selected_plan = dict(platforms=[dict(id='linux-x86_64', roots=['queue@1.0'], description=description,
                                             requested_roots=['queue@1.0'], filtered_roots=[],
                                             layers=[['queue@1.0']], system_dependencies={})],
-                             requested_modules=['queue@1.0'], publisher='')
+                             requested_modules=['queue@1.0'], publishers={})
         identity = dict(RUN, sha=sha, checkout_sha=sha)
         from test_entry_delivery import packaged_inputs
         inputs, _ = packaged_inputs(source, installed, builder, selected_plan, identity)
@@ -719,7 +733,7 @@ class PreparationTests(unittest.TestCase):
         print('real CLI select/prepare: two preparations preserve the same three final assets; source/install/input snapshots unchanged')
 
         selected_plan = plan(PLATFORMS)
-        selected_plan['publisher'] = ''
+        selected_plan['publishers'] = {}
         for platform in selected_plan['platforms']:
             platform.update(roots=[], requested_roots=[], filtered_roots=[], layers=[])
             platform['description']['modules'] = []

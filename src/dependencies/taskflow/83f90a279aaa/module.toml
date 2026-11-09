@@ -1,9 +1,6 @@
 # taskflow：任务并行框架，仅安装头文件。
-name = "taskflow"
-version = "83f90a279aaa"
-supported_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
+package_platforms = ['any-any']
 type = "copy"
-platform_independent = true
 sentinel = "include/taskflow/taskflow.hpp"
 
 [source] # 固定迁移基线；升级时同步核对布局及导出接口。

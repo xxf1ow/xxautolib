@@ -1,8 +1,7 @@
 # FreeType：加载并光栅化 TrueType/OpenType 等字体，构建并安装静态字体引擎。
-name = "freetype"
 type = "cmake"
-version = "2.13.2"
-supported_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
+package_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64','darwin-aarch64']
+depends = ["zlib@1.3.1"]
 sentinel = "include/freetype2/ft2build.h"
 config_dir = "lib/cmake/freetype"
 pkgconfig_dir = "lib/pkgconfig"
@@ -15,3 +14,15 @@ URL = [
 ]
 URL_HASH = "SHA256=12991c4e55c506dd7f9b765933e62fd2be2e06d421505d7950a132e4f1bb484d"
 DOWNLOAD_NAME = "freetype-2.13.2.tar.xz" # 保持 URL 候选顺序，统一文件名以兼容带 /download 的镜像入口。
+
+[cmake.cache]
+FT_REQUIRE_ZLIB = true # 各平台统一使用 depends 声明的仓库 zlib，缺失时配置失败。
+# OpenCV 的中文绘制由 HarfBuzz 整形、FreeType 光栅化，保留 HarfBuzz → FreeType 集成。
+# 关闭 FreeType 借助 HarfBuzz 改善自动微调的可选功能，避免循环依赖及系统 HarfBuzz 混入。
+# OpenCV freetype 模块的文本整形由 HarfBuzz 自身负责，不依赖这项自动微调增强。
+FT_DISABLE_HARFBUZZ = true
+# 这些可选字体格式依赖并非各目标系统默认具备；统一关闭，避免产物依赖构建机的额外安装。
+# OpenCV 的 PNG 图像编解码不受 FreeType 字体格式开关影响。
+FT_DISABLE_PNG = true
+FT_DISABLE_BZIP2 = true
+FT_DISABLE_BROTLI = true

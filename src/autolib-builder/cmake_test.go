@@ -242,7 +242,7 @@ func TestPersistentInputs(t *testing.T) {
 			body := testSource + "[[copy]]\nfiles=['x.h']\ndestination='.'\n"
 			local := filepath.Join(f.root, "git/demo/1.0")
 			if resource {
-				body = "[resources.extra]\nGIT_REPOSITORY='unused'\nGIT_TAG='fixed'\n[[copy]]\nresource='extra'\nfiles=['x.h']\ndestination='.'\n"
+				body = "[resources.extra]\nGIT_REPOSITORY='unused'\nGIT_TAG='0123456789012345678901234567890123456789'\n[[copy]]\nresource='extra'\nfiles=['x.h']\ndestination='.'\n"
 				local = filepath.Join(f.root, "git/_resources/demo/1.0/extra")
 			}
 			m := f.definition("demo", "copy", body)
@@ -264,7 +264,7 @@ func TestPersistentInputs(t *testing.T) {
 
 func TestSentinel(t *testing.T) {
 	f := newFixture(t)
-	m := f.definition("demo", "copy", "sentinel='include/x.h'\n"+testSource+"[resources.extra]\nGIT_REPOSITORY='unavailable'\nGIT_TAG='missing'\n[[copy]]\nfiles=['x.h']\ndestination='include'\n")
+	m := f.definition("demo", "copy", "sentinel='include/x.h'\n"+testSource+"[resources.extra]\nGIT_REPOSITORY='unavailable'\nGIT_TAG='0123456789012345678901234567890123456789'\n[[copy]]\nfiles=['x.h']\ndestination='include'\n")
 	sentinel := putFile(t, f.installed("demo", "include/x.h"), "cached")
 	m.Patches = append(m.Patches, patchDefinition{File: filepath.Join(f.root, "must-not-apply.patch")})
 	m.Steps = append(m.Steps, stepDefinition{Name: "must_not_run", Dependees: []string{"build"}, Commands: [][]string{{"unavailable-command"}}})

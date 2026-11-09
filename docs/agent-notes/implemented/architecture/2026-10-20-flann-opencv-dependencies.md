@@ -12,6 +12,8 @@ Status: implemented
 
 `flann`、`harfbuzz`、`opencv` 是三个 `cmake` 模块，复用 lz4 1.10.0 与 FreeType 2.13.2。沿用[模块扩展总体约束](../../proposed/architecture/2026-10-20-module-expansion.md)，本文拥有具体依赖字段、资源消费及版本配置；来源与复用语义仍由[流水线记录](2026-10-19-toml-externalproject-zlib.md)和[本地复用记录](2026-10-20-local-reuse-and-platform-inputs.md)拥有。
 
+固定版本依赖、资源字段及参数冲突规则见[统一模块配方字段与 macOS 全包验收](../../implemented/architecture/2026-11-06-module-recipe-contract-and-macos-validation.md)；本文继续拥有依赖接线、库功能基线及既有验证理由。
+
 ### 范围与参考基线
 
 参考仓库为 `D:/Work/AutoLibBuilder`，只读使用 `src/dependencies/flann.cmake`、`harfbuzz.cmake`、`opencv.cmake` 和 `src/build-system/tp_setup.cmake`、`tp_depends.cmake`。参考本体不修改；迁移只作纯数据定义、公共引擎接口及本节明确版本与选项变化所需的适配。先完成构建安装基线，不顺手优化参考逻辑，不重构根 CMake 骨架。
@@ -37,7 +39,7 @@ OpenCV 与 contrib 归档的实测 SHA256 分别为 `831375584ff7a680cbb4efbb242
 
 ### 模块依赖声明与生成
 
-模块顶层可选 `depends` 是字符串数组，元素使用模块目录的准确名称，无依赖时省略。依赖不按平台或架构变化，不提供条件依赖、版本范围或版本求解。重复依赖去重并保留首次声明顺序。
+模块顶层可选 `depends` 使用精确 `name@version` 字符串数组，无依赖时省略。依赖不按平台或架构变化，不提供条件依赖、版本范围或版本求解；重复包名及同名版本冲突均报错。字段细目见[字段参考](../../../subsystems/module-recipes.md)。
 
 生成器从根入口选中的模块出发递归读取依赖声明，按依赖先于使用方的稳定顺序生成，每模块只生成一次；独立模块保持入口顺序，依赖按声明顺序访问。缺失依赖、非法名称、自依赖或依赖环在 configure 阶段失败，诊断包含声明路径及相关依赖链；未选中且不在闭包中的模块不获取、不构建。所有实际读取的依赖 TOML 进入现有 configure 输入登记。
 
@@ -47,7 +49,7 @@ sentinel 不改变依赖图：声明仍完整解析，所选闭包的目标仍�
 
 ### 安装查找位置与配置身份
 
-模块顶层可选 `config_dir`、`pkgconfig_dir`、`package_name` 提供安装查找元数据。前两者是安装前缀内的相对目录，沿用 sentinel 的路径限制；`package_name` 是 CMake 包名，省略时使用模块名，仅在声明 `config_dir` 时使用。不声明并不触发目录扫描或自动猜测。`platforms.windows`、`platforms.linux` 可分别覆盖这三个字段和 `sentinel`；其余平台规则不变，不扩展为任意字段的递归合并。
+模块顶层可选 `config_dir`、`pkgconfig_dir`、`package_name` 提供安装查找元数据。前两者是安装前缀内的相对目录，沿用 sentinel 的路径限制；`package_name` 是 CMake 包名，省略时使用模块名，仅在声明 `config_dir` 时使用。不声明并不触发目录扫描或自动猜测。`platforms.<完整平台ID>` 可覆盖这三个字段和 `sentinel`；不扩展为任意字段的递归合并。安装及复用时检查声明的查找目录实际存在，包括没有 adapter 的配方。
 
 | 模块 | CMake 包目录 | pkg-config 目录 | sentinel |
 | --- | --- | --- | --- |

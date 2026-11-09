@@ -1,9 +1,6 @@
 # nlohmann：JSON 解析与序列化库，仅复制安装完整头文件目录。
-name = "nlohmann"
 type = "copy"
-version = "3.12.0"
-supported_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
-platform_independent = true
+package_platforms = ['any-any']
 sentinel = "include/nlohmann/json.hpp"
 
 [source]

@@ -1,8 +1,6 @@
 # gtest：GoogleTest 测试框架，安装参考默认库及导出配置。
-name = "gtest"
 type = "cmake"
-version = "1.17.0"
-supported_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
+package_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64','darwin-aarch64']
 sentinel = "include/gtest/gtest.h"
 config_dir = "lib/cmake/GTest"
 package_name = "GTest"

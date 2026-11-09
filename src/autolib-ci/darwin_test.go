@@ -74,8 +74,8 @@ func TestCIDarwinNative(t *testing.T) {
 				if err := writeCIJSON(f.options.PlanFile, plan); err != nil {
 					t.Fatal(err)
 				}
-			} else if f.plan.Publisher != "darwin-aarch64" {
-				t.Fatal("Darwin universal publisher missing", f.plan.Publisher)
+			} else if f.plan.Publishers["queue@1.0"] != "darwin-aarch64" {
+				t.Fatal("Darwin universal publisher missing", f.plan.Publishers["queue@1.0"])
 			}
 			if selection == "tools" {
 				f.options.Budget = 0

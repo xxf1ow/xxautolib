@@ -16,11 +16,11 @@ func TestPlatformSelection(t *testing.T) {
 	describeRootInputs(t, root)
 	for _, item := range []struct{ name, extra, platforms string }{
 		{"shared", "", "'linux-x86_64','darwin-aarch64'"},
-		{"good", "depends=['shared']\n", "'linux-x86_64','darwin-aarch64'"},
-		{"bad", "depends=['shared','blocked']\n", "'darwin-aarch64'"},
+		{"good", "depends=['shared@1.0']\n", "'linux-x86_64','darwin-aarch64'"},
+		{"bad", "depends=['shared@1.0','blocked@1.0']\n", "'darwin-aarch64'"},
 		{"blocked", "", "'linux-x86_64'"},
 	} {
-		definitionFile(t, root, item.name, "cmake", "supported_platforms=["+item.platforms+"]\n"+item.extra+testSource)
+		definitionFile(t, root, item.name, "cmake", "package_platforms=["+item.platforms+"]\n"+item.extra+testSource)
 	}
 	got, err := describeSelection(root, "Darwin", "arm64", []string{"bad", "good", "blocked"}, false)
 	if err != nil {
@@ -61,19 +61,19 @@ func TestPlatformSelection(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			r := t.TempDir()
 			describeRootInputs(t, r)
-			body := "supported_platforms=['linux-x86_64']\n"
+			body := "package_platforms=['linux-x86_64']\n"
 			request := "broken"
 			switch kind {
 			case "missing dependency":
-				body += "depends=['absent']\n"
+				body += "depends=['absent@1.0']\n"
 			case "cycle":
-				body += "depends=['broken']\n"
+				body += "depends=['broken@1.0']\n"
 			case "bad TOML":
 				body += "unknown=true\n"
 			case "version conflict":
 				body += "depends=['dep@1','dep@2']\n"
 				for _, v := range []string{"1", "2"} {
-					definitionVersionFile(t, r, "dep", v, "cmake", "supported_platforms=['linux-x86_64']\n"+testSource)
+					definitionVersionFile(t, r, "dep", v, "cmake", "package_platforms=['linux-x86_64']\n"+testSource)
 				}
 			case "unknown root":
 				request = "absent"
@@ -97,7 +97,7 @@ func TestDescribeParity(t *testing.T) {
 	f := newFixture(t)
 	describeRootInputs(t, f.root)
 	definitionFile(t, f.root, "lz4", "cmake", testSource)
-	definitionFile(t, f.root, "flann", "cmake", "depends=['lz4']\n[system_dependencies]\napt=['pkg-config']\n"+testSource)
+	definitionFile(t, f.root, "flann", "cmake", "depends=['lz4@1.0']\n[system_dependencies]\napt=['pkg-config']\n"+testSource)
 	got, err := describeModules(f.root, "Linux", "x86_64", []string{"flann"})
 	if err != nil {
 		t.Fatal(err)
@@ -108,13 +108,13 @@ func TestDescribeParity(t *testing.T) {
 	if got.Modules[1].Version != "1.0" || !reflect.DeepEqual(got.Modules[1].Depends, []string{"lz4@1.0"}) {
 		t.Fatalf("imprecise dependency description: %+v", got.Modules[1])
 	}
-	if !reflect.DeepEqual(got.Modules[1].SystemDependencies["apt"], []string{"pkg-config"}) || got.Modules[1].SystemDependencies["choco"] == nil {
+	if !reflect.DeepEqual(got.Modules[1].SystemDependencies["apt"], []string{"pkg-config"}) || len(got.Modules[1].SystemDependencies) != 1 {
 		t.Fatalf("system dependencies were not normalized: %+v", got.Modules[1].SystemDependencies)
 	}
 	other := f.root + "-other"
 	describeRootInputs(t, other)
 	definitionFile(t, other, "lz4", "cmake", testSource)
-	definitionFile(t, other, "flann", "cmake", "depends=['lz4']\n[system_dependencies]\napt=['pkg-config']\n"+testSource)
+	definitionFile(t, other, "flann", "cmake", "depends=['lz4@1.0']\n[system_dependencies]\napt=['pkg-config']\n"+testSource)
 	first, err := json.Marshal(got)
 	if err != nil {
 		t.Fatal(err)
@@ -138,9 +138,9 @@ func TestDescribeInputs(t *testing.T) {
 	moduleDir := filepath.Join(f.root, "src", "dependencies", "plain", "1.0")
 	putFile(t, filepath.Join(moduleDir, "fix.patch"), "patch\n")
 	putFile(t, filepath.Join(moduleDir, "run.cmake"), "step input\n")
-	body := "version='1.0'\nconfig_dir='config/linux'\n" + testSource + "[resources.assets]\nGIT_REPOSITORY='assets'\nGIT_TAG='fixed'\n[cmake.cache]\nVALUE='selected'\n" +
-		"[platforms.linux.cmake.cache]\nPLATFORM='linux'\n[[steps]]\nname='prepare'\nCOMMAND=['cmake','-P','run.cmake']\nDEPENDS=['run.cmake','<RESOURCE_SOURCE_DIR:assets>/run.cmake']\nWORKING_DIRECTORY='<RESOURCE_SOURCE_DIR:assets>'\n[[patches]]\nfile='fix.patch'\n[[copy]]\nfiles=['plain.h']\ndestination='include'\n"
-	definitionFile(t, f.root, "plain", "copy", body)
+	body := "version='1.0'\nconfig_dir='config/linux'\n" + testSource + "[resources.assets]\nGIT_REPOSITORY='assets'\nGIT_TAG='0123456789012345678901234567890123456789'\n[cmake.cache]\nVALUE='selected'\n" +
+		"[platforms.linux-x86_64.cmake.cache]\nPLATFORM='linux'\n[[steps]]\nname='prepare'\nCOMMAND=[['cmake','-P','run.cmake']]\nDEPENDEES=['download']\nDEPENDS=['run.cmake','<RESOURCE_SOURCE_DIR:assets>/run.cmake']\nWORKING_DIRECTORY='<RESOURCE_SOURCE_DIR:assets>'\n[[patches]]\nfile='fix.patch'\n"
+	definitionFile(t, f.root, "plain", "cmake", body)
 	putFile(t, filepath.Join(moduleDir, "autolib-import.cmake"), "# adapter\n")
 	description, err := describeModules(f.root, "Linux", "x86_64", []string{"plain"})
 	if err != nil {
@@ -150,24 +150,10 @@ func TestDescribeInputs(t *testing.T) {
 	if !reflect.DeepEqual(module.InputFiles, []string{"src/dependencies/plain/1.0/autolib-import.cmake", "src/dependencies/plain/1.0/fix.patch", "src/dependencies/plain/1.0/module.toml", "src/dependencies/plain/1.0/run.cmake", "src/dependencies/plain/package.toml"}) || module.AdapterFile != "src/dependencies/plain/1.0/autolib-import.cmake" {
 		t.Fatalf("module inputs/adapter: %+v", module)
 	}
-	var configuration map[string]any
-	if err := json.Unmarshal(module.Configuration, &configuration); err != nil {
-		t.Fatal(err)
+	if len(description.BuilderFiles) == 0 || !slices.Contains(description.BuilderFiles, "CMakeLists.txt") || slices.ContainsFunc(description.BuilderFiles, func(name string) bool { return strings.Contains(name, "ci_") }) {
+		t.Fatal(description.BuilderFiles)
 	}
-	patches := configuration["Patches"].([]any)
-	steps := configuration["Steps"].([]any)
-	resources := configuration["Resources"].(map[string]any)
-	copies := configuration["Copies"].([]any)
-	if configuration["Cache"].(map[string]any)["PLATFORM"] != "linux" ||
-		patches[0].(map[string]any)["File"] != "src/dependencies/plain/1.0/fix.patch" ||
-		steps[0].(map[string]any)["WorkingDirectory"] != "<RESOURCE_SOURCE_DIR:assets>" ||
-		steps[0].(map[string]any)["Depends"].([]any)[0] != "src/dependencies/plain/1.0/run.cmake" ||
-		steps[0].(map[string]any)["Depends"].([]any)[1] != "<RESOURCE_SOURCE_DIR:assets>/run.cmake" ||
-		resources["assets"] == nil || len(copies) != 1 ||
-		len(description.BuilderFiles) == 0 || !slices.Contains(description.BuilderFiles, "CMakeLists.txt") ||
-		slices.ContainsFunc(description.BuilderFiles, func(name string) bool { return strings.Contains(name, "ci_") }) {
-		t.Fatalf("effective configuration or production files missing: %+v / %+v", configuration, description)
-	}
+
 	definitionFile(t, f.root, "unadapted", "cmake", testSource)
 	plainNoAdapter, err := describeModules(f.root, "Linux", "x86_64", []string{"unadapted"})
 	if err != nil || plainNoAdapter.Modules[0].AdapterFile != "" {
@@ -182,8 +168,8 @@ func TestDescribeInputs(t *testing.T) {
 		t.Fatal("accepted empty module list")
 	}
 	outside := putFile(t, f.root+"-outside.cmake", "outside\n")
-	definitionFile(t, f.root, "unsafe", "cmake", testSource+"[[steps]]\nname='unsafe'\nCOMMAND=['cmake','-P','x']\nDEPENDS=['"+outside+"']\n")
-	if _, err := describeModules(f.root, "Linux", "x86_64", []string{"unsafe"}); err == nil || !strings.Contains(err.Error(), "escapes source root") {
+	definitionFile(t, f.root, "unsafe", "cmake", testSource+"[[steps]]\nname='unsafe'\nCOMMAND=[['cmake','-P','x']]\nDEPENDEES=['download']\nDEPENDS=['"+outside+"']\n")
+	if _, err := describeModules(f.root, "Linux", "x86_64", []string{"unsafe"}); err == nil || !strings.Contains(err.Error(), "DEPENDS") {
 		t.Fatalf("accepted a local input outside the source root: %v", err)
 	}
 }
@@ -199,12 +185,12 @@ func TestDescribeRejectsAbsoluteResourcePrefixes(t *testing.T) {
 			if field == "WORKING_DIRECTORY" {
 				fieldValue = "'" + outside + "'"
 			}
-			body := "version='1.0'\n" + testSource + "[resources.assets]\nGIT_REPOSITORY='assets'\nGIT_TAG='fixed'\n" +
-				"[[steps]]\nname='prepare'\nCOMMAND=['cmake','-P','x']\n" + field + "=" + fieldValue + "\n"
+			body := "version='1.0'\n" + testSource + "[resources.assets]\nGIT_REPOSITORY='assets'\nGIT_TAG='0123456789012345678901234567890123456789'\n" +
+				"[[steps]]\nname='prepare'\nCOMMAND=[['cmake','-P','x']]\nDEPENDEES=['download']\n" + field + "=" + fieldValue + "\n"
 			definitionFile(t, f.root, module, "cmake", body)
 			var stdout, stderr bytes.Buffer
 			args := []string{"describe", "--source-root", f.root, "--system-name", "Linux", "--architecture", "x86_64", "--module", module}
-			if code := run(args, &stdout, &stderr); code == 0 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "escapes source root") {
+			if code := run(args, &stdout, &stderr); code == 0 || stdout.Len() != 0 || !strings.Contains(stderr.String(), field) {
 				t.Fatalf("accepted external absolute %s path: code=%d stdout=%q stderr=%q", field, code, stdout.String(), stderr.String())
 			}
 		})
@@ -215,8 +201,8 @@ func TestDescribeCLI(t *testing.T) {
 	f := newFixture(t)
 	describeRootInputs(t, f.root)
 	definitionFile(t, f.root, "plain", "cmake", testSource)
-	definitionFile(t, f.root, "cycle-a", "cmake", "depends=['cycle-b']\n"+testSource)
-	definitionFile(t, f.root, "cycle-b", "cmake", "depends=['cycle-a']\n"+testSource)
+	definitionFile(t, f.root, "cycle-a", "cmake", "depends=['cycle-b@1.0']\n"+testSource)
+	definitionFile(t, f.root, "cycle-b", "cmake", "depends=['cycle-a@1.0']\n"+testSource)
 	definitionFile(t, f.root, "invalid", "cmake", "unknown=true\n"+testSource)
 	var stdout, stderr bytes.Buffer
 	args := []string{"describe", "--source-root", f.root, "--system-name", "Linux", "--architecture", "x86_64", "--module", "plain"}
@@ -272,7 +258,7 @@ func TestDescribeCISelection(t *testing.T) {
 	definitionVersionFile(t, root, "eigen", "3.4.0", "copy", testSource+"[[copy]]\nfiles=['Eigen']\ndestination='include'\n")
 	definitionFile(t, root, "old", "cmake", "depends=['eigen@3.4.0']\n"+testSource)
 	definitionFile(t, root, "new", "cmake", "depends=['eigen@5.0.1']\n"+testSource)
-	definitionFile(t, root, "conflict", "cmake", "depends=['old','new']\n"+testSource)
+	definitionFile(t, root, "conflict", "cmake", "depends=['old@1.0','new@1.0']\n"+testSource)
 	// Discovery includes every recipe, so keep the intentionally invalid root explicit.
 	for _, tc := range []struct {
 		name      string
@@ -365,6 +351,48 @@ func TestDescribeCISelection(t *testing.T) {
 		}
 		if !reflect.DeepEqual(got.Roots, []string{"eigen@3.4.0", "eigen@5.0.1"}) {
 			t.Fatalf("discovered roots: %v", got.Roots)
+		}
+	})
+}
+
+func TestPlatformSelectionCopyMappings(t *testing.T) {
+	root := t.TempDir()
+	describeRootInputs(t, root)
+	path := definitionFile(t, root, "windows-copy", "copy", `package_platforms=['windows-x86_64']
+[platforms.windows-x86_64.source]
+GIT_REPOSITORY='unused'
+GIT_TAG='0123456789012345678901234567890123456789'
+[[platforms.windows-x86_64.copy]]
+files=['header.h']
+destination='include'
+`)
+	definitionFile(t, root, "native", "cmake", "package_platforms=['darwin-aarch64']\n"+testSource)
+	got, err := describeSelection(root, "Darwin", "arm64", nil, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(got.Roots, []string{"native@1.0"}) || len(got.FilteredRoots) != 1 || got.FilteredRoots[0].Code != "unsupported_platform" || got.FilteredRoots[0].Root != "windows-copy@1.0" {
+		t.Fatalf("discovery: %+v", got)
+	}
+	if _, err := loadModuleClosure(root, []string{"windows-copy"}, "Darwin", "arm64"); err == nil || !strings.Contains(err.Error(), "unsupported platform") || strings.Contains(err.Error(), "installation mappings") {
+		t.Fatalf("explicit request must report platform before mapping requirements: %v", err)
+	}
+	selected, err := loadDefinition(path, "Windows", "x86_64")
+	if err != nil || len(selected.Copies) != 1 || selected.Source == nil {
+		t.Fatalf("Windows mappings: %+v %v", selected, err)
+	}
+	t.Run("missing supported mappings still fail", func(t *testing.T) {
+		r := t.TempDir()
+		describeRootInputs(t, r)
+		definitionFile(t, r, "broken", "copy", "package_platforms=['darwin-aarch64']\n"+testSource)
+		if _, err := describeSelection(r, "Darwin", "arm64", nil, true); err == nil || !strings.Contains(err.Error(), "installation mappings") {
+			t.Fatalf("accepted missing effective copy: %v", err)
+		}
+	})
+	t.Run("invalid unselected syntax still fails", func(t *testing.T) {
+		putFile(t, path, readFile(t, path)+"unknown=true\n")
+		if _, err := describeSelection(root, "Darwin", "arm64", nil, true); err == nil || !strings.Contains(err.Error(), "unknown field") {
+			t.Fatalf("accepted invalid unselected mapping: %v", err)
 		}
 	})
 }

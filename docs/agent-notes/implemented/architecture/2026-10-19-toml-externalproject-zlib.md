@@ -18,6 +18,8 @@ Status: implemented
 
 生成器的语言与运行环境由 [Go 工具层设计](../../proposed/architecture/2026-10-21-go-tooling-and-offline-import.md)替代原 Python 实现；本文保留纯声明、原生执行、模块归属及失败保护的决定，以下机制与路径对应当前 Go builder。
 
+当前字段身份、平台覆盖、安装类型适用性和步骤格式由[字段参考](../../../subsystems/module-recipes.md)拥有，统一职责及 macOS 验收结果见[统一模块配方设计](../../implemented/architecture/2026-11-06-module-recipe-contract-and-macos-validation.md)；本文继续拥有纯声明与原生执行的职责决定。
+
 ### 职责与执行流程
 
 ```text
@@ -30,7 +32,7 @@ CMake build
   → 安装到 3rdparty/<模块名>/
 ```
 
-根 CMake 拥有模块选择、构建环境和生成结果的加载。Go builder 拥有 TOML 解析、公共路径解析、上下文选择、参数编码和 CMake 生成。TOML 拥有模块名称、固定来源、附属资源、配置选项、文件引用、安装映射及自定义步骤。ExternalProject 拥有执行顺序、步骤完成记录和增量执行。
+根 CMake 拥有模块选择、构建环境和生成结果的加载。Go builder 拥有 TOML 解析、公共路径解析、上下文选择、参数编码和 CMake 生成。目录拥有包名与版本，TOML 拥有固定来源、附属资源、配置选项、文件引用、安装映射及自定义步骤。ExternalProject 拥有执行顺序、步骤完成记录和增量执行。
 
 TOML 不包含函数、条件表达式、路径计算或 CMake 生成逻辑。平台差异可以声明为数据，由引擎根据 CMake 提供的上下文选择。引擎不包含按 `zlib`、`opencv` 等模块名分支的专用逻辑，不执行下载或构建，不建立独立状态数据库、插件系统或任意表达式语言。TOML 解析使用根 Go module 固定的 go-toml/v2，其他生产逻辑使用标准库。
 
@@ -94,7 +96,7 @@ ExternalProject 的 `PREFIX` 为 `build/ep/<模块名>/`，其下保留归档解
 
 ### 模块声明与注释
 
-模块顶层使用 `name`、`type` 和可选的 `version`。name 与模块目录名一致，type 为 cmake 或 copy；version 是供维护者阅读的版本标识，不代替来源中的固定提交。包含不同上游的聚合模块不要求编造统一版本号。
+包名和版本仅从版本目录读取，包级 latest 显式选择已有版本。配方的身份、类型、依赖和必填平台声明见[字段参考](../../../subsystems/module-recipes.md)；聚合模块仍需明确一个对外交付版本。
 
 主来源放在 `[source]`，附属资源放在 `[resources.<资源名>]`，两者适用相同来源规则。Git 使用成对的 `GIT_REPOSITORY`、`GIT_TAG`，现有 Git 上游均固定完整提交；归档使用有序非空 `URL` 数组、必填 `URL_HASH="SHA256=<64位十六进制摘要>"` 和可选单文件名 `DOWNLOAD_NAME`。Git 与归档字段互斥。Go builder 只把来源声明生成为 ExternalProject 参数，不自行获取源码。固定提交不启用不适用的浅克隆，也不引入自动跟随分支的更新策略。
 
@@ -110,26 +112,7 @@ copy 类型以 `[[copy]]` 声明安装映射：resource 指定本模块资源，
 
 ### 平台差异的数据格式
 
-公共 CMake cache 选项放在 `[cmake.cache]`，公共自定义步骤放在 `[[steps]]`。平台差异只使用固定的 `platforms.windows`、`platforms.linux` 表，由 CMake 传入的 CMAKE_SYSTEM_NAME 分别以 Windows、Linux 精确选择，不从宿主环境猜测，不支持条件表达式、通配匹配或 targets 过滤语法。
-
-选中平台的 cmake.cache 按键覆盖公共同名值，其余公共值保留；平台 steps 追加到公共列表，但执行次序仍由原生依赖字段决定。平台 source、resources 及 architectures 的来源选择由[本地复用设计](2026-10-20-local-reuse-and-platform-inputs.md)拥有；未选中分支仍校验，不参与生成，未知键报错。不提供任意字段的通用递归合并规则。
-
-平台专用数据使用以下格式；示例不属于任何库的必要构建操作：
-
-```toml
-[platforms.linux.cmake.cache]
-# Linux 静态库使用位置无关代码。
-CMAKE_POSITION_INDEPENDENT_CODE = true
-
-# 此步骤仅用于展示平台选择，不是库的必要构建操作。
-[[platforms.linux.steps]]
-name = "linux_notice"
-DEPENDEES = ["patch"]
-DEPENDERS = ["configure"]
-COMMAND = ["cmake", "-E", "echo", "Linux-only step"]
-```
-
-该步骤仅在 Linux 生成，并直接位于 patch 与 configure 的依赖链中；平台选择不改变 DEPENDEES、DEPENDERS 的含义。
+公共声明与 `platforms.<完整平台ID>` 构成两层数据，不支持任意条件表达式或递归合并。字段适用类型、整组替换、按键覆盖及追加规则由[字段参考](../../../subsystems/module-recipes.md)拥有；所有分支先校验局部结构，当前目标合并后再检查来源与引用。平台资格和安装方法分别决定产物身份与执行方式。
 
 ### 生成类型与附属资源
 
@@ -149,21 +132,7 @@ copy 模块允许没有主来源。queue 保持一个模块和一个对外目标
 
 引擎不提供 before/after 包装，不把相邻阶段之间拆成两个位置。对 mkdir、download、update、patch、configure、build、install、test 等实际存在的步骤，通过依赖字段直接指定自定义步骤的位置。test 未启用时不人为添加空 test 步骤。自定义步骤的依赖图按声明生成，不按 TOML 出现顺序暗自串联。
 
-脚本与 sed 命令同样由 argv 数据描述；以下仅演示命令形状，不表示已接入 portaudio：
-
-```toml
-[[steps]]
-# Windows 下修正安装所用的 pkg-config 库名。
-name = "fix_pkgconfig_libs"
-DEPENDEES = ["build"]
-DEPENDERS = ["install"]
-COMMAND = [
-    "bash", "-c",
-    "sed -i 's|-lportaudio|-lportaudio_x64|g' \"<BINARY_DIR>/portaudio-2.0.pc\"",
-]
-```
-
-`COMMAND` 保存程序及参数，不默认拼成 shell 字符串；需要 shell 时显式调用 `bash -c`。一个步骤需要多条命令时，以参数数组的有序列表表示，生成重复的原生 COMMAND；单命令数组保留上例写法。命令内的 `<SOURCE_DIR>`、`<BINARY_DIR>`、`<INSTALL_DIR>` 沿用 ExternalProject 占位符。
+`COMMAND` 统一使用二维 argv，单命令也是一个参数数组的列表；多条命令依次生成原生 COMMAND，不隐式调用 shell。步骤字段、路径与占位符见[字段参考](../../../subsystems/module-recipes.md)。
 
 补丁是用途，不是文件格式要求。可以声明 `.patch` 文件，也可以保留 sed 命令、`git apply`、`cmake -P` 或模块专用脚本。源码 patch 阶段可使用原生 `PATCH_COMMAND`，其他时机的修改使用原生自定义步骤，不强制将所有 sed 转换为 patch 文件。
 

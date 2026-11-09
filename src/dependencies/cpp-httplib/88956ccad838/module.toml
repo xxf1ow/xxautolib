@@ -1,9 +1,6 @@
 # cpp-httplib：HTTP 客户端与服务器，仅安装单头文件。
-name = "cpp-httplib"
-version = "88956ccad838"
-supported_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
+package_platforms = ['any-any']
 type = "copy"
-platform_independent = true
 sentinel = "include/cpp-httplib/httplib.h"
 
 [source] # 固定迁移基线；升级时同步核对布局及导出接口。

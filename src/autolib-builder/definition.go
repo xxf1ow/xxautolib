@@ -15,7 +15,6 @@ var targetName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.+\-]*$`)
 var cacheKey = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 var sha256Hash = regexp.MustCompile(`^SHA256=[0-9a-fA-F]{64}$`)
 var resourceReference = regexp.MustCompile(`<RESOURCE_SOURCE_DIR:([^>]*)>`)
-var systemPackageName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9+_.:~=-]*$`)
 
 func normalizeArchitecture(value string) string {
 	switch strings.ToLower(value) {
@@ -119,6 +118,9 @@ func parseSource(value any, where string) (*sourceDefinition, error) {
 		if s.GitTag, err = text(m["GIT_TAG"], where+".GIT_TAG"); err != nil {
 			return nil, err
 		}
+		if !gitCommit.MatchString(s.GitTag) {
+			return nil, fmt.Errorf("%s.GIT_TAG: expected a complete 40-digit hexadecimal commit", where)
+		}
 		return s, nil
 	}
 	if s.URL, err = stringArray(m["URL"], where+".URL"); err != nil {
@@ -173,12 +175,8 @@ func sources(m map[string]any, where string) (*sourceDefinition, map[string]sour
 	return primary, result, nil
 }
 
-func parseCache(value any, where string, allowSubdir bool) (map[string]any, string, error) {
-	allowed := []string{"cache"}
-	if allowSubdir {
-		allowed = append(allowed, "SOURCE_SUBDIR")
-	}
-	m, err := table(value, where, allowed...)
+func parseCache(value any, where string) (map[string]any, string, error) {
+	m, err := table(value, where, "cache", "SOURCE_SUBDIR")
 	if err != nil {
 		return nil, "", err
 	}
@@ -200,6 +198,13 @@ func parseCache(value any, where string, allowSubdir bool) (map[string]any, stri
 			if !cacheKey.MatchString(key) {
 				return nil, "", fmt.Errorf("%s: invalid cache key", at)
 			}
+			if key == "CMAKE_PREFIX_PATH" || key == "CMAKE_PROJECT_INCLUDE" || key == "CMAKE_PROJECT_INCLUDE_BEFORE" {
+				switch cache[key].(type) {
+				case string, []any:
+				default:
+					return nil, "", fmt.Errorf("%s: expected string or string array", at)
+				}
+			}
 			switch item := cache[key].(type) {
 			case string, bool, int64:
 				result[key] = item
@@ -217,7 +222,7 @@ func parseCache(value any, where string, allowSubdir bool) (map[string]any, stri
 }
 
 func inputPath(value, directory string) string {
-	if strings.Contains(value, "<") {
+	if directoryTag.MatchString(value) {
 		return value
 	}
 	if !filepath.IsAbs(value) {
@@ -244,10 +249,7 @@ func parseSteps(value any, directory, where string) ([]stepDefinition, error) {
 		}
 		commands, ok := m["COMMAND"].([]any)
 		if !ok || len(commands) == 0 {
-			return nil, fmt.Errorf("%s.COMMAND: expected argv or an array of argv arrays", at)
-		}
-		if _, flat := commands[0].(string); flat {
-			commands = []any{commands}
+			return nil, fmt.Errorf("%s.COMMAND: expected an array of argv arrays", at)
 		}
 		for _, command := range commands {
 			argv, err := stringArray(command, at+".COMMAND")
@@ -256,6 +258,11 @@ func parseSteps(value any, directory, where string) ([]stepDefinition, error) {
 			}
 			if len(argv) == 0 || argv[0] == "" {
 				return nil, fmt.Errorf("%s.COMMAND: command executable cannot be empty", at)
+			}
+			for _, arg := range argv {
+				if err := validatePlaceholders(arg, at+".COMMAND", nil); err != nil {
+					return nil, err
+				}
 			}
 			s.Commands = append(s.Commands, argv)
 		}
@@ -270,12 +277,26 @@ func parseSteps(value any, directory, where string) ([]stepDefinition, error) {
 				}
 			}
 		}
+		if len(s.Dependees)+len(s.Dependers) == 0 {
+			return nil, fmt.Errorf("%s: steps require DEPENDEES or DEPENDERS", at)
+		}
+		if slices.Contains(nativeSteps, s.Name) {
+			return nil, fmt.Errorf("%s.name: native step name %q", where, s.Name)
+		}
 		for i, p := range s.Depends {
+			if err := validateRecipePath(p, at+".DEPENDS", true); err != nil {
+				return nil, err
+			}
 			s.Depends[i] = inputPath(p, directory)
 		}
+		s.WorkingDirectory = "<BINARY_DIR>"
+
 		if v, ok := m["WORKING_DIRECTORY"]; ok {
 			p, err := text(v, at+".WORKING_DIRECTORY")
 			if err != nil {
+				return nil, err
+			}
+			if err := validateRecipePath(p, at+".WORKING_DIRECTORY", true); err != nil {
 				return nil, err
 			}
 			s.WorkingDirectory = inputPath(p, directory)
@@ -302,9 +323,6 @@ func metadata(m map[string]any, where string, base map[string]string) (map[strin
 			}
 			result[key] = value
 		}
-	}
-	if result["package_name"] != "" && result["config_dir"] == "" {
-		return nil, fmt.Errorf("%s.package_name: requires config_dir", where)
 	}
 	return result, nil
 }
@@ -339,23 +357,26 @@ func readDefinition(path, systemName, architecture string, requireTarget bool) (
 	if err = toml.Unmarshal(content, &raw); err != nil {
 		return nil, err
 	}
-	m, err := table(raw, "module", "name", "type", "version", "source", "resources", "cmake", "patches", "steps", "copy", "platforms", "sentinel", "depends", "config_dir", "pkgconfig_dir", "package_name", "platform_independent", "system_dependencies", "supported_platforms")
-	if err != nil {
+	if err = validateDefinitionFields(raw, "module", false); err != nil {
 		return nil, err
 	}
+	m := raw
 	d := &moduleDefinition{Path: path}
-	if d.SupportedPlatforms, err = stringArray(m["supported_platforms"], "supported_platforms"); err != nil {
+	if d.PackagePlatforms, err = stringArray(m["package_platforms"], "package_platforms"); err != nil {
 		return nil, err
 	}
-	if len(d.SupportedPlatforms) == 0 {
-		return nil, fmt.Errorf("supported_platforms: expected at least one platform")
+	if len(d.PackagePlatforms) == 0 {
+		return nil, fmt.Errorf("package_platforms: expected at least one platform")
 	}
 	seenPlatforms := map[string]bool{}
-	for _, platform := range d.SupportedPlatforms {
-		if !slices.Contains(recipePlatforms, platform) || seenPlatforms[platform] {
-			return nil, fmt.Errorf("supported_platforms: unknown or duplicate platform %q", platform)
+	for _, platform := range d.PackagePlatforms {
+		if (platform != "any-any" && !slices.Contains(recipePlatforms, platform)) || seenPlatforms[platform] {
+			return nil, fmt.Errorf("package_platforms: unknown or duplicate platform %q", platform)
 		}
 		seenPlatforms[platform] = true
+	}
+	if slices.Contains(d.PackagePlatforms, "any-any") && len(d.PackagePlatforms) != 1 {
+		return nil, fmt.Errorf("package_platforms: any-any cannot be mixed with concrete platforms")
 	}
 	platformID, err := buildPlatform(systemName, architecture)
 	if err != nil {
@@ -363,52 +384,28 @@ func readDefinition(path, systemName, architecture string, requireTarget bool) (
 	}
 	d.SystemDependencies = map[string][]string{}
 	if value, ok := m["system_dependencies"]; ok {
-		dependencies, err := table(value, "system_dependencies", "apt", "choco")
+		d.SystemDependencies, err = validateSystemDependencies(value)
 		if err != nil {
 			return nil, err
 		}
-		for _, manager := range []string{"apt", "choco"} {
-			if entries, exists := dependencies[manager]; exists {
-				values, err := stringArray(entries, "system_dependencies."+manager)
-				if err != nil {
-					return nil, err
-				}
-				for _, item := range values {
-					if !systemPackageName.MatchString(item) {
-						return nil, fmt.Errorf("system_dependencies.%s: invalid package name %q", manager, item)
-					}
-				}
-				d.SystemDependencies[manager] = unique(values)
-			}
-		}
 	}
-	if value, ok := m["platform_independent"]; ok {
-		var valid bool
-		d.PlatformIndependent, valid = value.(bool)
-		if !valid {
-			return nil, fmt.Errorf("platform_independent: expected a boolean")
-		}
-	}
-	if d.Name, err = name(m["name"], "name"); err != nil {
-		return nil, err
-	}
+
 	versionDirectory := filepath.Dir(path)
 	packageDirectory := filepath.Dir(versionDirectory)
-	if d.Name != filepath.Base(packageDirectory) {
-		return nil, fmt.Errorf("name: must match the module directory name")
+	d.Name = filepath.Base(packageDirectory)
+	if err = validatePackageName(d.Name); err != nil {
+		return nil, err
 	}
 	d.Kind, _ = m["type"].(string)
 	if d.Kind != "cmake" && d.Kind != "copy" {
 		return nil, fmt.Errorf("type: expected cmake or copy")
 	}
-	if d.Version, err = text(m["version"], "version"); err != nil {
-		return nil, err
-	}
+	d.Version = filepath.Base(versionDirectory)
 	if err = validatePackageVersion(d.Version); err != nil {
 		return nil, err
 	}
-	if d.Version != filepath.Base(versionDirectory) {
-		return nil, fmt.Errorf("version: must match the version directory name")
+	if _, err = packageLatest(packageDirectory); err != nil {
+		return nil, err
 	}
 	if filepath.Base(path) != "module.toml" {
 		return nil, fmt.Errorf("recipe filename: expected module.toml")
@@ -429,13 +426,20 @@ func readDefinition(path, systemName, architecture string, requireTarget bool) (
 	if err != nil {
 		return nil, err
 	}
+	seenDepends := map[string]bool{}
 	for _, dep := range depends {
-		if _, err = parseModuleRef(dep); err != nil {
+		ref, err := parseModuleRef(dep)
+		if err != nil {
 			return nil, fmt.Errorf("depends: %w", err)
 		}
-		if !slices.Contains(d.Depends, dep) {
-			d.Depends = append(d.Depends, dep)
+		if ref.Version == "" {
+			return nil, fmt.Errorf("depends: expected name@version, got %q", dep)
 		}
+		if seenDepends[ref.Name] {
+			return nil, fmt.Errorf("depends: duplicate package %q", ref.Name)
+		}
+		seenDepends[ref.Name] = true
+		d.Depends = append(d.Depends, dep)
 	}
 	common, err := metadata(m, "module", nil)
 	if err != nil {
@@ -449,7 +453,7 @@ func readDefinition(path, systemName, architecture string, requireTarget bool) (
 	for resource := range d.Resources {
 		declaredResources[resource] = true
 	}
-	if d.Cache, d.SourceSubdir, err = parseCache(optional(m, "cmake", map[string]any{}), "cmake", true); err != nil {
+	if d.Cache, d.SourceSubdir, err = parseCache(optional(m, "cmake", map[string]any{}), "cmake"); err != nil {
 		return nil, err
 	}
 	if d.SourceSubdir != "" && d.Kind != "cmake" {
@@ -458,28 +462,13 @@ func readDefinition(path, systemName, architecture string, requireTarget bool) (
 	if d.Steps, err = parseSteps(optional(m, "steps", []any{}), filepath.Dir(path), "steps"); err != nil {
 		return nil, err
 	}
-	platforms, err := table(optional(m, "platforms", map[string]any{}), "platforms", "windows", "linux", "darwin")
-	if err != nil {
-		return nil, err
-	}
+	platforms := optional(m, "platforms", map[string]any{}).(map[string]any)
 	for _, platform := range sortedKeys(platforms) {
 		at := "platforms." + platform
-		options, err := table(platforms[platform], at, "cmake", "steps", "source", "resources", "architectures", "config_dir", "pkgconfig_dir", "package_name", "sentinel")
-		if err != nil {
-			return nil, err
+		if !slices.Contains(d.PackagePlatforms, "any-any") && !slices.Contains(d.PackagePlatforms, platform) {
+			return nil, fmt.Errorf("%s: override must belong to package_platforms", at)
 		}
-		meta, err := metadata(options, at, common)
-		if err != nil {
-			return nil, err
-		}
-		cache, _, err := parseCache(optional(options, "cmake", map[string]any{}), at+".cmake", false)
-		if err != nil {
-			return nil, err
-		}
-		steps, err := parseSteps(optional(options, "steps", []any{}), filepath.Dir(path), at+".steps")
-		if err != nil {
-			return nil, err
-		}
+		options := platforms[platform].(map[string]any)
 		primary, resources, err := sources(options, at)
 		if err != nil {
 			return nil, err
@@ -487,51 +476,52 @@ func readDefinition(path, systemName, architecture string, requireTarget bool) (
 		for resource := range resources {
 			declaredResources[resource] = true
 		}
-		selected := map[string]string{"Windows": "windows", "Linux": "linux", "Darwin": "darwin"}[systemName] == platform
-		merge := func(primary *sourceDefinition, resources map[string]sourceDefinition) {
-			if primary != nil {
-				d.Source = primary
-			}
-			for key, value := range resources {
-				d.Resources[key] = value
-			}
+		if platform != platformID {
+			continue
 		}
-		if selected {
-			selectedMetadata = meta
-			for key, value := range cache {
-				d.Cache[key] = value
-			}
-			d.Steps = append(d.Steps, steps...)
-			merge(primary, resources)
-		}
-		arches, err := table(optional(options, "architectures", map[string]any{}), at+".architectures", "x86_64", "aarch64")
+		meta, err := metadata(options, at, common)
 		if err != nil {
 			return nil, err
 		}
-		for _, arch := range sortedKeys(arches) {
-			archAt := at + ".architectures." + arch
-			inputs, err := table(arches[arch], archAt, "source", "resources")
-			if err != nil {
-				return nil, err
-			}
-			primary, resources, err := sources(inputs, archAt)
-			if err != nil {
-				return nil, err
-			}
-			for resource := range resources {
-				declaredResources[resource] = true
-			}
-			if selected && normalizeArchitecture(architecture) == arch {
-				merge(primary, resources)
-			}
+		cache, subdir, err := parseCache(optional(options, "cmake", map[string]any{}), at+".cmake")
+		if err != nil {
+			return nil, err
+		}
+		steps, err := parseSteps(optional(options, "steps", []any{}), filepath.Dir(path), at+".steps")
+		if err != nil {
+			return nil, err
+		}
+		selectedMetadata = meta
+		for key, value := range cache {
+			d.Cache[key] = value
+		}
+		if subdir != "" {
+			d.SourceSubdir = subdir
+		}
+		d.Steps = append(d.Steps, steps...)
+		if primary != nil {
+			d.Source = primary
+		}
+		for key, value := range resources {
+			d.Resources[key] = value
+		}
+		if value, ok := options["patches"]; ok {
+			common := optional(m, "patches", []any{}).([]any)
+			m["patches"] = append(slices.Clone(common), value.([]any)...)
+		}
+		if value, ok := options["copy"]; ok {
+			m["copy"] = value
 		}
 	}
 	d.ConfigDir = selectedMetadata["config_dir"]
 	d.PkgconfigDir = selectedMetadata["pkgconfig_dir"]
 	d.PackageName = selectedMetadata["package_name"]
 	d.Sentinel = selectedMetadata["sentinel"]
-	if requireTarget && !slices.Contains(d.SupportedPlatforms, platformID) {
+	if requireTarget && !slices.Contains(d.PackagePlatforms, "any-any") && !slices.Contains(d.PackagePlatforms, platformID) {
 		return nil, fmt.Errorf("%s@%s: unsupported platform %s", d.Name, d.Version, platformID)
+	}
+	if requireTarget && d.PackageName != "" && d.ConfigDir == "" {
+		return nil, fmt.Errorf("package_name: requires config_dir")
 	}
 	if requireTarget && d.Kind == "cmake" && d.Source == nil {
 		return nil, fmt.Errorf("source: no primary source for %s/%s", systemName, architecture)
@@ -560,95 +550,53 @@ func readDefinition(path, systemName, architecture string, requireTarget bool) (
 		}
 		names[step.Name] = true
 	}
-	patches, ok := optional(m, "patches", []any{}).([]any)
-	if !ok {
-		return nil, fmt.Errorf("patches: expected an array of tables")
+	patches, err := parsePatches(optional(m, "patches", []any{}), "patches")
+	if err != nil {
+		return nil, err
 	}
-	resource := func(m map[string]any, where string) (string, error) {
-		v, exists := m["resource"]
-		if !exists {
-			return "", nil
+	resource := func(value, where string) error {
+		if value == "" {
+			return nil
 		}
-		s, ok := v.(string)
-		_, selected := d.Resources[s]
-		if !ok || requireTarget && !selected || !requireTarget && !declaredResources[s] {
-			return "", fmt.Errorf("%s.resource: unknown resource %v", where, v)
+		_, selected := d.Resources[value]
+		if requireTarget && !selected || !requireTarget && !declaredResources[value] {
+			return fmt.Errorf("%s.resource: unknown resource %s", where, value)
 		}
-		return s, nil
+		return nil
 	}
-	for _, item := range patches {
-		p, err := table(item, "patches", "file", "resource")
-		if err != nil {
+	for _, patch := range patches {
+		if err := resource(patch.Resource, "patches"); err != nil {
 			return nil, err
 		}
-		r, err := resource(p, "patches")
-		if err != nil {
-			return nil, err
+		if requireTarget && patch.Resource == "" && d.Source == nil {
+			return nil, fmt.Errorf("patches: primary patch requires a source")
 		}
-		file, err := text(p["file"], "patches.file")
-		if err != nil {
-			return nil, err
-		}
-		if !filepath.IsAbs(file) {
-			file = filepath.Join(filepath.Dir(path), file)
-		}
+		file := filepath.Join(filepath.Dir(path), patch.File)
 		stat, err := os.Stat(file)
 		if err != nil || !stat.Mode().IsRegular() {
 			return nil, fmt.Errorf("patches.file: file not found: %s", file)
 		}
-		d.Patches = append(d.Patches, patchDefinition{File: filepath.Clean(file), Resource: r})
+		patch.File = filepath.Clean(file)
+		d.Patches = append(d.Patches, patch)
 	}
-	copies, ok := optional(m, "copy", []any{}).([]any)
-	if !ok || (d.Kind == "copy" && len(copies) == 0) {
+	if d.Copies, err = parseCopies(optional(m, "copy", []any{}), "copy"); err != nil {
+		return nil, err
+	}
+	if requireTarget && d.Kind == "copy" && len(d.Copies) == 0 {
 		return nil, fmt.Errorf("copy: expected nonempty installation mappings for copy modules")
 	}
-	if d.Kind == "cmake" && len(copies) > 0 {
-		return nil, fmt.Errorf("copy: installation mappings require type=copy")
-	}
-	for _, item := range copies {
-		c, err := table(item, "copy", "resource", "files", "directories", "destination")
-		if err != nil {
+	for _, mapping := range d.Copies {
+		if err := resource(mapping.Resource, "copy"); err != nil {
 			return nil, err
 		}
-		r, err := resource(c, "copy")
-		if err != nil {
-			return nil, err
-		}
-		if requireTarget && r == "" && d.Source == nil {
+		if requireTarget && mapping.Resource == "" && d.Source == nil {
 			return nil, fmt.Errorf("copy: mapping requires a source or resource")
 		}
-		_, files := c["files"]
-		_, dirs := c["directories"]
-		if files == dirs {
-			return nil, fmt.Errorf("copy: specify either files or directories")
-		}
-		key := "files"
-		if dirs {
-			key = "directories"
-		}
-		entries, err := stringArray(c[key], "copy."+key)
-		if err != nil {
+	}
+	if requireTarget {
+		if err := validateEffectiveExecution(d); err != nil {
 			return nil, err
 		}
-		if len(entries) == 0 {
-			return nil, fmt.Errorf("copy.%s: expected at least one path", key)
-		}
-		for _, entry := range entries {
-			if _, err := relative(entry, "copy."+key); err != nil {
-				return nil, err
-			}
-		}
-		destination, err := relative(c["destination"], "copy.destination")
-		if err != nil {
-			return nil, err
-		}
-		mapping := copyDefinition{Resource: r, Destination: destination}
-		if files {
-			mapping.Files = entries
-		} else {
-			mapping.Directories = entries
-		}
-		d.Copies = append(d.Copies, mapping)
 	}
 	return d, nil
 }

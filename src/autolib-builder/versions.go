@@ -90,19 +90,16 @@ func versionDirectories(directory string) ([]os.DirEntry, error) {
 	if err != nil {
 		return nil, err
 	}
-	seen := map[string]string{}
+	if err := validateCatalogCase(entries, directory); err != nil {
+		return nil, err
+	}
 	var versions []os.DirEntry
 	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
+		if entry.IsDir() {
+			versions = append(versions, entry)
 		}
-		key := strings.ToLower(entry.Name())
-		if previous, ok := seen[key]; ok {
-			return nil, fmt.Errorf("%s: case-colliding version directories %q and %q", directory, previous, entry.Name())
-		}
-		seen[key] = entry.Name()
-		versions = append(versions, entry)
 	}
+
 	return versions, nil
 }
 
@@ -147,6 +144,9 @@ func discoverModuleRefs(sourceRoot string) ([]moduleRef, error) {
 	dependencies := filepath.Join(sourceRoot, "src", "dependencies")
 	packages, err := os.ReadDir(dependencies)
 	if err != nil {
+		return nil, err
+	}
+	if err := validateCatalogCase(packages, dependencies); err != nil {
 		return nil, err
 	}
 	refs := []moduleRef{}
@@ -206,30 +206,12 @@ func resolveModuleRef(sourceRoot string, request moduleRef) (moduleRef, error) {
 	if _, err := versionDirectories(directory); err != nil {
 		return moduleRef{}, err
 	}
+	latest, err := packageLatest(directory)
+	if err != nil {
+		return moduleRef{}, err
+	}
 	if request.Version == "" {
-		path := filepath.Join(directory, "package.toml")
-		if err := exactEntry(directory, "package.toml", false); err != nil {
-			return moduleRef{}, err
-		}
-		content, err := os.ReadFile(path)
-		if err != nil {
-			return moduleRef{}, err
-		}
-		var raw map[string]any
-		if err := toml.Unmarshal(content, &raw); err != nil {
-			return moduleRef{}, fmt.Errorf("%s: %w", path, err)
-		}
-		metadata, err := table(raw, path, "latest")
-		if err != nil {
-			return moduleRef{}, err
-		}
-		request.Version, err = text(metadata["latest"], path+".latest")
-		if err != nil {
-			return moduleRef{}, err
-		}
-		if err := validatePackageVersion(request.Version); err != nil {
-			return moduleRef{}, fmt.Errorf("%s.latest: %w", path, err)
-		}
+		request.Version = latest
 	}
 	if err := exactEntry(directory, request.Version, true); err != nil {
 		return moduleRef{}, err
@@ -238,4 +220,53 @@ func resolveModuleRef(sourceRoot string, request moduleRef) (moduleRef, error) {
 		return moduleRef{}, err
 	}
 	return request, nil
+}
+
+func packageLatest(directory string) (string, error) {
+	path := filepath.Join(directory, "package.toml")
+	if err := exactEntry(directory, "package.toml", false); err != nil {
+		return "", err
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	var raw map[string]any
+	if err := toml.Unmarshal(content, &raw); err != nil {
+		return "", fmt.Errorf("%s: %w", path, err)
+	}
+	metadata, err := table(raw, path, "latest")
+	if err != nil {
+		return "", err
+	}
+	latest, err := text(metadata["latest"], path+".latest")
+	if err != nil {
+		return "", err
+	}
+	if err := validatePackageVersion(latest); err != nil {
+		return "", err
+	}
+	if err := exactEntry(directory, latest, true); err != nil {
+		return "", err
+	}
+	if err := exactEntry(filepath.Join(directory, latest), "module.toml", false); err != nil {
+		return "", err
+	}
+	return latest, nil
+}
+
+// 包和版本目录共用大小写规则，避免生成无法在其他目标上区分的身份。
+func validateCatalogCase(entries []os.DirEntry, directory string) error {
+	seen := map[string]string{}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		key := strings.ToLower(entry.Name())
+		if previous, ok := seen[key]; ok {
+			return fmt.Errorf("%s: case-colliding directories %q and %q", directory, previous, entry.Name())
+		}
+		seen[key] = entry.Name()
+	}
+	return nil
 }

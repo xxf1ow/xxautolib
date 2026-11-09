@@ -1,3 +1,16 @@
+#ifdef AUTOLIB_PYBIND_MODULE
+#include <pybind11/pybind11.h>
+PYBIND11_MODULE(autolib_binding, module)
+{
+    module.def("add", [](int left, int right) { return left + right; });
+}
+#else
+#ifdef AUTOLIB_TEST_VISP
+#include <cmath>
+#include <visp3/core/vpHomogeneousMatrix.h>
+#include <visp3/visual_features/vpFeatureTranslation.h>
+#include <visp3/vs/vpServo.h>
+#endif
 #ifdef AUTOLIB_TEST_QUEUE
 #include <queue/readerwriterqueue.h>
 #endif
@@ -7,6 +20,12 @@
 #ifdef AUTOLIB_TEST_FLANN
 #include <flann/flann.h>
 #include <flann/flann.hpp>
+#ifdef __APPLE__
+#ifndef _OPENMP
+#error "Darwin FLANN must expose its OpenMP compile requirements"
+#endif
+#include <omp.h>
+#endif
 #endif
 
 #ifdef AUTOLIB_TEST_LZ4
@@ -36,8 +55,74 @@
 #ifdef AUTOLIB_TEST_LIBREALSENSE
 #include <librealsense2/rs.hpp>
 #endif
-#ifdef AUTOLIB_TEST_ONNXRUNTIME
-#include <onnxruntime_c_api.h>
+#ifdef AUTOLIB_TEST_ASIO
+#include <asio.hpp>
+#endif
+#ifdef AUTOLIB_TEST_CLIPPER2
+#include <clipper2/clipper.h>
+#endif
+#ifdef AUTOLIB_TEST_CPP_HTTPLIB
+#include <cpp-httplib/httplib.h>
+#endif
+#ifdef AUTOLIB_TEST_EXPECTED
+#include <tl/expected.hpp>
+#endif
+#ifdef AUTOLIB_TEST_GTEST
+#include <gtest/gtest.h>
+TEST(AutolibPackage, AssertionRuns) { EXPECT_EQ(6 * 7, 42); }
+#endif
+#ifdef AUTOLIB_TEST_LIBZMQ
+#include <zmq.h>
+#endif
+#ifdef AUTOLIB_TEST_NATIVEFILEDIALOG_EXTENDED
+#include <nfd.h>
+#endif
+#ifdef AUTOLIB_TEST_ONETBB
+#include <oneapi/tbb/parallel_reduce.h>
+#include <oneapi/tbb/blocked_range.h>
+#endif
+#ifdef AUTOLIB_TEST_PORTAUDIO
+#include <portaudio.h>
+#endif
+#ifdef AUTOLIB_TEST_SDL3
+#include <SDL3/SDL.h>
+#endif
+#ifdef AUTOLIB_TEST_SPDLOG
+#include <spdlog/details/os.h>
+#include <spdlog/spdlog.h>
+#include <spdlog/sinks/ostream_sink.h>
+#include <sstream>
+#endif
+#ifdef AUTOLIB_TEST_YAML_CPP
+#include <yaml-cpp/yaml.h>
+#endif
+#ifdef AUTOLIB_TEST_ZLIB
+#include <zlib.h>
+#endif
+#ifdef AUTOLIB_TEST_BOOST
+#include <boost/filesystem/path.hpp>
+#include <boost/regex.hpp>
+#ifdef __APPLE__
+#include <boost/iostreams/copy.hpp>
+#include <boost/iostreams/filter/zlib.hpp>
+#include <boost/iostreams/filtering_stream.hpp>
+#include <sstream>
+#endif
+#endif
+#ifdef AUTOLIB_TEST_WEBSOCKETPP
+#ifdef AUTOLIB_TEST_WEBSOCKETPP_ASIO
+#include <websocketpp/config/asio_no_tls_client.hpp>
+#else
+#include <websocketpp/config/core_client.hpp>
+#endif
+#include <websocketpp/client.hpp>
+#endif
+#ifdef AUTOLIB_TEST_IMGUI
+#include <imgui.h>
+#endif
+#ifdef AUTOLIB_TEST_PCL
+#include <pcl/point_types.h>
+#include <pcl/search/kdtree.h>
 #endif
 #include <filesystem>
 #include <iostream>
@@ -49,9 +134,18 @@
 #include <dlfcn.h>
 #endif
 
-#if defined(AUTOLIB_TEST_FLANN) || defined(AUTOLIB_TEST_OPENCV) || defined(AUTOLIB_TEST_LIBREALSENSE) || defined(AUTOLIB_TEST_ONNXRUNTIME)
+#if defined(AUTOLIB_TEST_FLANN) || defined(AUTOLIB_TEST_OPENCV) || defined(AUTOLIB_TEST_LIBREALSENSE)
 namespace
 {
+#ifdef _WIN32
+// 未声明 dllimport 的 API 可能返回 EXE 跳板；仅查询已加载 DLL 的导出，不额外加载运行库。
+FARPROC loaded_export(const wchar_t *library, const char *symbol)
+{
+    const auto module = GetModuleHandleW(library);
+    return module ? GetProcAddress(module, symbol) : nullptr;
+}
+#endif
+
 bool check_runtime(const char *name, const void *address, const char *expected_root)
 {
     std::filesystem::path module_path;
@@ -87,6 +181,180 @@ bool check_runtime(const char *name, const void *address, const char *expected_r
 
 int main()
 {
+#ifdef AUTOLIB_TEST_BOOST
+    if (!boost::regex_match(std::string("answer42"), boost::regex("answer[0-9]+"))
+        || boost::filesystem::path("/one/../two").lexically_normal().generic_string() != "/two")
+        return 42;
+#ifdef __APPLE__
+    {
+        const std::string boost_input = "Boost Iostreams zlib delivery";
+        std::ostringstream compressed;
+        {
+            boost::iostreams::filtering_ostream encoder;
+            encoder.push(boost::iostreams::zlib_compressor());
+            encoder.push(compressed);
+            encoder << boost_input;
+        }
+        std::istringstream encoded(compressed.str());
+        boost::iostreams::filtering_istream decoder;
+        decoder.push(boost::iostreams::zlib_decompressor());
+        decoder.push(encoded);
+        std::ostringstream restored;
+        boost::iostreams::copy(decoder, restored);
+        if (restored.str() != boost_input)
+            return 48;
+    }
+#endif
+#endif
+#ifdef AUTOLIB_TEST_WEBSOCKETPP
+#ifdef AUTOLIB_TEST_WEBSOCKETPP_ASIO
+    websocketpp::client<websocketpp::config::asio_client> client;
+    client.init_asio();
+#else
+    websocketpp::client<websocketpp::config::core_client> client;
+#endif
+    websocketpp::lib::error_code connection_error;
+    const auto connection = client.get_connection("ws://127.0.0.1:1/acceptance", connection_error);
+    if (connection_error || !connection || connection->get_uri()->get_resource() != "/acceptance")
+        return 43;
+#endif
+#ifdef AUTOLIB_TEST_IMGUI
+    auto *gui_context = ImGui::CreateContext();
+    if (!gui_context)
+        return 44;
+    float hue = 0, saturation = 0, brightness = 0;
+    ImGui::ColorConvertRGBtoHSV(0, 1, 0, hue, saturation, brightness);
+    ImGui::DestroyContext(gui_context);
+    if (hue < 0.333f || hue > 0.334f || saturation != 1 || brightness != 1)
+        return 45;
+#endif
+#ifdef AUTOLIB_TEST_PCL
+    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
+    cloud->push_back(pcl::PointXYZ(0, 0, 0));
+    cloud->push_back(pcl::PointXYZ(1, 1, 1));
+    cloud->push_back(pcl::PointXYZ(2, 2, 2));
+    pcl::search::KdTree<pcl::PointXYZ> tree;
+    tree.setInputCloud(cloud);
+    std::vector<int> pcl_neighbors(1);
+    std::vector<float> pcl_distances(1);
+    if (tree.nearestKSearch((*cloud)[1], 1, pcl_neighbors, pcl_distances) != 1
+        || pcl_neighbors[0] != 1 || pcl_distances[0] != 0)
+        return 46;
+#endif
+#ifdef AUTOLIB_TEST_VISP
+    vpFeatureTranslation translation(vpFeatureTranslation::cdMc), desired_translation(vpFeatureTranslation::cdMc);
+    translation.buildFrom(vpHomogeneousMatrix(0.01, 0, 0, 0, 0, 0));
+    vpServo servo;
+    servo.setServo(vpServo::EYEINHAND_CAMERA);
+    servo.setInteractionMatrixType(vpServo::CURRENT);
+    servo.setLambda(0.5);
+    servo.addFeature(translation, desired_translation);
+    const auto velocity = servo.computeControlLaw();
+    if (velocity.size() != 6 || !std::isfinite(velocity[0]) || std::abs(velocity[0] + 0.005) > 1e-9)
+        return 47;
+#endif
+#ifdef AUTOLIB_TEST_ASIO
+    asio::io_context io;
+    int posted_value = 0;
+    asio::post(io, [&] { posted_value = 42; });
+    if (io.run() != 1 || posted_value != 42)
+        return 21;
+#endif
+#ifdef AUTOLIB_TEST_CLIPPER2
+    const Clipper2Lib::Paths64 subject = {{{0, 0}, {10, 0}, {10, 10}, {0, 10}}};
+    const Clipper2Lib::Paths64 clip = {{{5, 0}, {15, 0}, {15, 10}, {5, 10}}};
+    const auto intersection = Clipper2Lib::Intersect(subject, clip, Clipper2Lib::FillRule::NonZero);
+    if (Clipper2Lib::Area(intersection) != 50)
+        return 22;
+#endif
+#ifdef AUTOLIB_TEST_CPP_HTTPLIB
+    httplib::Response response;
+    response.set_content("verified response", "text/plain");
+    if (response.body != "verified response" || response.get_header_value("Content-Type") != "text/plain")
+        return 23;
+#endif
+#ifdef AUTOLIB_TEST_EXPECTED
+    const tl::expected<int, int> success = 42;
+    const tl::expected<int, int> failure = tl::unexpected<int>(7);
+    if (!success || *success != 42 || failure || failure.error() != 7)
+        return 24;
+#endif
+#ifdef AUTOLIB_TEST_GTEST
+    testing::InitGoogleTest();
+    if (RUN_ALL_TESTS() != 0)
+        return 25;
+#endif
+#ifdef AUTOLIB_TEST_LIBZMQ
+    void *context = zmq_ctx_new();
+    if (!context)
+        return 26;
+    void *sender = zmq_socket(context, ZMQ_PAIR);
+    void *receiver = zmq_socket(context, ZMQ_PAIR);
+    if (!sender || !receiver || zmq_bind(sender, "inproc://autolib-smoke") != 0
+        || zmq_connect(receiver, "inproc://autolib-smoke") != 0)
+        return 27;
+    char message[4] = {};
+    if (zmq_send(sender, "test", 4, 0) != 4 || zmq_recv(receiver, message, 4, 0) != 4
+        || std::string(message, 4) != "test")
+        return 28;
+    if (zmq_close(sender) || zmq_close(receiver) || zmq_ctx_term(context))
+        return 29;
+#endif
+#ifdef AUTOLIB_TEST_NATIVEFILEDIALOG_EXTENDED
+    // GTK 初始化需要显示服务；无交互验收只检查不依赖图形环境的 API。
+    NFD_ClearError();
+    if (NFD_GetError() != nullptr)
+        return 30;
+#endif
+#ifdef AUTOLIB_TEST_ONETBB
+    const int sum = oneapi::tbb::parallel_reduce(oneapi::tbb::blocked_range<int>(0, 100), 0,
+        [](const auto &range, int value) { for (int i = range.begin(); i != range.end(); ++i) value += i; return value; },
+        [](int left, int right) { return left + right; });
+    if (sum != 4950)
+        return 31;
+#endif
+#ifdef AUTOLIB_TEST_PORTAUDIO
+    if (Pa_Initialize() != paNoError)
+        return 32;
+    const auto host_count = Pa_GetHostApiCount();
+    if (host_count < 0 || Pa_Terminate() != paNoError)
+        return 33;
+    std::cout << "portaudio_host_apis=" << host_count << '\n';
+#endif
+#ifdef AUTOLIB_TEST_SDL3
+    SDL_Surface *surface = SDL_CreateSurface(2, 2, SDL_PIXELFORMAT_RGBA32);
+    if (!surface || !SDL_FillSurfaceRect(surface, nullptr, SDL_MapSurfaceRGB(surface, 10, 20, 30)))
+        return 34;
+    Uint8 red = 0, green = 0, blue = 0;
+    const bool read_pixel = SDL_ReadSurfacePixel(surface, 1, 1, &red, &green, &blue, nullptr);
+    SDL_DestroySurface(surface);
+    if (!read_pixel || red != 10 || green != 20 || blue != 30)
+        return 35;
+#endif
+#ifdef AUTOLIB_TEST_SPDLOG
+    std::ostringstream logged;
+    auto sink = std::make_shared<spdlog::sinks::ostream_sink_mt>(logged);
+    spdlog::logger logger("smoke", sink);
+    logger.set_pattern("%v");
+    logger.info("answer {}", 42);
+    logger.flush();
+    if (logged.str() != std::string("answer 42") + spdlog::details::os::default_eol)
+        return 36;
+#endif
+#ifdef AUTOLIB_TEST_YAML_CPP
+    const auto yaml = YAML::Load("answer: 42\nvalues: [1, 2, 3]\n");
+    if (yaml["answer"].as<int>() != 42 || yaml["values"].size() != 3)
+        return 38;
+#endif
+#ifdef AUTOLIB_TEST_ZLIB
+    const unsigned char plain[] = "repeat repeat repeat repeat";
+    unsigned char encoded[128] = {}, decoded[sizeof(plain)] = {};
+    uLongf encoded_size = sizeof(encoded), decoded_size = sizeof(decoded);
+    if (compress2(encoded, &encoded_size, plain, sizeof(plain), Z_BEST_COMPRESSION) != Z_OK
+        || uncompress(decoded, &decoded_size, encoded, encoded_size) != Z_OK
+        || decoded_size != sizeof(plain) || std::string(reinterpret_cast<char *>(decoded)) != "repeat repeat repeat repeat")
+        return 39;
+#endif
 #ifdef AUTOLIB_TEST_FREETYPE
     FT_Library font_library = nullptr;
     if (FT_Init_FreeType(&font_library) != 0)
@@ -116,22 +384,24 @@ int main()
     const auto font = cv::freetype::createFreeType2();
     if (font.empty() || cv::countNonZero(cv::Mat::eye(2, 2, CV_8U)) != 2)
         return 16;
-    if (!check_runtime("opencv", reinterpret_cast<const void *>(&cv::getTickCount), AUTOLIB_EXPECT_OPENCV_ROOT))
+#ifdef _WIN32
+    const auto opencv_address = loaded_export(AUTOLIB_OPENCV_DLL, "cvGetTickCount");
+#else
+    const auto opencv_address = &cv::getTickCount;
+#endif
+    if (!opencv_address || !check_runtime("opencv", reinterpret_cast<const void *>(opencv_address), AUTOLIB_EXPECT_OPENCV_ROOT))
         return 17;
 #endif
 #ifdef AUTOLIB_TEST_LIBREALSENSE
     rs2::config camera_config;
     camera_config.disable_all_streams();
-    if (!check_runtime("librealsense", reinterpret_cast<const void *>(&rs2_get_api_version), AUTOLIB_EXPECT_LIBREALSENSE_ROOT))
-        return 18;
+#ifdef _WIN32
+    const auto realsense_address = loaded_export(AUTOLIB_LIBREALSENSE_DLL, "rs2_get_api_version");
+#else
+    const auto realsense_address = &rs2_get_api_version;
 #endif
-#ifdef AUTOLIB_TEST_ONNXRUNTIME
-    const auto *api_base = OrtGetApiBase();
-    if (!api_base || !api_base->GetApi(ORT_API_VERSION))
-        return 19;
-    std::cout << "onnxruntime_version=" << api_base->GetVersionString() << '\n';
-    if (!check_runtime("onnxruntime", reinterpret_cast<const void *>(&OrtGetApiBase), AUTOLIB_EXPECT_ONNXRUNTIME_ROOT))
-        return 20;
+    if (!realsense_address || !check_runtime("librealsense", reinterpret_cast<const void *>(realsense_address), AUTOLIB_EXPECT_LIBREALSENSE_ROOT))
+        return 18;
 #endif
 #ifdef AUTOLIB_TEST_EIGEN
 #ifdef EIGEN_PATCH_VERSION
@@ -165,6 +435,13 @@ int main()
 #endif
 
 #ifdef AUTOLIB_TEST_FLANN
+#ifdef __APPLE__
+    int workers = 0;
+#pragma omp parallel num_threads(2) reduction(+:workers)
+    workers += 1;
+    if (workers != 2 || !check_runtime("flann OpenMP", reinterpret_cast<const void *>(&omp_get_max_threads), AUTOLIB_EXPECT_FLANN_ROOT))
+        return 9;
+#endif
     float dataset[] = {0, 0, 1, 1, 2, 2};
     float speedup = 0;
     auto parameters = DEFAULT_FLANN_PARAMETERS;
@@ -194,3 +471,4 @@ int main()
 #endif
     return 0;
 }
+#endif

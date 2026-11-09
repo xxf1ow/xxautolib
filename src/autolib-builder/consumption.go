@@ -108,10 +108,18 @@ func prepareConsumption(o consumptionOptions) error {
 	if err := validateArtifactVersionPath(filepath.Join(o.InstallRoot, o.Name, o.Version)); err != nil {
 		return err
 	}
+	if o.Phase != "begin" {
+		if err := validateInstalledMetadata(module, filepath.Join(o.InstallRoot, o.Name, o.Version)); err != nil {
+			return err
+		}
+	}
 	adapterPath := filepath.Join(filepath.Dir(module.Path), "autolib-import.cmake")
 	adapter, err := os.ReadFile(adapterPath)
 	if errors.Is(err, os.ErrNotExist) {
-		return nil
+		if o.Phase == "begin" {
+			return nil
+		}
+		return writeInstalledPackageIndex(module, o.InstallRoot)
 	}
 	if err != nil {
 		return fmt.Errorf("%s: %w", adapterPath, err)
@@ -197,7 +205,7 @@ func prepareConsumption(o consumptionOptions) error {
 			return fmt.Errorf("package %s: dependency %s identity does not match %s/%s", o.Name, dependency, o.OS, o.Arch)
 		}
 	}
-	if module.PlatformIndependent {
+	if slices.Contains(module.PackagePlatforms, "any-any") {
 		if err := validateSourceVersionPaths(module, o.SourceRoot); err != nil {
 			return err
 		}
@@ -205,16 +213,20 @@ func prepareConsumption(o consumptionOptions) error {
 			return err
 		}
 	}
-	packageFile := filepath.Join(filepath.Dir(filepath.Dir(module.Path)), "package.toml")
-	metadata, err := os.ReadFile(packageFile)
-	if err != nil {
-		return err
-	}
-	if _, err := writeIfChanged(filepath.Join(o.InstallRoot, o.Name, "package.toml"), string(metadata)); err != nil {
+	if err := writeInstalledPackageIndex(module, o.InstallRoot); err != nil {
 		return err
 	}
 	header := fmt.Sprintf("set(AUTOLIB_PACKAGE_NAME %q)\nset(AUTOLIB_PACKAGE_VERSION %q)\nset(AUTOLIB_OS %q)\nset(AUTOLIB_ARCH %q)\nset(AUTOLIB_DEPENDENCIES %q)\n", o.Name, o.Version, packageOS, packageArch, strings.Join(dependencies, ";"))
 	_, err = writeIfChanged(output, header+string(adapter))
+	return err
+}
+
+func writeInstalledPackageIndex(module *moduleDefinition, installRoot string) error {
+	metadata, err := os.ReadFile(filepath.Join(filepath.Dir(filepath.Dir(module.Path)), "package.toml"))
+	if err != nil {
+		return err
+	}
+	_, err = writeIfChanged(filepath.Join(installRoot, module.Name, "package.toml"), string(metadata))
 	return err
 }
 
@@ -241,4 +253,22 @@ func runConsumption(args []string, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+func validateInstalledMetadata(module *moduleDefinition, prefix string) error {
+	for _, field := range []struct{ name, value string }{{"config_dir", module.ConfigDir}, {"pkgconfig_dir", module.PkgconfigDir}} {
+		value := field.value
+		if value == "" {
+			continue
+		}
+		path := filepath.Join(prefix, value)
+		info, err := os.Stat(path)
+		if err != nil {
+			return fmt.Errorf("%s: %s installation directory %s: %w", module.Path, field.name, path, err)
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("%s: %s installation path must be a directory: %s", module.Path, field.name, path)
+		}
+	}
+	return nil
 }

@@ -18,7 +18,7 @@ func TestCIToolOnlySelection(t *testing.T) {
 		if err != nil {
 			t.Fatalf("tool-only plan invoked discovery: %v", err)
 		}
-		if len(plan.Platforms) != 3 || len(plan.RequestedModules) != 0 || plan.Publisher != "" {
+		if len(plan.Platforms) != 3 || len(plan.RequestedModules) != 0 || len(plan.Publishers) != 0 {
 			t.Fatalf("tool-only platforms lost: %+v", plan)
 		}
 		for _, platform := range plan.Platforms {
@@ -172,7 +172,7 @@ func TestCIToolOnlyRun(t *testing.T) {
 	f.options.MakeProgram = ""
 	f.options.Budget = 0
 	f.plan.RequestedModules = []string{}
-	f.plan.Publisher = ""
+	f.plan.Publishers = map[string]string{}
 	f.plan.Platforms[0].Roots = []string{}
 	f.plan.Platforms[0].Description.Roots = []string{}
 	f.plan.Platforms[0].Description.Modules = []describedModule{}

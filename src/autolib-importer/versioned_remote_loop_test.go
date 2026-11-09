@@ -98,6 +98,13 @@ func TestVersionedRemoteLoop(t *testing.T) {
 			} else {
 				e = remoteEntry(t, host)
 			}
+			for _, path := range []*string{&e.f.root, &e.f.source} {
+				canonical, err := filepath.EvalSymlinks(*path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				*path = canonical
+			}
 			for path, body := range currentAssets {
 				e.asset(t, path, body)
 				if got := readTestFile(t, filepath.Join(e.repo, filepath.FromSlash(path)+".sha256")); got != currentDigests[path] {
@@ -172,7 +179,7 @@ func TestVersionedRemoteLoop(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Log("corrupt adapter include control wrote marker")
-			out, err := exec.Command("cmake", "-S", consumer, "-B", filepath.Join(e.f.root, "corrupt-cache"), "-G", native.generator, "-DTLS_CA="+e.ca).CombinedOutput()
+			out, err := exec.Command("cmake", append([]string{"-S", consumer, "-B", filepath.Join(e.f.root, "corrupt-cache"), "-G", native.generator, "-DTLS_CA=" + e.ca}, nativeLoopCMakeArgs(t)...)...).CombinedOutput()
 			if err == nil || !strings.Contains(string(out), "probe/1/autolib-import.cmake") || !strings.Contains(string(out), "expected fixed name/version/os/arch/dependencies header:") || !strings.Contains(string(out), "AUTOLIB_PACKAGE_NAME line") {
 				t.Fatalf("corrupt cached candidate was not rejected: %v\n%s", err, out)
 			}
@@ -193,14 +200,14 @@ set(CMAKE_SYSTEM_PROCESSOR %s)
 include([==[%s]==])
 add_library(consumer INTERFACE)
 autolib_import(TARGET consumer INTERFACE %s)
-`, map[string]string{"linux": "Linux", "windows": "Windows"}[runtime.GOOS], native.arch, entry, packageRef))
+`, map[string]string{"linux": "Linux", "windows": "Windows", "darwin": "Darwin"}[runtime.GOOS], native.arch, entry, packageRef))
 			}
 			writeRequest(newSource, "dep@2")
 			loopCommand(t, "cmake", "-S", newSource, "-B", filepath.Join(e.f.root, "next-configure"), "-G", native.generator, "-DCMAKE_TLS_CAINFO="+e.ca)
 			want["dep-2-"+runtime.GOOS+"-"+native.arch+".tar.zst"] = 1
 			e.counts(t, 2, want)
 			writeRequest(newSource, "broken@1")
-			out, err = exec.Command("cmake", "-S", newSource, "-B", filepath.Join(e.f.root, "bad-identity"), "-G", native.generator, "-DCMAKE_TLS_CAINFO="+e.ca).CombinedOutput()
+			out, err = exec.Command("cmake", append([]string{"-S", newSource, "-B", filepath.Join(e.f.root, "bad-identity"), "-G", native.generator, "-DCMAKE_TLS_CAINFO=" + e.ca}, nativeLoopCMakeArgs(t)...)...).CombinedOutput()
 			if err == nil || !strings.Contains(string(out), "directory must end") || !strings.Contains(string(out), "other/1") {
 				t.Fatalf("valid digest with wrong package identity was not rejected: %v\n%s", err, out)
 			}

@@ -36,11 +36,9 @@ CI 使用 `Unix Makefiles` 和仓库已固定的 GNU Make 4.4.1，同一平台�
 
 ### 每个配方版本显式声明平台资格
 
-每个 `src/dependencies/<name>/<version>/module.toml` 使用必填、非空、无重复项的字符串数组 `supported_platforms`，允许四个规范值：`windows-x86_64`、`linux-x86_64`、`linux-aarch64`、`darwin-aarch64`。未知值、缺失字段、空数组和非字符串项均属于坏声明；不将缺失解释为全平台支持，也不从平台覆盖表、源码存在或头文件属性推断支持。
+当前单一 `package_platforms`、通用资格及平铺覆盖规则由[字段参考](../../../subsystems/module-recipes.md)拥有，职责与全包验收由[统一模块配方设计](../../implemented/architecture/2026-11-06-module-recipe-contract-and-macos-validation.md)拥有。具体包列出支持的完整平台 ID；通用包单独声明 any-any，各项依赖仍按目标判断资格。builder 与 CI 共用版本配方，不维护包名排除表，也不从来源或头文件属性推断具体平台支持。
 
-声明的所有者是对应版本配方。builder 统一解释平台资格，普通构建与 CI 复用这项判断；CI 不维护按包名列出的排除表。`[platforms.darwin]` 沿用现有平台覆盖的合并规则，仅在确有 macOS 来源或参数差异时声明。`platform_independent=true` 仍只决定交付为 `any-any`，不免除平台资格检查。
-
-本次核对所有现有版本配方并填入声明，保留其原有 Windows/Linux 构建范围；这不是对每个包、每个平台已经实测通过的新承诺。Darwin 首轮以 `queue` 和 `lz4` 验证头文件及静态机器码包的执行基础。其他包不因引擎已识别 Darwin 自动增加该值，须在后续有实际适配与验证依据时扩展。`librealsense@2.58.1` 明确不声明 Darwin；`onnxruntime@1.24.4` 保留已有预编译来源，本次不新增 macOS 归档或更换来源。
+本记录的 queue/lz4 首轮执行基础及以下验证证据保持原范围。统一字段后的两个 Eigen 版本使用上游 CMake 安装并交付通用头文件与元数据；其他通用配方按依赖资格判断。未适配的机器码包不自动增加 Darwin，包括 librealsense@2.58.1 和 onnxruntime@1.24.4。macos-15 全包构建调查和 PCL/example 实机消费留待统一设计第二阶段。
 
 平台资格在要求目标专用来源、生成原生目标及取源之前判断。例如 ONNX Runtime 没有 Darwin 来源时按不支持平台处理，不因缺来源使整份 Darwin 计划失败。只有明确的平台不支持可以走资格过滤；未知包、坏 TOML、非法身份、缺依赖、依赖环及其他实际错误继续失败，不用捕获任意错误的方式把它们降级为跳过。
 

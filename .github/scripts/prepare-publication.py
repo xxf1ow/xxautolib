@@ -116,8 +116,18 @@ def _planned_platforms(plan):
     _require(isinstance(plan, dict) and isinstance(plan.get('platforms'), list), 'invalid CI plan')
     platforms = [p['id'] for p in plan['platforms']]
     _require(len(platforms) == len(set(platforms)) and set(platforms) <= PLATFORMS, 'invalid or duplicate planned platforms')
-    universal = any(m['platform_independent'] for p in plan['platforms'] for m in p['description']['modules'])
-    _require(plan.get('publisher') in platforms if universal else plan.get('publisher', '') == '', 'invalid any-any publisher')
+    expected = {}
+    for preferred in ['linux-x86_64', 'linux-aarch64', 'windows-x86_64', 'darwin-aarch64']:
+        for platform in plan['platforms']:
+            if platform['id'] != preferred:
+                continue
+            for module in platform['description']['modules']:
+                identity = _component(module['name']) + '@' + _component(module['version'])
+                _require(module['package_platform'] in ('any-any', preferred), 'invalid package_platform')
+                if module['package_platform'] == 'any-any':
+                    expected.setdefault(identity, preferred)
+    _require(isinstance(plan.get('publishers'), dict) and plan['publishers'] == expected,
+             'publishers must match exact universal packages and preferred effective platforms')
     return platforms
 
 
@@ -235,11 +245,11 @@ def _validate_transport(root, transport, selected, platform, source_entry):
     system, arch = platform['id'].split('-', 1)
     for module in platform['description']['modules']:
         name, version = _component(module['name']), _component(module['version'])
-        universal = module['platform_independent']
-        _require(type(universal) is bool and module['target'], 'invalid planned module')
+        universal = module['package_platform'] == 'any-any'
+        _require(module['package_platform'] in ('any-any', platform['id']) and module['target'], 'invalid planned module')
         expected.append(dict(name=name, version=version, os='any' if universal else system,
                              arch='any' if universal else arch, dependencies=module['depends'] or [],
-                             publish=not universal or plan['publisher'] == platform['id']))
+                             publish=not universal or plan['publishers'][name + '@' + version] == platform['id']))
     _require(len({(p['name'], p['version']) for p in expected}) == len(expected), 'duplicate planned package')
     normalized = [dict(p, dependencies=p['dependencies'] or []) for p in transport['packages']]
     _require(all(type(p['publish']) is bool for p in normalized), 'invalid package publish flag')

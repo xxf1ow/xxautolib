@@ -55,9 +55,12 @@ func writeCITransport(ctx context.Context, o ciRunOptions, output string) error 
 	if err := decodeStrictJSONFile(filepath.Join(work, "results", o.Platform+".json"), &result); err != nil {
 		return err
 	}
+	if err := validateCIPublishers(plan); err != nil {
+		return err
+	}
 	selected := plan
 	selected.Platforms = []ciPlatformPlan{*platform}
-	if err := finalizeCI(selected, o.Repository, run, []ciPlatformResult{result}); err != nil {
+	if err := validateCIResults(selected, o.Repository, run, []ciPlatformResult{result}); err != nil {
 		return err
 	}
 	install := filepath.Join(work, "install")
@@ -92,7 +95,7 @@ func writeCITransport(ctx context.Context, o ciRunOptions, output string) error 
 	packages := map[string]bool{}
 	for _, module := range platform.Description.Modules {
 		slot := ciModuleSlot(module, o.Platform)
-		publish := !module.PlatformIndependent || plan.Publisher == o.Platform
+		publish := module.PackagePlatform != "any-any" || plan.Publishers[moduleIdentity(module)] == o.Platform
 		manifest.Packages = append(manifest.Packages, ciTransportPackage{Name: slot.Name, Version: slot.Version, OS: slot.OS, Arch: slot.Arch, Dependencies: module.Depends, Publish: publish})
 		if publish {
 			modules = append(modules, moduleIdentity(module))

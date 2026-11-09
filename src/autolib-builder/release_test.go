@@ -407,7 +407,7 @@ func TestDarwinPackageIdentity(t *testing.T) {
 	f := newFixture(t)
 	f.context.SystemName = "Darwin"
 	f.context.Architecture = "aarch64"
-	definitionFile(t, f.root, "unsupported", "copy", "supported_platforms=['linux-aarch64']\nplatform_independent=true\n"+testSource+"\n[[copy]]\nfiles=['x.h']\ndestination='include'\n")
+	definitionFile(t, f.root, "unsupported", "copy", "package_platforms=['linux-aarch64']\npackage_platforms=['any-any']\n"+testSource+"\n[[copy]]\nfiles=['x.h']\ndestination='include'\n")
 	if err := generate(f.context, []string{"unsupported"}); err == nil {
 		t.Fatal("platform independent bypassed support")
 	}

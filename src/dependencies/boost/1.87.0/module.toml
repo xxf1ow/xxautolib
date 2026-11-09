@@ -1,9 +1,7 @@
 # boost：Boost C++ 库集合，安装静态库并使用独立 zlib 模块。
-name = "boost"
 type = "cmake"
-version = "1.87.0"
-supported_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
-depends = ["zlib"]
+package_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64','darwin-aarch64']
+depends = ["zlib@1.3.1"]
 sentinel = "lib/cmake/Boost-1.87.0/BoostConfig.cmake"
 config_dir = "lib/cmake/Boost-1.87.0"
 package_name = "Boost"
@@ -17,3 +15,9 @@ DOWNLOAD_NAME = "boost-1.87.0-cmake.tar.xz"
 BUILD_SHARED_LIBS = false
 BOOST_IOSTREAMS_ENABLE_ZLIB = true
 BOOST_EXCLUDE_LIBRARIES = ""
+
+# 原平台 Iostreams 只启用仓库 zlib，防止 runner 预装库额外启用压缩后端。
+[platforms.darwin-aarch64.cmake.cache]
+BOOST_IOSTREAMS_ENABLE_BZIP2 = false
+BOOST_IOSTREAMS_ENABLE_LZMA = false
+BOOST_IOSTREAMS_ENABLE_ZSTD = false

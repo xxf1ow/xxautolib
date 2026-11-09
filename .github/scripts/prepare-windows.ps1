@@ -31,7 +31,7 @@ $tools = Join-Path $WorkRoot 'ci-tools'
 $bin = Join-Path $tools 'bin'
 New-Item -ItemType Directory -Force -Path $bin | Out-Null
 $archive = Join-Path $WorkRoot $asset[0].filename
-Invoke-WebRequest -Uri $asset[0].url -OutFile $archive
+Invoke-WebRequest -Uri $asset[0].url -OutFile $archive -MaximumRetryCount 2 -RetryIntervalSec 5
 $actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($actual -ne $asset[0].sha256) { throw "CMake SHA256 mismatch: $actual" }
 Expand-Archive -LiteralPath $archive -DestinationPath $tools -Force
@@ -42,9 +42,12 @@ $cmakeCommand = Join-Path $cmakeDir 'bin/cmake.exe'
 $cmakeVersion = & $cmakeCommand --version | Select-Object -First 1
 if ($cmakeVersion -ne "cmake version $($configDocument.cmake.version)") { throw "CMake version does not match configuration: $cmakeVersion" }
 
-$packages = @($platformPlan[0].system_dependencies.choco | Where-Object { $_ } | Sort-Object -Unique)
+$packages = @()
+if ($null -ne $platformPlan[0].system_dependencies.choco) {
+    $packages = @($platformPlan[0].system_dependencies.choco | Sort-Object -Unique)
+}
 foreach ($package in $packages) {
-    if ($package -notmatch '^[A-Za-z0-9.-]+$') { throw "Unsafe Chocolatey package name: $package" }
+    if ($package -notmatch '^[A-Za-z0-9.][A-Za-z0-9.-]*$') { throw "Unsafe Chocolatey package name: $package" }
 }
 if ($packages.Count -gt 0) {
     choco install @packages --yes --no-progress --limit-output 2>&1 | ForEach-Object { [Console]::Error.WriteLine($_) }

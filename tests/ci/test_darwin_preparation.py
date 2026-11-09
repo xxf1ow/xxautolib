@@ -40,6 +40,18 @@ elif name == 'xcrun':
         print(root / 'bin' / ('bootstrap-make' if args[1] == 'make' else args[1]))
 elif name in ('clang', 'clang++'):
     print('Apple clang version 17.0.0')
+elif name == 'brew':
+    if os.environ.get('FIXTURE_BREW_FAILURE'):
+        sys.exit(72)
+    if args[:1] == ['install']:
+        assert args[1:] == ['pkg-config', 'libomp'], args
+    elif args[:2] == ['list', '--versions']:
+        print('pkg-config 0.29.2\nlibomp 21.1.0')
+    elif args[:1] == ['--prefix']:
+        assert args[1] in ('pkg-config', 'libomp'), args
+        print(root / 'brew' / args[1])
+    else:
+        raise AssertionError(args)
 elif name == 'curl':
     output = Path(args[args.index('-o') + 1])
     shutil.copyfile(root / output.name, output)
@@ -84,7 +96,7 @@ class DarwinPreparationTests(unittest.TestCase):
         (root / 'bin').mkdir()
         (root / 'stub').write_bytes(binary)
         (root / 'stub').chmod(0o755)
-        for name in ('uname', 'sw_vers', 'sysctl', 'xcrun', 'clang', 'clang++', 'curl', 'bootstrap-make'):
+        for name in ('uname', 'sw_vers', 'sysctl', 'xcrun', 'clang', 'clang++', 'curl', 'bootstrap-make', 'brew'):
             (root / 'bin' / name).symlink_to(root / 'stub')
         config = json.loads((ROOT / '.github/ci-tools.json').read_text())
         asset = next(a for a in config['cmake']['assets'] if a['platform'] == 'darwin-aarch64')
@@ -117,6 +129,41 @@ class DarwinPreparationTests(unittest.TestCase):
         ], text=True, capture_output=True, env=environment, cwd=ROOT)
         events = [json.loads(line) for line in (root / 'events').read_text().splitlines()] if (root / 'events').exists() else []
         return result, events
+
+    def test_brew_formula_selection(self):
+        for formulas in [[], ['pkg-config', 'libomp', 'pkg-config']]:
+            with self.subTest(formulas=formulas), tempfile.TemporaryDirectory(prefix='brew formula ') as temporary:
+                root = Path(temporary)
+                environment_file = root / 'github-env'
+                platforms = [dict(id='linux-x86_64', roots=['other'], system_dependencies=dict(brew=['unrelated'])),
+                             dict(id='darwin-aarch64', roots=['lz4@1.10.0'], system_dependencies=dict(brew=formulas))]
+                result, events = self.execute(root, self.fixture(root), platforms, GITHUB_ENV=str(environment_file),
+                                              CMAKE_PREFIX_PATH='/existing/prefix', PKG_CONFIG_PATH='/existing/pc')
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(set(json.loads(result.stdout)), {'cmake_command', 'make_program', 'budget'})
+                brew = [args for name, args in events if name == 'brew']
+                exports = dict(line.split('=', 1) for line in environment_file.read_text().splitlines())
+                if formulas:
+                    self.assertEqual([args for args in brew if args[:1] == ['install']], [['install', 'pkg-config', 'libomp']])
+                    self.assertIn(['list', '--versions', 'pkg-config', 'libomp'], brew)
+                    self.assertIn('libomp 21.1.0', result.stderr)
+                    self.assertEqual(exports['CMAKE_PREFIX_PATH'], str(root / 'brew/pkg-config') + ':' + str(root / 'brew/libomp') + ':/existing/prefix')
+                    self.assertEqual(exports['PKG_CONFIG_PATH'], ':'.join(str(root / 'brew' / formula / suffix) for formula in ['pkg-config', 'libomp'] for suffix in ['lib/pkgconfig', 'share/pkgconfig']) + ':/existing/pc')
+                else:
+                    self.assertEqual(brew, [])
+                    self.assertNotIn('CMAKE_PREFIX_PATH', exports)
+                    self.assertNotIn('PKG_CONFIG_PATH', exports)
+
+    def test_brew_failure_is_fatal(self):
+        for formulas, variables in [(['pkg-config', 'libomp'], dict(FIXTURE_BREW_FAILURE='1')),
+                                   (['--cask'], {}), (['tap/formula'], {}), (['libomp;echo bad'], {}), ([''], {}), (False, {}), (None, {}), ('libomp', {})]:
+            with self.subTest(formulas=formulas), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                result, events = self.execute(root, self.fixture(root), [dict(id='darwin-aarch64', roots=['lz4@1.10.0'], system_dependencies=dict(brew=formulas))], **variables)
+                self.assertNotEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, '')
+                if not variables:
+                    self.assertNotIn('brew', [name for name, _ in events])
 
     def test_tools_only_filtered_and_library_work(self):
         for roots, filtered, cpu, budget in (([], [], '4', 0), ([], ['librealsense@2.58.1'], '4', 0), (['lz4@1.10.0'], [], '4', 4), (['lz4@1.10.0'], [], '0', 1)):

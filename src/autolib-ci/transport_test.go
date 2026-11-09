@@ -241,13 +241,18 @@ func TestCIPackageSelection(t *testing.T) {
 		t.Run(selection, func(t *testing.T) {
 			f := transportInputFixture(t)
 			if selection == "non-publisher" {
-				f.plan.Publisher = "windows-x86_64"
-				if f.options.Platform == f.plan.Publisher {
-					f.plan.Publisher = "linux-x86_64"
+				publisher := "linux-x86_64"
+				if f.options.Platform == publisher {
+					t.Skip("highest priority platform cannot be a nonpublisher")
 				}
+				candidate := f.plan.Platforms[0]
+				candidate.ID = publisher
+				f.plan.Platforms = append(f.plan.Platforms, candidate)
+				f.plan.Publishers["queue@1"] = publisher
 			}
 			if selection == "ordinary" {
-				f.plan.Platforms[0].Description.Modules[0].PlatformIndependent = false
+				f.plan.Platforms[0].Description.Modules[0].PackagePlatform = f.options.Platform
+				f.plan.Publishers = map[string]string{}
 				osName, arch, _ := strings.Cut(f.options.Platform, "-")
 				writeCIFixture(t, f.options.WorkRoot, "install/queue/1/autolib-import.cmake", fmt.Sprintf("set(AUTOLIB_PACKAGE_NAME \"queue\")\nset(AUTOLIB_PACKAGE_VERSION \"1\")\nset(AUTOLIB_OS %q)\nset(AUTOLIB_ARCH %q)\nset(AUTOLIB_DEPENDENCIES \"\")\n", osName, arch))
 			}
@@ -257,6 +262,7 @@ func TestCIPackageSelection(t *testing.T) {
 				t.Fatal(err)
 			}
 			if selection == "tools" {
+				f.plan.Publishers = map[string]string{}
 				f.plan.Platforms[0].Roots = []string{}
 				f.plan.Platforms[0].Description.Roots = []string{}
 				f.plan.Platforms[0].Description.Modules = []describedModule{}
@@ -441,7 +447,7 @@ func transportInputFixture(t *testing.T) installedFixture {
 	platform := runtime.GOOS + "-" + map[string]string{"amd64": "x86_64", "arm64": "aarch64"}[runtime.GOARCH]
 	work := filepath.Join(root, "build", "ci", "123-1", platform)
 	f := installedFixture{identity: identity, options: ciRunOptions{Repository: ciGitHubRepository, SourceRoot: root, Platform: platform, WorkRoot: work, PlanFile: filepath.Join(root, "plan.json"), RunIdentityFile: filepath.Join(root, "run.json")}}
-	f.plan = ciPlan{Publisher: platform, Platforms: []ciPlatformPlan{{ID: platform, Roots: []string{"queue@1"}, Description: moduleDescription{Roots: []string{"queue@1"}, Modules: []describedModule{{Name: "queue", Version: "1", Target: "fixture-queue", Depends: []string{}, PlatformIndependent: true}}}, Layers: [][]string{{"queue@1"}}}}}
+	f.plan = ciPlan{Publishers: map[string]string{"queue@1": platform}, Platforms: []ciPlatformPlan{{ID: platform, Roots: []string{"queue@1"}, Description: moduleDescription{Roots: []string{"queue@1"}, Modules: []describedModule{{Name: "queue", Version: "1", Target: "fixture-queue", Depends: []string{}, PackagePlatform: "any-any"}}}, Layers: [][]string{{"queue@1"}}}}}
 	result := map[string]any{"run": identity, "platform": platform, "packages": []any{map[string]any{"slot": map[string]string{"name": "queue", "version": "1", "os": "any", "arch": "any"}, "built": true, "verified": true}}, "roots": []any{map[string]any{"root": "queue@1", "verified": true}}, "importer": map[string]any{"file": ciImporterExecutable(platform), "verified": true}, "complete": true, "error": ""}
 	entry := "set(_autolib_release_root \"\")\n# transport fixture\n"
 	writeCIFixture(t, root, "src/autolib.cmake", entry)
@@ -529,11 +535,11 @@ func installedCIFixture(t *testing.T) installedFixture {
 	t.Setenv("GOSUMDB", "off")
 	for _, item := range []struct{ name, version, depends string }{{"dep", "1", ""}, {"queue", "1", ""}, {"eigen", "3", "dep@1"}, {"eigen", "5", "dep@1"}} {
 		name, version := item.name, item.version
-		recipe := "name='" + name + "'\nversion='" + version + "'\ntype='copy'\nplatform_independent=true\nsupported_platforms=['windows-x86_64','linux-x86_64','linux-aarch64','darwin-aarch64']\n"
+		recipe := "type='copy'\npackage_platforms=['any-any']\n"
 		if item.depends != "" {
 			recipe += "depends=['" + item.depends + "']\n"
 		}
-		recipe += "[source]\nGIT_REPOSITORY='local-fixture'\nGIT_TAG='fixed'\n[[copy]]\nfiles=['header.h']\ndestination='include'\n"
+		recipe += "[source]\nGIT_REPOSITORY='local-fixture'\nGIT_TAG='0123456789012345678901234567890123456789'\n[[copy]]\nfiles=['header.h']\ndestination='include'\n"
 		writeCIFixture(t, root, "src/dependencies/"+name+"/"+version+"/module.toml", recipe)
 		writeCIFixture(t, root, "src/dependencies/"+name+"/package.toml", "latest='"+map[string]string{"dep": "1", "queue": "1", "eigen": "3"}[name]+"'\n")
 		adapter := "add_library(autolib::" + name + " INTERFACE IMPORTED GLOBAL)\nset_target_properties(autolib::" + name + " PROPERTIES INTERFACE_INCLUDE_DIRECTORIES \"${CMAKE_CURRENT_LIST_DIR}/include\" INTERFACE_COMPILE_DEFINITIONS \"FIXTURE_" + strings.ToUpper(name) + "=" + version + "\")\n"

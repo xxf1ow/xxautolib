@@ -1,8 +1,6 @@
 # oneTBB：任务并行运行库，构建共享库、内存分配器及其代理。
-name = "oneTBB"
 type = "cmake"
-version = "628c90df6867"
-supported_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
+package_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64','darwin-aarch64']
 package_name = "TBB"
 config_dir = "lib/cmake/TBB"
 sentinel = "include/tbb/tbb.h"
@@ -34,12 +32,12 @@ TBB_SIGNTOOL = false
 [[patches]] # 将参考安装后复制 HWLOC DLL 的效果放在上游安装规则中，不依赖引擎私有资源路径。
 file = "hwloc-runtime.patch"
 
-[platforms.windows.resources.hwloc]
+[platforms.windows-x86_64.resources.hwloc]
 URL = ["https://download.open-mpi.org/release/hwloc/v2.12/hwloc-win64-build-2.12.2.zip"]
 URL_HASH = "SHA256=ae7426d4dd1fbe33afffd5ccfa599e1ea9479484f0b9ba54af58f5412916fd4f"
 DOWNLOAD_NAME = "hwloc-win64-build-2.12.2.zip"
 
-[platforms.windows.cmake.cache]
+[platforms.windows-x86_64.cmake.cache]
 CMAKE_HWLOC_2_5_INCLUDE_PATH = "<RESOURCE_SOURCE_DIR:hwloc>/include"
 CMAKE_HWLOC_2_5_LIBRARY_PATH = "<RESOURCE_SOURCE_DIR:hwloc>/lib/libhwloc.lib"
 CMAKE_HWLOC_2_5_DLL_PATH = "<RESOURCE_SOURCE_DIR:hwloc>/bin/libhwloc-15.dll"

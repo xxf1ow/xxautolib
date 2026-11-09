@@ -1,16 +1,18 @@
 # HarfBuzz：文本整形引擎，构建并安装库，供 OpenCV freetype 使用。
-name = "harfbuzz"
 type = "cmake"
-version = "8.5.0"
-supported_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
-depends = ["freetype"]
+package_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64','darwin-aarch64']
+depends = ["freetype@2.13.2"]
 pkgconfig_dir = "lib/pkgconfig"
 sentinel = "include/harfbuzz/hb.h"
+
+[system_dependencies] # HarfBuzz 消费与 OpenCV 字体模块配置需要 pkg-config，不依赖其他根包带入工具。
+choco = ["pkgconfiglite"]
 
 [source] # 版本与归档摘要须配套；升级时重新验证 FreeType 接线及安装布局。
 URL = ["https://github.com/harfbuzz/harfbuzz/archive/refs/tags/8.5.0.zip"]
 URL_HASH = "SHA256=734985456b60c198da41f4c85280963795b9baa6fb6f3b91c6b85026da837933"
 DOWNLOAD_NAME = "harfbuzz-8.5.0.zip"
 
-[cmake.cache]                              # 其余组件沿用上游默认值。
-HB_HAVE_FREETYPE = true                    # 启用 FreeType 集成，由 depends 引入本仓库 freetype。
+[cmake.cache] # 其余组件沿用上游默认值。
+# 保留 hb-ft 接口，供 OpenCV 中文绘制使用仓库 FreeType；FreeType 关闭反向集成，依赖保持单向。
+HB_HAVE_FREETYPE = true

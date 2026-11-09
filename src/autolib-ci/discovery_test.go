@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -41,10 +42,10 @@ func discoveryModule(t *testing.T, root, name string, adapter bool, depends stri
 
 func discoveryVersion(t *testing.T, root, name, version string, adapter bool, depends string) {
 	t.Helper()
-	if !strings.Contains(depends, "supported_platforms") {
-		depends = "supported_platforms=['windows-x86_64','linux-x86_64','linux-aarch64','darwin-aarch64']\n" + depends
+	if !strings.Contains(depends, "package_platforms") {
+		depends = "package_platforms=['windows-x86_64','linux-x86_64','linux-aarch64','darwin-aarch64']\n" + depends
 	}
-	declaration := "name='" + name + "'\nversion='" + version + "'\ntype='cmake'\n" + depends + "\n[source]\nGIT_REPOSITORY='fixture'\nGIT_TAG='fixed'\n"
+	declaration := "type='cmake'\n" + depends + "\n[source]\nGIT_REPOSITORY='fixture'\nGIT_TAG='0123456789012345678901234567890123456789'\n"
 	writeCIFixture(t, root, "src/dependencies/"+name+"/package.toml", "latest='"+version+"'\n")
 	writeCIFixture(t, root, "src/dependencies/"+name+"/"+version+"/module.toml", declaration)
 	if adapter {
@@ -108,7 +109,7 @@ func TestCIDiscoveryFiltering(t *testing.T) {
 			t.Fatal(err)
 		}
 		plan, err := planCI(context.Background(), ciPlanOptions{SourceRoot: root, BuilderFile: builder, Modules: stringPointer("all")})
-		if err != nil || len(plan.Platforms) != 3 || len(plan.RequestedModules) != 0 {
+		if err != nil || len(plan.Platforms) != 4 || len(plan.RequestedModules) != 0 {
 			t.Fatalf("empty module directory: %+v %v", plan, err)
 		}
 	})
@@ -120,11 +121,11 @@ func TestCIDiscoveryFiltering(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(file, append([]byte("platform_independent=true\n"), data...), 0644); err != nil {
+		if err := os.WriteFile(file, []byte(strings.Replace(string(data), "package_platforms=['windows-x86_64','linux-x86_64','linux-aarch64','darwin-aarch64']", "package_platforms=['any-any']", 1)), 0644); err != nil {
 			t.Fatal(err)
 		}
 		plan, err := planCI(context.Background(), ciPlanOptions{SourceRoot: root, BuilderFile: builder, Modules: stringPointer("all")})
-		if err != nil || plan.Publisher != "linux-x86_64" {
+		if err != nil || plan.Publishers["universal@1.0"] != "linux-x86_64" {
 			t.Fatalf("publisher depends on package name: %+v %v", plan, err)
 		}
 	})
@@ -132,7 +133,7 @@ func TestCIDiscoveryFiltering(t *testing.T) {
 		root := discoveryRoot(t)
 		discoveryModule(t, root, "local", false, "")
 		plan, err := planCI(context.Background(), ciPlanOptions{SourceRoot: root, BuilderFile: builder, Modules: stringPointer("all")})
-		if err != nil || len(plan.Platforms) != 3 || len(plan.RequestedModules) != 0 {
+		if err != nil || len(plan.Platforms) != 4 || len(plan.RequestedModules) != 0 {
 			t.Fatalf("ineligible discovery retained work: %+v %v", plan, err)
 		}
 	})
@@ -140,18 +141,18 @@ func TestCIDiscoveryFiltering(t *testing.T) {
 		t.Run("selection="+selection, func(t *testing.T) {
 			root := discoveryRoot(t)
 			discoveryModule(t, root, "shared", true, "")
-			discoveryModule(t, root, "fresh", true, "depends=['shared']\n")
-			discoveryModule(t, root, "independent", true, "depends=['shared']\n")
+			discoveryModule(t, root, "fresh", true, "depends=['shared@1.0']\n")
+			discoveryModule(t, root, "independent", true, "depends=['shared@1.0']\n")
 			discoveryModule(t, root, "local", false, "")
-			discoveryModule(t, root, "middle", true, "depends=['local','orphan']\n")
+			discoveryModule(t, root, "middle", true, "depends=['local@1.0','orphan@1.0']\n")
 			discoveryModule(t, root, "orphan", true, "")
-			discoveryModule(t, root, "blocked", true, "depends=['middle']\n")
+			discoveryModule(t, root, "blocked", true, "depends=['middle@1.0']\n")
 			plan, err := planCI(context.Background(), ciPlanOptions{SourceRoot: root, BuilderFile: builder, Platforms: stringPointer("linux-x86_64"), Modules: &selection})
 			if err != nil {
 				t.Fatal(err)
 			}
 			if selection == "local" || selection == "blocked" {
-				if len(plan.Platforms) != 1 || len(plan.Platforms[0].Layers) != 0 || plan.Publisher != "" {
+				if len(plan.Platforms) != 1 || len(plan.Platforms[0].Layers) != 0 || len(plan.Publishers) != 0 {
 					t.Fatalf("filtered work retained: %+v", plan)
 				}
 				return
@@ -205,5 +206,25 @@ func TestCIDiscoveryFiltering(t *testing.T) {
 				t.Fatal("invalid input accepted")
 			}
 		})
+	}
+}
+
+func TestCIDescriptionContract(t *testing.T) {
+	builder := discoveryBuilder(t)
+	root := discoveryRoot(t)
+	discoveryModule(t, root, "demo", true, "")
+	data, err := exec.Command(builder, "describe", "--source-root="+root, "--system-name=Linux", "--architecture=x86_64", "--module=demo").CombinedOutput()
+	if err != nil {
+		t.Fatalf("describe: %v %s", err, data)
+	}
+	if strings.Contains(string(data), `"configuration"`) {
+		t.Fatal("builder still emits configuration")
+	}
+	var description moduleDescription
+	if err := json.Unmarshal(data, &description); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateModuleDescription(description, "Linux", "x86_64", []string{"demo"}); err != nil {
+		t.Fatal(err)
 	}
 }

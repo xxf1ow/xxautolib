@@ -14,7 +14,7 @@ import (
 
 func ciModuleSlot(module describedModule, platform string) ciSlot {
 	osName, arch, _ := ciTarget(platform)
-	if module.PlatformIndependent {
+	if module.PackagePlatform == "any-any" {
 		return ciSlot{Name: module.Name, Version: module.Version, OS: "any", Arch: "any"}
 	}
 	return ciSlot{Name: module.Name, Version: module.Version, OS: strings.ToLower(osName), Arch: arch}
@@ -29,6 +29,13 @@ func ciImporterExecutable(platform string) string {
 }
 
 func finalizeCI(plan ciPlan, repository string, run ciRunIdentity, results []ciPlatformResult) error {
+	if err := validateCIPublishers(plan); err != nil {
+		return err
+	}
+	return validateCIResults(plan, repository, run, results)
+}
+
+func validateCIResults(plan ciPlan, repository string, run ciRunIdentity, results []ciPlatformResult) error {
 	if !ciRepositoryPattern.MatchString(repository) || run.Repository != repository || !commitPattern.MatchString(run.SHA) || run.CheckoutSHA != run.SHA || !ciRunNumber(run.RunID) || !ciRunNumber(run.Attempt) {
 		return errors.New("invalid run identity")
 	}

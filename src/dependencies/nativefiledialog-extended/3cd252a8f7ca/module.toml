@@ -1,7 +1,5 @@
 # nativefiledialog-extended：原生文件对话框，安装静态库与 C/C++ 头文件。
-name = "nativefiledialog-extended"
-version = "3cd252a8f7ca"
-supported_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
+package_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64','darwin-aarch64']
 type = "cmake"
 sentinel = "include/nfd.h"
 config_dir = "lib/cmake/nfd"

@@ -1,0 +1,27 @@
+--- a/cmake/pcl_targets.cmake
++++ b/cmake/pcl_targets.cmake
+@@ -208,7 +208,7 @@
+ 
+     target_link_libraries(${_name} Threads::Threads)
+     if(TARGET OpenMP::OpenMP_CXX)
+-      target_link_libraries(${_name} OpenMP::OpenMP_CXX)
++      target_link_libraries(${_name} flann::openmp)
+     endif()
+ 
+     if((UNIX AND NOT ANDROID) OR MINGW)
+--- a/PCLConfig.cmake.in
++++ b/PCLConfig.cmake.in
+@@ -310,10 +310,9 @@
+   elseif("${_lib}" STREQUAL "png")
+     find_package(PNG)
+   elseif("${_lib}" STREQUAL "OpenMP")
+-    find_package(OpenMP COMPONENTS CXX)
+-    # the previous find_package call sets OpenMP_CXX_LIBRARIES, but not OPENMP_LIBRARIES, which is used further down
+-    # we can link to the CMake target OpenMP::OpenMP_CXX by setting the following:
+-    set(OPENMP_LIBRARIES OpenMP::OpenMP_CXX)
++    find_package(flann CONFIG REQUIRED)
++    set(OPENMP_FOUND TRUE)
++    set(OPENMP_LIBRARIES flann::openmp)
+   else()
+     message(WARNING "${_lib} is not handled by find_external_library")
+   endif()

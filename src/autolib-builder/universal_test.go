@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -17,7 +18,7 @@ func TestUniversalIdentity(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !m.PlatformIndependent {
+		if !slices.Contains(m.PackagePlatforms, "any-any") {
 			t.Fatal("queue is not explicitly platform independent")
 		}
 		os, arch := packagePlatform(m, "linux", "x86_64")

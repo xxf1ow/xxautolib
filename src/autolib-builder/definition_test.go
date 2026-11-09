@@ -1,30 +1,33 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
 
-const testSource = "\n[source]\nGIT_REPOSITORY='unused'\nGIT_TAG='fixed'\n"
+const testSource = "\n[source]\nGIT_REPOSITORY='unused'\nGIT_TAG='0123456789012345678901234567890123456789'\n"
 
-func TestSupportedPlatforms(t *testing.T) {
+func TestPackagePlatforms(t *testing.T) {
 	for _, tc := range []struct {
 		declaration string
 		valid       bool
 	}{
-		{"", false}, {"supported_platforms=[]\n", false},
-		{"supported_platforms=['linux-x86_64','linux-x86_64']\n", false},
-		{"supported_platforms=['macos-arm64']\n", false},
-		{"supported_platforms=[42]\n", false},
-		{"supported_platforms=['windows-x86_64','linux-x86_64','linux-aarch64','darwin-aarch64']\n", true},
+		{"", false}, {"package_platforms=[]\n", false},
+		{"package_platforms=['linux-x86_64','linux-x86_64']\n", false},
+		{"package_platforms=['macos-arm64']\n", false},
+		{"package_platforms=[42]\n", false},
+		{"package_platforms=['windows-x86_64','linux-x86_64','linux-aarch64','darwin-aarch64']\n", true},
 	} {
 		t.Run(tc.declaration, func(t *testing.T) {
 			root := t.TempDir()
 			path := filepath.Join(root, "src/dependencies/demo/1/module.toml")
-			putFile(t, path, "name='demo'\nversion='1'\ntype='cmake'\n"+tc.declaration+testSource)
+			putFile(t, filepath.Join(root, "src/dependencies/demo/package.toml"), "latest='1'")
+			putFile(t, path, "type='cmake'\n"+tc.declaration+testSource)
 			_, err := loadDefinition(path, "Linux", "x86_64")
 			if (err == nil) != tc.valid {
 				t.Fatalf("valid=%v, got %v", tc.valid, err)
@@ -59,16 +62,16 @@ func definitionFile(t *testing.T, root, name, kind, body string) string {
 
 func definitionVersionFile(t *testing.T, root, name, version, kind, body string) string {
 	t.Helper()
-	if !strings.Contains(body, "supported_platforms") {
-		body = "supported_platforms=['windows-x86_64','linux-x86_64','linux-aarch64','darwin-aarch64']\n" + body
+	if !strings.Contains(body, "package_platforms") {
+		body = "package_platforms=['windows-x86_64','linux-x86_64','linux-aarch64','darwin-aarch64']\n" + body
 	}
 	putFile(t, filepath.Join(root, "src", "dependencies", name, "package.toml"), "latest='"+version+"'\n")
-	return putFile(t, filepath.Join(root, "src", "dependencies", name, version, "module.toml"), "name='"+name+"'\nversion='"+version+"'\ntype='"+kind+"'\n"+body)
+	return putFile(t, filepath.Join(root, "src", "dependencies", name, version, "module.toml"), "type='"+kind+"'\n"+body)
 }
 
 func TestDefinitionPlatformSelection(t *testing.T) {
 	root := t.TempDir()
-	path := definitionFile(t, root, "demo", "cmake", `depends=['left','left','right']
+	path := definitionFile(t, root, "demo", "cmake", `depends=['left@1.0','right@1.0']
 config_dir='lib/cmake/demo'
 pkgconfig_dir='lib/pkgconfig'
 package_name='Demo'
@@ -76,7 +79,7 @@ sentinel='include/demo.h'
 `+testSource+`
 [resources.extra]
 GIT_REPOSITORY='common-extra'
-GIT_TAG='fixed'
+GIT_TAG='0123456789012345678901234567890123456789'
 [cmake]
 SOURCE_SUBDIR='build/cmake'
 [cmake.cache]
@@ -85,27 +88,29 @@ B=42
 LIST=['one','two']
 [[steps]]
 name='common'
-COMMAND=['cmake','-E','echo','common']
-[platforms.linux.source]
+COMMAND=[['cmake','-E','echo','common']]
+DEPENDEES=['download']
+[platforms.linux-x86_64.source]
 URL=['https://one.invalid/linux.tar.xz','https://two.invalid/linux.tar.xz']
 URL_HASH='SHA256=`+strings.Repeat("a", 64)+`'
-[platforms.linux.resources.extra]
+[platforms.linux-x86_64.resources.extra]
 URL=['extra.tar.xz']
 URL_HASH='SHA256=`+strings.Repeat("b", 64)+`'
 DOWNLOAD_NAME='extra.tar.xz'
-[platforms.linux.cmake.cache]
+[platforms.linux-x86_64.cmake.cache]
 A='linux'
 C=true
-[[platforms.linux.steps]]
+[[platforms.linux-x86_64.steps]]
 name='linux'
 COMMAND=[['cmake','-E','echo','one'],['cmake','-E','echo','two']]
-[platforms.linux.architectures.aarch64.source]
+DEPENDEES=['download']
+[platforms.linux-aarch64.source]
 GIT_REPOSITORY='arm'
-GIT_TAG='arm-tag'
-[platforms.linux.architectures.aarch64.resources.extra]
+GIT_TAG='0123456789012345678901234567890123456789'
+[platforms.linux-aarch64.resources.extra]
 GIT_REPOSITORY='arm-extra'
-GIT_TAG='extra-tag'
-[platforms.windows]
+GIT_TAG='0123456789012345678901234567890123456789'
+[platforms.windows-x86_64]
 config_dir='lib'
 package_name='WinDemo'
 sentinel='lib/DemoConfig.cmake'
@@ -117,7 +122,7 @@ sentinel='lib/DemoConfig.cmake'
 	if linux.Source.GitRepository != "" || !reflect.DeepEqual(linux.Source.URL, []string{"https://one.invalid/linux.tar.xz", "https://two.invalid/linux.tar.xz"}) {
 		t.Fatalf("source not replaced: %+v", linux.Source)
 	}
-	if linux.PlatformIndependent {
+	if slices.Contains(linux.PackagePlatforms, "any-any") {
 		t.Fatal("platform_independent default must be false")
 	}
 	if linux.Resources["extra"].GitRepository != "" || linux.Resources["extra"].DownloadName != "extra.tar.xz" {
@@ -129,7 +134,7 @@ sentinel='lib/DemoConfig.cmake'
 	if len(linux.Steps) != 2 || linux.Steps[0].Name != "common" || linux.Steps[1].Commands[1][3] != "two" {
 		t.Fatal(linux.Steps)
 	}
-	if !reflect.DeepEqual(linux.Depends, []string{"left", "right"}) || linux.SourceSubdir != "build/cmake" || linux.PkgconfigDir != "lib/pkgconfig" {
+	if !reflect.DeepEqual(linux.Depends, []string{"left@1.0", "right@1.0"}) || linux.SourceSubdir != "build/cmake" || linux.PkgconfigDir != "lib/pkgconfig" {
 		t.Fatal(linux)
 	}
 	for _, arch := range []string{"ARM64", "arm64", "aarch64"} {
@@ -148,7 +153,7 @@ sentinel='lib/DemoConfig.cmake'
 	if win.Source.GitRepository != "unused" || win.Cache["A"] != "common" || len(win.Steps) != 1 || win.ConfigDir != "lib" || win.PackageName != "WinDemo" || win.Sentinel != "lib/DemoConfig.cmake" {
 		t.Fatal(win)
 	}
-	path = definitionFile(t, root, "demo", "cmake", "[platforms.windows.architectures.x86_64.source]\nGIT_REPOSITORY='win'\nGIT_TAG='fixed'\n")
+	path = definitionFile(t, root, "demo", "cmake", "[platforms.windows-x86_64.source]\nGIT_REPOSITORY='win'\nGIT_TAG='0123456789012345678901234567890123456789'\n")
 	for _, arch := range []string{"x64", "AMD64", "x86_64"} {
 		if _, err := loadDefinition(path, "Windows", arch); err != nil {
 			t.Fatal(err)
@@ -173,10 +178,10 @@ func TestDefinitionRejectsInvalidData(t *testing.T) {
 		{"cmake", "depends=['../escape']\n" + testSource, "depends"},
 		{"cmake", "package_name='Demo'\n" + testSource, "package_name"},
 		{"cmake", testSource + "[platforms.macos]\n", "macos"},
-		{"cmake", testSource + "[platforms.windows]\nfilter=true\n", "filter"},
-		{"cmake", testSource + "[platforms.windows.architectures.mips]\n", "mips"},
-		{"cmake", testSource + "[platforms.windows.architectures.aarch64]\ncache={}\n", "cache"},
-		{"cmake", testSource + "[platforms.windows.architectures.x86_64.source]\nGIT_REPOSITORY='bad'\n", "GIT_TAG"},
+		{"cmake", testSource + "[platforms.windows-x86_64]\nfilter=true\n", "filter"},
+		{"cmake", testSource + "[platforms.windows-x86_64.architectures.mips]\n", "mips"},
+		{"cmake", testSource + "[platforms.windows-x86_64.architectures.aarch64]\ncache={}\n", "cache"},
+		{"cmake", testSource + "[platforms.windows-x86_64.source]\nGIT_REPOSITORY='bad'\n", "GIT_TAG"},
 		{"cmake", testSource + "[cmake]\ncach={}\n", "cach"},
 		{"cmake", testSource + "[cmake.cache]\nA=1.5\n", "A"},
 		{"cmake", testSource + "[cmake.cache]\nA=['a',1]\n", "A"},
@@ -184,9 +189,9 @@ func TestDefinitionRejectsInvalidData(t *testing.T) {
 		{"cmake", testSource + "[[steps]]\nname='s'\nCOMMAND='echo no'\n", "COMMAND"},
 		{"cmake", testSource + "[[steps]]\nname='s'\nCOMMAND=[['echo'],1]\n", "COMMAND"},
 		{"cmake", testSource + "[[steps]]\nname='s'\nCOMMAND=[[]]\n", "COMMAND"},
-		{"cmake", testSource + "[[steps]]\nname='s'\nCOMMAND=['']\n", "COMMAND"},
-		{"cmake", testSource + "[[steps]]\nname='s'\nCOMMAND=['echo']\nBEFORE='build'\n", "BEFORE"},
-		{"cmake", testSource + "[[steps]]\nname='s'\nCOMMAND=['echo']\n[[steps]]\nname='s'\nCOMMAND=['echo']\n", "steps.name"},
+		{"cmake", testSource + "[[steps]]\nname='s'\nCOMMAND=[['']]\n", "COMMAND"},
+		{"cmake", testSource + "[[steps]]\nname='s'\nCOMMAND=[['echo']]\nDEPENDEES=['download']\nBEFORE='build'\n", "BEFORE"},
+		{"cmake", testSource + "[[steps]]\nname='s'\nCOMMAND=[['echo']]\nDEPENDEES=['download']\n[[steps]]\nname='s'\nCOMMAND=[['echo']]\nDEPENDEES=['download']\n", "steps.name"},
 		{"cmake", testSource + "[[copy]]\nfiles=['a']\ndestination='.'\n", "copy"},
 		{"copy", "[[copy]]\nfiles=['a']\ndestination='.'\n", "copy"},
 		{"copy", testSource + "[[copy]]\nresource='missing'\nfiles=['a']\ndestination='.'\n", "copy.resource"},
@@ -237,7 +242,7 @@ func TestDefinitionLocalInputs(t *testing.T) {
 	path := definitionFile(t, root, "demo", "cmake", testSource+`
 [resources.extra]
 GIT_REPOSITORY='not-downloaded'
-GIT_TAG='fixed'
+GIT_TAG='0123456789012345678901234567890123456789'
 [cmake.cache]
 EXTRA=['<RESOURCE_SOURCE_DIR:extra>/modules','suffix']
 [[patches]]
@@ -245,11 +250,13 @@ file='change.patch'
 resource='extra'
 [[steps]]
 name='change'
-COMMAND=['cmake','-P','change.cmake']
+COMMAND=[['cmake','-P','change.cmake']]
+DEPENDEES=['download']
 DEPENDS=['change.cmake','<SOURCE_DIR>/input']
 WORKING_DIRECTORY='<SOURCE_DIR>'
 `)
 	patch := putFile(t, filepath.Join(filepath.Dir(path), "change.patch"), "patch input")
+	putFile(t, filepath.Join(filepath.Dir(path), "change.cmake"), "input")
 	m, err := loadDefinition(path, "Linux", "x86_64")
 	if err != nil {
 		t.Fatal(err)
@@ -273,7 +280,7 @@ WORKING_DIRECTORY='<SOURCE_DIR>'
 	}
 	path = definitionFile(t, root, "demo", "copy", `[resources.extra]
 GIT_REPOSITORY='unused'
-GIT_TAG='fixed'
+GIT_TAG='0123456789012345678901234567890123456789'
 [[copy]]
 resource='extra'
 directories=['.']
@@ -300,13 +307,13 @@ func TestDefinitionPreservesInput(t *testing.T) {
 }
 
 func TestSystemDependencies(t *testing.T) {
-	path := definitionFile(t, t.TempDir(), "demo", "cmake", testSource+"[system_dependencies]\napt=['pkg-config','libgomp1','pkg-config']\nchoco=['pkgconfiglite']\n")
+	path := definitionFile(t, t.TempDir(), "demo", "cmake", testSource+"[system_dependencies]\napt=['pkg-config','libgomp1']\nchoco=['pkgconfiglite']\n")
 	definition, err := loadDefinition(path, "Linux", "x86_64")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got, want := strings.Join(definition.SystemDependencies["apt"], ","), "pkg-config,libgomp1"; got != want {
-		t.Fatalf("APT list was not deduplicated: got %q, want %q", got, want)
+		t.Fatalf("APT list changed: got %q, want %q", got, want)
 	}
 	for _, invalid := range []string{
 		"apt=['pkg-config']\nyum=['yum-only']\n",
@@ -334,5 +341,174 @@ func TestSystemDependencies(t *testing.T) {
 	}
 	if got, want := strings.Join(flann.SystemDependencies["choco"], ","), "pkgconfiglite"; got != want {
 		t.Fatalf("flann Chocolatey dependencies: got %q, want %q", got, want)
+	}
+}
+
+func contractRecipe(t *testing.T, body string) (string, string) {
+	t.Helper()
+	root := t.TempDir()
+	putFile(t, filepath.Join(root, "src/dependencies/demo/package.toml"), "latest='1.0'\n")
+	path := putFile(t, filepath.Join(root, "src/dependencies/demo/1.0/module.toml"), body)
+	return root, path
+}
+
+func TestPackagePlatformsContract(t *testing.T) {
+	for _, tc := range []struct {
+		declaration string
+		valid       bool
+	}{
+		{"", false}, {"package_platforms=[]", false},
+		{"package_platforms=['linux-x86_64','linux-x86_64']", false},
+		{"package_platforms=['macos-arm64']", false}, {"package_platforms=[42]", false},
+		{"package_platforms=['any-any','darwin-aarch64']", false},
+		{"package_platforms=['any-any']", true}, {"package_platforms=['darwin-aarch64']", true},
+		{"package_platforms=['any-any']\nname='demo'", false},
+		{"package_platforms=['any-any']\nversion='1.0'", false},
+		{"package_platforms=['any-any']\nsupported_platforms=['darwin-aarch64']", false},
+		{"package_platforms=['any-any']\nplatform_independent=true", false},
+	} {
+		t.Run(tc.declaration, func(t *testing.T) {
+			_, path := contractRecipe(t, "type='cmake'\n"+tc.declaration+"\n"+testSource)
+			got, err := loadDefinition(path, "Darwin", "arm64")
+			if (err == nil) != tc.valid {
+				t.Fatalf("valid=%v: %v", tc.valid, err)
+			}
+			if err == nil && (got.Name != "demo" || got.Version != "1.0") {
+				t.Fatal(got)
+			}
+			if err == nil && tc.declaration == "package_platforms=['any-any']" {
+				osName, arch := packagePlatform(got, "darwin", "aarch64")
+				if osName != "any" || arch != "any" {
+					t.Fatal(osName, arch)
+				}
+			}
+		})
+	}
+}
+
+func TestDirectoryIdentityAndPinnedDepends(t *testing.T) {
+	base := "type='cmake'\npackage_platforms=['any-any']\n"
+	for _, depends := range []string{"['dep']", "['dep@1','dep@1']", "['dep@1','dep@2']"} {
+		t.Run(depends, func(t *testing.T) {
+			_, path := contractRecipe(t, base+"depends="+depends+"\n"+testSource)
+			if _, err := loadDefinition(path, "Linux", "x86_64"); err == nil {
+				t.Fatal("accepted invalid direct dependencies")
+			}
+		})
+	}
+	for _, latest := range []string{"", "latest='missing'", "latest='1.0'\nextra=true"} {
+		t.Run("latest/"+latest, func(t *testing.T) {
+			root, path := contractRecipe(t, base+testSource)
+			putFile(t, filepath.Join(root, "src/dependencies/demo/package.toml"), latest)
+			if _, err := loadDefinition(path, "Linux", "x86_64"); err == nil {
+				t.Fatal("accepted invalid package latest")
+			}
+		})
+	}
+	for _, component := range []string{"CON", "trailing."} {
+		t.Run(component, func(t *testing.T) {
+			root := t.TempDir()
+			putFile(t, filepath.Join(root, "src/dependencies", component, "package.toml"), "latest='1.0'")
+			path := putFile(t, filepath.Join(root, "src/dependencies", component, "1.0/module.toml"), base+testSource)
+			if _, err := loadDefinition(path, "Linux", "x86_64"); err == nil {
+				t.Fatal("accepted unsafe directory identity")
+			}
+		})
+	}
+}
+
+func TestFlatPlatformOverrides(t *testing.T) {
+	root, path := contractRecipe(t, `type='cmake'
+package_platforms=['linux-x86_64','darwin-aarch64']
+config_dir='common/config'
+[source]
+GIT_REPOSITORY='common'
+GIT_TAG='0123456789012345678901234567890123456789'
+[resources.extra]
+GIT_REPOSITORY='common-extra'
+GIT_TAG='0123456789012345678901234567890123456789'
+[cmake]
+SOURCE_SUBDIR='common'
+[cmake.cache]
+A='common'
+B=42
+[[steps]]
+name='common-step'
+COMMAND=[['cmake','-E','echo','common']]
+DEPENDEES=['download']
+[[patches]]
+file='common.patch'
+[platforms.darwin-aarch64]
+config_dir='target/config'
+[platforms.darwin-aarch64.source]
+URL=['archive.zip']
+URL_HASH='SHA256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+[platforms.darwin-aarch64.resources.extra]
+GIT_REPOSITORY='target-extra'
+GIT_TAG='0123456789012345678901234567890123456789'
+[platforms.darwin-aarch64.cmake]
+SOURCE_SUBDIR='target'
+[platforms.darwin-aarch64.cmake.cache]
+A='target'
+[[platforms.darwin-aarch64.steps]]
+name='target-step'
+COMMAND=[['cmake','-E','echo','target']]
+DEPENDEES=['common-step']
+[[platforms.darwin-aarch64.patches]]
+file='target.patch'
+`)
+	putFile(t, filepath.Join(root, "src/dependencies/demo/1.0/common.patch"), "patch")
+	putFile(t, filepath.Join(root, "src/dependencies/demo/1.0/target.patch"), "patch")
+	got, err := loadDefinition(path, "Darwin", "arm64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Source.GitRepository != "" || !reflect.DeepEqual(got.Source.URL, []string{"archive.zip"}) {
+		t.Fatal(got.Source)
+	}
+	if got.Resources["extra"].GitRepository != "target-extra" || got.Cache["A"] != "target" || got.Cache["B"] != int64(42) {
+		t.Fatal(got)
+	}
+	if got.SourceSubdir != "target" || got.ConfigDir != "target/config" || len(got.Steps) != 2 || len(got.Patches) != 2 {
+		t.Fatal(got)
+	}
+	for _, override := range []string{"[platforms.linux]\n", "[platforms.windows-x86_64]\n", "[platforms.darwin-aarch64]\ndepends=['dep@1']\n"} {
+		_, invalid := contractRecipe(t, "type='cmake'\npackage_platforms=['darwin-aarch64']\n"+testSource+override)
+		if _, err := loadDefinition(invalid, "Darwin", "arm64"); err == nil {
+			t.Fatal("accepted invalid override", override)
+		}
+	}
+	_, copyPath := contractRecipe(t, "type='copy'\npackage_platforms=['any-any']\n"+testSource+`
+[[copy]]
+files=['common.h']
+destination='include'
+[[platforms.darwin-aarch64.copy]]
+files=['target.h']
+destination='include'
+`)
+	copied, err := loadDefinition(copyPath, "Darwin", "arm64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(copied.Copies) != 1 || !reflect.DeepEqual(copied.Copies[0].Files, []string{"target.h"}) {
+		t.Fatal(copied.Copies)
+	}
+}
+
+func TestDescribePackagePlatform(t *testing.T) {
+	root, _ := contractRecipe(t, "type='cmake'\npackage_platforms=['any-any']\n"+testSource)
+	for _, file := range []string{"go.mod", "go.sum", "src/autolib-builder/index.cmake"} {
+		putFile(t, filepath.Join(root, file), "")
+	}
+	got, err := describeModules(root, "Darwin", "arm64", []string{"demo@1.0"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(encoded), `"package_platform":"any-any"`) || strings.Contains(string(encoded), "platform_independent") {
+		t.Fatal(string(encoded))
 	}
 }

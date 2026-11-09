@@ -12,6 +12,10 @@ Go fixture 验证声明、原生构建、安装及版本化本地和受控远端
 
 仅修改文档时使用 doc-standards、agent-notes 技能校验链接、归属和 `scripts/doc-budgets.manifest.json` 预算；校验器不是构建依赖。仓库没有自动 Git hook 或覆盖率门槛；CI 的接线与实机验收由独立的 [CI 系统设计](agent-notes/implemented/architecture/2026-10-20-ci-system.md)拥有。
 
+## 预编译二进制包免验
+
+上游预编译二进制包免于独立 API 编译和运行验收；当前适用于 ONNX Runtime，不因 `type = "copy"` 就跳过源码或头文件包验收。ONNX Runtime 仍通过公共入口检查安装与导入，保留来源摘要、精确身份及打包运输校验；不调用其运行时 API、不执行推理，也不将免验记为运行测试通过。
+
 ## 本地二进制闭环
 
 先通过[普通根入口](development.md#准备与配置)选择代表集完成 configure/build，生成版本化安装、精确依赖描述及宿主工具；本节使用[实机验收](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md#版本化本地消费验证)中的独立生产根，不覆盖旧结果。
@@ -30,7 +34,7 @@ cmake -P src/autolib-builder/go-sdk.cmake -- test -mod=readonly ./src/autolib-im
 
 [头文件定向工程](../tests/adapters/headers/CMakeLists.txt)覆盖重复导入和跨目录使用；受控载荷不代表真实 API。
 
-真实七包[smoke](../tests/autolib/smoke.cpp)使用 `ROOT_PACKAGES=opencv@4.14.0;librealsense@2.58.1;onnxruntime@1.24.4`、`MODULES=freetype;harfbuzz;libusb;nlohmann;lz4;opencv;librealsense;onnxruntime`。两个消费driver在Windows上将已准备精确闭包内的DLL目录加入CTest进程PATH；直接运行smoke时自行设置PATH。含双版本 Eigen 的结果与未测范围见[导入适配记录](agent-notes/implemented/architecture/2026-11-04-package-adapter-standardization.md#验证结果)。
+真实库[smoke](../tests/autolib/smoke.cpp)使用 `ROOT_PACKAGES=opencv@4.14.0;librealsense@2.58.1;onnxruntime@1.24.4`、`MODULES=freetype;harfbuzz;libusb;nlohmann;lz4;opencv;librealsense;onnxruntime`。两个消费driver在Windows上将已准备精确闭包内的DLL目录加入CTest进程PATH；直接运行smoke时自行设置PATH。含双版本 Eigen 的结果与未测范围见[导入适配记录](agent-notes/implemented/architecture/2026-11-04-package-adapter-standardization.md#验证结果)。
 
 ## Release 下载验证
 
@@ -46,7 +50,9 @@ cmake -P src/autolib-builder/go-sdk.cmake -- test -mod=readonly ./src/autolib-im
 
 Darwin 实机 queue/lz4 的生产、直接及搬迁消费、Mach-O 与 FIFO 证据和未测项见[Darwin 验证](agent-notes/implemented/architecture/2026-11-05-darwin-aarch64-native-build-and-ci.md#第一阶段验证证据)。工具专用及代表库的 macos-15 运行已通过，见[CI 实机验收](agent-notes/implemented/architecture/2026-11-05-darwin-aarch64-native-build-and-ci.md#macos-15-实机验收)；Gitee 自动同步仍由默认分支旧平台校验拒绝。Go 定向检查的 PATH 前置固定 CMake/Make。
 
-Darwin 工具准备及 workflow 的受控检查分别执行 `python3.12 -B -m unittest discover -s tests/ci -p test_darwin_preparation.py -v`、`python3.12 -B -m unittest discover -s tests/ci -p test_darwin_workflow.py -v`。四平台选择、精确成品与元数据的增量证据见[第二阶段本地验证](agent-notes/implemented/architecture/2026-11-05-darwin-aarch64-native-build-and-ci.md#第二阶段本地验证)。不要求补跑 Linux 实机；原样 example 依赖未支持 Darwin 的 FLANN，未作为本轮验收输入。
+Darwin 工具准备及 workflow 的受控检查分别执行 `python3.12 -B -m unittest discover -s tests/ci -p test_darwin_preparation.py -v`、`python3.12 -B -m unittest discover -s tests/ci -p test_darwin_workflow.py -v`。四平台选择、精确成品与元数据的增量证据见[第二阶段本地验证](agent-notes/implemented/architecture/2026-11-05-darwin-aarch64-native-build-and-ci.md#第二阶段本地验证)。这些既有证据不要求补跑 Linux 实机；原样 example 依赖当时未支持 Darwin 的 FLANN，未纳入该轮验收。统一配方的[阶段证据与缺口](agent-notes/implemented/architecture/2026-11-06-module-recipe-contract-and-macos-validation.md#验证结果)分别记录本机闭环和后续 macos-15、同 Linux Eigen 归档跨平台、PCL/example 验收。
+
+新增消费入口与同归档预检分别选择 `test_consumer_runtime.py`、`test_eigen_portability.py`，沿用上述命令按需验证。
 
 [CI 测试](../src/autolib-ci/main_test.go)覆盖精确计划、独立根验证、原生 builder 打包、成品摘要与数量、运输安全及所选平台完整性；workflow 定向测试核对事件条件、参数与接线。本地 fixture 和 workflow 片段执行不替代真实 Actions 验收。109的工具构建命令：
 
@@ -96,7 +102,7 @@ ctest --test-dir build/check/opencv -C Release --output-on-failure
 
 librealsense 按[无相机验证说明](../tests/librealsense/README.md)运行两项检查，不替代实机取流。
 
-FreeType 使用真实归档构建安装，核对 `include/freetype2/ft2build.h`、`include/freetype2/freetype/freetype.h`、实际静态库、`lib/cmake/freetype/` 包文件与 `lib/pkgconfig/freetype2.pc`。两端分别检查 configure/cache 中 ZLIB、BZip2、PNG、HarfBuzz、BrotliDec 的发现结果及导出依赖、路径；不对静态归档运行 ldd 来证明自包含。沿用参考可选依赖探测，不承诺依赖隔离、静态自包含或包可搬迁。
+FreeType 核对安装头文件、静态库、CMake Config 与 `.pc`，检查仓库 zlib 链接输入、`FT_REQUIRE_ZLIB=ON`、`FT_DISABLE_HARFBUZZ=ON` 和 `HB_HAVE_FREETYPE=ON`；能力取舍见[配方注释](../src/dependencies/freetype/2.13.2/module.toml)。确认 PNG、BZip2、Brotli 三项能力未启用，导出依赖中也未残留这些库；静态库不以 ldd 证明自包含。[中文消费工程](../tests/opencv/chinese/CMakeLists.txt)检查真实字形、整形、完整绘图边界；打包搬迁仍须独立验收。
 
 lz4 从根入口真实构建安装，检查公开头文件、Windows `lib/lz4.lib` 或 Linux `lib/liblz4.a`、`lib/cmake/lz4/` 和 `lib/pkgconfig/liblz4.pc`。ONNX Runtime 检查完整归档内容、实际库名、版本、许可证和运行库依赖；Linux 检查共享库名称可解析且无缺失依赖。安装后重新 configure/build 应显示 cached；跨 build 输入复用由隔离测试区分于 sentinel 短路，不删除真实安装。平台证据与限制见[本地复用设计](agent-notes/implemented/architecture/2026-10-20-local-reuse-and-platform-inputs.md)。
 

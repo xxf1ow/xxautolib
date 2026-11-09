@@ -1,10 +1,8 @@
 # librealsense：RealSense 彩色/深度采集、标定及 CPU 对齐 SDK，构建共享库，不安装驱动。
-name = "librealsense"
 type = "cmake"
-version = "2.58.1"
-supported_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
+package_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64','darwin-aarch64']
 sentinel = "include/librealsense2/rs.hpp"
-depends = ["nlohmann", "lz4", "libusb"]
+depends = ["nlohmann@3.12.0", "lz4@1.10.0", "libusb@1.0.27"]
 config_dir = "lib/cmake/realsense2"
 pkgconfig_dir = "lib/pkgconfig"
 package_name = "realsense2"
@@ -23,7 +21,7 @@ BUILD_TOOLS = false
 BUILD_GLSL_EXTENSIONS = false
 CHECK_FOR_UPDATES = false # 不构建 GUI 或在线更新检查。
 
-[platforms.windows.cmake.cache]
+[platforms.windows-x86_64.cmake.cache]
 BUILD_WITH_STATIC_CRT = false # 不允许上游覆盖公共引擎的 CRT 选择。
 
 [[patches]]

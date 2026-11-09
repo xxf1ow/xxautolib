@@ -1,0 +1,16 @@
+# asio：跨平台异步 I/O，复制 1.24.0 头文件供消费者显式选择。
+package_platforms = ['any-any']
+type = "copy"
+sentinel = "include/asio.hpp"
+
+[source]
+GIT_REPOSITORY = "https://github.com/chriskohlhoff/asio.git"
+GIT_TAG = "147f7225a96d45a2807a64e443177f621844e51c"
+
+[[copy]]
+directories = ["asio/include"]
+destination = "include"
+
+[[copy]]
+files = ["asio/LICENSE_1_0.txt"]
+destination = "share/licenses/asio"

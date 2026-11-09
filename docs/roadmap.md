@@ -22,7 +22,7 @@
 
 待实施：增加轻量回归CI，复用现有Go测试、vet及独立发布单元测试；不持有发布凭据、不修改Release、不重编全部第三方库。完成标志是代码检查自动运行、失败可见且不触发发布；触发条件与平台范围在实施前确认。
 
-当前 31 个配方版本均具备统一格式的 adapter，五类基准与新增步骤由[模块技能参考](../.agents/skills/add-third-party-module/references/adapter-baselines.md)维护；原七个缺失包及 LZ4 已完成 109 的真实消费和打包搬迁，两个 Eigen 版本分别通过真实消费。其余包及平台的验证范围见[导入适配记录](agent-notes/implemented/architecture/2026-11-04-package-adapter-standardization.md#验证结果)，不将文件齐全等同于全库发行通过。
+当前 33 个配方版本均有 adapter。编写步骤见[模块技能参考](../.agents/skills/add-third-party-module/references/adapter-baselines.md)，平台与消费范围见[配方与 macOS 验收](agent-notes/implemented/architecture/2026-11-06-module-recipe-contract-and-macos-validation.md#验证结果)及[导入适配记录](agent-notes/implemented/architecture/2026-11-04-package-adapter-standardization.md#验证结果)。
 
 ## 建议接入顺序
 
@@ -32,11 +32,11 @@
 | --- | --- | --- |
 | 本地获取与安装扩展 | 已实现 | 已验证：URL/SHA256/原生镜像回退、平台/架构来源、SOURCE_SUBDIR 和目录复制；lz4、ONNX Runtime 在 Windows x64、Linux aarch64 完成真实安装，并在 Linux x86_64 完成公共入口消费与搬迁。lz4 另经三平台 CI。 |
 | 本地输入与安装复用 | 已实现 | 已验证：持久 Git、哈希归档复用和 sentinel 短路，公共回归双端通过；已接入模块登记 sentinel，不把存在性当版本校验。 |
-| 模块依赖 | 已实现 | 叶子请求得到稳定闭包，显式依赖来自本仓库；FLANN、HarfBuzz、OpenCV 已有双端验证。Boost、PCL 的依赖在 109 完成构建与来源核对；PCL 消费链接待 CI 验收。 |
-| 复杂模块与专用文件 | 已实现 | OpenCV 的资源补丁、平台布局与链接运行已有双端证据；oneTBB 的 HWLOC 绑定及 ImGui 专用构建在 109 完成安装核对；Windows HWLOC 待 CI。 |
+| 模块依赖 | 已实现 | 叶子请求得到稳定闭包，显式依赖来自本仓库；FLANN、HarfBuzz、OpenCV 已有双端验证。Boost、PCL 的依赖在 109 完成构建与来源核对；PCL 在原三平台及 Darwin 完成 Config 组合消费与搬迁验收。 |
+| 复杂模块与专用文件 | 已实现 | OpenCV 的资源补丁、平台布局与链接运行已有双端证据；oneTBB 的 HWLOC 绑定及 ImGui 专用构建在 109 完成安装核对；Windows HWLOC 未验。 |
 | 下游导入与可搬迁包 | 已实现 | queue、lz4、flann 的显式包内 adapter 已完成双端搬迁链接运行；当前全部配方版本有 adapter，追加真实消费范围见上文，本地构建资格与发布资格分离。 |
 | 固定槽交付 | 已实现 | 本地消费和 GitHub 发布已验证；CI 每轮重建，不维护跨运行生产包缓存，各槽独立更新、无全局发行清单，汇总只报告结果。Gitee 消费已通过用户手动验收；同步专项证据独立记录，后续远端写操作仍须授权。 |
-| 三平台原生 CI | 已实现 | queue、lz4、flann 的三平台原生单 job、统一环境、FIFO 预算、真实供给已有验证证据。任意分支可手动运行；OpenCV 等其余库按需另行确认。 |
+| 四平台原生 CI | 已实现 | 生产入口支持四平台，Darwin 固定 macos-15/arm64/15.0；逐包及 example 结果见配方与 macOS 验收记录。 |
 | 平台无关头文件槽位 | 已实现 | queue-any-any 的打包、导入、唯一 publisher 和三平台消费已验证，只有一个通用资产；机器码包与 importer 仍限定平台。 |
 
 机制与设计索引见[架构](architecture.md)；FLANN、HarfBuzz、OpenCV 的双平台证据见[依赖与复杂资源决定](agent-notes/implemented/architecture/2026-10-20-flann-opencv-dependencies.md)，不证明其他模块或远端发行通过。
@@ -49,12 +49,11 @@
 | --- | --- | --- |
 | 已验证 | zlib、queue、freetype、lz4、onnxruntime、flann、harfbuzz、opencv | Windows x64、Linux aarch64 本地构建或复制安装通过，不追加下游交付要求；保留系统可选依赖边界。 |
 | 已接入的 RSUSB 依赖链 | librealsense、libusb、nlohmann | Windows x64/v143、Linux aarch64 本地安装及无相机检查通过；具备 adapter，Linux x86_64 公共入口消费与搬迁通过，不表示实机取流验收。构建依据见[RSUSB 决定](agent-notes/implemented/architecture/2026-10-27-librealsense-rsusb.md)。 |
-| 首批常规迁移 | asio、clipper2、cpp-httplib、eigen、expected、gtest、libzmq、nativefiledialog-extended、portaudio、pybind11、sdl3、spdlog、taskflow、websocketpp、yaml-cpp、boost | 配方及导入适配已迁入；109 的 Linux x86_64 构建安装及含 zlib 闭包打包通过，消费链接与三平台 CI 待用户手动验收，见[分批迁移记录](agent-notes/proposed/architecture/2026-10-28-batch-module-migration.md#首批验证结果)。 |
-| 第二批迁移 | oneTBB、imgui、pcl | 配方及导入适配已迁入；109 一次整批构建安装通过，消费链接与三平台 CI 待用户手动验收，见[第二批验证结果](agent-notes/proposed/architecture/2026-10-28-batch-module-migration.md#第二批验证结果)。 |
+| 首批常规迁移 | asio、clipper2、cpp-httplib、eigen、expected、gtest、libzmq、nativefiledialog-extended、portaudio、pybind11、sdl3、spdlog、taskflow、websocketpp、yaml-cpp、boost | 配方及导入适配已迁入；历史安装与打包证据见[分批迁移记录](agent-notes/proposed/architecture/2026-10-28-batch-module-migration.md#首批验证结果)。 |
+| 第二批迁移 | oneTBB、imgui、pcl | 配方及导入适配已迁入；历史整批构建安装证据见[第二批验证结果](agent-notes/proposed/architecture/2026-10-28-batch-module-migration.md#第二批验证结果)。 |
+| 新增 ViSP | visp 3.7.0 | Config、Darwin 适配及消费搬迁已验，见[专项结果](agent-notes/implemented/architecture/2026-11-06-module-recipe-contract-and-macos-validation.md#visp-专项验收)。 |
 | 暂停迁入 | sherpa-onnx | 版本管理完成后再恢复，使 PCL 与 sherpa 的独立项目分别选择 Eigen 3.4.0 与 5.0.1，不全局升级；已确认基线与未完成状态见[迁移记录](agent-notes/proposed/architecture/2026-10-28-batch-module-migration.md#第三批暂停状态)。 |
 | 明确排除 | fastdeploy、nndeploy、ftxui、logo、mysql、gtsam、lastools | 不迁入，不列为待迁候选。 |
-
-参考实现的可搬迁导入适配覆盖 eigen、onnxruntime、portaudio、lz4、flann、pcl、boost、zlib；它们是后续代表集，不意味着其他模块不可本地构建，也不要求新仓库首批同时发布八包。
 
 ## 保留的范围限制
 

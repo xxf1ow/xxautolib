@@ -1,7 +1,5 @@
 package main
 
-import "encoding/json"
-
 type moduleDescription struct {
 	SystemName     string            `json:"system_name"`
 	Architecture   string            `json:"architecture"`
@@ -20,15 +18,14 @@ type filteredRoot struct {
 }
 
 type describedModule struct {
-	Name                string              `json:"name"`
-	Version             string              `json:"version"`
-	Target              string              `json:"target"`
-	Depends             []string            `json:"depends"`
-	PlatformIndependent bool                `json:"platform_independent"`
-	SystemDependencies  map[string][]string `json:"system_dependencies"`
-	Configuration       json.RawMessage     `json:"configuration"`
-	InputFiles          []string            `json:"input_files"`
-	AdapterFile         string              `json:"adapter_file"`
+	Name               string              `json:"name"`
+	Version            string              `json:"version"`
+	Target             string              `json:"target"`
+	Depends            []string            `json:"depends"`
+	PackagePlatform    string              `json:"package_platform"`
+	SystemDependencies map[string][]string `json:"system_dependencies"`
+	InputFiles         []string            `json:"input_files"`
+	AdapterFile        string              `json:"adapter_file"`
 }
 
 type ciPlanOptions struct {
@@ -47,9 +44,9 @@ type ciPlatformPlan struct {
 }
 
 type ciPlan struct {
-	Platforms        []ciPlatformPlan `json:"platforms"`
-	RequestedModules []string         `json:"requested_modules"`
-	Publisher        string           `json:"publisher"`
+	Platforms        []ciPlatformPlan  `json:"platforms"`
+	RequestedModules []string          `json:"requested_modules"`
+	Publishers       map[string]string `json:"publishers"`
 }
 
 type ciProductionContext struct {

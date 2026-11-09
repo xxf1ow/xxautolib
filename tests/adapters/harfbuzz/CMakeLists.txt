@@ -4,17 +4,21 @@ project(autolib_harfbuzz_adapter_check LANGUAGES C)
 get_filename_component(repository "${CMAKE_CURRENT_LIST_DIR}/../../.." ABSOLUTE)
 set(harfbuzz_prefix "${CMAKE_CURRENT_BINARY_DIR}/packages/harfbuzz/8.5.0")
 set(AUTOLIB_PACKAGE_DIR_freetype "${CMAKE_CURRENT_BINARY_DIR}/packages/freetype/2.13.2")
+set(AUTOLIB_PACKAGE_DIR_zlib "${CMAKE_CURRENT_BINARY_DIR}/packages/zlib/1.3.1")
 
 # 排除系统包，确保 HarfBuzz 的 .pc 依赖由本次准备的 FreeType 满足。
 set(ENV{PKG_CONFIG_PATH} "")
 set(ENV{PKG_CONFIG_LIBDIR} "${CMAKE_CURRENT_BINARY_DIR}/no-system-packages")
 file(MAKE_DIRECTORY "$ENV{PKG_CONFIG_LIBDIR}"
     "${harfbuzz_prefix}/include/harfbuzz" "${harfbuzz_prefix}/lib/pkgconfig"
-    "${AUTOLIB_PACKAGE_DIR_freetype}/include/freetype2" "${AUTOLIB_PACKAGE_DIR_freetype}/lib/pkgconfig")
+    "${AUTOLIB_PACKAGE_DIR_freetype}/include/freetype2" "${AUTOLIB_PACKAGE_DIR_freetype}/lib/pkgconfig"
+    "${AUTOLIB_PACKAGE_DIR_zlib}/include" "${AUTOLIB_PACKAGE_DIR_zlib}/share/pkgconfig")
 file(WRITE "${harfbuzz_prefix}/lib/pkgconfig/harfbuzz.pc"
     "Name: harfbuzz\nDescription: Adapter fixture\nVersion: 8.5.0\nRequires.private: freetype2 >= 12.0.6\nCflags: -I${harfbuzz_prefix}/include/harfbuzz\n")
 file(WRITE "${AUTOLIB_PACKAGE_DIR_freetype}/lib/pkgconfig/freetype2.pc"
-    "Name: freetype2\nDescription: Adapter dependency fixture\nVersion: 26.1.20\nCflags: -I${AUTOLIB_PACKAGE_DIR_freetype}/include/freetype2\n")
+    "Name: freetype2\nDescription: Adapter dependency fixture\nVersion: 26.1.20\nRequires.private: zlib\nCflags: -I${AUTOLIB_PACKAGE_DIR_freetype}/include/freetype2\n")
+file(WRITE "${AUTOLIB_PACKAGE_DIR_zlib}/share/pkgconfig/zlib.pc"
+    "Name: zlib\nDescription: Adapter transitive dependency fixture\nVersion: 1.3.1\nCflags: -I${AUTOLIB_PACKAGE_DIR_zlib}/include\n")
 configure_file("${repository}/src/dependencies/harfbuzz/8.5.0/autolib-import.cmake"
     "${harfbuzz_prefix}/autolib-import.cmake" COPYONLY)
 add_library(autolib::freetype INTERFACE IMPORTED GLOBAL)

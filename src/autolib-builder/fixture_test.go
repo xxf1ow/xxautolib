@@ -113,6 +113,10 @@ func (f *fixture) definitionVersion(name, version, kind, body string) *moduleDef
 
 func (f *fixture) project(modules []*moduleDefinition, suffix string) {
 	f.t.Helper()
+	if f.context.BuilderFile == "" {
+		f.context.BuilderFile = filepath.Join(f.root, "builder")
+		f.must(goExecutable(), "build", "-o", f.context.BuilderFile, ".")
+	}
 	byName := map[string]*moduleDefinition{}
 	for _, m := range modules {
 		byName[m.Name] = m

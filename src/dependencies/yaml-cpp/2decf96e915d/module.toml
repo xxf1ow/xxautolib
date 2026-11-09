@@ -1,7 +1,5 @@
 # yaml-cpp：YAML 解析与生成，安装参考默认库及导出配置。
-name = "yaml-cpp"
-version = "2decf96e915d"
-supported_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
+package_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64','darwin-aarch64']
 type = "cmake"
 sentinel = "include/yaml-cpp/yaml.h"
 config_dir = "lib/cmake/yaml-cpp"

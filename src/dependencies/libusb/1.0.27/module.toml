@@ -1,8 +1,6 @@
 # libusb：跨平台 USB 访问库，使用上游 CMake 包装构建并安装静态库。
-name = "libusb"
 type = "cmake"
-version = "1.0.27"
-supported_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64']
+package_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64','darwin-aarch64']
 sentinel = "include/libusb-1.0/libusb.h"
 
 [source]
