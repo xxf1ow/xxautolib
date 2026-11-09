@@ -34,7 +34,7 @@ func ciSyncDependencies(source ciSyncSource) map[string]map[string]string {
 			deps := map[string]string{}
 			for _, dep := range m.Depends {
 				key := ciModuleCacheKey(byRef[dep]).archiveName()
-				deps[key] = source.Inputs.Fingerprints[key]
+				deps[dep] = source.Inputs.Fingerprints[key]
 			}
 			result[ciModuleCacheKey(m).archiveName()] = deps
 		}
@@ -116,7 +116,15 @@ func downloadCISyncCache(ctx context.Context, c *ciCacheClient, snapshot ciCache
 	}
 	deps := map[string]string{}
 	for dep := range r.DependencyFingerprints {
-		deps[dep] = snapshot.Inputs.Fingerprints[dep]
+		depName, version, _ := strings.Cut(dep, "@")
+		osName, arch, _ := strings.Cut(r.Verification.Platform, "-")
+		key := ciCacheKey{Kind: "library", Name: depName, Version: version, OS: osName, Arch: arch}
+		fingerprint, native := snapshot.Inputs.Fingerprints[key.archiveName()]
+		if !native {
+			key.OS, key.Arch = "any", "any"
+			fingerprint = snapshot.Inputs.Fingerprints[key.archiveName()]
+		}
+		deps[dep] = fingerprint
 	}
 	if err := validateCICacheRecord(r, c.Repository, r.Key, snapshot.Inputs.Fingerprints[name], deps, snapshot.Assets); err != nil {
 		return ciLocalAsset{}, err

@@ -119,6 +119,70 @@ func TestCISyncCacheDownload(t *testing.T) {
 	}
 }
 
+func TestCISyncCacheDependencyReferences(t *testing.T) {
+	for _, consumerPlatform := range []string{"linux-x86_64", "any-any"} {
+		for _, dependencyPlatform := range []string{"linux-x86_64", "any-any"} {
+			for _, phase := range []string{"prepare", "download"} {
+				for _, state := range []string{"current", "changed", "missing", "other platform"} {
+					t.Run(strings.Join([]string{consumerPlatform, dependencyPlatform, phase, state}, "/"), func(t *testing.T) {
+						ctx := context.Background()
+						f := releaseCacheFixture(t)
+						local := localCacheFixture(t)
+						local.Record.Key.OS, local.Record.Key.Arch, _ = strings.Cut(consumerPlatform, "-")
+						local.Record.Archive.Name = local.Record.Key.archiveName()
+						local.Record.DependencyFingerprints = map[string]string{"d@1": strings.Repeat("d", 64)}
+						r := f.seed(t, local)
+						source := syncCacheSource(r)
+						source.Plan.Platforms[0].Description.Modules[0].Depends = []string{"d@1"}
+						source.Plan.Platforms[0].Description.Modules = append(source.Plan.Platforms[0].Description.Modules,
+							describedModule{Name: "d", Version: "1", PackagePlatform: dependencyPlatform})
+						depName := "d-1-" + dependencyPlatform + ".tar.zst"
+						source.Inputs.Fingerprints[depName] = strings.Repeat("d", 64)
+						switch state {
+						case "changed":
+							source.Inputs.Fingerprints[depName] = strings.Repeat("e", 64)
+						case "missing", "other platform":
+							delete(source.Inputs.Fingerprints, depName)
+							if state == "other platform" {
+								source.Inputs.Fingerprints["d-1-windows-x86_64.tar.zst"] = strings.Repeat("d", 64)
+							}
+						}
+						if phase == "prepare" {
+							snapshot, err := prepareCISyncCache(ctx, f.client, source)
+							if err != nil {
+								t.Fatal(err)
+							}
+							if got := snapshot.RecordErrors[r.Archive.Name]; (got == "") != (state == "current") {
+								t.Fatalf("candidate validation for %s: %q", state, got)
+							}
+							return
+						}
+						snapshot, err := f.client.Snapshot(ctx, false)
+						if err != nil {
+							t.Fatal(err)
+						}
+						snapshot.Inputs = source.Inputs
+						asset, err := downloadCISyncCache(ctx, f.client, snapshot, r.Archive.Name, t.TempDir())
+						if state != "current" {
+							if err == nil {
+								t.Fatal("download accepted a non-current dependency")
+							}
+							return
+						}
+						if err != nil {
+							t.Fatal(err)
+						}
+						data, err := os.ReadFile(asset.Path)
+						if err != nil || string(data) != "verified archive bytes" {
+							t.Fatalf("downloaded archive: %q, %v", data, err)
+						}
+					})
+				}
+			}
+		}
+	}
+}
+
 func TestCISyncCacheDelete(t *testing.T) {
 	for _, fault := range []string{"deleted", "present", "unknown platforms", "unknown versions", "replacement", "partial retry"} {
 		t.Run(fault, func(t *testing.T) {

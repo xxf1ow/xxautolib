@@ -29,7 +29,7 @@ class SyncSchedulerTests(unittest.TestCase):
             deps=['b@1'] if name in {'a','c'} else []
             modules.append(dict(name=name,version='1',package_platform='any-any',depends=deps))
             if deps:
-                config['cache']['records'][asset['name']]['dependency_fingerprints']={'b-1-any-any.tar.zst':'a'*64}
+                config['cache']['records'][asset['name']]['dependency_fingerprints']={'b@1':'a'*64}
         config['source']['plan']={'platforms':[{'id':'linux-x86_64','description':{'modules':modules,'failed_roots':[],'filtered_roots':[]}}]}
         return assets,config
 
@@ -95,7 +95,7 @@ class SyncSchedulerTests(unittest.TestCase):
         self.f.run_release(self.f.config([assets[1]]))
         for module in config['source']['plan']['platforms'][0]['description']['modules']:
             module['depends']={'a':['b@1'],'b':['c@1']}.get(module['name'],[])
-        config['cache']['records']['b-1-any-any.tar.zst']['dependency_fingerprints']={'c-1-any-any.tar.zst':'a'*64}
+        config['cache']['records']['b-1-any-any.tar.zst']['dependency_fingerprints']={'c@1':'a'*64}
         config['cache']['records']['c-1-any-any.tar.zst']['dependency_fingerprints']={}
         config['work_root']=self.f.root/'transitive'
         self.f.server.add_asset('a-1-any-any.tar.zst',b'previous A',asset_id=99)

@@ -112,7 +112,7 @@ class CacheSyncLifecycleTests(unittest.TestCase):
                  '--host-os',host_os,'--host-arch',host_arch,'--cmake-command',shutil.which('cmake')], env=self.env)
         body = (output/archive).read_bytes()
         return self.record(archive, body, dict(kind='library',name=name,version=version,os=os_name,arch=arch),run,
-                           {f'b-1-{self.native}.tar.zst':self.facts['inputs']['fingerprints'][f'b-1-{self.native}.tar.zst']} if deps else {})
+                           {'b@1':self.facts['inputs']['fingerprints'][f'b-1-{self.native}.tar.zst']} if deps else {})
 
     def record(self, archive, body, key, run, deps, entry=None):
         asset = self.remote.add_source(archive, body)
