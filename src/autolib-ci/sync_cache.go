@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"flag"
@@ -54,6 +55,36 @@ func prepareCISyncCache(ctx context.Context, c *ciCacheClient, source ciSyncSour
 	}
 	if err != nil {
 		return ciCacheSnapshot{}, err
+	}
+
+	// 缺少归档的合法 sidecar 只保留清理归属，不成为候选。
+	counts := map[string]int{}
+	for _, a := range snapshot.Assets {
+		counts[a.Name]++
+	}
+	for _, a := range snapshot.Assets {
+		name, sidecar := strings.CutSuffix(a.Name, ".publication.json")
+		if !sidecar || counts[a.Name] != 1 || counts[name] != 0 || a.State != "uploaded" || a.Size <= 0 || a.Size >= ciCacheSizeLimit {
+			continue
+		}
+		response, err := c.request(ctx, "GET", c.endpoint(c.APIBase, "/assets/"+strconv.FormatInt(a.ID, 10)), "application/octet-stream", "", nil)
+		if err != nil {
+			return ciCacheSnapshot{}, err
+		}
+		data, readErr := io.ReadAll(io.LimitReader(response.Body, a.Size+1))
+		closeErr := response.Body.Close()
+		if readErr != nil || closeErr != nil {
+			return ciCacheSnapshot{}, errors.New("read orphan cache record failed")
+		}
+		var r ciCacheRecord
+		if int64(len(data)) != a.Size || (a.Digest != "" && a.Digest != "sha256:"+ciSHA256(data)) || decodeCICacheJSON(bytes.NewReader(data), &r, true) != nil || r.Key.archiveName() != name {
+			continue
+		}
+		binding := []ciCacheAsset{{ID: r.Archive.ID, Name: name, State: "uploaded", Size: r.Archive.Size, Digest: "sha256:" + r.Archive.SHA256}}
+		if validateCICacheRecord(r, c.Repository, r.Key, r.Fingerprint, r.DependencyFingerprints, binding) == nil {
+			snapshot.Records[name] = r
+			snapshot.RecordErrors[name] = "archive missing; record retained for cleanup identity only"
+		}
 	}
 	snapshot.Inputs = source.Inputs
 	deps := ciSyncDependencies(source)
@@ -125,7 +156,7 @@ func deleteCISyncCache(ctx context.Context, c *ciCacheClient, source ciSyncSourc
 		return errors.New("cache release changed before deletion")
 	}
 	selected := []ciCacheAsset{}
-	for _, name := range []string{key.archiveName() + ".publication.json", key.archiveName()} {
+	for _, name := range []string{key.archiveName(), key.archiveName() + ".publication.json"} {
 		old := []ciCacheAsset{}
 		now := []ciCacheAsset{}
 		for _, a := range previous.Assets {

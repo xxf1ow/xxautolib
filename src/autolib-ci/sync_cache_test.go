@@ -17,12 +17,14 @@ func syncCacheSource(r ciCacheRecord) ciSyncSource {
 
 func TestCISyncCache(t *testing.T) {
 	ctx := context.Background()
-	for _, fault := range []string{"valid", "stale", "orphan", "origin", "ID", "missing release", "pagination"} {
+	for _, fault := range []string{"valid", "stale", "orphan", "orphan record", "origin", "ID", "missing release", "pagination"} {
 		t.Run(fault, func(t *testing.T) {
 			f := releaseCacheFixture(t)
 			r := f.seed(t, localCacheFixture(t))
 			source := syncCacheSource(r)
 			switch fault {
+			case "orphan record":
+				delete(f.assets, r.Archive.ID)
 			case "orphan":
 				for id, a := range f.assets {
 					if strings.HasSuffix(a.Name, ".publication.json") {
@@ -75,6 +77,8 @@ func TestCISyncCache(t *testing.T) {
 				if snapshot.ReleaseID != 0 || len(snapshot.Assets) != 0 {
 					t.Fatal("404 is not empty")
 				}
+			} else if fault == "orphan record" && snapshot.Records[r.Archive.Name].Key.Name != "b" {
+				t.Fatal("orphan record lost cleanup identity")
 			} else if snapshot.RecordErrors[r.Archive.Name] == "" {
 				t.Fatal("invalid candidate accepted")
 			}
