@@ -18,19 +18,34 @@ import (
 )
 
 type packageOptions struct {
+	AssetKind                                                                                                   string
 	SourceRoot, InstallRoot, ProducerPrefix, OutputRoot, OS, Arch, HostOS, HostArch, ImporterFile, CMakeCommand string
 	Modules                                                                                                     []string
 }
 
 func packageRelease(o packageOptions) error {
+	if o.AssetKind == "" {
+		o.AssetKind = "all"
+	}
+	if o.AssetKind != "all" && o.AssetKind != "library" && o.AssetKind != "importer" {
+		return fmt.Errorf("asset-kind must be all, library or importer")
+	}
+	if o.AssetKind == "library" && len(o.Modules) == 0 {
+		return fmt.Errorf("library packaging requires explicit modules")
+	}
+	if o.AssetKind == "importer" && len(o.Modules) != 0 {
+		return fmt.Errorf("importer packaging does not accept modules")
+	}
 	if err := validatePackagePlatform(o.OS, o.Arch); err != nil {
 		return err
 	}
-	if err := validatePackagePlatform(o.HostOS, o.HostArch); err != nil {
-		return err
+	if o.AssetKind != "library" {
+		if err := validatePackagePlatform(o.HostOS, o.HostArch); err != nil {
+			return err
+		}
 	}
-	if o.SourceRoot == "" || o.InstallRoot == "" || o.OutputRoot == "" || o.ImporterFile == "" || o.CMakeCommand == "" {
-		return fmt.Errorf("package requires source, install, output, importer and CMake paths")
+	if o.SourceRoot == "" || o.InstallRoot == "" || o.OutputRoot == "" || o.CMakeCommand == "" || (o.AssetKind != "library" && o.ImporterFile == "") {
+		return fmt.Errorf("package requires source, install, output and CMake paths, and importer for tool assets")
 	}
 	source, err := resolvePackagePath(o.SourceRoot)
 	if err != nil {
@@ -50,12 +65,14 @@ func packageRelease(o packageOptions) error {
 	if pathWithin(install, output) || pathWithin(output, install) {
 		return fmt.Errorf("release output overlaps installation: %s", output)
 	}
-	toolInfo, err := os.Stat(o.ImporterFile)
-	if err != nil {
-		return err
-	}
-	if !toolInfo.Mode().IsRegular() {
-		return fmt.Errorf("importer must be a regular file: %s", o.ImporterFile)
+	if o.AssetKind != "library" {
+		toolInfo, err := os.Stat(o.ImporterFile)
+		if err != nil {
+			return err
+		}
+		if !toolInfo.Mode().IsRegular() {
+			return fmt.Errorf("importer must be a regular file: %s", o.ImporterFile)
+		}
 	}
 	refs := []moduleRef{}
 	pointers := map[string][]byte{}
@@ -90,24 +107,27 @@ func packageRelease(o packageOptions) error {
 		return err
 	}
 	defer os.RemoveAll(work)
-	toolAsset := fmt.Sprintf("autolib-importer-%s-%s", o.HostOS, o.HostArch)
-	if o.HostOS == "windows" {
-		toolAsset += ".exe"
+	assets := []string{}
+	if o.AssetKind != "library" {
+		toolAsset := fmt.Sprintf("autolib-importer-%s-%s", o.HostOS, o.HostArch)
+		if o.HostOS == "windows" {
+			toolAsset += ".exe"
+		}
+		toolDirectory := filepath.Join(work, "tool")
+		if err := os.Mkdir(toolDirectory, 0755); err != nil {
+			return err
+		}
+		if err := copyPackageFile(o.ImporterFile, filepath.Join(toolDirectory, toolAsset), 0755); err != nil {
+			return err
+		}
+		toolArchive := toolAsset + ".tar.xz"
+		cmd := exec.Command(o.CMakeCommand, "-E", "tar", "cJf", filepath.Join(work, toolArchive), "--format=gnutar", toolAsset)
+		cmd.Dir = toolDirectory
+		if output, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("archive importer: %w\n%s", err, output)
+		}
+		assets = append(assets, toolArchive)
 	}
-	toolDirectory := filepath.Join(work, "tool")
-	if err := os.Mkdir(toolDirectory, 0755); err != nil {
-		return err
-	}
-	if err := copyPackageFile(o.ImporterFile, filepath.Join(toolDirectory, toolAsset), 0755); err != nil {
-		return err
-	}
-	toolArchive := toolAsset + ".tar.xz"
-	cmd := exec.Command(o.CMakeCommand, "-E", "tar", "cJf", filepath.Join(work, toolArchive), "--format=gnutar", toolAsset)
-	cmd.Dir = toolDirectory
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("archive importer: %w\n%s", err, output)
-	}
-	assets := []string{toolArchive}
 	archiveRefs := map[string]moduleRef{}
 	for _, ref := range refs {
 		directory, err := stagePackage(stageOptions{SourceRoot: source, InstallRoot: install, ProducerPrefix: o.ProducerPrefix, StageRoot: filepath.Join(work, "staging"), Name: ref.Name, Version: ref.Version, OS: o.OS, Arch: o.Arch, CMakeCommand: o.CMakeCommand})
@@ -311,6 +331,7 @@ func runPackage(args []string, stderr io.Writer) int {
 	flags := flag.NewFlagSet("package", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	o := packageOptions{}
+	flags.StringVar(&o.AssetKind, "asset-kind", "all", "all, library or importer")
 	for _, field := range []struct {
 		key   string
 		value *string

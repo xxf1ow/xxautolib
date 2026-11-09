@@ -27,6 +27,69 @@ func releaseFixture(t *testing.T) packageOptions {
 	return packageOptions{SourceRoot: o.SourceRoot, InstallRoot: o.InstallRoot, OutputRoot: filepath.Join(o.SourceRoot, "build/release"), OS: o.OS, Arch: o.Arch, HostOS: "windows", HostArch: "x86_64", ImporterFile: tool, CMakeCommand: o.CMakeCommand, Modules: []string{"queue", "lz4", "queue"}}
 }
 
+func TestPackageAssetKind(t *testing.T) {
+	for _, kind := range []string{"library", "importer", "all", "invalid", "library empty", "importer modules"} {
+		t.Run(kind, func(t *testing.T) {
+			o := releaseFixture(t)
+			o.AssetKind = kind
+			switch kind {
+			case "library":
+				o.Modules = []string{"queue@1.0"}
+				o.ImporterFile = ""
+			case "importer":
+				o.Modules = nil
+			case "library empty":
+				o.AssetKind = "library"
+				o.Modules = nil
+			case "importer modules":
+				o.AssetKind = "importer"
+			}
+			before := releaseSnapshot(t, o.InstallRoot)
+			err := packageRelease(o)
+			if kind == "invalid" || kind == "library empty" || kind == "importer modules" {
+				if err == nil {
+					t.Fatal("invalid asset selection accepted")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			entries, err := os.ReadDir(o.OutputRoot)
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantCount := 8
+			if kind == "library" {
+				wantCount = 3
+			}
+			if kind == "importer" {
+				wantCount = 2
+			}
+			if len(entries) != wantCount {
+				t.Fatalf("unexpected assets: %v", entries)
+			}
+			for _, entry := range entries {
+				if kind == "library" && strings.HasPrefix(entry.Name(), "autolib-importer") {
+					t.Fatal("library mode emitted tool")
+				}
+				if kind == "importer" && !strings.HasPrefix(entry.Name(), "autolib-importer") {
+					t.Fatal("importer mode emitted library")
+				}
+			}
+			if !reflect.DeepEqual(before, releaseSnapshot(t, o.InstallRoot)) {
+				t.Fatal("installation changed")
+			}
+		})
+	}
+	var stderr bytes.Buffer
+	o := releaseFixture(t)
+	args := []string{"--asset-kind=library", "--source-root", o.SourceRoot, "--install-root", o.InstallRoot, "--output-root", o.OutputRoot, "--os", o.OS, "--arch", o.Arch, "--cmake-command", o.CMakeCommand, "--module=queue@1.0"}
+	if code := runPackage(args, &stderr); code != 0 {
+		t.Fatalf("library CLI: %s", &stderr)
+	}
+}
+
 func putInstalledRelease(t *testing.T, root, name, version, system, arch, dependencies string) string {
 	t.Helper()
 	header := fmt.Sprintf("set(AUTOLIB_PACKAGE_NAME %q)\nset(AUTOLIB_PACKAGE_VERSION %q)\nset(AUTOLIB_OS %q)\nset(AUTOLIB_ARCH %q)\nset(AUTOLIB_DEPENDENCIES %q)\n", name, version, system, arch, dependencies)
