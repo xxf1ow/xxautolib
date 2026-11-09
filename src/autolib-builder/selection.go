@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"slices"
@@ -80,9 +81,15 @@ func selectModuleClosure(sourceRoot string, requests []string, systemName, archi
 		closure := []*moduleDefinition{}
 		var blocked []string
 		var visit func(moduleRef) error
-		visit = func(ref moduleRef) error {
+		visit = func(ref moduleRef) (visitErr error) {
 			key := ref.String()
 			chain := append(slices.Clone(stack), key)
+			defer func() {
+				var scoped *moduleSelectionError
+				if visitErr != nil && !errors.As(visitErr, &scoped) {
+					visitErr = &moduleSelectionError{visitErr, chain}
+				}
+			}()
 			chainText := strings.Join(chain, " -> ")
 			path := filepath.Join(sourceRoot, "src/dependencies", ref.Name, ref.Version, "module.toml")
 			if previous, ok := selected[ref.Name]; ok && previous.ref.Version != ref.Version {
@@ -105,7 +112,7 @@ func selectModuleClosure(sourceRoot string, requests []string, systemName, archi
 				for _, dependency := range module.Depends {
 					dep, err := resolve(dependency)
 					if err != nil {
-						return fmt.Errorf("%s: %w; dependency chain: %s -> %s", path, err, chainText, dependency)
+						return &moduleSelectionError{fmt.Errorf("%s: %w; dependency chain: %s -> %s", path, err, chainText, dependency), append(slices.Clone(chain), dependency)}
 					}
 					depends = append(depends, dep.String())
 				}

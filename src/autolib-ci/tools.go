@@ -21,7 +21,7 @@ func readModuleDescription(ctx context.Context, builderFile, sourceRoot, systemN
 	if strings.TrimSpace(sourceRoot) == "" {
 		return moduleDescription{}, fmt.Errorf("source root is required")
 	}
-	args := []string{"describe", "--source-root", sourceRoot, "--system-name", systemName, "--architecture", architecture}
+	args := []string{"describe", "--report-errors", "--source-root", sourceRoot, "--system-name", systemName, "--architecture", architecture}
 	for _, module := range modules {
 		args = append(args, "--module", module)
 	}
@@ -57,7 +57,7 @@ func validateModuleDescription(description moduleDescription, systemName, archit
 	if description.SystemName != systemName || description.Architecture != architecture {
 		return fmt.Errorf("builder described %s/%s, requested %s/%s", description.SystemName, description.Architecture, systemName, architecture)
 	}
-	if description.Roots == nil || description.RequestedRoots == nil || description.FilteredRoots == nil || description.Modules == nil || description.GoModuleFiles == nil || description.BuilderFiles == nil {
+	if description.Roots == nil || description.RequestedRoots == nil || description.FilteredRoots == nil || description.FailedRoots == nil || description.Modules == nil || description.GoModuleFiles == nil || description.BuilderFiles == nil {
 		return fmt.Errorf("builder describe output is missing required arrays")
 	}
 	byName := make(map[string]describedModule, len(description.Modules))
@@ -89,12 +89,25 @@ func validateModuleDescription(description moduleDescription, systemName, archit
 		rootSet[root] = true
 	}
 	requestedSet := map[string]bool{}
+	failedSet := map[string]bool{}
 	validReference := func(value string) bool {
 		name, version, found := strings.Cut(value, "@")
 		return found && ciModuleName.MatchString(name) && ciModuleName.MatchString(version)
 	}
+	for _, failure := range description.FailedRoots {
+		if failure.Code != "recipe_error" || failure.Message == "" || failedSet[failure.Root] || len(failure.Chain) == 0 || failure.Chain[0] != failure.Root ||
+			(!validReference(failure.Root) && !ciModuleName.MatchString(failure.Root)) {
+			return fmt.Errorf("builder describe output has invalid recipe failure for %q", failure.Root)
+		}
+		for _, ref := range failure.Chain {
+			if !validReference(ref) && !ciModuleName.MatchString(ref) {
+				return fmt.Errorf("invalid failure dependency chain for %s", failure.Root)
+			}
+		}
+		failedSet[failure.Root] = true
+	}
 	for _, root := range description.RequestedRoots {
-		if !validReference(root) || requestedSet[root] {
+		if (!validReference(root) && !failedSet[root]) || requestedSet[root] {
 			return fmt.Errorf("builder describe output has invalid requested root %q", root)
 		}
 		requestedSet[root] = true
@@ -119,6 +132,12 @@ func validateModuleDescription(description moduleDescription, systemName, archit
 			seen[ref] = true
 		}
 		partition[reason.Root] = true
+	}
+	for root := range failedSet {
+		if !requestedSet[root] || partition[root] {
+			return fmt.Errorf("invalid failed root partition for %s", root)
+		}
+		partition[root] = true
 	}
 	if len(partition) != len(requestedSet) {
 		return fmt.Errorf("builder describe output omits a requested root result")

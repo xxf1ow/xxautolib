@@ -17,6 +17,7 @@ type moduleDescription struct {
 	Roots          []string          `json:"roots"`
 	RequestedRoots []string          `json:"requested_roots"`
 	FilteredRoots  []filteredRoot    `json:"filtered_roots"`
+	FailedRoots    []failedRoot      `json:"failed_roots"`
 	Modules        []describedModule `json:"modules"`
 	GoModuleFiles  []string          `json:"go_module_files"`
 	BuilderFiles   []string          `json:"builder_files"`
@@ -38,26 +39,9 @@ func describeModules(sourceRoot, systemName, architecture string, names []string
 }
 
 func describeSelection(sourceRoot, systemName, architecture string, requests []string, discover bool) (moduleDescription, error) {
-	result := moduleDescription{SystemName: systemName, Architecture: normalizeArchitecture(architecture), Roots: []string{}, Modules: []describedModule{}, GoModuleFiles: []string{"go.mod", "go.sum"}, BuilderFiles: []string{}}
-	if strings.TrimSpace(sourceRoot) == "" {
-		return result, fmt.Errorf("describe: source root is required")
-	}
-	if _, err := buildPlatform(systemName, result.Architecture); err != nil {
-		return result, err
-	}
-	if discover && len(requests) != 0 {
-		return result, fmt.Errorf("describe: --discover and --module are mutually exclusive")
-	}
-	if !discover && len(requests) == 0 {
-		return result, fmt.Errorf("describe: at least one module is required")
-	}
-	root, err := filepath.Abs(sourceRoot)
+	result, root, err := prepareDescription(sourceRoot, systemName, architecture, requests, discover)
 	if err != nil {
 		return result, err
-	}
-	root, err = filepath.EvalSymlinks(root)
-	if err != nil {
-		return result, fmt.Errorf("source root: %w", err)
 	}
 	selection, err := selectModuleClosure(root, requests, systemName, result.Architecture, discover)
 	if err != nil {
@@ -83,15 +67,45 @@ func describeSelection(sourceRoot, systemName, architecture string, requests []s
 		}
 		result.Modules = append(result.Modules, module)
 	}
+	return result, nil
+}
+
+func prepareDescription(sourceRoot, systemName, architecture string, requests []string, discover bool) (moduleDescription, string, error) {
+	result := moduleDescription{SystemName: systemName, Architecture: normalizeArchitecture(architecture), Roots: []string{}, RequestedRoots: []string{}, FilteredRoots: []filteredRoot{}, FailedRoots: []failedRoot{}, Modules: []describedModule{}, GoModuleFiles: []string{"go.mod", "go.sum"}, BuilderFiles: []string{}}
+	if strings.TrimSpace(sourceRoot) == "" {
+		return result, "", fmt.Errorf("describe: source root is required")
+	}
+	if _, err := buildPlatform(systemName, result.Architecture); err != nil {
+		return result, "", err
+	}
+	if discover && len(requests) != 0 {
+		return result, "", fmt.Errorf("describe: --discover and --module are mutually exclusive")
+	}
+	if !discover && len(requests) == 0 {
+		return result, "", fmt.Errorf("describe: at least one module is required")
+	}
+	for _, request := range requests {
+		if _, err := parseModuleRef(request); err != nil {
+			return result, "", err
+		}
+	}
+	root, err := filepath.Abs(sourceRoot)
+	if err != nil {
+		return result, "", err
+	}
+	root, err = filepath.EvalSymlinks(root)
+	if err != nil {
+		return result, "", fmt.Errorf("source root: %w", err)
+	}
 	for _, name := range result.GoModuleFiles {
 		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(name))); err != nil {
-			return result, fmt.Errorf("describe input %s: %w", name, err)
+			return result, "", fmt.Errorf("describe input %s: %w", name, err)
 		}
 	}
 	engine := filepath.Join(root, "src", "autolib-builder")
 	entries, err := os.ReadDir(engine)
 	if err != nil {
-		return result, err
+		return result, "", err
 	}
 	for _, entry := range entries {
 		name := entry.Name()
@@ -104,7 +118,7 @@ func describeSelection(sourceRoot, systemName, architecture string, requests []s
 	}
 	result.BuilderFiles = append(result.BuilderFiles, "CMakeLists.txt")
 	slices.Sort(result.BuilderFiles)
-	return result, nil
+	return result, root, nil
 }
 
 func describeModule(root string, definition *moduleDefinition, platform string) (describedModule, error) {
@@ -137,7 +151,7 @@ func describeModule(root string, definition *moduleDefinition, platform string) 
 		}
 		rel, err := filepath.Rel(root, resolved)
 		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
-			return "", fmt.Errorf("referenced path escapes source root: %s", value)
+			return "", fmt.Errorf("%w: %s", errDescriptionBoundary, value)
 		}
 		return filepath.ToSlash(rel), nil
 	}
@@ -197,6 +211,7 @@ func runDescribe(args []string, stdout, stderr io.Writer) int {
 	var modules repeatedFlag
 	flags.Var(&modules, "module", "module name (repeatable)")
 	discover := flags.Bool("discover", false, "discover all recipe versions")
+	reportErrors := flags.Bool("report-errors", false, "report individual recipe failures and retain healthy roots")
 	if err := flags.Parse(args); err != nil {
 		return 1
 	}
@@ -213,7 +228,11 @@ func runDescribe(args []string, stdout, stderr io.Writer) int {
 	if !*discover && len(modules) == 0 {
 		return fail(fmt.Errorf("describe: at least one --module is required"))
 	}
-	description, err := describeSelection(sourceRoot, systemName, architecture, modules, *discover)
+	describe := describeSelection
+	if *reportErrors {
+		describe = describeReport
+	}
+	description, err := describe(sourceRoot, systemName, architecture, modules, *discover)
 	if err != nil {
 		return fail(err)
 	}

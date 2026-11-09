@@ -46,7 +46,7 @@ func planCI(ctx context.Context, o ciPlanOptions) (ciPlan, error) {
 		if err != nil {
 			return ciPlan{}, err
 		}
-		description := moduleDescription{SystemName: systemName, Architecture: architecture, Roots: []string{}, RequestedRoots: []string{}, FilteredRoots: []filteredRoot{}, Modules: []describedModule{}, GoModuleFiles: []string{}, BuilderFiles: []string{}}
+		description := moduleDescription{SystemName: systemName, Architecture: architecture, Roots: []string{}, RequestedRoots: []string{}, FilteredRoots: []filteredRoot{}, FailedRoots: []failedRoot{}, Modules: []describedModule{}, GoModuleFiles: []string{}, BuilderFiles: []string{}}
 		if !toolOnly {
 			description, err = readModuleDescription(ctx, o.BuilderFile, o.SourceRoot, systemName, architecture, selected)
 			if err != nil {
@@ -61,16 +61,14 @@ func planCI(ctx context.Context, o ciPlanOptions) (ciPlan, error) {
 		description.Modules, description.Roots = modules, roots
 		description.FilteredRoots = append(description.FilteredRoots, adapterReasons...)
 		filtered := []string{}
-		for _, root := range requested {
-			if !slices.Contains(roots, root) {
-				filtered = append(filtered, root)
-			}
+		for _, reason := range description.FilteredRoots {
+			filtered = append(filtered, reason.Root)
 		}
 		layers, err := ciLayers(description.Modules)
 		if err != nil {
 			return ciPlan{}, err
 		}
-		plan.Platforms = append(plan.Platforms, ciPlatformPlan{ID: platform, RequestedRoots: requested, FilteredRoots: filtered, Roots: roots, Description: description, Layers: layers, SystemDependencies: ciSystemDependencies(description.Modules)})
+		plan.Platforms = append(plan.Platforms, ciPlatformPlan{ID: platform, RequestedRoots: requested, FilteredRoots: filtered, FailedRoots: slices.Clone(description.FailedRoots), Roots: roots, Description: description, Layers: layers, SystemDependencies: ciSystemDependencies(description.Modules)})
 		for _, root := range roots {
 			if !slices.Contains(plan.RequestedModules, root) {
 				plan.RequestedModules = append(plan.RequestedModules, root)
