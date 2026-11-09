@@ -12,6 +12,9 @@ import (
 )
 
 func run(args []string, stdout, stderr io.Writer) int {
+	if len(args) > 0 && (args[0] == "sync-cache" || args[0] == "cache-download" || args[0] == "cache-delete") {
+		return runCISyncCache(args[0], args[1:], stdout, stderr)
+	}
 	if len(args) > 0 && args[0] == "sync-source" {
 		return runCISyncSource(args[1:], stdout, stderr)
 	}
