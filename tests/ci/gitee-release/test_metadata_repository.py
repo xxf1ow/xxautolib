@@ -165,6 +165,42 @@ class MetadataRepositoryTests(unittest.TestCase):
         self.assertEqual(git(self.bare, 'show', 'HEAD:queue/package.toml'), b'latest = "2"\n')
         self.assertEqual(self.module.commit_metadata(repo, {}, {}), head)
 
+    def test_digest_index_and_atomic_package_removal(self):
+        self.seed_files(self.legitimate(**{'queue/2/queue-2-any-any.tar.zst.sha256': b'b' * 64 + b'\n'}))
+        self.make_remote()
+        repo = self.open()
+        self.assertEqual(repo['existing_digests']['queue/1/queue-1-any-any.tar.zst.sha256'], 'a' * 64)
+        previous = repo['head']
+        head = self.module.commit_metadata(repo, {}, {'queue': '1'},
+            remove_paths=('queue/2/queue-2-any-any.tar.zst.sha256',))
+        self.assertNotEqual(head, previous)
+        self.assertEqual(git(self.bare, 'rev-list', '--count', previous + '..HEAD').strip(), b'1')
+        self.assertNotIn('queue/2/queue-2-any-any.tar.zst.sha256', git(self.bare, 'ls-tree', '-r', '--name-only', 'HEAD').decode())
+        self.assertEqual(git(self.bare, 'show', 'HEAD:queue/package.toml'), b'latest = "1"\n')
+        self.assertNotIn('queue/2/queue-2-any-any.tar.zst.sha256', repo['existing_digests'])
+        self.assertEqual(self.module.commit_metadata(repo, {}, {}, remove_paths=('queue/2/queue-2-any-any.tar.zst.sha256',)), head)
+        final = self.module.commit_metadata(repo, {}, {}, remove_paths=('queue/package.toml',))
+        self.assertNotEqual(final, head)
+        self.assertNotIn('queue', repo['existing_latest'])
+
+    def test_delete_conflicts_fail_before_any_write(self):
+        self.seed_files(self.legitimate())
+        self.make_remote()
+        repo = self.open()
+        before = repo['head']
+        target = 'queue/1/queue-1-any-any.tar.zst.sha256'
+        for removals in [('README.md',), ('../outside',), (target, 'Queue/package.toml'), (target,)]:
+            with self.subTest(removals=removals), self.assertRaises(ValueError):
+                self.module.commit_metadata(repo, {target: 'b' * 64}, {}, remove_paths=removals)
+            self.assertEqual((repo['path'] / target).read_bytes(), b'a' * 64 + b'\n')
+            self.assertEqual(git(self.bare, 'rev-parse', 'HEAD').decode().strip(), before)
+
+    def test_invalid_digest_index_is_rejected(self):
+        self.seed_files(self.legitimate(**{'queue/1/queue-1-any-any.tar.zst.sha256': b'A' * 64 + b'\n'}))
+        self.make_remote()
+        with self.assertRaises(ValueError):
+            self.open()
+
     def test_darwin_digest_preserves_existing_metadata(self):
         files = self.legitimate(**{
             'lz4/package.toml': b'latest = "1.9.4"\n',
@@ -191,11 +227,15 @@ class MetadataRepositoryTests(unittest.TestCase):
         self.make_remote()
         repo = self.open()
         before = repo['head']
+        before_digests = dict(repo['existing_digests'])
+        before_latest = dict(repo['existing_latest'])
         git(repo['path'], 'remote', 'set-url', 'origin', str(self.root / 'missing.git'))
         with self.assertRaises(RuntimeError) as failure:
             self.module.commit_metadata(repo, {}, {'queue': '2'})
         self.assertNotIn('fake-secret', str(failure.exception))
         self.assertEqual(repo['head'], before)
+        self.assertEqual(repo['existing_digests'], before_digests)
+        self.assertEqual(repo['existing_latest'], before_latest)
         self.assertEqual(git(self.bare, 'rev-parse', 'HEAD').decode().strip(), before)
 
     def test_selected_link_parent_and_invalid_digest_fail_before_write(self):

@@ -87,6 +87,56 @@ def choose_latest(existing: dict[str, str], candidates: dict[str, str], succeede
     return result
 
 
+def choose_source_latest(existing: dict, candidates: dict, source: dict, succeeded: set[str],
+                         explicit: dict) -> tuple[dict, set[str], dict]:
+    """返回源码合法的指针更新、已悬空指针删除及逐包错误；未知集合保留。"""
+    latest_mapping(existing)
+    packages = source['catalog']['packages']
+    updates, removed, errors = {}, set(), {}
+    check_case([*existing, *candidates, *explicit, *packages])
+    for name in sorted(set(existing) | set(candidates) | set(explicit)):
+        package = packages.get(name)
+        if package is None:
+            if name in existing:
+                removed.add(name)
+            if name in explicit:
+                errors[name] = 'explicit latest package is absent from source'
+            continue
+        versions = package['versions']
+        if versions is None:
+            errors[name] = package['error'] or 'source versions are unknown'
+            continue
+        def valid(version):
+            item = versions.get(version)
+            return item is not None and not item['error'] and item['platforms'] is not None
+        old = existing.get(name)
+        dangling = old is not None and old not in versions
+        if dangling:
+            removed.add(name)
+        try:
+            if name in explicit:
+                latest_mapping({name: explicit[name]})
+                selected = explicit[name]
+            elif old is not None and not dangling:
+                continue
+            elif dangling:
+                selected = package['latest']
+            elif name in succeeded and name in candidates:
+                selected = candidates[name]
+                if selected not in versions:
+                    selected = package['latest']
+            else:
+                continue
+            if not valid(selected):
+                raise ValueError(package['error'] or 'latest does not select a valid source version')
+            if selected != old:
+                updates[name] = selected
+            removed.discard(name)
+        except (ValueError, TypeError):
+            errors[name] = 'latest does not select a valid source version'
+    return updates, removed, errors
+
+
 def _object(pairs):
     value = {}
     for key, item in pairs:

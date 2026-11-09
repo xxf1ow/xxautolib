@@ -29,6 +29,29 @@ class PublicationRulesTests(unittest.TestCase):
             with self.subTest(platform=platform), self.assertRaises(ValueError):
                 self.rules.metadata_path(dict(importer, platform=platform))
 
+    def test_source_latest_preserves_repairs_and_isolates_errors(self):
+        source = {'catalog': {'packages': {
+            'keep': {'latest': '2', 'error': '', 'versions': {'1': {'platforms': ['any-any'], 'error': ''}, '2': {'platforms': ['any-any'], 'error': ''}}},
+            'repair': {'latest': '1', 'error': '', 'versions': {'1': {'platforms': ['any-any'], 'error': ''}}},
+            'bad': {'latest': '', 'error': 'dangling latest', 'versions': {}},
+            'unknown': {'latest': '', 'error': 'unreadable', 'versions': None},
+        }}}
+        updates, removed, errors = self.rules.choose_source_latest(
+            {'keep': '1', 'repair': 'deleted', 'bad': 'deleted', 'gone': '1', 'unknown': '1'},
+            {'repair': 'deleted'}, source, {'repair'}, {'keep': 'missing'})
+        self.assertEqual(updates, {'repair': '1'})
+        self.assertEqual(removed, {'bad', 'gone'})
+        self.assertIn('keep', errors)
+        self.assertIn('bad', errors)
+        self.assertNotIn('unknown', removed)
+        updates, removed, errors = self.rules.choose_source_latest({}, {'keep': '1'}, source, {'keep'}, {})
+        self.assertEqual(updates, {'keep': '1'})
+        updates, _, _ = self.rules.choose_source_latest({'keep': '1'}, {}, source, set(), {})
+        self.assertNotIn('keep', updates)
+        updates, _, errors = self.rules.choose_source_latest({}, {}, source, set(), {'keep': '2', 'repair': '../bad'})
+        self.assertEqual(updates, {'keep': '2'})
+        self.assertIn('repair', errors)
+
     def test_choose_latest(self):
         choose = self.rules.choose_latest
         self.assertEqual(choose({}, {'queue': '1'}, {'queue'}, {}), {'queue': '1'})
