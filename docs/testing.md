@@ -12,6 +12,10 @@ Go fixture 验证声明、原生构建、安装及版本化本地和受控远端
 
 仅修改文档时使用 doc-standards、agent-notes 技能校验链接、归属和 `scripts/doc-budgets.manifest.json` 预算；校验器不是构建依赖。仓库没有自动 Git hook 或覆盖率门槛；CI 的接线与实机验收由独立的 [CI 系统设计](agent-notes/implemented/architecture/2026-10-20-ci-system.md)拥有。
 
+## 预编译二进制包免验
+
+上游预编译二进制包免于独立 API 编译和运行验收；当前适用于 ONNX Runtime，不因 `type = "copy"` 就跳过源码或头文件包验收。ONNX Runtime 仍通过公共入口检查安装与导入，保留来源摘要、精确身份及打包运输校验；不调用其运行时 API、不执行推理，也不将免验记为运行测试通过。
+
 ## 本地二进制闭环
 
 先通过[普通根入口](development.md#准备与配置)选择代表集完成 configure/build，生成版本化安装、精确依赖描述及宿主工具；本节使用[实机验收](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md#版本化本地消费验证)中的独立生产根，不覆盖旧结果。
@@ -31,8 +35,6 @@ cmake -P src/autolib-builder/go-sdk.cmake -- test -mod=readonly ./src/autolib-im
 [头文件定向工程](../tests/adapters/headers/CMakeLists.txt)覆盖重复导入和跨目录使用；受控载荷不代表真实 API。
 
 真实库[smoke](../tests/autolib/smoke.cpp)使用 `ROOT_PACKAGES=opencv@4.14.0;librealsense@2.58.1;onnxruntime@1.24.4`、`MODULES=freetype;harfbuzz;libusb;nlohmann;lz4;opencv;librealsense;onnxruntime`。两个消费driver在Windows上将已准备精确闭包内的DLL目录加入CTest进程PATH；直接运行smoke时自行设置PATH。含双版本 Eigen 的结果与未测范围见[导入适配记录](agent-notes/implemented/architecture/2026-11-04-package-adapter-standardization.md#验证结果)。
-
-上游预编译二进制包免于独立编译与运行验收，保留安装导入及交付校验；范围见[预编译包免验规则](agent-notes/implemented/architecture/2026-11-06-module-recipe-contract-and-macos-validation.md#预编译二进制包免验)。
 
 ## Release 下载验证
 

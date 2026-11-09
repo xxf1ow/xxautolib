@@ -44,7 +44,7 @@ libzmq 已补查原三平台均因未找到 GnuTLS 而不启用 WSS。用户批�
 
 ### 预编译二进制包免验
 
-上游预编译二进制包免于独立 API 编译和运行验收；当前适用于 ONNX Runtime，不因 `type = "copy"` 就跳过源码或头文件包验收。ONNX Runtime 仍通过公共入口检查安装与导入，保留来源摘要、精确身份及打包运输校验；不调用其运行时 API、不执行推理，也不将免验记为运行测试通过。
+ONNX Runtime 直接分发上游预编译产物，验收聚焦本仓库的安装与交付，不重复验证上游运行能力。当前规则由[测试指南](../../../testing.md#预编译二进制包免验)直接定义；其字数预算为 550，为完整规则及后续维护保留空间。
 
 ### ViSP 独立接入
 
@@ -513,7 +513,7 @@ Windows 剩余 12 根的安装及消费证据来自下表。前三个 run 整体
 
 Windows 工具准备为 CMake 下载增加两次、间隔五秒的重试，保持固定 SHA256 校验。pybind11 消费直接使用 runner 现有 Python 开发环境，包导入目标快照排除随后由测试发现的 Python DLL。spdlog smoke 使用平台默认行尾并显式包含其声明；编译库和 header-only 的 LF/CRLF 本地八组检查通过。MSVC 消费工程启用 `/Zc:__cplusplus`，WebSocket++ 的 Windows adapter 传递系统 `ws2_32`，不增加仓库包依赖，仍发布为 `any-any`。
 
-末次 Windows 三根的 CTest 各 1/1 通过，实际命令包含 `/Zc:__cplusplus` 与 `ws2_32.lib`。三包及宿主工具的四个归档经正式发布校验器核对原运输身份、大小和摘要，`complete=true`，transport SHA256 为 `b9d8ee2f6406836817020ec4ae5c90cc67d555b3331d72cac2d019f9fd6135e4`。该次证据覆盖直接安装消费和运输打包，没有独立搬迁消费日志。ONNX Runtime 按上文用户决定人工免验接受；自动化只保留安装导入和通用交付检查，不编译或运行其 API，预编译包免验规则见[测试指南](../../../testing.md#adapter-定向验证)。
+末次 Windows 三根的 CTest 各 1/1 通过，实际命令包含 `/Zc:__cplusplus` 与 `ws2_32.lib`。三包及宿主工具的四个归档经正式发布校验器核对原运输身份、大小和摘要，`complete=true`，transport SHA256 为 `b9d8ee2f6406836817020ec4ae5c90cc67d555b3331d72cac2d019f9fd6135e4`。该次证据覆盖直接安装消费和运输打包，没有独立搬迁消费日志。ONNX Runtime 按上文用户决定人工免验接受；自动化只保留安装导入和通用交付检查，不编译或运行其 API，预编译包免验规则见[测试指南](../../../testing.md#预编译二进制包免验)。
 
 Linux 原始汇总位于 `build/release-closure-20261108/native-incremental/summary.json`；其 Windows 条目仅记录早期失败。最新 Windows 逐根生产身份及证据路径位于 `build/release-closure-20261108/windows-winsock-link/consumer-acceptance-summary.json`，末次归档核对位于同目录的 `acceptance-1/archive-audit.json`。这些增量证据不替代同一成功 run/attempt 的正式发布条件。
 
