@@ -175,12 +175,8 @@ func sources(m map[string]any, where string) (*sourceDefinition, map[string]sour
 	return primary, result, nil
 }
 
-func parseCache(value any, where string, allowSubdir bool) (map[string]any, string, error) {
-	allowed := []string{"cache"}
-	if allowSubdir {
-		allowed = append(allowed, "SOURCE_SUBDIR")
-	}
-	m, err := table(value, where, allowed...)
+func parseCache(value any, where string) (map[string]any, string, error) {
+	m, err := table(value, where, "cache", "SOURCE_SUBDIR")
 	if err != nil {
 		return nil, "", err
 	}
@@ -457,7 +453,7 @@ func readDefinition(path, systemName, architecture string, requireTarget bool) (
 	for resource := range d.Resources {
 		declaredResources[resource] = true
 	}
-	if d.Cache, d.SourceSubdir, err = parseCache(optional(m, "cmake", map[string]any{}), "cmake", true); err != nil {
+	if d.Cache, d.SourceSubdir, err = parseCache(optional(m, "cmake", map[string]any{}), "cmake"); err != nil {
 		return nil, err
 	}
 	if d.SourceSubdir != "" && d.Kind != "cmake" {
@@ -487,7 +483,7 @@ func readDefinition(path, systemName, architecture string, requireTarget bool) (
 		if err != nil {
 			return nil, err
 		}
-		cache, subdir, err := parseCache(optional(options, "cmake", map[string]any{}), at+".cmake", true)
+		cache, subdir, err := parseCache(optional(options, "cmake", map[string]any{}), at+".cmake")
 		if err != nil {
 			return nil, err
 		}

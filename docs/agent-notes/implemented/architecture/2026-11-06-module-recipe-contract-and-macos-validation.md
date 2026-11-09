@@ -496,7 +496,9 @@ Windows 在 13 个独立根通过后，RealSense 来源探针把 `rs2_get_api_ve
 
 两个 Linux 平台均完成 33 包构建及 28 个独立根消费，pybind11 已通过；随后 Taskflow 消费因 GCC 10.5 的标准库缺少 `<latch>` 失败。固定上游的 README 和 CMakeLists 明确要求 GNU GCC 至少 11.0、C++20。这不是 Taskflow 头文件安装失败；当前生产及消费者工具链与其实际要求存在冲突。用户决定保留当前工具链并跳过 Taskflow 的 C++20 API 验收；当前入口只检查该包的安装导入，配方、adapter 和版本不变。Windows 完成 33 包构建及 20 个独立根消费后，在 ONNX Runtime 的消费者运行阶段失败；RealSense 来源检查已通过。ONNX 消费者已编译链接成功，该次 CTest 日志无程序输出或具体退出原因。用户确认本轮直接接受上游预编译包，独立运行验收免验，不再将该失败列为收尾阻断；历史 CI 结果仍为失败，不记为运行测试通过。
 
-正式发布要求原运行整体成功，不混合不同 run/attempt 或重标旧归档身份。本轮尚不满足发布条件，Gitee 完整发布未完成。[自动发布 run 42548594110，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42548594110) 使用默认分支提交 `05ad42949ec1ec1d6f9113cdc7e538263836215d`，在 `Select original build` 失败，后续准备及上传均跳过；独立验收成功不等于正式发布成功。
+正式发布的每个批次要求来源 run/attempt 整体成功，不把不同运行的运输文件拼成一个批次，也不重标旧归档身份。多个成功批次可以分次发布到同一 Gitee Release；完整交付以最终覆盖当前配方要求的全部库归档、四平台工具及入口，并核对摘要为准，不要求一次全量构建成功。上述两次失败运行均未用于发布。[自动发布 run 42548594110，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42548594110) 使用默认分支提交 `05ad42949ec1ec1d6f9113cdc7e538263836215d`，在 `Select original build` 失败，后续准备及上传均跳过；独立验收成功不等于正式发布成功。
+
+Eigen 3.4.0 和 5.0.1 按当前配方补充发布 `any-any` 包；两个版本原有的六份平台摘要索引及旧 Release 归档由仓库所有者手动处理，本轮不执行迁移或删除。新旧索引并存时，Windows 和 Linux 的远端导入会报摘要歧义；发布完整性核对不将这一状态记为消费验收通过。
 
 #### 原生增量复验
 
@@ -515,7 +517,7 @@ Windows 工具准备为 CMake 下载增加两次、间隔五秒的重试，保�
 
 末次 Windows 三根的 CTest 各 1/1 通过，实际命令包含 `/Zc:__cplusplus` 与 `ws2_32.lib`。三包及宿主工具的四个归档经正式发布校验器核对原运输身份、大小和摘要，`complete=true`，transport SHA256 为 `b9d8ee2f6406836817020ec4ae5c90cc67d555b3331d72cac2d019f9fd6135e4`。该次证据覆盖直接安装消费和运输打包，没有独立搬迁消费日志。ONNX Runtime 按上文用户决定人工免验接受；自动化只保留安装导入和通用交付检查，不编译或运行其 API，预编译包免验规则见[测试指南](../../../testing.md#预编译二进制包免验)。
 
-Linux 原始汇总位于 `build/release-closure-20261108/native-incremental/summary.json`；其 Windows 条目仅记录早期失败。最新 Windows 逐根生产身份及证据路径位于 `build/release-closure-20261108/windows-winsock-link/consumer-acceptance-summary.json`，末次归档核对位于同目录的 `acceptance-1/archive-audit.json`。这些增量证据不替代同一成功 run/attempt 的正式发布条件。
+Linux 原始汇总位于 `build/release-closure-20261108/native-incremental/summary.json`；其 Windows 条目仅记录早期失败。最新 Windows 逐根生产身份及证据路径位于 `build/release-closure-20261108/windows-winsock-link/consumer-acceptance-summary.json`，末次归档核对位于同目录的 `acceptance-1/archive-audit.json`。每个发布批次仍须满足其来源 run/attempt 整体成功的条件，累计验收证据本身不能替代这一条件。
 
 #### 临时分支清理
 

@@ -112,7 +112,7 @@ func validateDefinitionFields(raw map[string]any, where string, override bool) e
 		return err
 	}
 	if v, ok := raw["cmake"]; ok {
-		cache, _, err := parseCache(v, where+".cmake", true)
+		cache, _, err := parseCache(v, where+".cmake")
 		if err != nil {
 			return err
 		}
