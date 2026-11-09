@@ -15,12 +15,9 @@ import (
 	"github.com/pelletier/go-toml/v2"
 )
 
-func packageCIItem(ctx context.Context, o ciRunOptions, record ciCacheRecord) (ciLocalAsset, error) {
+func packageCIItem(ctx context.Context, o ciRunOptions, run ciRunIdentity, platform *ciPlatformPlan, publishers map[string]string, record ciCacheRecord) (ciLocalAsset, error) {
 	asset := ciLocalAsset{Record: record}
-	plan, run, platform, source, work, err := loadCIWork(ctx, o)
-	if err != nil {
-		return asset, err
-	}
+	source, work := o.SourceRoot, o.WorkRoot
 	if record.Origin != run || record.Verification.Platform != o.Platform {
 		return asset, errors.New("packaging requires this run's item verification")
 	}
@@ -40,7 +37,7 @@ func packageCIItem(ctx context.Context, o ciRunOptions, record ciCacheRecord) (c
 		if selected == nil {
 			return asset, errors.New("package item is outside the selected plan")
 		}
-		if selected.PackagePlatform == "any-any" && plan.Publishers[moduleIdentity(*selected)] != o.Platform {
+		if selected.PackagePlatform == "any-any" && publishers[moduleIdentity(*selected)] != o.Platform {
 			return asset, errors.New("universal package can only be packaged by its selected publisher")
 		}
 		if len(record.DependencyFingerprints) != len(selected.Depends) {

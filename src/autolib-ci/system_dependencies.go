@@ -26,7 +26,7 @@ var ciSystemPackagePatterns = map[string]*regexp.Regexp{
 	"brew":  regexp.MustCompile(`^[a-z0-9][a-z0-9+_.@-]*$`),
 }
 
-func prepareCIItemDependencies(ctx context.Context, o ciRunOptions, module describedModule, phase string, state ciDependencyState) ([]string, error) {
+func prepareCIItemDependencies(ctx context.Context, o ciRunOptions, closure []string, modules map[string]describedModule, phase string, state ciDependencyState) ([]string, error) {
 	if phase != "build" && phase != "verify" {
 		return nil, errors.New("dependency phase must be build or verify")
 	}
@@ -38,55 +38,13 @@ func prepareCIItemDependencies(ctx context.Context, o ciRunOptions, module descr
 	if state == nil {
 		return nil, errors.New("dependency preparation requires current run state")
 	}
-	var plan ciPlan
-	if err := decodeStrictJSONFile(o.PlanFile, &plan); err != nil {
-		return nil, err
-	}
-	modules := map[string]describedModule{}
-	selected := 0
-	for _, platform := range plan.Platforms {
-		if platform.ID == o.Platform {
-			selected++
-			for _, m := range platform.Description.Modules {
-				modules[moduleIdentity(m)] = m
-			}
-		}
-	}
-	if selected != 1 {
-		return nil, errors.New("dependency preparation requires one selected platform")
-	}
 	packages := []string{}
-	active := map[string]bool{}
-	seen := map[string]bool{}
-	var visit func(describedModule) error
-	visit = func(m describedModule) error {
-		ref := moduleIdentity(m)
-		if active[ref] {
-			return fmt.Errorf("dependency cycle at %s", ref)
-		}
-		if seen[ref] {
-			return nil
-		}
-		active[ref] = true
-		for _, dep := range m.Depends {
-			child, ok := modules[dep]
-			if !ok {
-				return fmt.Errorf("missing dependency description %s", dep)
-			}
-			if err := visit(child); err != nil {
-				return err
-			}
-		}
-		delete(active, ref)
-		seen[ref] = true
+	for _, ref := range closure {
+		m := modules[ref]
 		packages = append(packages, m.SystemDependencies[manager]...)
 		if manager == "apt" && phase == "verify" && m.Name == "pybind11" {
 			packages = append(packages, "python3-dev")
 		}
-		return nil
-	}
-	if err := visit(module); err != nil {
-		return nil, err
 	}
 	for _, name := range packages {
 		if !ciSystemPackagePatterns[manager].MatchString(name) {

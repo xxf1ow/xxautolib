@@ -68,7 +68,7 @@ func planCI(ctx context.Context, o ciPlanOptions) (ciPlan, error) {
 		if err != nil {
 			return ciPlan{}, err
 		}
-		plan.Platforms = append(plan.Platforms, ciPlatformPlan{ID: platform, RequestedRoots: requested, FilteredRoots: filtered, FailedRoots: slices.Clone(description.FailedRoots), Roots: roots, Description: description, Layers: layers, SystemDependencies: ciSystemDependencies(description.Modules)})
+		plan.Platforms = append(plan.Platforms, ciPlatformPlan{ID: platform, RequestedRoots: requested, FilteredRoots: filtered, FailedRoots: slices.Clone(description.FailedRoots), Roots: roots, Description: description, Layers: layers})
 		for _, root := range roots {
 			if !slices.Contains(plan.RequestedModules, root) {
 				plan.RequestedModules = append(plan.RequestedModules, root)
@@ -257,23 +257,6 @@ func ciLayers(modules []describedModule) ([][]string, error) {
 		slices.Sort(layers[i])
 	}
 	return layers, nil
-}
-
-func ciSystemDependencies(modules []describedModule) map[string][]string {
-	result := map[string][]string{"apt": {}, "choco": {}}
-	for _, module := range modules {
-		for manager, packages := range module.SystemDependencies {
-			for _, name := range packages {
-				if !slices.Contains(result[manager], name) {
-					result[manager] = append(result[manager], name)
-				}
-			}
-		}
-	}
-	for manager := range result {
-		slices.Sort(result[manager])
-	}
-	return result
 }
 
 func ciPublishers(platforms []ciPlatformPlan) map[string]string {

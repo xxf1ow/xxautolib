@@ -71,26 +71,33 @@ func TestCISystemDependencyIsolation(t *testing.T) {
 			c := describedModule{Name: "c", Version: "1", Depends: []string{"a@1"}, SystemDependencies: map[string][]string{}}
 			d := describedModule{Name: "d", Version: "1", Depends: []string{}, SystemDependencies: map[string][]string{}}
 			binding := describedModule{Name: "pybind11", Version: "1", Depends: []string{}, SystemDependencies: map[string][]string{}}
-			plan := ciPlan{Platforms: []ciPlatformPlan{{ID: platform, Description: moduleDescription{Modules: []describedModule{a, b, c, d, binding}}}}}
-			o := ciRunOptions{Platform: platform, PlanFile: filepath.Join(root, "plan.json"), WorkRoot: filepath.Join(root, "work")}
-			if err := writeCIJSON(o.PlanFile, plan); err != nil {
-				t.Fatal(err)
+			modules := map[string]describedModule{}
+			for _, module := range []describedModule{a, b, c, d, binding} {
+				modules[moduleIdentity(module)] = module
 			}
+			o := ciRunOptions{Platform: platform, WorkRoot: filepath.Join(root, "work")}
 			state := ciDependencyState{}
+			prepare := func(module describedModule, phase string) ([]string, error) {
+				closure, err := ciModuleClosure(moduleIdentity(module), modules)
+				if err != nil {
+					return nil, err
+				}
+				return prepareCIItemDependencies(context.Background(), o, closure, modules, phase, state)
+			}
 			for range 2 {
-				if _, err := prepareCIItemDependencies(context.Background(), o, b, "build", state); err == nil {
+				if _, err := prepare(b, "build"); err == nil {
 					t.Fatal("dependency failure swallowed")
 				}
 			}
-			if _, err := prepareCIItemDependencies(context.Background(), o, d, "build", state); err != nil {
+			if _, err := prepare(d, "build"); err != nil {
 				t.Fatal("unrelated item blocked", err)
 			}
 			for range 2 {
-				if _, err := prepareCIItemDependencies(context.Background(), o, a, "build", state); err != nil {
+				if _, err := prepare(a, "build"); err != nil {
 					t.Fatal(err)
 				}
 			}
-			environment, err := prepareCIItemDependencies(context.Background(), o, c, "verify", state)
+			environment, err := prepare(c, "verify")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -102,18 +109,18 @@ func TestCISystemDependencyIsolation(t *testing.T) {
 			} else if len(environment) != 0 {
 				t.Fatal("unexpected environment overrides")
 			}
-			clean, err := prepareCIItemDependencies(context.Background(), o, d, "verify", state)
+			clean, err := prepare(d, "verify")
 			if err != nil || len(clean) != 0 {
 				t.Fatal("formula environment leaked to independent item")
 			}
-			if _, err := prepareCIItemDependencies(context.Background(), o, binding, "build", state); err != nil {
+			if _, err := prepare(binding, "build"); err != nil {
 				t.Fatal(err)
 			}
 			before := mustReadText(t, filepath.Join(root, "events"))
 			if strings.Contains(before, "python3-dev") {
 				t.Fatal("Python headers installed during build")
 			}
-			if _, err := prepareCIItemDependencies(context.Background(), o, binding, "verify", state); err != nil {
+			if _, err := prepare(binding, "verify"); err != nil {
 				t.Fatal(err)
 			}
 			events := mustReadText(t, filepath.Join(root, "events"))
@@ -137,14 +144,14 @@ func TestCISystemDependencyIsolation(t *testing.T) {
 			}
 			for _, invalid := range []string{"--bad", "bad;echo", "tap/formula", ""} {
 				a.SystemDependencies[manager] = []string{"new-good", invalid}
-				if _, err := prepareCIItemDependencies(context.Background(), o, a, "build", state); err == nil {
+				if _, err := prepare(a, "build"); err == nil {
 					t.Fatal("invalid name accepted")
 				}
 			}
 			if mustReadText(t, filepath.Join(root, "events")) != events {
 				t.Fatal("invalid declaration started a manager")
 			}
-			if _, err := prepareCIItemDependencies(context.Background(), o, a, "unknown", state); err == nil {
+			if _, err := prepare(a, "unknown"); err == nil {
 				t.Fatal("unknown phase accepted")
 			}
 		})

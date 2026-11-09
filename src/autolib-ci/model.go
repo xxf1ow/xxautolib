@@ -42,14 +42,13 @@ type ciPlanOptions struct {
 }
 
 type ciPlatformPlan struct {
-	ID                 string              `json:"id"`
-	RequestedRoots     []string            `json:"requested_roots"`
-	FilteredRoots      []string            `json:"filtered_roots"`
-	FailedRoots        []failedRoot        `json:"failed_roots"`
-	Roots              []string            `json:"roots"`
-	Description        moduleDescription   `json:"description"`
-	Layers             [][]string          `json:"layers"`
-	SystemDependencies map[string][]string `json:"system_dependencies"`
+	ID             string            `json:"id"`
+	RequestedRoots []string          `json:"requested_roots"`
+	FilteredRoots  []string          `json:"filtered_roots"`
+	FailedRoots    []failedRoot      `json:"failed_roots"`
+	Roots          []string          `json:"roots"`
+	Description    moduleDescription `json:"description"`
+	Layers         [][]string        `json:"layers"`
 }
 
 type ciPlan struct {

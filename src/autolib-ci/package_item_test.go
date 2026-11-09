@@ -75,7 +75,13 @@ func TestCIPackageItem(t *testing.T) {
 			before := transportSnapshot(t, filepath.Join(f.options.WorkRoot, "install"))
 			entry := mustReadText(t, filepath.Join(f.options.SourceRoot, "src/autolib.cmake"))
 			origin := r.Origin
-			asset, err := packageCIItem(context.Background(), f.options, r)
+			plan, run, platform, source, work, err := loadCIWork(context.Background(), f.options)
+			if err != nil {
+				t.Fatal(err)
+			}
+			o := f.options
+			o.SourceRoot, o.WorkRoot = source, work
+			asset, err := packageCIItem(context.Background(), o, run, platform, plan.Publishers, r)
 			if kind != "library" && kind != "importer" {
 				if err == nil {
 					t.Fatal("unqualified item packaged")

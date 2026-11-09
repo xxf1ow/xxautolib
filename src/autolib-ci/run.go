@@ -44,6 +44,7 @@ func runCILayerWithCache(ctx context.Context, o ciRunOptions, cache *ciCacheClie
 	if err != nil {
 		return err
 	}
+	o.SourceRoot, o.WorkRoot = source, work
 	var snapshot ciCacheSnapshot
 	if err := decodeStrictJSONFile(o.CacheFile, &snapshot); err != nil {
 		return fmt.Errorf("read cache snapshot: %w", err)
@@ -158,7 +159,7 @@ func runCILayerWithCache(ctx context.Context, o ciRunOptions, cache *ciCacheClie
 		status := "reused"
 		if !hit {
 			record = ciCacheRecord{Schema: 1, Kind: "importer", Key: topTool, Origin: run, Fingerprint: snapshot.Inputs.Fingerprints[topTool.archiveName()], DependencyFingerprints: map[string]string{}, Verification: ciCacheVerification{Platform: o.Platform, Context: production, Evidence: []string{"logs/prepare/configure.log", "importer-smoke"}, Passed: true}}
-			asset, err := packageCIItem(ctx, o, record)
+			asset, err := packageCIItem(ctx, o, run, platform, plan.Publishers, record)
 			if err != nil {
 				return err
 			}
@@ -279,6 +280,10 @@ func runCILayerWithCache(ctx context.Context, o ciRunOptions, cache *ciCacheClie
 		if item.Status == "" {
 			logs := filepath.Join(work, "logs", o.Layer, strconv.Itoa(position+1))
 			err := func() error {
+				closure, err := ciModuleClosure(ref, modules)
+				if err != nil {
+					return err
+				}
 				deps := map[string]string{}
 				for _, dep := range module.Depends {
 					deps[dep] = snapshot.Inputs.Fingerprints[ciModuleCacheKey(modules[dep]).archiveName()]
@@ -297,16 +302,12 @@ func runCILayerWithCache(ctx context.Context, o ciRunOptions, cache *ciCacheClie
 					hit = true
 				}
 				if !hit {
-					environment, err := prepareCIItemDependencies(ctx, o, module, "build", result.SystemDependencies)
+					environment, err := prepareCIItemDependencies(ctx, o, closure, modules, "build", result.SystemDependencies)
 					if err != nil {
 						return err
 					}
 					buildOptions := o
 					buildOptions.Environment = environment
-					closure, err := ciModuleClosure(ref, modules)
-					if err != nil {
-						return err
-					}
 					for _, dependency := range closure {
 						if ready := find(dependency); ready != nil && ready.Status == "reused" && ready.Verified {
 							buildOptions.RestoredPackages = append(buildOptions.RestoredPackages, dependency)
@@ -317,11 +318,7 @@ func runCILayerWithCache(ctx context.Context, o ciRunOptions, cache *ciCacheClie
 					}
 					item.Built = true
 				}
-				environment, err := prepareCIItemDependencies(ctx, o, module, "verify", result.SystemDependencies)
-				if err != nil {
-					return err
-				}
-				closure, err := ciModuleClosure(ref, modules)
+				environment, err := prepareCIItemDependencies(ctx, o, closure, modules, "verify", result.SystemDependencies)
 				if err != nil {
 					return err
 				}
@@ -341,7 +338,7 @@ func runCILayerWithCache(ctx context.Context, o ciRunOptions, cache *ciCacheClie
 					return nil
 				}
 				record = ciCacheRecord{Schema: 1, Kind: "library", Key: key, Origin: run, Fingerprint: fingerprint, DependencyFingerprints: deps, Verification: ciCacheVerification{Platform: o.Platform, Context: production, Evidence: []string{evidence.EvidenceDirectory}, Passed: true}}
-				asset, err := packageCIItem(ctx, o, record)
+				asset, err := packageCIItem(ctx, o, run, platform, plan.Publishers, record)
 				if err != nil {
 					return err
 				}
