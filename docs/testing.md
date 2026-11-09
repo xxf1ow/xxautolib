@@ -4,7 +4,9 @@ Go fixture 验证声明、原生构建、安装及版本化本地和受控远端
 
 ## 执行
 
-先按[开发指南](development.md)准备环境。通用 Go 编译与测试优先在授权的 109 目录执行，当前进程 PATH 前置开发指南记录的 Make。本任务在新的本机隔离目录执行必要工具、轻量原生输入和代表库验证，范围及例外见[验证授权](development.md#远端构建与源码传输授权)。阶段定向证据不替代真实托管和用户验收。
+先按[开发指南](development.md)准备环境。本机编译与测试使用 `build/` 下的新隔离目录，编译并行度最多 4 线程；Go 只使用仓库管理的固定 SDK，不调用系统 Go。远端 109 仍可用于定向验证，其测试进程 PATH 前置开发指南记录的 Make；范围及例外见[验证授权](development.md#远端构建与源码传输授权)。阶段定向证据不替代真实托管和用户验收。
+
+本机隔离测试源码放在 `build/` 下，使 `go-sdk.cmake` 创建的工具缓存也在其中；现有固定SDK可只读复用，临时目录指向同一隔离根。Go测试串行执行包和用例，限制其子进程并发；原生构建并行度上限同为4。
 
 测试源码与各工具同目录。CMake 包装入口自动准备私有 SDK 和缓存；fixture 不下载真实依赖。builder 在 `build/tests/` 创建含空格和中文的隔离副本，importer 使用 Go 临时目录，结束时仅清理自身目录。SDK 获取、失败及离线复用、根入口与环境隔离由 [builder 测试](../src/autolib-builder/fixture_test.go)覆盖。定向验证用 `-run TestDefinition`；依赖接线用 `-run TestDirectDependencies`，资源补丁用 `-run TestPatch`，真实模块声明用 `-run TestRealModuleDeclarations`。只运行修改及直接受影响接口的增量用例，复用未失效证据；不运行全量 test、全量 vet 或重编无关模块。
 
@@ -74,7 +76,7 @@ build/tools/gitee-sync-venv/Scripts/python.exe -m pip install -r .github/actions
 build/tools/gitee-sync-venv/Scripts/python.exe -m unittest discover -s tests/ci/gitee-release -p test_publish.py -v
 ```
 
-按修改所有者替换 `-p` 文件名，不重复整套发布测试。HTTP 替身不访问真实 Gitee；Git 测试只用本地临时裸库。Windows 无 Bash 跳过相关分支检查，真实 builder 用例只在 109 执行。成品交接、两次准备字节一致及就绪资产重复发布零写入的定向证据由[成品交接记录](agent-notes/implemented/architecture/2026-11-04-ci-packaged-artifact-handoff.md#验证)拥有；既有交付证据由[交付证据](agent-notes/implemented/architecture/2026-11-02-gitee-delivery-reimplementation.md#已有受控证据)拥有。
+按修改所有者替换 `-p` 文件名，不重复整套发布测试。HTTP 替身不访问真实 Gitee；Git 测试只用本地临时裸库。Windows 无 Bash 跳过相关分支检查，真实 builder 用例使用上述授权的隔离环境。成品交接、两次准备字节一致及就绪资产重复发布零写入的定向证据由[成品交接记录](agent-notes/implemented/architecture/2026-11-04-ci-packaged-artifact-handoff.md#验证)拥有；既有交付证据由[交付证据](agent-notes/implemented/architecture/2026-11-02-gitee-delivery-reimplementation.md#已有受控证据)拥有。
 
 ## 真实交付与手动验收
 

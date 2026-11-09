@@ -93,11 +93,13 @@ Git 主来源复用 `git/<包名>/<版本>/`，资源复用 `git/_resources/<包
 
 ## 远端构建与源码传输授权
 
-用户永久授权向可信局域网设备 `lxx@192.168.0.109` 的 `/home/lxx/xxautolib` 传输任务源码，同类传输不重复询问；仍须工具审批、逐文件摘要核对并保留已有数据，不覆盖未知差异或清空目标目录，不传项目 `.git/`、凭据、SDK、缓存或宿主产物。第三方库迁移的编译安装、修复及增量续跑按用户确认执行；版本化交付可编译轻量夹具、执行定向测试并写自有日志。本机默认禁止编译，包括 Go。此授权不含其他目标、push、发布或触发 CI；push 由用户执行，CI 另按授权验收。
+允许本机编译和定向验证；产物、编译缓存及临时文件均放在仓库 `build/` 下的新隔离目录，并行度最多4线程。Go仅使用仓库管理并校验的固定SDK，不使用系统Go；隔离方式见[测试指南](testing.md#执行)。
+
+用户永久授权向可信局域网设备 `lxx@192.168.0.109` 的 `/home/lxx/xxautolib` 传输任务源码，同类传输不重复询问；仍须工具审批、逐文件摘要核对并保留已有数据，不覆盖未知差异或清空目标目录，不传项目 `.git/`、凭据、SDK、缓存或宿主产物。第三方库迁移的编译安装、修复及增量续跑按用户确认执行；版本化交付可编译轻量夹具、执行定向测试并写自有日志。此授权不含其他目标、push、发布或触发 CI；push 由用户执行，CI 另按授权验收。
 
 [本任务的原生验证授权](agent-notes/implemented/architecture/2026-11-05-darwin-aarch64-native-build-and-ci.md#工作目录验证环境与授权)允许在新的任务隔离目录准备固定工具，编译必要的宿主工具、轻量原生输入及 queue/lz4，完成对应消费和打包；不覆盖既有安装、来源和缓存。[统一配方第一阶段](agent-notes/implemented/architecture/2026-11-06-module-recipe-contract-and-macos-validation.md)另授权同一隔离根的两版 Eigen 真实安装与直接/搬迁消费；全包调查不属于第一阶段。第二阶段按[已确认的同步范围](agent-notes/implemented/architecture/2026-11-06-module-recipe-contract-and-macos-validation.md#原平台基线与-macos-同步范围)推进，允许必要宿主工具与定向检查；包的正式验收使用 macos-15，原平台配方冻结。
 
-通用定向验证优先使用上述远端环境；最低 CMake 按用户决定不安排任何形式测试，不下载或传输旧工具。
+通用定向验证可使用本机隔离目录或上述远端环境；最低 CMake 按用户决定不安排任何形式测试，不下载或传输旧工具。
 
 109 使用既有 Make 4.4.1：`/home/lxx/xxautolib/build/task3-make-V1Bt5n/install/bin/make`，仅为测试进程前置 PATH；清理 build 须保留该目录。发布归档测试使用已有且支持 xz 的 `/home/lxx/.local/share/uv/python/cpython-3.12.14-linux-x86_64-gnu/bin/python3.12`，不重装工具。
 
