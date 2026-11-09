@@ -15,6 +15,9 @@ func (f *repeatedFlag) String() string         { return strings.Join(*f, ",") }
 func (f *repeatedFlag) Set(value string) error { *f = append(*f, value); return nil }
 
 func run(args []string, stdout, stderr io.Writer) int {
+	if len(args) > 0 && args[0] == "catalog" {
+		return runCatalog(args[1:], stdout, stderr)
+	}
 	fail := func(err error) int { fmt.Fprintln(stderr, err); return 1 }
 	if len(args) == 1 && args[0] == "version" {
 		fmt.Fprintln(stdout, "autolib-builder 1")

@@ -12,6 +12,9 @@ import (
 )
 
 func run(args []string, stdout, stderr io.Writer) int {
+	if len(args) > 0 && args[0] == "sync-source" {
+		return runCISyncSource(args[1:], stdout, stderr)
+	}
 	fail := func(err error) int { fmt.Fprintln(stderr, err); return 1 }
 	if len(args) > 0 && args[0] == "transport" {
 		return runCITransport(args[1:], stdout, stderr)
