@@ -206,3 +206,67 @@ func TestInstalledMetadataWithoutAdapter(t *testing.T) {
 		})
 	}
 }
+
+func TestRestoredConsumption(t *testing.T) {
+	f := newFixture(t)
+	f.definition("demo", "copy", "package_platforms=['any-any']\n"+testSource+"[[copy]]\nfiles=['input.h']\ndestination='include'\n")
+	putFile(t, filepath.Join(f.root, "src/dependencies/demo/1.0/autolib-import.cmake"), "# adapter\n")
+	putFile(t, filepath.Join(f.root, "git/demo/1.0/input.h"), "// portable\n")
+	payload := f.installed("demo", "include/input.h")
+	putFile(t, payload, "// portable\n")
+	if err := consumptionCommand(f, "demo", "installed"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(filepath.Join(f.root, "git/demo")); err != nil {
+		t.Fatal(err)
+	}
+	index := filepath.Join(f.root, "3rdparty/demo/package.toml")
+	if err := os.Remove(index); err != nil {
+		t.Fatal(err)
+	}
+	original := readFile(t, f.installed("demo", "autolib-import.cmake"))
+	if err := consumptionCommand(f, "demo", "restored"); err != nil {
+		t.Fatal("verified restored package requires upstream source:", err)
+	}
+	requireFile(t, f.installed("demo", "autolib-import.cmake"), original)
+	if _, err := os.Stat(index); !os.IsNotExist(err) {
+		t.Fatal("restored validation rewrote latest", err)
+	}
+	if err := consumptionCommand(f, "demo", "reuse"); err == nil {
+		t.Fatal("ordinary local reuse skipped copy source validation")
+	}
+	putFile(t, payload, string(universalBinaryFixtures()["ELF"]))
+	if err := consumptionCommand(f, "demo", "restored"); err == nil {
+		t.Fatal("restored package accepted machine code as any-any")
+	}
+	putFile(t, payload, "// portable\n")
+	putFile(t, f.installed("demo", "autolib-import.cmake"), strings.Replace(original, `set(AUTOLIB_DEPENDENCIES "")`, `set(AUTOLIB_DEPENDENCIES "missing@1")`, 1))
+	if err := consumptionCommand(f, "demo", "restored"); err == nil {
+		t.Fatal("restored package accepted changed frozen dependencies")
+	}
+	putFile(t, f.installed("demo", "autolib-import.cmake"), incompleteConsumption)
+	if err := consumptionCommand(f, "demo", "restored"); err == nil {
+		t.Fatal("restored validation accepted an incomplete installation")
+	}
+	if err := os.Remove(f.installed("demo", "autolib-import.cmake")); err != nil {
+		t.Fatal(err)
+	}
+	if err := consumptionCommand(f, "demo", "restored"); err == nil {
+		t.Fatal("restored validation synthesized missing package metadata")
+	}
+}
+
+func TestGenerateRestoredSelection(t *testing.T) {
+	for _, refs := range [][]string{{"demo"}, {"other@1.0"}, {"demo@1.0", "demo@1.0"}} {
+		f := newFixture(t)
+		f.definition("demo", "copy", testSource+"[[copy]]\nfiles=['input.h']\ndestination='include'\n")
+		context := f.context
+		context.RestoredPackages = refs
+		if err := generate(context, []string{"demo@1.0"}); err == nil || !strings.Contains(err.Error(), "unique selected exact package") {
+			t.Fatalf("accepted ambiguous restored selection %v: %v", refs, err)
+		}
+		if _, err := os.Stat(filepath.Join(context.BuildRoot, "generated/inputs.cmake")); !os.IsNotExist(err) {
+			t.Fatal("invalid restored selection emitted usable output", err)
+		}
+	}
+}

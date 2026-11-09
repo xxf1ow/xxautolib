@@ -16,6 +16,7 @@ type buildContext struct {
 	MultiConfig                                     bool
 	MSVCRuntimeLibrary                              *string
 	CMakeDefaults                                   map[string]string
+	RestoredPackages                                []string
 }
 
 func cmakeArgument(value string) string {
@@ -132,8 +133,15 @@ func renderModule(module *moduleDefinition, context buildContext, dependencies [
 		return args
 	}
 	postBuildCommand := prepare("reuse")
-	if module.Sentinel != "" {
-		lines = append(lines, "if(EXISTS "+cmakeArgument(slashJoin(install, module.Sentinel))+")", "    message(STATUS "+cmakeArgument("  [Info] ["+(moduleRef{module.Name, module.Version}).String()+"] cached")+")", "    add_custom_target("+cmakeArgument(target)+" ALL)")
+	cacheCondition := ""
+	if slices.Contains(context.RestoredPackages, (moduleRef{module.Name, module.Version}).String()) {
+		cacheCondition = "TRUE"
+		postBuildCommand = prepare("restored")
+	} else if module.Sentinel != "" {
+		cacheCondition = "EXISTS " + cmakeArgument(slashJoin(install, module.Sentinel))
+	}
+	if cacheCondition != "" {
+		lines = append(lines, "if("+cacheCondition+")", "    message(STATUS "+cmakeArgument("  [Info] ["+(moduleRef{module.Name, module.Version}).String()+"] cached")+")", "    add_custom_target("+cmakeArgument(target)+" ALL)")
 		arguments := []string{}
 		for _, arg := range postBuildCommand {
 			arguments = append(arguments, cmakeArgument(arg))
@@ -430,7 +438,7 @@ func renderModule(module *moduleDefinition, context buildContext, dependencies [
 		}
 		emit("ExternalProject_Add_Step", []string{target, step.Name}, options)
 	}
-	if module.Sentinel != "" {
+	if cacheCondition != "" {
 		lines = append(lines, "endif()")
 	}
 	return strings.Join(lines, "\n"), nil

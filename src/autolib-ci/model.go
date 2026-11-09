@@ -67,6 +67,7 @@ type ciProductionContext struct {
 type ciRunOptions struct {
 	CacheFile, PreparedImporter                                      string
 	Environment                                                      []string
+	RestoredPackages                                                 []string
 	Repository                                                       string
 	SourceRoot, PlanFile, RunIdentityFile, Platform, Layer, WorkRoot string
 	ImporterFile, CMakeCommand, MakeProgram                          string

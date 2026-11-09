@@ -25,7 +25,7 @@
 | `steps`、`patches` | 追加 |
 | `copy` | 整数组替换 |
 
-旧 OS 表和 `architectures` 层级不接受。通用身份约束完整交付内容；安装类型本身不证明内容可跨平台使用。cmake 和 copy 均可交付 any-any；消费准备、复用和 staging 按内容拒绝已知 ELF、PE、Mach-O、COFF 及目标代码归档，不依赖扩展名。copy 另核对映射集合及来源字节，允许平台无关的查找元数据；生成头文件和元数据的跨平台语义仍需审查与真实消费验证。字段设计与验收要求见[统一配方设计](../agent-notes/implemented/architecture/2026-11-06-module-recipe-contract-and-macos-validation.md)。
+旧 OS 表和 `architectures` 层级不接受。通用身份约束完整交付内容；安装类型本身不证明内容可跨平台使用。cmake 和 copy 均可交付 any-any；消费准备、复用和 staging 按内容拒绝已知 ELF、PE、Mach-O、COFF 及目标代码归档，不依赖扩展名。copy 另核对映射集合及来源字节，允许平台无关的查找元数据；[CI 已验证归档恢复](../development.md#ci-开发与运行)在后续构建中只读校验安装身份、冻结依赖及通用载荷，不要求原上游源码；生成头文件和元数据的跨平台语义仍需审查与真实消费验证。字段设计与验收要求见[统一配方设计](../agent-notes/implemented/architecture/2026-11-06-module-recipe-contract-and-macos-validation.md)。
 
 ## 来源与安装字段
 

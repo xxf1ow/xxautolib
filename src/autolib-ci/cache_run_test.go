@@ -275,3 +275,82 @@ func TestCICacheRunCancellation(t *testing.T) {
 	}
 	f.transport(t, false)
 }
+
+func nextCacheRun(t *testing.T, f *cacheRunTestFixture) {
+	t.Helper()
+	if err := os.RemoveAll(f.options.WorkRoot); err != nil {
+		t.Fatal(err)
+	}
+	f.identity.RunID = "124"
+	f.identity.Attempt = "2"
+	f.options.WorkRoot = filepath.Join(f.options.SourceRoot, "build/ci/124-2", f.options.Platform)
+	f.options.ImporterFile = filepath.Join(f.options.WorkRoot, "install", ciImporterExecutable(f.options.Platform))
+	if err := writeCIJSON(f.options.RunIdentityFile, f.identity); err != nil {
+		t.Fatal(err)
+	}
+	f.snapshot(t)
+}
+
+func runCacheFixture(t *testing.T, f *cacheRunTestFixture) {
+	t.Helper()
+	for _, layer := range []string{"prepare", "layer0", "layer1", "verify"} {
+		if err := f.runLayer(layer); err != nil {
+			t.Fatalf("%s: %v", layer, err)
+		}
+	}
+	if err := finalizeCI(f.plan, f.options.Repository, f.identity, []ciPlatformResult{f.result(t)}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCICacheRunPackagingInputChange(t *testing.T) {
+	f := cacheRunFixture(t)
+	runCacheFixture(t, &f)
+	first := f.result(t)
+	file := "src/autolib-importer/fixup-metadata.cmake"
+	writeCIFixture(t, f.options.SourceRoot, file, mustReadText(t, filepath.Join(f.options.SourceRoot, file))+"\n# changed packaging input\n")
+	nextCacheRun(t, &f)
+	runCacheFixture(t, &f)
+	for i, item := range f.result(t).Packages {
+		if item.Status != "stored" || !item.Built || item.Record.Fingerprint == first.Packages[i].Record.Fingerprint {
+			t.Fatal("packaging input reused stale library", item)
+		}
+	}
+}
+
+func TestCICacheRunRestoredCopyDependency(t *testing.T) {
+	for _, sentinel := range []bool{true, false} {
+		t.Run(map[bool]string{true: "sentinel", false: "without sentinel"}[sentinel], func(t *testing.T) {
+			f := cacheRunFixture(t)
+			if sentinel {
+				file := "src/dependencies/dep/1/module.toml"
+				writeCIFixture(t, f.options.SourceRoot, file, "sentinel='include/header.h'\n"+mustReadText(t, filepath.Join(f.options.SourceRoot, file)))
+				f.snapshot(t)
+			}
+			runCacheFixture(t, &f)
+			original := f.result(t).Packages[0]
+			file := "src/dependencies/eigen/3/autolib-import.cmake"
+			writeCIFixture(t, f.options.SourceRoot, file, mustReadText(t, filepath.Join(f.options.SourceRoot, file))+"\n# changed dependent only\n")
+			if err := os.RemoveAll(filepath.Join(f.options.SourceRoot, "git/dep")); err != nil {
+				t.Fatal(err)
+			}
+			nextCacheRun(t, &f)
+			runCacheFixture(t, &f)
+			for _, item := range f.result(t).Packages {
+				if item.Slot.Name == "eigen" && item.Slot.Version == "3" {
+					if item.Status != "stored" || !item.Built {
+						t.Fatal("dependent did not rebuild", item)
+					}
+				} else if item.Status != "reused" || item.Built {
+					t.Fatal("unchanged dependency rebuilt", item)
+				}
+				if item.Slot.Name == "dep" && (item.Record.Origin != original.Record.Origin || item.Record.Archive != original.Record.Archive) {
+					t.Fatal("restored dependency producer changed", item)
+				}
+			}
+			if _, err := os.Stat(filepath.Join(f.options.SourceRoot, "git/dep")); !os.IsNotExist(err) {
+				t.Fatal("restored dependency tried to prepare upstream", err)
+			}
+		})
+	}
+}

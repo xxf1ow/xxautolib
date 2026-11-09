@@ -197,7 +197,7 @@ func computeCIFingerprints(sourceRoot string, plan ciPlan) (ciFingerprintReport,
 	if err != nil {
 		return report, err
 	}
-	builderFiles = append(builderFiles, "go.mod", "go.sum", "CMakeLists.txt")
+	builderFiles = append(builderFiles, "go.mod", "go.sum", "CMakeLists.txt", "src/autolib-importer/fixup-metadata.cmake")
 	for _, platform := range plan.Platforms {
 		builderFiles = append(builderFiles, platform.Description.BuilderFiles...)
 		builderFiles = append(builderFiles, platform.Description.GoModuleFiles...)

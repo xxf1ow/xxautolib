@@ -303,6 +303,15 @@ func runCILayerWithCache(ctx context.Context, o ciRunOptions, cache *ciCacheClie
 					}
 					buildOptions := o
 					buildOptions.Environment = environment
+					closure, err := ciModuleClosure(ref, modules)
+					if err != nil {
+						return err
+					}
+					for _, dependency := range closure {
+						if ready := find(dependency); ready != nil && ready.Status == "reused" && ready.Verified {
+							buildOptions.RestoredPackages = append(buildOptions.RestoredPackages, dependency)
+						}
+					}
 					if err := buildCIModule(ctx, buildOptions, production, module, install, logs); err != nil {
 						return err
 					}
@@ -469,6 +478,7 @@ func configureCIProduction(ctx context.Context, o ciRunOptions, c ciProductionCo
 	}
 	build := filepath.Join(o.WorkRoot, "build")
 	args := []string{"-S", o.SourceRoot, "-B", build, "-G", c.Generator, "-DBUILD_LIST=" + strings.Join(modules, ","), "-DCMAKE_BUILD_TYPE=" + c.Configuration}
+	args = append(args, "-DAUTOLIB_RESTORED_PACKAGES="+strings.Join(o.RestoredPackages, ";"))
 	if o.PreparedImporter != "" {
 		args = append(args, "-DAUTOLIB_PREPARED_IMPORTER="+o.PreparedImporter)
 	}

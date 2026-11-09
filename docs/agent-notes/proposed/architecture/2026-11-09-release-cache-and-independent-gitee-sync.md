@@ -247,6 +247,8 @@ Gitee 清理不能只遍历现有 Git 摘要，还须检查附件列表中符合
 
 `TestCICacheLifecycle` 在 Darwin ARM64 宿主使用真实原生静态库和受控 HTTP Release，连续组织五次运行。首次依赖 B 失败，A/C 阻断而 D 入库；删除原 work/install 后，更换 run/attempt 和源码 SHA，D 只从缓存恢复并实际链接运行，来源及归档字节不变。B 同版本输入变化重建 B/A/C，D 继续复用；latest 单独变化不重建库，入口单独变化更新工具记录及原始入口。该测试经过实际通用载荷校验，含机器码的 D 使用原生平台身份，未放入 any-any 缓存。
 
+库指纹包含实际执行的 `fixup-metadata.cmake`，单独修改该脚本使库重新入库。恢复的 copy 依赖有无 sentinel 均可在删除原上游源码后供依赖者单独重建；显式恢复目标只读校验冻结安装，普通本地 reuse 保留来源比对。
+
 逐项执行用例覆盖构建、验证、打包、入库失败以及依赖者自身失败；取消、悬空 latest、双版本独立消费者、非 publisher 本地就绪及子进程令牌隔离有定向证据。HTTP 夹具验证分页、同名残留重传、starter、中断及响应丢失、来源和归档 ID 绑定、下载校验及不同身份并发；容量预检包含全部计划净新增项，不以驱逐通过。
 
 workflow 的 Go 接线检查及 Python 发布入口、Darwin Bash 片段通过；Windows PowerShell 片段因宿主未提供 PowerShell 跳过，Linux 专用脚本不在 Darwin 冒称原生通过。本机使用仓库管理的 Go 1.27.3，源码快照、产物、缓存和临时文件位于 build 下，编译并发不超过四线程。109 SSH 握手失败后依用户授权改为本机验证，没有覆盖远端源码。

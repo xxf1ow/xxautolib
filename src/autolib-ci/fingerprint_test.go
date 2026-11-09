@@ -14,6 +14,7 @@ func fingerprintFixture(t *testing.T) (string, ciPlan) {
 	for name, content := range map[string]string{
 		"src/autolib-builder/fixture.go":             "package main\n",
 		"src/autolib-importer/main.go":               "package main\n",
+		"src/autolib-importer/fixup-metadata.cmake":  "# package fixup\n",
 		"src/autolib.cmake":                          "# raw entry\r\n",
 		"src/autolib-builder/prepare-tools.cmake":    "# prepare tools\n",
 		"src/internal/packagemetadata/references.go": "package packagemetadata\n",
@@ -39,6 +40,25 @@ func fingerprintFixture(t *testing.T) (string, ciPlan) {
 	}
 	desc := moduleDescription{Modules: modules, BuilderFiles: []string{"src/autolib-builder/fixture.go", "src/autolib-builder/prepare-tools.cmake", "CMakeLists.txt"}, GoModuleFiles: []string{"go.mod", "go.sum"}}
 	return root, ciPlan{Platforms: []ciPlatformPlan{{ID: "linux-x86_64", Description: desc}}, Publishers: map[string]string{}}
+}
+
+func TestCIFingerprintPackagingInput(t *testing.T) {
+	root, plan := fingerprintFixture(t)
+	before, err := computeCIFingerprints(root, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeCIFixture(t, root, "src/autolib-importer/fixup-metadata.cmake", "# changed package fixup\n")
+	after, err := computeCIFingerprints(root, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"a", "b", "c", "d"} {
+		key := name + "-1-linux-x86_64.tar.zst"
+		if before.Fingerprints[key] == "" || before.Fingerprints[key] == after.Fingerprints[key] {
+			t.Fatalf("packaging input did not invalidate %s", key)
+		}
+	}
 }
 
 func TestCIFingerprintClosure(t *testing.T) {

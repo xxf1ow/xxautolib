@@ -83,7 +83,7 @@ Git 主来源复用 `git/<包名>/<版本>/`，资源复用 `git/_resources/<包
 
 共享准备生成缓存快照，各平台`run --cache`显式读取。每项恢复或构建、消费验证后立即入库；失败运行中的成功成品仍可复用，汇总保持整体失败。缓存为当前源码仓库的`autolib-cache`，共享准备和平台使用`contents: write`；令牌仅注入缓存步骤，子进程不继承GitHub/Gitee令牌。容量、精确同名文件自动替换及无关文件保护见[缓存设计](agent-notes/proposed/architecture/2026-11-09-release-cache-and-independent-gitee-sync.md#release-成品缓存)。运行互斥不按分支拆组，队列最多等待100个运行。
 
-同版本输入变化沿依赖链失效，latest单独变化不重建库。命中归档恢复到新安装根，不复用旧安装；Artifacts只保存计划、结果和诊断。零有效库仍验证工具与入口。验证命令及边界见[测试指南](testing.md#ci-验证)。
+同版本输入变化沿依赖链失效，latest单独变化不重建库。命中归档恢复到新安装根，不复用旧安装；CI 仅将已恢复并验证的精确依赖传入 `AUTOLIB_RESTORED_PACKAGES`，其构建目标只读校验冻结安装，不要求上游源码。普通本地复用仍执行原来源比对；Artifacts只保存计划、结果和诊断。零有效库仍验证工具与入口。验证命令及边界见[测试指南](testing.md#ci-验证)。
 
 ### 独立 Gitee 发布
 
