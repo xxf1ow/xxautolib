@@ -24,6 +24,8 @@ CI 在原生平台完成编译、安装和消费验证后，调用同提交的 `
 
 ### 归属与不变项
 
+逐项 Release 成品缓存及独立同步的后续提案见[Release 成品缓存与独立 Gitee 精确同步](../../proposed/architecture/2026-11-09-release-cache-and-independent-gitee-sync.md)。
+
 本文部分替代 [Gitee 版本化交付重做](../../implemented/architecture/2026-11-02-gitee-delivery-reimplementation.md)中安装树运输、发布端暂存修正及重打包的职责，部分替代[自定位消费入口与工具专用 CI](../../implemented/architecture/2026-11-03-entry-delivery-and-tool-only-ci.md)中对应交接描述。两份记录的包选择、精确依赖、资格过滤、入口消费、可信来源、latest、上传、权限及历史证据继续适用，不整体归档。
 
 builder 继续拥有安装描述、暂存副本、路径修正、安全归档和本地打包命令。CI 负责按原计划驱动构建、验证、打包与运输；发布准备负责可信输入、完整集合、实际字节和入口注入检查；Gitee Action 负责附件协调及成功项元数据登记。

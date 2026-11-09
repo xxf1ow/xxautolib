@@ -16,6 +16,8 @@ Status: implemented
 
 ### 设计归属与范围
 
+入口随 importer 实际更新的后续提案见[Release 成品缓存与独立 Gitee 精确同步](../../proposed/architecture/2026-11-09-release-cache-and-independent-gitee-sync.md)。
+
 [CI 成品归档交接与重复发布](2026-11-04-ci-packaged-artifact-handoff.md)拥有成品运输及 CI 归档生成职责；本文保留入口来源核对、发布目标注入及其余决定。
 
 本文拥有入口交付、本地与远程地址的确定方式、CI 三种构建选择、fork 构建发布的可信来源规则，以及相应退役范围。它部分替代[版本化包与统一产物交付](../../proposed/architecture/2026-10-29-versioned-artifact-delivery.md)的独立本地来源和四步选择，部分替代[CI 自动发现](2026-10-27-ci-discovery-and-release-sources.md)及[Gitee 交付](2026-11-02-gitee-delivery-reimplementation.md)的空列表、无包平台跳过、固定上游源码限制和发布二次筛选，并扩充入口运输及发布内容。上述记录仍拥有版本、依赖、资格过滤、校验、Git 元数据、权限及历史证据，保持原生命周期，不整体归档。

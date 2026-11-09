@@ -14,6 +14,8 @@ Status: implemented
 
 ### 设计归属与参考范围
 
+后续独立同步、摘要信任及源码驱动清理的提案见[Release 成品缓存与独立 Gitee 精确同步](../../proposed/architecture/2026-11-09-release-cache-and-independent-gitee-sync.md)。
+
 [CI 成品归档交接与重复发布](2026-11-04-ci-packaged-artifact-handoff.md)拥有 CI 成品归档及运输职责；本文保留 Gitee 发布、元数据、latest、权限和历史验证决定。
 
 本文拥有第四阶段的交接结构、Gitee 发布、首次 latest 初始化及重构边界，在这些范围内替代[统一交付设计](../../proposed/architecture/2026-10-29-versioned-artifact-delivery.md)的第四阶段方案。前三阶段的公共消费入口、精确依赖、缓存选择、Git 快照与已验收记录继续作为基线约束；本文不重新定义这些能力，也不把被替代实现的分项证据当作新实现验收结果。

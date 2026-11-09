@@ -8,6 +8,8 @@ Status: implemented
 
 ## 决定
 
+跨运行生产包复用及链式失效的后续提案见[Release 成品缓存与独立 Gitee 精确同步](../../proposed/architecture/2026-11-09-release-cache-and-independent-gitee-sync.md)。
+
 CI 每轮在该运行与平台的隔离安装根中，按依赖先序构建所选模块的完整依赖闭包。同轮共享依赖只构建一次，后续层使用已安装的依赖；不从 Release 下载包恢复安装树，不复用其他运行的生产包或工作区原有安装 sentinel。源码、工具和 Go 下载缓存保持各自原有规则。
 
 删除生产 build ID、逐包生产提交、缓存命中结果和 force 输入，不新增包内生产元数据、sidecar、Actions 包缓存或发行清单。整个运行的提交、run ID 和 attempt 仍用于授权与结果归属，不能随缓存字段删除。
