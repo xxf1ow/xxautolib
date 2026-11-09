@@ -90,6 +90,76 @@ class SyncSchedulerTests(unittest.TestCase):
         self.assertIn('b-1-any-any.tar.zst',result['coverage'])
         self.assertEqual(result['uploaded'],0)
 
+    def transitive_graph(self):
+        assets,config=self.graph()
+        self.f.run_release(self.f.config([assets[1]]))
+        for module in config['source']['plan']['platforms'][0]['description']['modules']:
+            module['depends']={'a':['b@1'],'b':['c@1']}.get(module['name'],[])
+        config['cache']['records']['b-1-any-any.tar.zst']['dependency_fingerprints']={'c-1-any-any.tar.zst':'a'*64}
+        config['cache']['records']['c-1-any-any.tar.zst']['dependency_fingerprints']={}
+        config['work_root']=self.f.root/'transitive'
+        self.f.server.add_asset('a-1-any-any.tar.zst',b'previous A',asset_id=99)
+        return assets,config
+
+    def test_skipped_dependency_does_not_hide_missing_transitive_cache(self):
+        assets,config=self.transitive_graph()
+        config['cache']['records'].pop('c-1-any-any.tar.zst')
+        fetched=[]
+        def fetch(asset):
+            fetched.append(asset['name'])
+            return next(a['path'] for a in assets if a['name']==asset['name'])
+        config['fetch_asset']=fetch
+        result=self.f.run_release(config)
+        status={item['name']:item for item in result['items']}
+        self.assertEqual(status['b-1-any-any.tar.zst']['status'],'skipped')
+        self.assertEqual(status['a-1-any-any.tar.zst']['status'],'dependency_failed')
+        self.assertEqual(status['a-1-any-any.tar.zst']['dependency_chain'],
+                         ['a-1-any-any.tar.zst','b-1-any-any.tar.zst','c-1-any-any.tar.zst'])
+        self.assertNotIn('a-1-any-any.tar.zst',fetched)
+        self.assertFalse(any(method=='DELETE' and url.endswith('/99') for method,url in self.f.server.events))
+        self.assertEqual(self.f.server.bodies['a-1-any-any.tar.zst'],b'previous A')
+        self.assertEqual((result['uploaded'],result['blocked'],result['failed']),(1,1,0))
+
+    def test_skipped_dependency_propagates_transitive_upload_failure(self):
+        _,config=self.transitive_graph()
+        self.f.server.fail.add('c-1-any-any.tar.zst')
+        result=self.f.run_release(config)
+        status={item['name']:item for item in result['items']}
+        self.assertEqual(status['a-1-any-any.tar.zst']['status'],'dependency_failed')
+        self.assertEqual(status['a-1-any-any.tar.zst']['dependency_chain'],
+                         ['a-1-any-any.tar.zst','b-1-any-any.tar.zst','c-1-any-any.tar.zst'])
+        self.assertEqual(self.f.server.bodies['a-1-any-any.tar.zst'],b'previous A')
+        self.assertEqual((result['uploaded'],result['skipped'],result['failed']),(1,1,2))
+
+    def test_skipped_dependency_still_waits_for_transitive_push(self):
+        assets,config=self.transitive_graph()
+        entered,release,independent=threading.Event(),threading.Event(),threading.Event()
+        started=[]
+        original=self.scheduler.commit_metadata
+        def fetch(asset):
+            started.append(asset['name'])
+            if asset['name']=='c-1-any-any.tar.zst' and not independent.wait(10):
+                raise RuntimeError('test timeout')
+            return next(a['path'] for a in assets if a['name']==asset['name'])
+        def commit(repo,digests,latest,**kwargs):
+            if any(path.startswith('c/') for path in digests):
+                entered.set()
+                if not release.wait(10):raise RuntimeError('test timeout')
+            head=original(repo,digests,latest,**kwargs)
+            if any(path.startswith('d/') for path in digests):independent.set()
+            return head
+        config['fetch_asset']=fetch
+        results=[]
+        with patch('sync_scheduler.commit_metadata',side_effect=commit):
+            thread=threading.Thread(target=lambda:results.append(self.f.run_release(config)))
+            thread.start()
+            try:
+                self.assertTrue(entered.wait(10))
+                self.assertNotIn('a-1-any-any.tar.zst',started)
+            finally:release.set();thread.join(10)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual((results[0]['uploaded'],results[0]['skipped'],results[0]['failed']),(3,1,0))
+
     def tools(self):
         config=self.f.config([self.f.asset('d')])
         raw=b'# original\nset(_autolib_release_root "")\n'

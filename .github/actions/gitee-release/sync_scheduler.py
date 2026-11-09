@@ -118,6 +118,19 @@ def run_sync(config: dict, source: dict, cache: dict, *, api, repository: dict,
             except Exception:
                 stopped.set()
                 raise
+    def dependency_status(name):
+        ready = True
+        for dependency in dependencies.get(name, []):
+            parent = outcomes.get(dependency, {})
+            status = parent.get('status')
+            if dependency not in candidates or status in {'failed', 'dependency_failed'}:
+                failed = status == 'failed' or parent.get('blocking_failure', False)
+                return False, [name, *parent.get('dependency_chain', [dependency])], failed
+            child_ready, chain, failed = dependency_status(dependency)
+            if chain:
+                return False, [name, *chain], failed
+            ready = ready and child_ready and status in {'uploaded', 'skipped'}
+        return ready, None, False
     entry_result = None
     cpu = len(os.sched_getaffinity(0)) if hasattr(os, 'sched_getaffinity') else os.cpu_count() or 1
     active = {}
@@ -128,18 +141,14 @@ def run_sync(config: dict, source: dict, cache: dict, *, api, repository: dict,
                     outcomes[name] = {'name': name, 'status': 'failed', 'operation': 'metadata_commit'}
                     pending.remove(name)
                     continue
-                deps = dependencies.get(name, [])
-                blocker = next((d for d in deps if d not in candidates or
-                                outcomes.get(d, {}).get('status') in {'failed', 'dependency_failed'}), None)
-                if blocker is not None:
-                    parent = outcomes.get(blocker, {})
-                    failed = parent.get('status') == 'failed' or parent.get('blocking_failure', False)
+                ready, chain, failed = dependency_status(name)
+                if chain:
                     outcomes[name] = {'name': name, 'status': 'dependency_failed', 'blocking_failure': failed,
-                                      'dependency_chain': [name, *parent.get('dependency_chain', [blocker])]}
+                                      'dependency_chain': chain}
                     result['coverage'][name] = outcomes[name]
                     pending.remove(name)
                     continue
-                if not all(outcomes.get(d, {}).get('status') in {'uploaded', 'skipped'} for d in deps):
+                if not ready:
                     continue
                 asset = candidates[name]
                 callback = (lambda asset: False) if asset['kind'] == 'importer' else confirm

@@ -114,12 +114,6 @@ def execute_cleanup(plan: dict, *, delete_cache, api, release_id: int | None,
         removed = []
         for item in group['items']:
             cache_ok, gitee_ok = True, True
-            if item['github']:
-                try:
-                    delete_cache(item['key'])
-                except (OSError, RuntimeError, ValueError):
-                    cache_ok = False
-                    result['errors'][item['name'] + ':github'] = 'cache deletion unconfirmed'
             try:
                 for asset in item['gitee']:
                     if release_id is None:
@@ -128,6 +122,13 @@ def execute_cleanup(plan: dict, *, delete_cache, api, release_id: int | None,
             except (OSError, RuntimeError, ValueError):
                 gitee_ok = False
                 result['errors'][item['name'] + ':gitee'] = 'Gitee deletion unconfirmed'
+            # 无摘要的残留可能仅由缓存记录证明归属，Gitee 确认前须保留该证据。
+            if gitee_ok and item['github']:
+                try:
+                    delete_cache(item['key'])
+                except (OSError, RuntimeError, ValueError):
+                    cache_ok = False
+                    result['errors'][item['name'] + ':github'] = 'cache deletion unconfirmed'
             if gitee_ok:
                 removed.extend(item['metadata_paths'])
             if cache_ok and gitee_ok:

@@ -119,6 +119,33 @@ class CleanupTests(unittest.TestCase):
         self.assertFalse(repo['existing_digests'])
         self.assertNotIn('queue', repo['existing_latest'])
 
+    def test_failed_orphan_deletion_preserves_identity_for_next_run(self):
+        repo = self.open()
+        name = 'gone-1-any-any.tar.zst'
+        key = dict(kind='library', name='gone', version='1', os='any', arch='any')
+        cache = cache_facts({name: {'key': key}},
+                            [{'id': 21, 'name': name}, {'id': 22, 'name': name + '.publication.json'}])
+        source = source_facts({'queue': package({'1': ['any-any']})})
+        api = CleanupAPI([{'id': 1, 'name': name}, {'id': 2, 'name': 'unknown.bin'}], fail=1)
+        def delete_cache(identity):
+            self.assertEqual(identity, key)
+            cache['records'].pop(name)
+            cache['assets'].clear()
+        plan = self.cleanup.plan_cleanup(source, cache, repo, list(api.assets.values()))
+        first = self.cleanup.execute_cleanup(plan, delete_cache=delete_cache, api=api, release_id=7,
+                                            repository=repo, git_lock=threading.Lock())
+        self.assertIn(name + ':gitee', first['errors'])
+        self.assertIn(name, cache['records'])
+        api.fail = None
+        plan = self.cleanup.plan_cleanup(source, cache, repo, list(api.assets.values()))
+        second = self.cleanup.execute_cleanup(plan, delete_cache=delete_cache, api=api, release_id=7,
+                                             repository=repo, git_lock=threading.Lock())
+        self.assertFalse(second['errors'])
+        self.assertEqual(second['deleted'], [name])
+        self.assertEqual(set(api.assets), {2})
+        self.assertFalse(cache['records'])
+        self.assertFalse(cache['assets'])
+
     def test_incomplete_or_wrong_source_is_not_a_deletion_input(self):
         repo = self.open()
         for source, cache, assets in [(source_facts({}), dict(cache_facts(), repository='fake/repo'), []),
