@@ -15,16 +15,16 @@ Status: implemented
 CI 在原生平台完成编译、安装和消费验证后，调用同提交的 `builder package`，保存最终库归档与宿主 importer 归档。发布端只校验并分发这些归档，不生成归档。
 
 ```text
-构建时选择一次 → 编译安装 → 消费验证 → builder 打包 → 保存成品 artifacts
+构建时选择一次 → 编译安装 → 消费验证 → builder 打包 → 保存成品 Release 缓存
                                                          ↓
-选择精确 run/attempt → 校验全部成品 → 注入入口上传副本 → 核对/跳过/替换 → 登记元数据
+历史手动选择精确 run/attempt → 校验全部成品 → 注入入口上传副本 → 核对/跳过/替换 → 登记元数据
 ```
 
 本地构建仍只完成安装；需要归档时手动调用同一个 `builder package`。CI workflow 自动调用该命令，不给 builder 增加 CI 环境判断、自动打包开关或第二套归档算法。
 
 ### 归属与不变项
 
-逐项 Release 成品缓存及独立同步的后续提案见[Release 成品缓存与独立 Gitee 精确同步](../../proposed/architecture/2026-11-09-release-cache-and-independent-gitee-sync.md)。
+现行 CI 逐项保存 Release 缓存，由[Release 成品缓存与独立 Gitee 精确同步](../../proposed/architecture/2026-11-09-release-cache-and-independent-gitee-sync.md)拥有；本记录继续拥有原样成品分发、安全运输格式及历史手动发布。构建 workflow 不生成成品 Artifacts，以下运输协议供仍持有原格式 Artifacts 的历史成功 run 手动发布使用，不作为新缓存的输入。
 
 本文部分替代 [Gitee 版本化交付重做](../../implemented/architecture/2026-11-02-gitee-delivery-reimplementation.md)中安装树运输、发布端暂存修正及重打包的职责，部分替代[自定位消费入口与工具专用 CI](../../implemented/architecture/2026-11-03-entry-delivery-and-tool-only-ci.md)中对应交接描述。两份记录的包选择、精确依赖、资格过滤、入口消费、可信来源、latest、上传、权限及历史证据继续适用，不整体归档。
 
@@ -34,15 +34,15 @@ builder 继续拥有安装描述、暂存副本、路径修正、安全归档和
 
 ### CI 打包与完成条件
 
-各平台在完整消费验证成功后，使用该次安装结果和该提交的 builder 执行打包。精确库参数取自计划中可发布的包及版本；平台无关库按既有 publisher 规则过滤，宿主工具始终打包。库集合为空时仍生成工具归档和原样入口运输内容，不要求库候选。
+每项在本平台消费验证成功后，使用该次安装结果和该提交的 builder 执行打包并立即入库。精确库参数取自计划中可发布的包及版本；平台无关库按既有 publisher 规则过滤，宿主工具始终打包。库集合为空时仍生成工具归档和原样入口运输内容，不要求库候选。
 
 打包输出进入本次工作目录中的独立目录，不覆盖生产安装树。路径修正只发生在 builder 的暂存副本内，沿用现有输出范围、输入只读、包身份、相对软链接和权限保护；生产安装根可作为打包时的前缀输入，但不作为发布协议字段运输。
 
-CI 对最终归档计算实际大小和 SHA256，并将其与精确身份写入运输清单。打包、摘要计算或运输失败均使平台任务及整体构建失败；即使消费验证结果已写成成功，也不能据此发布缺少成品的运行。自动发布仍只接受全部所选平台及汇总成功的运行，不增加持久化打包完成数据库。
+CI 对最终归档计算实际大小和 SHA256，并将其与精确身份绑定到交付记录。打包、摘要或入库失败使该项失败并阻断依赖者，无关项继续；最终汇总仍失败，已入库合格项不失效。自动 Gitee 发布关闭，历史手动发布仍要求原运行全部平台及汇总成功。
 
 ### 成品运输协议
 
-计划 artifact 保留 `ci-plan-<run_id>-<attempt>`。平台成品 artifact 使用 `ci-package-<run_id>-<attempt>-<platform>`，其中仍只有一个 `transport.tar`，用于保留清单及成品的关联。验证结果 artifact 的既有职责不变。
+计划 artifact 保留 `ci-plan-<run_id>-<attempt>`。历史平台成品 artifact 使用 `ci-package-<run_id>-<attempt>-<platform>`，其中仍只有一个 `transport.tar`，用于保留清单及成品的关联。验证结果 artifact 的既有职责不变。
 
 `transport.tar` 中保留 `plan.json`、`result.json`、`transport.json`，并使用以下固定内容布局：
 

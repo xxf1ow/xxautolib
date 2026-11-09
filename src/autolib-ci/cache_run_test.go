@@ -31,16 +31,8 @@ elseif(ROOT_PACKAGES STREQUAL "eigen@3")`, 1)
 
 func (f *cacheRunTestFixture) snapshot(t *testing.T) {
 	t.Helper()
-	s, err := f.release.client.Snapshot(context.Background(), false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	s.Inputs, err = computeCIFingerprints(f.options.SourceRoot, f.plan)
-	if err != nil {
-		t.Fatal(err)
-	}
 	f.options.CacheFile = filepath.Join(f.options.SourceRoot, "cache.json")
-	if err := writeCIJSON(f.options.CacheFile, s); err != nil {
+	if err := prepareCICacheWithClient(context.Background(), ciCachePrepareOptions{Repository: f.options.Repository, SourceRoot: f.options.SourceRoot, PlanFile: f.options.PlanFile, RunIdentityFile: f.options.RunIdentityFile, Output: f.options.CacheFile}, f.release.client); err != nil {
 		t.Fatal(err)
 	}
 }

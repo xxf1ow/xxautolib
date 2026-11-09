@@ -20,7 +20,9 @@
 
 `autolib-importer` 负责包选择、精确依赖遍历、HTTPS 下载、安全解包、校验和缓存准备，不复制独立安装来源或执行路径修正。单文件 [autolib.cmake](../src/autolib.cmake) 负责宿主 importer 引导、按需 FetchContent Git 快照及仓库检查、结果身份与闭包校验及包就绪后的 target 加载。adapter 使用已准备的依赖公共目标，不自行推断 sibling 版本目录、重新选择依赖或下载编译。
 
-`autolib-ci` 在选择库时通过 builder 取得精确根及闭包，保留请求、有效及过滤根，按依赖层构建、逐根消费验证，再调用同提交 builder 打包并运输最终归档；两个 Eigen 版本各有独立消费者。通用包以每个精确版本的有效平台集合选择 publisher，计划、运输及发布准备共用同一映射。零库选择仍保留各平台，验证 importer 与入口后打包工具并运输，不执行库构建或消费。workflow 提供可信源码仓库、平台环境、触发、权限与同目标串行，不在构建矩阵内发布 Release。
+`autolib-ci` 通过 builder 取得精确根及闭包，分别保留有效、资格过滤和配方失败的根。每项按依赖顺序恢复或构建，经本平台独立消费验证后立即打包入库；两个 Eigen 版本使用独立消费者。某项失败只阻断其依赖者，无关项继续。结果区分入库、复用、非 publisher 本地就绪和失败；全部处理完毕与全部成功分别记录，最终汇总保留整体失败。
+
+跨运行成品保存在当前源码仓库的固定 Release `autolib-cache`，每个归档伴随一份 `.publication.json`，绑定精确身份、来源、输入及依赖指纹、验证和最终字节。源码是身份与有效性的依据；相关输入变化使缓存沿依赖链失效，单独修改 latest 不重建库。命中项恢复到新的隔离安装根并消费，不重新打包或改写生产来源；通用包只由唯一 publisher 写入。Actions Artifacts 保存计划、结果及诊断。运行级互斥保护缓存，平台仅并发写不同身份，共享准备负责初始化和容量预检。缓存约束由[Release 成品缓存设计](agent-notes/proposed/architecture/2026-11-09-release-cache-and-independent-gitee-sync.md)拥有。
 
 ## 构建与交付
 
@@ -30,7 +32,9 @@
 
 本地打包读取安装中的精确身份和依赖，在副本修正生产路径并生成版本化 tar.zst、单程序 importer tar.xz 及 SHA256；不读取源码 latest 重选安装版本。只打包显式模块，调用者提供完整分发集合。原安装保持不变。
 
-独立发布以 workflow 运行上下文为可信源码仓库，核对成功构建的精确 run/attempt、原计划平台、验证结果、包级候选及成品实际大小和 SHA256，原样分发 CI 已生成的归档，不编译 builder 或重新打包。全部运输入口必须与原构建 Git 提交字节一致；发布准备只在上传副本注入实际 Gitee 目标和编码 tag，每次交付各平台工具及一个入口，零库仍保留工具和入口。Gitee Action 只接收明确资产清单并核对可信来源；worker 查询远端实际内容，相同则跳过，不同先删后传，临时故障退避后从查询重试。一个协调器登记上传或核对就绪的工具和库摘要及 latest，并确认 Git push；入口也须就绪，但不写 Git 元数据。普通发布只初始化缺失指针，显式映射可以随资产或独立更新。新库私有，用户公开后才匿名消费；附件替换不提供事务回滚。成品交接由[CI 成品归档交接](agent-notes/implemented/architecture/2026-11-04-ci-packaged-artifact-handoff.md)拥有，元数据及失败约束由[Gitee 交付设计](agent-notes/implemented/architecture/2026-11-02-gitee-delivery-reimplementation.md)拥有。
+构建 workflow 逐项写入缓存；源码删除清理和从缓存独立同步 Gitee 尚未接通。单个 Release 最多 1000 个附件，归档及记录都计数；单文件须小于 2 GiB，容量不足时失败，不驱逐有效成品或自动分片。
+
+Gitee workflow 仅保留手动历史成品发布和显式 latest 更新。历史发布仍核对成功 run/attempt、完整计划、入口与成品字节，只分发原归档；新缓存不依赖该历史入口。Gitee Action 的实际内容核对、先删后传、成功项元数据登记与 push 确认仍按[Gitee 交付设计](agent-notes/implemented/architecture/2026-11-02-gitee-delivery-reimplementation.md)执行。入口只在上传副本注入实际目标，不写 Git 摘要；新库默认私有，附件替换不提供事务回滚。
 
 ## 消费与缓存
 

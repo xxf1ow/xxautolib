@@ -79,17 +79,17 @@ Git 主来源复用 `git/<包名>/<版本>/`，资源复用 `git/_resources/<包
 
 ## CI 开发与运行
 
-[手动流水线](../.github/workflows/build-platform.yml)接受当前源码仓库的普通分支、拒绝 tag，检出事件提交；workflow 将 `GITHUB_REPOSITORY` 作为可信仓库传给运行、运输和汇总校验，支持 fork。默认/all 为 Windows x86_64、Linux x86_64/aarch64、darwin-aarch64，也可单选。Darwin 固定 macos-15，核对 15.x/arm64；[准备脚本](../.github/scripts/prepare-darwin.sh)在任务目录校验并准备 CMake 3.31.12 和私有 Go，有效库才编译 Make 4.4.1。生产与消费沿用普通根入口及上述 Apple 参数。
+[手动流水线](../.github/workflows/build-platform.yml)使用当前仓库的普通分支与事件提交，支持fork，拒绝tag。默认四个平台，也可单选；平台、工具与ABI基准见[架构](architecture.md#包与版本)。模块空字符串只准备工具，严格等于`all`才发现全部合资格版本，也可填写逗号分隔的精确引用或裸名；纯空白和变形的`all`拒绝。过滤不算失败；配方错误只阻断相关依赖者，无关项继续。
 
-模块未提供或空字符串只准备 importer 和入口，原始输入严格等于 `all` 才发现全部合资格配方版本，也可选择 `eigen@3.4.0,eigen@5.0.1,queue,lz4,flann`。纯空白、混合或变形的 `all` 及单独 importer 选择均拒绝。缺自身或传递依赖 adapter 的根按资格过滤；计划与汇总分别展示请求根、有效根和过滤根，过滤不算警告或失败。
+共享准备生成缓存快照，各平台`run --cache`显式读取。每项恢复或构建、消费验证后立即入库；失败运行中的成功成品仍可复用，汇总保持整体失败。缓存为当前源码仓库的`autolib-cache`，共享准备和平台使用`contents: write`；令牌仅注入缓存步骤，子进程不继承GitHub/Gitee令牌。容量、精确同名文件自动替换及无关文件保护见[缓存设计](agent-notes/proposed/architecture/2026-11-09-release-cache-and-independent-gitee-sync.md#release-成品缓存)。运行互斥不按分支拆组，队列最多等待100个运行。
 
-零有效库仍保留所选平台，真实验证工具与入口，但不执行库构建或消费；普通根的空 `BUILD_LIST` 仍发现全部配方。非空库逐根验证精确闭包，随后打包运输成品、候选及原样入口，协议见[成品交接](agent-notes/implemented/architecture/2026-11-04-ci-packaged-artifact-handoff.md)。最终汇总不写 Release。环境见[CI 设计](agent-notes/implemented/architecture/2026-10-20-ci-system.md)，证据见[测试指南](testing.md#ci-验证)。
+同版本输入变化沿依赖链失效，latest单独变化不重建库。命中归档恢复到新安装根，不复用旧安装；Artifacts只保存计划、结果和诊断。零有效库仍验证工具与入口。验证命令及边界见[测试指南](testing.md#ci-验证)。
 
 ### 独立 Gitee 发布
 
-[发布流水线](../.github/workflows/publish-artifacts.yml)仅写 Gitee。源码仓库及其分叉须显式配置 `GITEE_REPOSITORY`、`GITEE_RELEASE_TAG` 和密钥 `GITEE_TOKEN`，缺失或非法即失败，无上游默认目标。可信来源取自 `GITHUB_REPOSITORY`，不采用清单自报仓库。自动发布等待同仓库成功构建；手动指定同仓库 `source_run_id/source_attempt`。两者核对原提交、全部验证记录及成品后，原样分发库和工具、生成唯一目标注入入口，不二次筛选、编译 builder 或重打包；入口不写 Git 元数据。可附 `latest` 映射；独立更新指针要求非空映射，不读取或要求构建输入。接口与目标编码见[发布接口](../.github/actions/gitee-release/UPSTREAM.md#gitee-版本化发布适配)。
+[发布流水线](../.github/workflows/publish-artifacts.yml)关闭自动触发，仅保留历史成品手动发布和显式latest更新。配置`GITEE_REPOSITORY`、`GITEE_RELEASE_TAG`和`GITEE_TOKEN`，缺失或非法即失败。历史发布填写同仓库成功构建的`source_run_id/source_attempt`，要求原格式成品Artifacts仍存在；新缓存不能作为该入口的输入。独立latest更新要求非空映射，不需要构建输入。完整校验、重试、入口注入及失败登记见[发布接口](../.github/actions/gitee-release/UPSTREAM.md#gitee-版本化发布适配)。
 
-执行前必须信任控制代码与原构建提交；代码可以外传令牌，脱敏不是沙箱。同名附件核对实际 SHA256，相同跳过，不同先删后传，无回滚；临时故障退避后从查询重试，参数见发布接口。部分失败登记就绪项但任务失败，push 未确认也失败。重跑复用同一成品，不仅凭同名、大小或已登记摘要跳过；旧安装树输入须重新构建，同源码重建不保证相同字节。真实触发须取得目标及删除替换授权，并核对默认分支自动入口，不能假定它使用任务分支代码。新库保持私有，公开后由用户按[验收交接](testing.md#真实交付与手动验收)验证。
+执行前必须信任控制代码与原构建提交，脱敏不是沙箱。实际写入须取得目标及删除替换授权，并核对控制分支；push未确认仍失败。新库私有，公开后按[验收交接](testing.md#真实交付与手动验收)验证。
 
 ## 远端构建与源码传输授权
 
