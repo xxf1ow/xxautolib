@@ -94,6 +94,8 @@ class PublishTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
+        self.fetch_asset = lambda asset: self.root / asset['name']
+        self.delete_cache = lambda key: None
         self.server = Server()
         self.api = self.module.GiteeAPI('fake-secret', 'fixture/mirror')
         self.addCleanup(self.api.close)
@@ -139,7 +141,8 @@ class PublishTests(unittest.TestCase):
                 git(repo['path'], 'remote', 'set-url', 'origin', str(self.root / 'absent.git'))
             return repo
         with patch('metadata_repository._repository_url', return_value=str(self.bare)), \
-                patch('publish.open_repository', side_effect=open_repo):
+                patch('publish.open_repository', side_effect=open_repo), \
+                patch('publish.cache_callbacks', return_value=(self.fetch_asset, self.delete_cache)):
             if entry:
                 with patch('publish.resolve_config', return_value=config):
                     return self.module.main()
@@ -166,8 +169,7 @@ class PublishTests(unittest.TestCase):
         root = self.root / ('work-' + str(len(list(self.root.glob('work-*')))))
         return {'host': 'gitee', 'mode': 'sync', 'repository': 'fixture/mirror', 'tag': 'fixed',
                 'gitee_token': 'fake-secret', 'source': source, 'cache': cache, 'explicit_latest': explicit or {},
-                'work_root': root, 'fetch_asset': lambda asset: next(a['path'] for a in assets if a['name'] == asset['name']),
-                'delete_cache': lambda key: None}
+                'work_root': root}
 
     def test_same_git_digest_skips_even_missing_attachment_and_download(self):
         asset = self.asset()
@@ -175,7 +177,7 @@ class PublishTests(unittest.TestCase):
                      'queue/package.toml': b'latest="1"\n',
                      'queue/1/' + asset['name'] + '.sha256': (asset['sha256'] + '\n').encode()})
         config = self.config([asset])
-        config['fetch_asset'] = lambda asset: self.fail('unchanged archive downloaded')
+        self.fetch_asset = lambda asset: self.fail('unchanged archive downloaded')
         previous = git(self.bare, 'rev-parse', 'HEAD')
         result = self.run_release(config)
         self.assertEqual((result['uploaded'], result['skipped'], result['failed']), (0, 1, 0))
@@ -231,7 +233,7 @@ class PublishTests(unittest.TestCase):
         def fetch(asset):
             fetched.append(asset['name'])
             return changed['path']
-        config['fetch_asset']=fetch
+        self.fetch_asset=fetch
         result=self.run_release(config)
         self.assertEqual((result['uploaded'],result['skipped'],result['failed']),(1,1,0))
         self.assertEqual(fetched,[changed['name']])
@@ -278,7 +280,7 @@ class PublishTests(unittest.TestCase):
                 entered.set()
                 if not release.wait(10):raise RuntimeError('test timeout')
             return fast['path'] if asset['name']==fast['name'] else slow['path']
-        config=self.config([slow,fast]);config['fetch_asset']=fetch
+        config=self.config([slow,fast]);self.fetch_asset=fetch
         results=[]
         with patch('sync_scheduler.commit_metadata',side_effect=confirm):
             thread=threading.Thread(target=lambda:results.append(self.run_release(config)))

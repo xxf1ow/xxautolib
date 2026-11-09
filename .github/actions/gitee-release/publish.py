@@ -15,8 +15,8 @@ from typing import Mapping
 import unicodedata
 
 from gitee_api import GiteeAPI, GiteeAPIError
-from metadata_repository import commit_metadata, open_repository
-from publication_rules import _object, choose_source_latest, latest_mapping, metadata_path
+from metadata_repository import open_repository
+from publication_rules import _object, metadata_path
 
 ATTACHMENT_RETRY_DELAYS = (2, 4, 8, 16, 32, 32, 32, 32, 32, 32)
 
@@ -98,7 +98,7 @@ def cache_callbacks(config):
     def delete(key):
         _cache_command(config, ['cache-delete', '--snapshot', config['cache_file'], '--source-input', config['source_file'],
                                 '--key', json.dumps(key, separators=(',', ':'))])
-    return config.get('fetch_asset', fetch), config.get('delete_cache', delete)
+    return fetch, delete
 
 
 def cache_candidates(source, cache):
@@ -210,8 +210,6 @@ def publish_release(config: dict) -> dict:
         if repository is not None:
             result['metadata_commit'] = repository['head']
         api.close()
-    for status in ('uploaded', 'skipped', 'failed'):
-        result[status] = sum(item['status'] == status or status == 'failed' and item.get('blocking_failure', False) for item in result['items'])
     return result
 
 

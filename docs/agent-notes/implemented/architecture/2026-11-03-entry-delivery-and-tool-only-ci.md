@@ -159,7 +159,7 @@ CI 验证安装入口与源码逐字节一致，工具缓存记录携带原始�
 
 历史发布准备验证覆盖原提交入口和成品完整交接；现行[入口测试](../../../../tests/ci/gitee-release/test_entry_delivery.py)及[调度测试](../../../../tests/ci/gitee-release/test_sync_scheduler.py)覆盖目标注入、编码、多工具唯一入口及失败关联。[上传测试](../../../../tests/ci/gitee-release/test_publish.py)通过真实 main、HTTP multipart 和本地裸 Git 验证入口成功及失败、其他成功项登记、无入口元数据和 push 未确认失败，不访问真实 Gitee。
 
-[生产到消费联动](../../../../tests/ci/gitee-release/test_entry_delivery.py)复用[远端原生闭环](../../../../src/autolib-importer/versioned_remote_loop_test.go)，以 `controlled-fork/source` 构造已验证原构建计划与结果，调用生产 CI transport 打包，再调用 `prepare_publication`，从返回清单读取真实唯一入口及工具、dep@1/2、probe@1 资产，核对最终大小和 SHA256。受控 Git/HTTPS 实际观测 `fixture/mirror` 与 `中文/release` 对应的 `%E4%B8%AD%E6%96%87%2Frelease`，工具引导和 importer 库下载都命中该地址，不由测试重新注入入口。
+原交接实现的历史生产到消费验收复用[远端原生闭环](../../../../src/autolib-importer/versioned_remote_loop_test.go)，以 `controlled-fork/source` 构造已验证原构建计划与结果，调用生产 CI transport 打包，再调用 `prepare_publication`，从返回清单读取真实唯一入口及工具、dep@1/2、probe@1 资产，核对最终大小和 SHA256。CI transport 与 `prepare_publication` 均已退役；现行[生产到消费测试](../../../../tests/ci/gitee-release/test_entry_delivery.py)读取 builder 成品归档，调用生产入口注入规则后交给原生闭环。历史受控 Git/HTTPS 实际观测 `fixture/mirror` 与 `中文/release` 对应的 `%E4%B8%AD%E6%96%87%2Frelease`，工具引导和 importer 库下载都命中该地址，当时未由测试重新注入入口。
 
 109 上联动 Python 1/1、Go RemoteLoop 的 GitHub/Gitee 两子项及 LocalLoop 均通过。每托管首次 clone/ls-tree 各 1、HTTPS 3 次，随后完整缓存、损坏已有候选拒绝及迁移离线消费增量均为 0。新 dep@2 请求和错误包内身份各取新快照，最终每托管 clone/ls-tree 各 3、下载 5、API/Raw 0；真实链接与运行来自当前 dep/1、probe/1，错误身份在 adapter 前拒绝。生产安装、运输、元数据、精确依赖及无关缓存的内容与权限保持不变。
 

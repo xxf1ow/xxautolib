@@ -144,7 +144,12 @@ func deleteCISyncCache(ctx context.Context, c *ciCacheClient, source ciSyncSourc
 			return errors.New("source identity remains present or unknown")
 		}
 	}
-	current, err := c.Snapshot(ctx, false)
+	var current ciCacheSnapshot
+	err := c.retry(ctx, func() error {
+		var err error
+		current, err = c.snapshot(ctx, false, key.archiveName())
+		return err
+	})
 	var remote *ciCacheHTTPError
 	if errors.As(err, &remote) && remote.Status == 404 && current.ReleaseID == 0 {
 		return nil

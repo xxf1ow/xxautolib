@@ -52,7 +52,7 @@ class SyncSchedulerTests(unittest.TestCase):
             for name in completed:
                 if any(p.startswith(name+'/') for p in digests):completed[name].set()
             return head
-        config['fetch_asset']=fetch
+        self.f.fetch_asset=fetch
         results=[]
         with patch('sync_scheduler.commit_metadata',side_effect=commit):
             thread=threading.Thread(target=lambda:results.append(self.f.run_release(config)))
@@ -108,7 +108,7 @@ class SyncSchedulerTests(unittest.TestCase):
         def fetch(asset):
             fetched.append(asset['name'])
             return next(a['path'] for a in assets if a['name']==asset['name'])
-        config['fetch_asset']=fetch
+        self.f.fetch_asset=fetch
         result=self.f.run_release(config)
         status={item['name']:item for item in result['items']}
         self.assertEqual(status['b-1-any-any.tar.zst']['status'],'skipped')
@@ -148,7 +148,7 @@ class SyncSchedulerTests(unittest.TestCase):
             head=original(repo,digests,latest,**kwargs)
             if any(path.startswith('d/') for path in digests):independent.set()
             return head
-        config['fetch_asset']=fetch
+        self.f.fetch_asset=fetch
         results=[]
         with patch('sync_scheduler.commit_metadata',side_effect=commit):
             thread=threading.Thread(target=lambda:results.append(self.f.run_release(config)))
@@ -175,8 +175,8 @@ class SyncSchedulerTests(unittest.TestCase):
             config['cache']['records'][name]={'key':dict(kind='importer',name='autolib-importer',version='',os=os_name,arch=arch),
                 'archive':dict(name=name,size=len(body),sha256=hashlib.sha256(body).hexdigest(),id=1),
                 'fingerprint':'a'*64,'dependency_fingerprints':{},'entry':dict(entry),'latest_candidate':''}
-        original=config['fetch_asset']
-        config['fetch_asset']=lambda a:paths[a['name']] if a['name'] in paths else original(a)
+        original=self.f.fetch_asset
+        self.f.fetch_asset=lambda a:paths[a['name']] if a['name'] in paths else original(a)
         return raw,config
 
     def test_four_tools_finish_with_smaller_pool_and_one_entry(self):

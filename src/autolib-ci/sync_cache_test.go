@@ -168,3 +168,46 @@ func TestCISyncCacheDelete(t *testing.T) {
 		})
 	}
 }
+
+func TestCISyncCacheDeleteReadsOnlySelectedRecord(t *testing.T) {
+	f := releaseCacheFixture(t)
+	r := f.seed(t, localCacheFixture(t))
+	other := localCacheFixture(t)
+	other.Record.Key.Name = "d"
+	other.Record.Archive.Name = other.Record.Key.archiveName()
+	f.seed(t, other)
+	source := syncCacheSource(r)
+	snapshot, err := prepareCISyncCache(context.Background(), f.client, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	delete(source.Catalog.Packages, r.Key.Name)
+	wantRead := ""
+	for _, asset := range snapshot.Assets {
+		if asset.Name == r.Archive.Name+".publication.json" {
+			wantRead = fmt.Sprintf("/repos/owner/repo/releases/assets/%d", asset.ID)
+		}
+	}
+	original := f.client.HTTP.Transport
+	reads := []string{}
+	f.client.HTTP.Transport = cacheTestRoundTripper(func(req *http.Request) (*http.Response, error) {
+		if req.Header.Get("Accept") == "application/octet-stream" {
+			reads = append(reads, req.URL.Path)
+		}
+		return original.RoundTrip(req)
+	})
+	if err := deleteCISyncCache(context.Background(), f.client, source, snapshot, r.Key); err != nil {
+		t.Fatal(err)
+	}
+	if len(reads) != 1 || reads[0] != wantRead {
+		t.Fatalf("deletion read %v, want only %s", reads, wantRead)
+	}
+	if len(f.assets) != 2 {
+		t.Fatalf("unrelated cache pair was changed: %v", f.assets)
+	}
+	for _, asset := range f.assets {
+		if asset.Name != other.Record.Archive.Name && asset.Name != other.Record.Archive.Name+".publication.json" {
+			t.Fatalf("unexpected remaining asset: %v", asset)
+		}
+	}
+}
