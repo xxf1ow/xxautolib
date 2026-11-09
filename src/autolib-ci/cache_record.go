@@ -23,7 +23,7 @@ type ciCacheKey struct {
 
 func (k ciCacheKey) archiveName() string {
 	if k.Kind == "importer" {
-		return "autolib-importer-" + k.OS + "-" + k.Arch + ".tar.xz"
+		return ciImporterExecutable(k.OS+"-"+k.Arch) + ".tar.xz"
 	}
 	return k.Name + "-" + k.Version + "-" + k.OS + "-" + k.Arch + ".tar.zst"
 }

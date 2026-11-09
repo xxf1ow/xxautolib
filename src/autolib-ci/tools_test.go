@@ -176,3 +176,105 @@ func TestCIDescriptionPackagePlatform(t *testing.T) {
 		}
 	}
 }
+
+func TestCIPreparedImporter(t *testing.T) {
+	root, err := filepath.Abs("../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	osName, arch := testPlatform()
+	name := ciImporterExecutable(osName + "-" + arch)
+	for _, mode := range []string{"script", "root"} {
+		for _, kind := range []string{"prepared", "in place", "default", "wrong name", "missing", "directory", "symlink"} {
+			t.Run(mode+"/"+kind, func(t *testing.T) {
+				source := t.TempDir()
+				install := filepath.Join(source, "install")
+				builder := discoveryBuilder(t)
+				for _, file := range []string{"CMakeLists.txt", "go.mod", "go.sum", "src/autolib.cmake", "src/autolib-importer/main.go", "src/autolib-importer/fixup-metadata.cmake", "src/internal/packagemetadata/references.go", "src/autolib-builder/index.cmake", "src/autolib-builder/prepare-tools.cmake"} {
+					writeCIFixture(t, source, file, mustReadText(t, filepath.Join(root, file)))
+				}
+				writeCIFixture(t, source, "src/dependencies/queue/package.toml", "latest='1'\n")
+				writeCIFixture(t, source, "src/dependencies/queue/1/module.toml", "type='copy'\npackage_platforms=['any-any']\n[source]\nGIT_REPOSITORY='fixture'\nGIT_TAG='0123456789012345678901234567890123456789'\n[[copy]]\nfiles=['h.h']\ndestination='include'\n")
+				writeCIFixture(t, source, "src/dependencies/queue/1/autolib-import.cmake", "add_library(autolib::queue INTERFACE IMPORTED GLOBAL)\n")
+				writeCIFixture(t, source, "src/autolib-builder/go-sdk.cmake", `function(xxautolib_prepare_go executable_output environment_output)
+set(${executable_output} "${CMAKE_COMMAND}" PARENT_SCOPE)
+set(${environment_output} "${CMAKE_COMMAND};-DREAL_BUILDER=${REAL_BUILDER};-P;${CMAKE_CURRENT_FUNCTION_LIST_DIR}/compile.cmake;--" PARENT_SCOPE)
+endfunction()
+`)
+				writeCIFixture(t, source, "src/autolib-builder/compile.cmake", `math(EXPR last "${CMAKE_ARGC}-1")
+foreach(i RANGE 0 ${last})
+ if(CMAKE_ARGV${i} STREQUAL "-o")
+  math(EXPR next "${i}+1")
+  set(output "${CMAKE_ARGV${next}}")
+ endif()
+endforeach()
+if(CMAKE_ARGV${last} STREQUAL "./src/autolib-importer")
+ message(FATAL_ERROR "importer compilation reached")
+endif()
+configure_file("${REAL_BUILDER}" "${output}" COPYONLY)
+`)
+				prepared := filepath.Join(source, "prepared", name)
+				if kind == "in place" {
+					prepared = filepath.Join(install, name)
+				}
+				if kind == "wrong name" {
+					prepared = filepath.Join(source, "prepared", "wrong")
+				}
+				if kind != "missing" {
+					writeCIFixture(t, filepath.Dir(prepared), filepath.Base(prepared), "verified prepared tool")
+				}
+				if kind == "directory" {
+					os.Remove(prepared)
+					if err := os.Mkdir(prepared, 0755); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if kind == "symlink" {
+					os.Remove(prepared)
+					if err := os.Symlink(builder, prepared); err != nil {
+						t.Skip(err)
+					}
+				}
+				args := []string{"-DREAL_BUILDER=" + builder}
+				if kind != "default" {
+					args = append(args, "-DAUTOLIB_PREPARED_IMPORTER="+prepared)
+				}
+				if mode == "script" {
+					args = append(args, "-DAUTOLIB_SOURCE_ROOT="+source, "-DAUTOLIB_INSTALL_ROOT="+install, "-P", filepath.Join(source, "src/autolib-builder/prepare-tools.cmake"))
+				} else {
+					args = append(args, "-S", source, "-B", filepath.Join(source, "build"), "-DBUILD_LIST=queue")
+					config, err := loadCIEnvironment(filepath.Join(root, ".github/ci-tools.json"))
+					if err != nil {
+						t.Fatal(err)
+					}
+					production, err := ciProductionForPlatform(osName+"-"+arch, config)
+					if err != nil {
+						t.Fatal(err)
+					}
+					for _, key := range sortedKeysStringMap(production.CMakeDefaults) {
+						args = append(args, "-D"+key+"="+production.CMakeDefaults[key])
+					}
+				}
+				cmd := exec.Command("cmake", args...)
+				cmd.Env = append(withoutEnvironment(os.Environ(), "AUTOLIB_INSTALL_ROOT"), "AUTOLIB_INSTALL_ROOT="+install)
+				out, err := cmd.CombinedOutput()
+				if kind == "prepared" || kind == "in place" {
+					if err != nil {
+						t.Fatalf("prepared importer: %v\n%s", err, out)
+					}
+					if mustReadText(t, filepath.Join(install, name)) != "verified prepared tool" {
+						t.Fatal("prepared program was not installed")
+					}
+				} else {
+					if err == nil {
+						t.Fatal("invalid input or unexpected compilation accepted")
+					}
+					compiled := strings.Contains(string(out), "importer compilation reached")
+					if compiled != (kind == "default") {
+						t.Fatalf("unexpected importer compilation=%t: %s", compiled, out)
+					}
+				}
+			})
+		}
+	}
+}

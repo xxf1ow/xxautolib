@@ -14,6 +14,13 @@ func cacheRecordFixture() (ciCacheRecord, []ciCacheAsset) {
 	return r, []ciCacheAsset{{ID: 42, Name: r.Archive.Name, State: "uploaded", Digest: "sha256:" + digest, Size: 100}}
 }
 
+func TestCIImporterCacheName(t *testing.T) {
+	k := ciCacheKey{Kind: "importer", Name: "autolib-importer", OS: "windows", Arch: "x86_64"}
+	if got := k.archiveName(); got != "autolib-importer-windows-x86_64.exe.tar.xz" {
+		t.Fatalf("cache must keep the existing release archive name: %s", got)
+	}
+}
+
 func TestCICacheRecordValidation(t *testing.T) {
 	r, assets := cacheRecordFixture()
 	if err := validateCICacheRecord(r, "owner/repo", r.Key, r.Fingerprint, map[string]string{}, assets); err != nil {

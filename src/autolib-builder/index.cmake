@@ -18,7 +18,7 @@ function(xxautolib_generate_modules)
     if(CMAKE_HOST_WIN32)
         string(APPEND builder ".exe")
     endif()
-    xxautolib_prepare_tools("${root}" "${CMAKE_INSTALL_PREFIX}" "${builder}")
+    xxautolib_prepare_tools("${root}" "${CMAKE_INSTALL_PREFIX}" "${builder}" "${AUTOLIB_PREPARED_IMPORTER}")
 
     set(module_arguments)
     foreach(module IN LISTS BUILD_MODULES)
