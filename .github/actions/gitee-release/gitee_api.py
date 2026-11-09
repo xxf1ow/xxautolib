@@ -2,13 +2,12 @@
 
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
-import hashlib
 from json import JSONDecodeError
 from pathlib import Path
 import re
 import threading
 import time
-from urllib.parse import quote, urljoin, urlsplit
+from urllib.parse import quote, urlsplit
 
 import requests
 
@@ -213,42 +212,6 @@ class GiteeAPI:
             if len(items) < 100:
                 return result
             page += 1
-
-    def asset_sha256(self, asset: dict) -> str:
-        """流式核对远端实际字节；只向 Gitee 发送凭据，仅跟随 HTTPS 重定向。
-
-        初始 URL 必须属于目标仓库。请求或读取失败抛 GiteeAPIError，不自行重试。
-        """
-        def download():
-            url = asset['browser_download_url']
-            if not isinstance(url, str):
-                raise ValueError('invalid asset URL')
-            initial = urlsplit(url)
-            if initial.hostname != 'gitee.com' or not initial.path.startswith('/' + self.repository + '/releases/download/'):
-                raise ValueError('invalid asset source')
-            for _ in range(6):
-                parsed = urlsplit(url)
-                if (parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password
-                        or any(c.isspace() for c in url)):
-                    raise ValueError('invalid asset URL')
-                headers = {'Authorization': 'token ' + self.token} if parsed.netloc == 'gitee.com' else {}
-                response = self._session().request('GET', url, headers=headers, timeout=(10, 300),
-                                                   allow_redirects=False, verify=True, stream=True)
-                if response.status_code not in {301, 302, 303, 307, 308}:
-                    return response
-                with response:
-                    location = response.headers.get('Location')
-                    if not location:
-                        raise ValueError('missing redirect URL')
-                    url = urljoin(url, location)
-            raise ValueError('too many redirects')
-
-        def digest(response):
-            result = hashlib.sha256()
-            for chunk in response.iter_content(1024 * 1024):
-                result.update(chunk)
-            return result.hexdigest()
-        return self._run('asset_sha256', download, 200, digest, retry_delays=())
 
     def delete_asset(self, release_id: int, asset_id: int) -> None:
         """单次删除，只在收到 204 时确认；失败交给附件更新循环。"""

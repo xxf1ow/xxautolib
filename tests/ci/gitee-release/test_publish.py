@@ -104,22 +104,6 @@ class PublishTests(unittest.TestCase):
         self.clock = clock.start()
         self.addCleanup(clock.stop)
 
-    def test_main_reports_input_rule_on_stderr_without_credentials(self):
-        environment = {'PUBLISH_HOST': 'gitee', 'PUBLISH_MODE': 'latest', 'PUBLISH_LATEST': '[]',
-                       'GITEE_REPOSITORY': 'fixture/mirror', 'GITEE_RELEASE_TAG': 'fixed',
-                       'GITEE_TOKEN': 'fake-secret'}
-        for latest, rule in [('[]', 'latest must be an object'),
-                             ('fake-secret', 'valid UTF-8 JSON')]:
-            with self.subTest(latest=latest):
-                stdout, stderr = io.StringIO(), io.StringIO()
-                with patch.dict(os.environ, dict(environment, PUBLISH_LATEST=latest), clear=True), \
-                        contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-                    self.assertEqual(self.module.main(), 1)
-                self.assertEqual(stdout.getvalue(), '')
-                self.assertIn(rule, stderr.getvalue())
-                self.assertNotIn('fake-secret', stderr.getvalue())
-        self.assertEqual(self.server.events, [])
-
     def asset(self, name='queue', version='1', body=b'archive\0bytes'):
         filename = f'{name}-{version}-any-any.tar.zst'
         path = self.root / filename
@@ -144,11 +128,6 @@ class PublishTests(unittest.TestCase):
         self.bare = self.root / 'remote.git'
         git(self.root, 'clone', '--bare', str(seed), str(self.bare))
 
-    def config(self, assets, initial, explicit=None):
-        return {'host': 'gitee', 'mode': 'artifacts', 'repository': 'fixture/mirror', 'tag': 'fixed',
-                'gitee_token': 'fake-secret', 'assets': assets, 'initial_latest': initial,
-                'explicit_latest': explicit or {}, 'work_root': self.root / ('work-' + str(len(list(self.root.glob('work-*')))))}
-
     def run_release(self, config, *, created=False, break_push=False, entry=False):
         import metadata_repository
         from test_metadata_repository import RepositoryAPI
@@ -166,427 +145,177 @@ class PublishTests(unittest.TestCase):
                     return self.module.main()
             return self.module.publish_release(config)
 
-    def test_main_requeries_after_received_write_with_lost_response(self):
+
+    def config(self, assets, initial=None, explicit=None):
+        from test_cleanup import source_facts, package, cache_facts
+        packages = {}
+        records = {}
+        for asset in assets:
+            if asset['kind'] != 'library':
+                continue
+            key = dict(kind='library', **asset['package'])
+            packages.setdefault(key['name'], package({}))["versions"][key['version']] = {'platforms': ['any-any'], 'error': ''}
+            packages[key['name']]['latest'] = (initial or {}).get(key['name'], key['version'])
+            records[asset['name']] = {'key': key, 'archive': {'name': asset['name'], 'sha256': asset['sha256'], 'size': asset['size'], 'id': 1},
+                                      'fingerprint': 'a' * 64, 'dependency_fingerprints': {},
+                                      'latest_candidate': packages[key['name']]['latest']}
+        source = source_facts(packages)
+        source['inputs']['fingerprints'] = {a['name']: 'a' * 64 for a in assets}
+        cache = cache_facts(records)
+        cache['inputs'] = source['inputs']
+        root = self.root / ('work-' + str(len(list(self.root.glob('work-*')))))
+        return {'host': 'gitee', 'mode': 'sync', 'repository': 'fixture/mirror', 'tag': 'fixed',
+                'gitee_token': 'fake-secret', 'source': source, 'cache': cache, 'explicit_latest': explicit or {},
+                'work_root': root, 'fetch_asset': lambda asset: next(a['path'] for a in assets if a['name'] == asset['name']),
+                'delete_cache': lambda key: None}
+
+    def test_same_git_digest_skips_even_missing_attachment_and_download(self):
+        asset = self.asset()
+        self.remote({'.autolib-repository.json': json.dumps(IDENTITY).encode(),
+                     'queue/package.toml': b'latest="1"\n',
+                     'queue/1/' + asset['name'] + '.sha256': (asset['sha256'] + '\n').encode()})
+        config = self.config([asset])
+        config['fetch_asset'] = lambda asset: self.fail('unchanged archive downloaded')
+        previous = git(self.bare, 'rev-parse', 'HEAD')
+        result = self.run_release(config)
+        self.assertEqual((result['uploaded'], result['skipped'], result['failed']), (0, 1, 0))
+        self.assertEqual(git(self.bare, 'rev-parse', 'HEAD'), previous)
+        self.assertFalse(any(m in {'DELETE', 'POST'} or '/releases/download/' in u for m,u in self.server.events))
+
+    def test_identical_attachment_without_digest_is_deleted_and_uploaded(self):
+        asset = self.asset()
+        self.remote()
+        self.server.add_asset(asset['name'], Path(asset['path']).read_bytes())
+        result = self.run_release(self.config([asset]))
+        self.assertEqual((result['uploaded'], result['skipped'], result['failed']), (1, 0, 0))
+        self.assertEqual([m for m,u in self.server.events if m in {'DELETE','POST'}], ['DELETE','POST'])
+        self.assertFalse(any('/releases/download/' in u for _,u in self.server.events))
+        self.assertEqual(git(self.bare,'show','HEAD:queue/1/'+asset['name']+'.sha256'),(asset['sha256']+'\n').encode())
+
+    def test_response_lost_refreshes_then_deletes_and_reuploads(self):
         self.remote()
         asset = self.asset()
-        for method, operation in [('GET', 'target_assets'), ('GET', 'asset_sha256'),
-                                  ('DELETE', 'delete_asset'), ('POST', 'upload_asset')]:
-            with self.subTest(operation=operation):
-                self.server.assets.clear()
-                self.server.add_asset(asset['name'], b'old')
-                self.server.events.clear()
-                self.clock.reset_mock()
-                output, errors = io.StringIO(), io.StringIO()
-                lost = False
-                def received_then_lost(request_method, url, **options):
-                    nonlocal lost
-                    response = self.server.request(request_method, url, **options)
-                    selected = (operation == 'target_assets' and url.endswith('/attach_files') or
-                                operation == 'asset_sha256' and '/releases/download/' in url or
-                                method != 'GET')
-                    if request_method == method and selected and not lost:
-                        lost = True
-                        response.close()
-                        raise requests.Timeout('fake-secret: response lost after acceptance')
-                    return response
-                with patch('requests.sessions.Session.request', side_effect=received_then_lost), \
-                        contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
-                    self.assertEqual(self.run_release(self.config([asset], {'queue': '1'}), entry=True), 0)
-                result = json.loads(output.getvalue())
-                self.assertEqual((result['uploaded'], result['skipped'], result['failed']),
-                                 (0, 1, 0) if method == 'POST' else (1, 0, 0))
-                self.assertEqual(result['metadata_committed'], operation == 'target_assets')
-                self.assertIsNotNone(result['metadata_commit'])
-                self.assertEqual(len(self.server.assets), 1)
-                self.assertEqual(self.server.bodies[asset['name']], b'archive\0bytes')
-                self.assertEqual([m for m, _ in self.server.events if m in {'DELETE', 'POST'}],
-                                 ['DELETE', 'POST'])
-                self.assertEqual(sum(url.endswith('/attach_files') and m == 'GET'
-                                     for m, url in self.server.events), 2)
-                self.assertEqual([c.args[0] for c in self.clock.call_args_list], [2])
-                self.assertEqual(git(self.bare, 'show', 'HEAD:queue/1/' + asset['name'] + '.sha256'),
-                                 (asset['sha256'] + '\n').encode())
-                self.assertNotIn('fake-secret', output.getvalue() + errors.getvalue())
-
-    def test_identical_remote_bytes_skip_writes_and_repair_metadata(self):
-        self.remote()
-        asset = self.asset()
-        self.server.add_asset(asset['name'], b'archive\0bytes')
-        result = self.run_release(self.config([asset], {'queue': '1'}))
-        self.assertEqual((result['uploaded'], result.get('skipped', -1), result['failed']), (0, 1, 0))
-        self.assertTrue(result['metadata_committed'])
-        self.assertFalse(any(m in {'DELETE', 'POST'} for m, _ in self.server.events))
-        self.assertEqual(git(self.bare, 'show', 'HEAD:queue/1/' + asset['name'] + '.sha256'),
-                         (asset['sha256'] + '\n').encode())
-        self.assertEqual(git(self.bare, 'show', 'HEAD:queue/package.toml'), b'latest = "1"\n')
-
-    def test_republish_ready_assets_is_noop(self):
-        self.remote()
-        library = self.asset()
-        assets = [library]
-        for kind, name, body in [('importer', 'autolib-importer-linux-x86_64.tar.xz', b'fixed tool'),
-                                 ('entry', 'autolib.cmake', b'fixed entry')]:
-            path = self.root / name
-            path.write_bytes(body)
-            asset = dict(kind=kind, name=name, path=str(path), size=len(body), sha256=hashlib.sha256(body).hexdigest())
-            if kind == 'importer':
-                asset['platform'] = 'linux-x86_64'
-            assets.append(asset)
-        first = self.run_release(self.config(assets, {'queue': '1'}))
-        self.assertEqual((first['uploaded'], first['failed']), (3, 0))
-        self.assertTrue(first['metadata_committed'])
-        before = git(self.bare, 'rev-parse', 'HEAD')
-        self.server.events.clear()
-        result = self.run_release(self.config(assets, {'queue': '1'}))
-        self.assertEqual((result['uploaded'], result['failed']), (0, 0))
-        self.assertEqual(result['skipped'], result['selected'])
-        self.assertEqual(result['selected'], 3)
-        self.assertFalse(result['metadata_committed'])
-        self.assertEqual(git(self.bare, 'rev-parse', 'HEAD'), before)
-        self.assertFalse(any(method in {'DELETE', 'POST'} for method, _ in self.server.events))
-        with contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(self.run_release(self.config(assets, {'queue': '1'}), entry=True), 0)
-
-    def test_attachment_retry_budget_restarts_at_query_and_caps_delay(self):
-        self.remote()
-        asset = self.asset()
-        self.server.fail.add(asset['name'])
-        result = self.run_release(self.config([asset], {'queue': '1'}))
-        self.assertEqual((result['uploaded'], result['failed']), (0, 1))
-        self.assertEqual([m for m, url in self.server.events if url.endswith('/attach_files')],
-                         ['GET', 'POST'] * 11)
-        self.assertEqual([c.args[0] for c in self.clock.call_args_list],
-                         [2, 4, 8, 16, 32, 32, 32, 32, 32, 32])
-        self.assertNotIn('queue/', git(self.bare, 'ls-tree', '-r', '--name-only', 'HEAD').decode())
-
-    def test_main_reports_local_asset_failure(self):
-        self.remote()
-        asset = self.asset()
-        Path(asset['path']).write_bytes(b'changed')
-        output, errors = io.StringIO(), io.StringIO()
-        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
-            self.assertEqual(self.run_release(self.config([asset], {'queue': '1'}), entry=True), 1)
-        self.assertEqual(json.loads(output.getvalue())['uploaded'], 0)
-        self.assertFalse(any(method in {'DELETE', 'POST'} for method, _ in self.server.events))
-        self.assertTrue(errors.getvalue(), 'main lost the local asset failure')
-        self.assertEqual(json.loads(errors.getvalue()),
-                         {'asset': asset['name'], 'operation': 'local_asset', 'outcome': 'failed'})
-
-    def test_main_preserves_http_and_validation_diagnostics_without_response_body(self):
-        self.remote()
-        asset = self.asset()
-        for status, reason in [(503, 'unexpected_http_status'), (201, 'invalid_asset_size')]:
-            with self.subTest(status=status):
-                self.server.assets.clear()
-                self.server.fail = {asset['name']} if status == 503 else set()
-                def reply(method, url, **options):
-                    response = self.server.request(method, url, **options)
-                    if method == 'POST' and url.endswith('/attach_files'):
-                        response.status_code = status
-                        response._content = json.dumps({'message': 'fake-secret'} if status == 503 else
-                            dict(response.json(), size=999, message='fake-secret')).encode()
-                    return response
-                stdout, stderr = io.StringIO(), io.StringIO()
-                with patch('requests.sessions.Session.request', side_effect=reply), \
-                        contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-                    self.assertEqual(self.run_release(self.config([asset], {'queue': '1'}), entry=True), 1)
-                self.assertEqual(json.loads(stdout.getvalue())['uploaded'], 0)
-                diagnostics = [json.loads(line) for line in stderr.getvalue().splitlines()]
-                diagnostic = diagnostics[-1]
-                self.assertEqual(diagnostic['asset'], asset['name'])
-                self.assertEqual(diagnostic['operation'], 'upload_asset')
-                self.assertEqual(diagnostic['outcome'], 'unknown')
-                self.assertEqual(diagnostic.get('http_status'), status)
-                self.assertEqual(diagnostic.get('reason'), reason)
-                self.assertNotIn('fake-secret', stdout.getvalue() + stderr.getvalue())
-                self.assertEqual(len(diagnostics), 11 if status == 503 else 1)
-
-    def test_main_reports_unknown_repository_creation(self):
-        config = self.config([], {}, {'queue': '1'})
-        config['work_root'].mkdir()
-        output, errors = io.StringIO(), io.StringIO()
-        with patch('publish.resolve_config', return_value=config), \
-                patch('publish.open_repository', side_effect=self.module.GiteeAPIError('create_repository', outcome='unknown')), \
-                contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
-            self.assertEqual(self.module.main(), 1)
-        self.assertFalse(json.loads(output.getvalue())['metadata_committed'])
-        self.assertTrue(errors.getvalue(), 'main lost the uncertain repository creation')
-        self.assertEqual(json.loads(errors.getvalue()), {'operation': 'create_repository', 'outcome': 'unknown',
-                         'http_status': None, 'reason': 'unspecified', 'exception_type': None})
-        self.assertEqual(self.server.events, [])
-
-    def test_main_reports_received_release_creation_with_lost_response(self):
-        self.remote()
-        self.server.missing_release = True
-        asset = self.asset()
-        def received_then_lost(method, url, **options):
-            response = self.server.request(method, url, **options)
-            if method == 'POST' and url.endswith('/releases'):
+        lost = False
+        def send(method,url,**options):
+            nonlocal lost
+            response = self.server.request(method,url,**options)
+            if method=='POST' and url.endswith('/attach_files') and not lost:
+                lost=True
                 response.close()
-                raise requests.Timeout('fake-secret: release response lost')
+                raise requests.Timeout('fake-secret')
             return response
-        output, errors = io.StringIO(), io.StringIO()
-        with patch('requests.sessions.Session.request', side_effect=received_then_lost), \
-                contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
-            self.assertEqual(self.run_release(self.config([asset], {'queue': '1'}), entry=True), 1)
-        self.assertFalse(self.server.missing_release)
-        self.assertFalse(json.loads(output.getvalue())['metadata_committed'])
-        self.assertNotIn('fake-secret', output.getvalue() + errors.getvalue())
-        self.assertTrue(errors.getvalue(), 'main lost the uncertain release creation')
-        self.assertEqual(json.loads(errors.getvalue()), {'operation': 'create_release', 'outcome': 'unknown',
-                         'http_status': None, 'reason': 'timeout', 'exception_type': 'Timeout'})
+        with patch('requests.sessions.Session.request',side_effect=send):
+            result=self.run_release(self.config([asset]))
+        self.assertEqual((result['uploaded'],result['failed']),(1,0))
+        self.assertEqual([m for m,u in self.server.events if m in {'DELETE','POST'}],['POST','DELETE','POST'])
+        self.assertEqual(sum(m=='GET' and u.endswith('/attach_files') for m,u in self.server.events),2)
+        self.assertEqual([c.args[0] for c in self.clock.call_args_list],[2])
 
-    def test_main_reports_unconfirmed_metadata_push(self):
+    def test_wrong_local_bytes_never_delete_remote(self):
+        asset=self.asset()
         self.remote()
-        before = git(self.bare, 'rev-parse', 'HEAD')
-        asset = self.asset()
-        output, errors = io.StringIO(), io.StringIO()
-        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
-            self.assertEqual(self.run_release(self.config([asset], {'queue': '1'}), break_push=True, entry=True), 1)
-        result = json.loads(output.getvalue())
-        self.assertEqual(result['uploaded'], 1)
-        self.assertFalse(result['metadata_committed'])
-        self.assertEqual(git(self.bare, 'rev-parse', 'HEAD'), before)
-        self.assertEqual(self.server.bodies[asset['name']], b'archive\0bytes')
-        self.assertNotIn('fake-secret', output.getvalue() + errors.getvalue())
-        self.assertTrue(errors.getvalue(), 'main lost the unconfirmed metadata push')
-        self.assertEqual(json.loads(errors.getvalue()), {'operation': 'metadata_commit', 'outcome': 'unconfirmed'})
+        self.server.add_asset(asset['name'],b'old')
+        Path(asset['path']).write_bytes(b'changed')
+        result=self.run_release(self.config([asset]))
+        self.assertEqual(result['failed'],1)
+        self.assertFalse(any(m in {'DELETE','POST'} for m,u in self.server.events))
+        self.assertEqual(self.server.bodies[asset['name']],b'old')
 
-    def test_replace_same_name_and_failures(self):
-        asset = self.asset()
-        for target, status, fail, expected in [(None, 204, False, ['POST']), (7, 204, False, ['DELETE', 'POST']),
-                                              (7, 403, False, ['DELETE']), (7, 503, False, ['DELETE']),
-                                              (7, 204, True, ['DELETE', 'POST'])]:
-            with self.subTest(target=target, status=status, fail=fail):
-                self.server.events.clear()
-                self.server.assets.clear()
-                if target is not None:
-                    self.server.add_asset(asset['name'], b'x' * asset['size'], target)
-                self.server.delete_status = status
-                self.server.fail = {asset['name']} if fail else set()
-                with contextlib.redirect_stderr(io.StringIO()):
-                    result = self.module.publish_one(self.api, 3, asset)
-                if status == 503:
-                    expected = ['DELETE'] * 11
-                elif fail:
-                    expected = ['DELETE'] + ['POST'] * 11
-                self.assertEqual([method for method, _ in self.server.events if method in {'DELETE', 'POST'}], expected)
-                self.assertEqual(result['status'], 'uploaded' if status == 204 and not fail else 'failed')
-                if result['status'] == 'failed':
-                    self.assertNotIn('sha256', result)
+    def test_only_changed_item_downloads_and_uploads(self):
+        unchanged,changed=self.asset('a'),self.asset('b')
+        self.remote({'.autolib-repository.json':json.dumps(IDENTITY).encode(),
+                     'a/package.toml':b'latest="1"\n',
+                     'a/1/'+unchanged['name']+'.sha256':(unchanged['sha256']+'\n').encode()})
+        config=self.config([unchanged,changed])
+        fetched=[]
+        def fetch(asset):
+            fetched.append(asset['name'])
+            return changed['path']
+        config['fetch_asset']=fetch
+        result=self.run_release(config)
+        self.assertEqual((result['uploaded'],result['skipped'],result['failed']),(1,1,0))
+        self.assertEqual(fetched,[changed['name']])
+        self.assertEqual(sum(m=='GET' and u.endswith('/attach_files') for m,u in self.server.events),1)
+
+    def test_permanent_errors_do_not_retry(self):
+        for status in [401,403,422]:
+            asset=self.asset()
+            self.server.events.clear()
+            self.clock.reset_mock()
+            def send(method,url,**options):
+                response=self.server.request(method,url,**options)
+                response.status_code=status
+                return response
+            with patch('requests.sessions.Session.request',side_effect=send):
+                result=self.module.publish_one(self.api,3,asset,[],fetch_asset=lambda a:a['path'],confirm_item=lambda a:None)
+            self.assertEqual(result['status'],'failed')
+            self.assertEqual(sum(m=='POST' for m,u in self.server.events),1)
+            self.clock.assert_not_called()
+
+    def test_retry_budget_and_diagnostics_are_bounded(self):
+        asset=self.asset()
+        self.server.fail.add(asset['name'])
+        errors=io.StringIO()
+        with contextlib.redirect_stderr(errors):
+            result=self.module.publish_one(self.api,3,asset,[],fetch_asset=lambda a:a['path'],confirm_item=lambda a:self.fail('failed upload confirmed'))
+        self.assertEqual(result['status'],'failed')
+        self.assertEqual(sum(m=='POST' for m,u in self.server.events),11)
+        self.assertEqual([c.args[0] for c in self.clock.call_args_list],[2,4,8,16,32,32,32,32,32,32])
+        self.assertNotIn('fake-secret',errors.getvalue())
+
+    def test_fast_item_is_committed_while_slow_upload_is_in_flight(self):
         self.remote()
-        self.server.assets = [{'id': 7, 'name': asset['name']}, {'id': 8, 'name': asset['name']}]
-        self.server.events.clear()
-        result = self.run_release(self.config([asset], {'queue': '1'}))
-        self.assertEqual((result['uploaded'], result['failed']), (0, 1))
-        self.assertFalse(any(method in {'DELETE', 'POST'} for method, _ in self.server.events))
-
-    def test_success_metadata_and_latest(self):
-        self.remote({'README.md': b'template', 'README.en.md': b'template'})
-        self.server.missing_release = True
-        assets = [self.asset('eigen', '3.4.0'), self.asset('eigen', '5.0.1'), self.asset()]
-        result = self.run_release(self.config(assets, {'eigen': '3.4.0', 'queue': '1'}), created=True)
-        self.assertEqual((result['selected'], result['uploaded'], result['failed']), (3, 3, 0))
-        self.assertTrue(result['metadata_committed'])
-        self.assertEqual(git(self.bare, 'show', 'HEAD:eigen/package.toml'), b'latest = "3.4.0"\n')
-        self.assertEqual(git(self.bare, 'show', 'HEAD:queue/package.toml'), b'latest = "1"\n')
-        result = self.run_release(self.config([self.asset('lz4')], {'lz4': '1'}, {'eigen': '5.0.1'}))
-        self.assertTrue(result['metadata_committed'])
-        self.assertEqual(git(self.bare, 'show', 'HEAD:lz4/package.toml'), b'latest = "1"\n')
-        self.assertEqual(git(self.bare, 'show', 'HEAD:eigen/package.toml'), b'latest = "5.0.1"\n')
-        paths = git(self.bare, 'ls-tree', '-r', '--name-only', 'HEAD').decode().splitlines()
-        self.assertEqual(sum(p == 'eigen/package.toml' for p in paths), 1)
-        self.assertEqual(sum(p == 'queue/package.toml' for p in paths), 1)
-
-    def test_importer_digest_has_no_latest(self):
-        self.remote()
-        name = 'autolib-importer-linux-x86_64.tar.xz'
-        path = self.root / name
-        path.write_bytes(b'tool')
-        asset = {'kind': 'importer', 'name': name, 'path': str(path), 'size': 4,
-                 'sha256': hashlib.sha256(b'tool').hexdigest(), 'platform': 'linux-x86_64'}
-        result = self.run_release(self.config([asset], {}))
-        self.assertTrue(result['metadata_committed'])
-        self.assertEqual(result['uploaded'], 1)
-        self.assertEqual(git(self.bare, 'show', 'HEAD:autolib-importer/' + name + '.sha256'),
-                         (hashlib.sha256(b'tool').hexdigest() + '\n').encode())
-        self.assertNotIn('package.toml', git(self.bare, 'ls-tree', '-r', '--name-only', 'HEAD').decode())
-
-    def test_entry_success_or_failure_never_registers_git_metadata(self):
-        self.remote()
-        path = self.root / 'autolib.cmake'
-        path.write_bytes(b'entry')
-        entry_asset = dict(kind='entry', name='autolib.cmake', path=str(path), size=5,
-                           sha256=hashlib.sha256(b'entry').hexdigest())
-        tool_name = 'autolib-importer-linux-x86_64.tar.xz'
-        tool_path = self.root / tool_name
-        tool_path.write_bytes(b'tool')
-        importer = dict(kind='importer', name=tool_name, platform='linux-x86_64', path=str(tool_path),
-                        size=4, sha256=hashlib.sha256(b'tool').hexdigest())
-        for fail in [False, True]:
-            with self.subTest(fail=fail):
-                self.server.fail = {'autolib.cmake'} if fail else set()
-                if fail:
-                    self.server.assets = [a for a in self.server.assets if a['name'] != 'autolib.cmake']
-                library = self.asset('queue', '2' if fail else '1')
-                errors, output = io.StringIO(), io.StringIO()
-                with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
-                    code = self.run_release(self.config([entry_asset, library, importer], {'queue': '1'}), entry=True)
-                result = json.loads(output.getvalue())
-                self.assertEqual(code, int(fail))
-                self.assertEqual((result['uploaded'], result['skipped'], result['failed']),
-                                 (1, 1, 1) if fail else (3, 0, 0))
-                self.assertTrue(result['metadata_committed'])
-                paths = git(self.bare, 'ls-tree', '-r', '--name-only', 'HEAD').decode().splitlines()
-                self.assertFalse(any('autolib.cmake' in name for name in paths))
-                self.assertIn('queue/' + library['package']['version'] + '/' + library['name'] + '.sha256', paths)
-                self.assertIn('autolib-importer/' + tool_name + '.sha256', paths)
-                if not fail:
-                    self.assertEqual(self.server.bodies['autolib.cmake'], b'entry')
-
-    def test_attachment_pool_respects_cpu_affinity_and_continues_after_failure(self):
-        self.remote()
-        assets = [self.asset('p' + str(i)) for i in range(5)]
-        self.server.fail.add(assets[0]['name'])
-        ready, release = threading.Event(), threading.Event()
-        lock = threading.Lock()
-        state = {'started': 0, 'active': 0, 'maximum': 0}
-        sessions = set()
-        def send(session, method, url, **options):
-            if method == 'POST' and url.endswith('/attach_files'):
-                with lock:
-                    sessions.add(id(session))
-                    state['started'] += 1
-                    state['active'] += 1
-                    state['maximum'] = max(state['maximum'], state['active'])
-                    if state['started'] == 4:
-                        ready.set()
-                try:
-                    if not release.wait(10):
-                        raise AssertionError('upload gate not released')
-                finally:
-                    with lock:
-                        state['active'] -= 1
-            return self.server.request(method, url, **options)
-        results, errors = [], []
-        def run():
-            try:
-                results.append(self.run_release(self.config(assets, {'p' + str(i): '1' for i in range(5)})))
-            except BaseException as error:
-                errors.append(error)
-        self.transport.stop()
-        with patch('publish.os.sched_getaffinity', return_value={0, 1}, create=True), \
-                patch('publish.os.cpu_count', return_value=1), \
-                patch('requests.sessions.Session.request', autospec=True, side_effect=send):
-            thread = threading.Thread(target=run)
+        fast,slow=self.asset('fast'),self.asset('slow')
+        entered,release,confirmed=threading.Event(),threading.Event(),threading.Event()
+        original=self.module.commit_metadata
+        def confirm(repo,digests,latest,**kwargs):
+            head=original(repo,digests,latest,**kwargs)
+            if any(p.startswith('fast/') for p in digests):confirmed.set()
+            return head
+        def fetch(asset):
+            if asset['name']==slow['name']:
+                entered.set()
+                if not release.wait(10):raise RuntimeError('test timeout')
+            return fast['path'] if asset['name']==fast['name'] else slow['path']
+        config=self.config([slow,fast]);config['fetch_asset']=fetch
+        results=[]
+        with patch('publish.commit_metadata',side_effect=confirm):
+            thread=threading.Thread(target=lambda:results.append(self.run_release(config)))
             thread.start()
             try:
-                self.assertTrue(ready.wait(5))
-                self.assertEqual(state['active'], 4)
+                self.assertTrue(entered.wait(10))
+                self.assertTrue(confirmed.wait(10))
+                self.assertEqual(git(self.bare,'show','HEAD:fast/1/'+fast['name']+'.sha256'),(fast['sha256']+'\n').encode())
             finally:
-                release.set()
-                thread.join(15)
+                release.set();thread.join(10)
         self.assertFalse(thread.is_alive())
-        self.assertEqual(errors, [])
-        self.assertEqual(state['maximum'], 4)
-        self.assertEqual(state['started'], 15)
-        self.assertEqual(len(sessions), 4)
-        self.assertEqual((results[0]['uploaded'], results[0]['failed']), (4, 1))
-        self.assertTrue(results[0]['metadata_committed'])
+        self.assertEqual(results[0]['uploaded'],2)
 
-    def test_partial_failure_preserves_unselected_latest_bytes(self):
-        original = b'# keep format\r\nlatest="old"\r\n'
-        self.remote({'.autolib-repository.json': json.dumps(IDENTITY).encode(), 'queue/package.toml': original})
-        failed = self.asset('eigen')
-        self.server.fail.add(failed['name'])
-        result = self.run_release(self.config([failed, self.asset()], {'eigen': '1', 'queue': '1'}))
-        self.assertEqual((result['uploaded'], result['failed']), (1, 1))
-        self.assertTrue(result['metadata_committed'])
-        self.assertEqual(git(self.bare, 'show', 'HEAD:queue/package.toml'), original)
-        self.assertNotIn('eigen/package.toml', git(self.bare, 'ls-tree', '-r', '--name-only', 'HEAD').decode())
-
-    def test_republish_bytes_and_push_failure(self):
+    def test_unconfirmed_push_stops_all_further_metadata_writes(self):
         self.remote()
-        asset = self.asset()
-        first = self.run_release(self.config([asset], {'queue': '1'}))
-        before = git(self.bare, 'rev-parse', 'HEAD')
-        result = self.run_release(self.config([asset], {'queue': '1'}, {'queue': '2'}), break_push=True)
-        self.assertFalse(result['metadata_committed'])
-        self.assertEqual((result['uploaded'], result['skipped']), (0, 1))
-        self.assertEqual(git(self.bare, 'rev-parse', 'HEAD'), before)
-        self.assertEqual(len(self.server.bodies), 1)
-        repaired = self.run_release(self.config([asset], {'queue': '1'}, {'queue': '2'}))
-        self.assertTrue(repaired['metadata_committed'])
-        self.assertEqual(git(self.bare, 'show', 'HEAD:queue/package.toml'), b'latest = "2"\n')
-        self.assertEqual(sum(method == 'POST' for method, _ in self.server.events), 1)
-        self.assertEqual(sum(method == 'DELETE' for method, _ in self.server.events), 0)
-        body = self.server.bodies[asset['name']]
-        self.assertEqual(body, b'archive\0bytes')
-        self.assertEqual(git(self.bare, 'show', 'HEAD:queue/1/queue-1-any-any.tar.zst.sha256'),
-                         (hashlib.sha256(body).hexdigest() + '\n').encode())
-        self.assertTrue(first['metadata_committed'])
+        assets=[self.asset('a'),self.asset('b')]
+        result=self.run_release(self.config(assets),break_push=True)
+        self.assertTrue(result['errors'])
+        self.assertEqual(result['uploaded'],0)
+        self.assertEqual(git(self.bare,'rev-list','--count','HEAD').strip(),b'1')
 
-    def test_changed_input_and_failed_query_never_mutate_assets(self):
-        asset = self.asset()
-        Path(asset['path']).write_bytes(b'changed bytes')
-        result = self.module.publish_one(self.api, 3, asset)
-        self.assertEqual(result['status'], 'failed')
-        self.assertEqual(self.server.events, [])
-        asset = self.asset()
-        with patch('requests.sessions.Session.request', side_effect=requests.Timeout('fake-secret')) as send:
-            output = io.StringIO()
-            with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
-                result = self.module.publish_one(self.api, 3, asset)
-        self.assertEqual(result['status'], 'failed')
-        self.assertEqual(result['operation'], 'target_assets')
-        self.assertEqual(send.call_count, 11)
-        self.assertTrue(all(call.args[0] == 'GET' for call in send.call_args_list))
-        self.assertNotIn('sha256', result)
-        self.assertNotIn('fake-secret', output.getvalue() + json.dumps(result))
-
-    def test_latest_only_has_no_publication_or_release_queries_and_main_fails(self):
-        environment = {'PUBLISH_HOST': 'gitee', 'PUBLISH_MODE': 'latest', 'PUBLISH_LATEST': '{"queue":"2"}',
-                       'GITEE_REPOSITORY': 'fixture/mirror', 'GITEE_RELEASE_TAG': 'fixed', 'GITEE_TOKEN': 'fake-secret'}
-        with patch('publish.load_publication', side_effect=AssertionError('must not read build')):
-            config = self.module.resolve_config(environment)
-        self.addCleanup(Path(config['work_root']).rmdir)
-        self.assertEqual(config['assets'], [])
-        self.remote()
-        config['work_root'] = self.root / 'latest-work'
-        result = self.run_release(config)
-        self.assertTrue(result['metadata_committed'])
-        self.assertEqual(self.server.events, [])
-        self.assertEqual(git(self.bare, 'show', 'HEAD:queue/package.toml'), b'latest = "2"\n')
-        for result in [dict(result, failed=1), dict(result, metadata_committed=False, metadata_commit=None)]:
-            output = io.StringIO()
-            config = dict(config, work_root=Path(tempfile.mkdtemp(dir=self.root)))
-            readonly = config['work_root'] / 'git-object'
-            readonly.write_bytes(b'object')
-            readonly.chmod(0o444)
-            with patch('publish.resolve_config', return_value=config), patch('publish.publish_release', return_value=result), \
-                    contextlib.redirect_stdout(output):
-                self.assertEqual(self.module.main(), 1)
-
-    def test_resolve_artifacts_uses_only_manifest_and_rejects_conflicting_inputs(self):
-        asset = self.asset()
-        document = {'source_run': {'repository': 'xxf1ow/xxautolib', 'ref': 'refs/heads/test', 'sha': 'a' * 40,
-                                   'checkout_sha': 'a' * 40, 'run_id': '1', 'attempt': '1'},
-                    'assets': [dict(asset, path=asset['name'])], 'initial_latest': {'queue': '1'}, 'explicit_latest': {}}
-        manifest = self.root / 'publication.json'
-        manifest.write_text(json.dumps(document))
-        environment = {'PUBLISH_HOST': 'gitee', 'PUBLISH_MODE': 'artifacts', 'PUBLISH_INPUT': str(manifest),
-                       'GITHUB_REPOSITORY': 'xxf1ow/xxautolib',
-                       'GITEE_REPOSITORY': 'fixture/mirror', 'GITEE_RELEASE_TAG': 'fixed', 'GITEE_TOKEN': 'fake-secret'}
-        config = self.module.resolve_config(environment)
-        self.addCleanup(lambda: Path(config['work_root']).rmdir())
-        self.assertEqual(config['assets'][0]['path'], asset['path'])
-        self.assertEqual(config['initial_latest'], {'queue': '1'})
-        for changes in [{'PUBLISH_LATEST': '{"queue":"2"}'}, {'PUBLISH_HOST': 'github'},
-                        {'PUBLISH_MODE': 'latest'}, {'GITEE_TOKEN': ''}, {'GITEE_RELEASE_TAG': ''},
-                        {'GITHUB_REPOSITORY': 'another/source'}, {'GITHUB_REPOSITORY': ''},
-                        {'GITEE_RELEASE_TAG': 'has space'}, {'GITEE_RELEASE_TAG': 'wide\u3000space'}]:
-            with self.subTest(changes=changes), self.assertRaises(ValueError):
-                self.module.resolve_config(dict(environment, **changes))
+    def test_configuration_binds_source_and_cache_to_trusted_snapshot(self):
+        asset=self.asset()
+        config=self.config([asset])
+        source=self.root/'source.json';cache=self.root/'cache.json';tool=self.root/'helper'
+        source.write_text(json.dumps(config['source']));cache.write_text(json.dumps(config['cache']));tool.write_text('helper')
+        environment={'PUBLISH_HOST':'gitee','PUBLISH_MODE':'sync','GITEE_REPOSITORY':'fixture/mirror','GITEE_RELEASE_TAG':'fixed',
+                     'GITEE_TOKEN':'fake-secret','GITHUB_REPOSITORY':'owner/repo','SYNC_REF':'refs/heads/main','SYNC_SHA':'a'*40,
+                     'SYNC_SOURCE':str(source),'SYNC_CACHE':str(cache),'SYNC_CACHE_TOOL':str(tool)}
+        resolved=self.module.resolve_config(environment)
+        self.addCleanup(lambda root=resolved['work_root']:Path(root).rmdir())
+        self.assertEqual(resolved['source']['sha'],'a'*40)
+        for changes in [{'SYNC_SHA':'b'*40},{'GITHUB_REPOSITORY':'fake/repo'},{'PUBLISH_MODE':'artifacts'},{'PUBLISH_LATEST':'[]'}]:
+            with self.subTest(changes=changes),self.assertRaises(ValueError):self.module.resolve_config(dict(environment,**changes))
+        environment.update(PUBLISH_MODE='latest',PUBLISH_LATEST='{"queue":"1"}',SYNC_CACHE='does-not-exist',SYNC_CACHE_TOOL='')
+        resolved=self.module.resolve_config(environment)
+        self.addCleanup(lambda root=resolved['work_root']:Path(root).rmdir())
+        self.assertIsNone(resolved['cache'])
 
 
 if __name__ == '__main__':
