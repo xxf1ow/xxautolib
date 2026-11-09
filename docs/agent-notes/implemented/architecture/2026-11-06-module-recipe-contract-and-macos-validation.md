@@ -242,7 +242,7 @@ Asio 1.24.0 和 ViSP 3.7.0 分别作为第 32、33 份配方完成追加验证�
 
 按包收集与修正必要动态库属于可交付性适配，不要求预建通用动态库收集框架。不能合法交付或无法满足系统基线时记录具体阻断；涉及改变既有功能、版本、运行依赖承诺或既定产物要求时暂停受影响包，提出最小修订。不得通过关闭既有功能、增加额外后端、升级上游、提高最低系统版本或更换编译器取得绿灯。Darwin 显式关闭已确认不属于同步基线的额外探测能力，依照前述同步规则处理。
 
-RealSense 和 ONNX Runtime 也列入调查与验收，不能仅因当前无 Darwin 声明跳过。RealSense 区分 SDK 构建消费与实际相机功能；ONNX Runtime 核对当前版本官方 Darwin ARM64 产物、来源摘要及运行能力，不混入 Intel 包，也不无依据改为另一套预编译来源。FLANN 通过后，现有 `example/` 必须使用本轮产物完成导入、编译、链接和运行；验证可预置本轮入口及包，避免改写示例的业务代码或依赖旧远端产物。
+RealSense 和 ONNX Runtime 也列入调查与验收，不能仅因当前无 Darwin 声明跳过。RealSense 区分 SDK 构建消费与实际相机功能；ONNX Runtime 核对当前版本官方 Darwin ARM64 产物及来源摘要，不混入 Intel 包，也不无依据改为另一套预编译来源；本轮收尾按用户决定接受上游预编译交付，独立 API 与模型运行验收免验，记为人工验收通过。FLANN 通过后，现有 `example/` 必须使用本轮产物完成导入、编译、链接和运行；验证可预置本轮入口及包，避免改写示例的业务代码或依赖旧远端产物。
 
 ### 实施范围与数据保护
 
@@ -490,14 +490,37 @@ Windows 在 13 个独立根通过后，RealSense 来源探针把 `rs2_get_api_ve
 
 修复提交 `c1f1a19cab8410962914dbb52e864e72da681bf4` 的[完整重试 run 42457018775，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42457018775) 使用同一四平台、全部版本选择。Darwin 全部 33 包、33 个独立根及运输搬迁通过，结果为 `complete=true`；已下载原始 transport 并经正式发布校验器核对 24 个归档的身份、大小和 SHA256，transport SHA256 为 `4c15d5c79ccd3ba670c12f7a483f4b7e59f9c6ff0c883597b28243b8059a30c3`。
 
-两个 Linux 平台均完成 33 包构建及 28 个独立根消费，pybind11 已通过；随后 Taskflow 消费因 GCC 10.5 的标准库缺少 `<latch>` 失败。固定上游的 README 和 CMakeLists 明确要求 GNU GCC 至少 11.0、C++20。这不是 Taskflow 头文件安装失败；当前生产及消费者工具链与其实际要求存在冲突。用户决定保留当前工具链并跳过 Taskflow 的 C++20 API 验收；当前入口只检查该包的安装导入，配方、adapter 和版本不变。Windows 完成 33 包构建及 20 个独立根消费后，在 ONNX Runtime 的消费者运行阶段失败；RealSense 来源检查已通过。ONNX 消费者已编译链接成功，现有 CTest 日志无程序输出或具体退出原因，诊断尚未完成。
+两个 Linux 平台均完成 33 包构建及 28 个独立根消费，pybind11 已通过；随后 Taskflow 消费因 GCC 10.5 的标准库缺少 `<latch>` 失败。固定上游的 README 和 CMakeLists 明确要求 GNU GCC 至少 11.0、C++20。这不是 Taskflow 头文件安装失败；当前生产及消费者工具链与其实际要求存在冲突。用户决定保留当前工具链并跳过 Taskflow 的 C++20 API 验收；当前入口只检查该包的安装导入，配方、adapter 和版本不变。Windows 完成 33 包构建及 20 个独立根消费后，在 ONNX Runtime 的消费者运行阶段失败；RealSense 来源检查已通过。ONNX 消费者已编译链接成功，该次 CTest 日志无程序输出或具体退出原因。用户确认本轮直接接受上游预编译包，独立运行验收免验，不再将该失败列为收尾阻断；历史 CI 结果仍为失败，不记为运行测试通过。
 
-正式发布要求原运行整体成功，不混合不同 run/attempt 或重标旧归档身份。本轮尚不满足发布条件，Gitee 完整发布和临时分支删除均未执行。六个任务临时分支已保存在 `build/branch-cleanup-20261108/temporary-branches.bundle`；bundle 大小 1659969 字节、SHA256 为 `f562c7de8dcd32dde0ef2a4644bbdc439b152ea90657ac91d765e46ecb7f27d1`，11 条本地及远端引用已通过独立恢复核对。
+正式发布要求原运行整体成功，不混合不同 run/attempt 或重标旧归档身份。本轮尚不满足发布条件，Gitee 完整发布未完成。[自动发布 run 42548594110，attempt 1](https://github.com/xxf1ow/xxautolib/actions/runs/42548594110) 使用默认分支提交 `05ad42949ec1ec1d6f9113cdc7e538263836215d`，在 `Select original build` 失败，后续准备及上传均跳过；独立验收成功不等于正式发布成功。
+
+#### 原生增量复验
+
+两个 Linux 平台分别在 [x86_64 run 42465970788](https://github.com/xxf1ow/xxautolib/actions/runs/42465970788) 和 [aarch64 run 42465974920](https://github.com/xxf1ow/xxautolib/actions/runs/42465974920) 的 attempt 1 完成剩余五根：Taskflow、ViSP、WebSocket++、yaml-cpp、zlib。两次均为 `complete=true`，八包及九个归档资产的身份、大小和摘要核对通过。transport SHA256 分别为 `37b7acb684db099cba915ccdbc04fc73cef16401378d146c55e2df1ed8c27516` 和 `f521c7a24d2f4077018736eb7a6af6dfa20dca83f5197611df4c49b477b37847`；Taskflow 只覆盖安装导入，按用户决定跳过 C++20 API。
+
+Windows 剩余 12 根的安装及消费证据来自下表。前三个 run 整体失败，仅保留其中已经通过的根；末次 run 整体成功，不把累计证据记为同一完整生产运行。
+
+| run / attempt | 已通过根 |
+|---|---|
+| [42471193743](https://github.com/xxf1ow/xxautolib/actions/runs/42471193743) / 6 | OpenCV、PCL、PortAudio |
+| [42482759948](https://github.com/xxf1ow/xxautolib/actions/runs/42482759948) / 1 | pybind11、queue、SDL3 |
+| [42488933057](https://github.com/xxf1ow/xxautolib/actions/runs/42488933057) / 1 | spdlog、Taskflow、ViSP |
+| [42548308165](https://github.com/xxf1ow/xxautolib/actions/runs/42548308165) / 1 | WebSocket++、yaml-cpp、zlib |
+
+Windows 工具准备为 CMake 下载增加两次、间隔五秒的重试，保持固定 SHA256 校验。pybind11 消费直接使用 runner 现有 Python 开发环境，包导入目标快照排除随后由测试发现的 Python DLL。spdlog smoke 使用平台默认行尾并显式包含其声明；编译库和 header-only 的 LF/CRLF 本地八组检查通过。MSVC 消费工程启用 `/Zc:__cplusplus`，WebSocket++ 的 Windows adapter 传递系统 `ws2_32`，不增加仓库包依赖，仍发布为 `any-any`。
+
+末次 Windows 三根的 CTest 各 1/1 通过，实际命令包含 `/Zc:__cplusplus` 与 `ws2_32.lib`。三包及宿主工具的四个归档经正式发布校验器核对原运输身份、大小和摘要，`complete=true`，transport SHA256 为 `b9d8ee2f6406836817020ec4ae5c90cc67d555b3331d72cac2d019f9fd6135e4`。该次证据覆盖直接安装消费和运输打包，没有独立搬迁消费日志。ONNX Runtime 按上文用户决定人工免验接受；自动化入口仍保留其 API 检查，后续完整生产须落实该免验决定。
+
+Linux 原始汇总位于 `build/release-closure-20261108/native-incremental/summary.json`；其 Windows 条目仅记录早期失败。最新 Windows 逐根生产身份及证据路径位于 `build/release-closure-20261108/windows-winsock-link/consumer-acceptance-summary.json`，末次归档核对位于同目录的 `acceptance-1/archive-audit.json`。这些增量证据不替代同一成功 run/attempt 的正式发布条件。
+
+#### 临时分支清理
+
+八个远端、七个本地临时分支已删除，本地及远端仅保留 `master` 和 `task/darwin-aarch64-sync`，master 未变。恢复备份为 `build/branch-cleanup-20261109/temporary-branches-and-pre-squash.bundle`，同时保存临时引用及整理前的本地、远端开发分支，共 17 条引用；大小 1682639 字节、SHA256 为 `a4d42ed8ad3118aba50fde43d9eeacdeb066684b275b506553b62729cd5db0c8`。全部引用已在独立裸仓库恢复并逐项核对，删除清单及前后 SHA 位于同目录的 `cleanup-audit.json`。
 
 #### 同归档与功能覆盖缺口
 
 两份 Linux Eigen 原件及 `producer.json` 已核对为 run 42264057220/attempt 1、源码 `d8ffda6a51e0a427a8ddec6fd508ff61c564625c`：3.4.0 SHA256 为 `be0dcfb8cd69556b00edeb541fbacff0ac4f9d9167ac75f47546bdf00923a2c4`，5.0.1 为 `9d71707429eeff4186b5993e3caff52fe76c33f6f8afb66f2801dcbb0831d578`。复用 Windows/macOS 两版直接及搬迁共八次消费，以及 run 42272676188 的原三平台 PCL 组合；没有重新生产或改写旧身份。同归档消费始终使用这两份原件，不使用本轮 transport 中重新打包的 Eigen 替代。Darwin PCL 在上述新运行中完成同一 Linux 3.4.0 Config 组合，直接及搬迁各 1/1 通过；已下载核对原摘要、生产身份及实际 Eigen3_DIR，均指向对应隔离安装的 3.4.0 Config。
 
-实际覆盖限于有效 API smoke。RealSense 验证 SDK/API 和搬迁，未验相机取流；固定上游另有 Viewer/IMU/USB 权限限制。PortAudio 未验音频设备；SDL3 验证内存 surface，未验交互图形或 HID/USB，ImGui 验证 context 与颜色转换，未验窗口；Native File Dialog 只验证错误状态 API，不要求显示服务，未验图形初始化或交互对话框；libusb 未验设备；ONNX Runtime 创建并释放 CPU 环境，未验模型推理。pybind11 包含编译扩展并由匹配 Python 实际调用。构建消费通过不扩大这些覆盖。
+实际覆盖限于有效 API smoke。RealSense 验证 SDK/API 和搬迁，未验相机取流；固定上游另有 Viewer/IMU/USB 权限限制。PortAudio 未验音频设备；SDL3 验证内存 surface，未验交互图形或 HID/USB，ImGui 验证 context 与颜色转换，未验窗口；Native File Dialog 只验证错误状态 API，不要求显示服务，未验图形初始化或交互对话框；libusb 未验设备；ONNX Runtime 既有 Darwin 结果覆盖创建并释放 CPU 环境，未验模型推理。pybind11 包含编译扩展并由匹配 Python 实际调用。构建消费通过不扩大这些覆盖。
 
 第二阶段首轮独立审查覆盖 `49df3fc..0a3cd6c` 及对应文档，发现 SDL3/libusb 一项 Important，ImGui 随依赖受到影响；用户确认暂列两包阻断后撤回新增 Darwin 声明。真实 plan 检查先复现两包仍被选中，修正声明后验证过滤，原三平台配置保持不变。没有其他已证实的 Critical/Important 或待处理 Minor。后续 SDL3、libzmq、字体链和 ViSP 的补验结果见各专项章节；正式发布与分支清理独立记录，不由包验收成功推定。
