@@ -313,10 +313,17 @@ class PublishTests(unittest.TestCase):
         self.assertEqual(resolved['source']['sha'],'a'*40)
         for changes in [{'SYNC_SHA':'b'*40},{'GITHUB_REPOSITORY':'fake/repo'},{'PUBLISH_MODE':'artifacts'},{'PUBLISH_LATEST':'[]'}]:
             with self.subTest(changes=changes),self.assertRaises(ValueError):self.module.resolve_config(dict(environment,**changes))
+        malformed=json.loads(source.read_bytes())
+        malformed['catalog']['packages']['queue']['versions']=[]
+        source.write_text(json.dumps(malformed))
+        with self.assertRaises(ValueError):self.module.resolve_config(environment)
+        source.write_text(json.dumps(config['source']))
         environment.update(PUBLISH_MODE='latest',PUBLISH_LATEST='{"queue":"1"}',SYNC_CACHE='does-not-exist',SYNC_CACHE_TOOL='')
         resolved=self.module.resolve_config(environment)
         self.addCleanup(lambda root=resolved['work_root']:Path(root).rmdir())
         self.assertIsNone(resolved['cache'])
+        source.write_text(json.dumps(malformed))
+        with self.assertRaises(ValueError):self.module.resolve_config(environment)
 
 
 if __name__ == '__main__':

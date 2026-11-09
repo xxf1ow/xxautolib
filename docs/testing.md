@@ -40,7 +40,7 @@ cmake -P src/autolib-builder/go-sdk.cmake -- test -mod=readonly ./src/autolib-im
 
 ## Release 下载验证
 
-[远端原生闭环](../src/autolib-importer/versioned_remote_loop_test.go)复用真实轻量库。Gitee 子例经生产 CI transport 打包运输，再从 `prepare_publication` 返回清单取得实际入口和资产，验证非上游仓库与编码 tag 的工具及库 URL；GitHub 保留消费协议。空缓存引导后真实链接运行，完整缓存和损坏已有候选均零远端操作；错误身份及损坏候选在 adapter 前拒绝。关闭受控 Git/HTTPS、迁移完整缓存后仍链接运行，原输入及无关缓存不变。证据及缺口由[自定位入口记录](agent-notes/implemented/architecture/2026-11-03-entry-delivery-and-tool-only-ci.md#验证)拥有。
+[远端原生闭环](../src/autolib-importer/versioned_remote_loop_test.go)复用真实轻量库。Gitee 子例使用 builder 已生成的成品及生产入口注入规则取得实际入口和资产，验证非上游仓库与编码 tag 的工具及库 URL；GitHub 保留消费协议。空缓存引导后真实链接运行，完整缓存和损坏已有候选均零远端操作；错误身份及损坏候选在 adapter 前拒绝。关闭受控 Git/HTTPS、迁移完整缓存后仍链接运行，原输入及无关缓存不变。证据及缺口由[自定位入口记录](agent-notes/implemented/architecture/2026-11-03-entry-delivery-and-tool-only-ci.md#验证)拥有。
 
 109 使用[已有 Python 环境](development.md#远端构建与源码传输授权)，按下节发布测试方式选择 `-p test_entry_delivery.py`。该[桥接测试](../tests/ci/gitee-release/test_entry_delivery.py)从仓库根调度 RemoteLoop，不重复单跑同一 Go 用例；原目录存在未知源码差异时，只在逐摘要核对的新隔离源码根运行测试快照，不覆盖未知文件。
 
@@ -56,9 +56,9 @@ cmake -P src/autolib-builder/go-sdk.cmake -- test -mod=readonly ./src/autolib-im
 cmake -P src/autolib-builder/go-sdk.cmake -- test -mod=readonly -p=1 -parallel=1 ./src/autolib-ci -run 'TestCICacheLifecycle$' -count=1 -v
 ```
 
-[跨 run 闭环](../src/autolib-ci/cache_lifecycle_test.go)使用受控 Release、原生静态库及独立消费，验证旧工作目录删除后的恢复、局部失败续跑、链式失效和 latest/入口单独变化。测试不写真实 Release，不证明新流程的四平台 Actions 通过；源码删除和新 Gitee 同步未实施。
+[跨 run 闭环](../src/autolib-ci/cache_lifecycle_test.go)使用受控 Release、原生静态库及独立消费，验证旧工作目录删除后的恢复、局部失败续跑、链式失效和 latest/入口单独变化。测试不写真实 Release，不证明新流程的四平台 Actions 通过；独立同步的受控端到端证据见下节，不等于真实托管通过。
 
-Darwin 实机 queue/lz4 的生产、直接及搬迁消费、Mach-O 与 FIFO 证据和未测项见[Darwin 验证](agent-notes/implemented/architecture/2026-11-05-darwin-aarch64-native-build-and-ci.md#第一阶段验证证据)。工具专用及代表库的 macos-15 运行已通过，见[CI 实机验收](agent-notes/implemented/architecture/2026-11-05-darwin-aarch64-native-build-and-ci.md#macos-15-实机验收)；Gitee workflow 的自动触发关闭。Go 定向检查的 PATH 前置固定 CMake/Make。
+Darwin 实机 queue/lz4 的生产、直接及搬迁消费、Mach-O 与 FIFO 证据和未测项见[Darwin 验证](agent-notes/implemented/architecture/2026-11-05-darwin-aarch64-native-build-and-ci.md#第一阶段验证证据)。工具专用及代表库的 macos-15 运行已通过，见[CI 实机验收](agent-notes/implemented/architecture/2026-11-05-darwin-aarch64-native-build-and-ci.md#macos-15-实机验收)；独立同步的自动触发接线按下节受控检查，真实 Actions 调度仍待验收。Go 定向检查的 PATH 前置固定 CMake/Make。
 
 Darwin准备脚本和workflow受控检查使用下节Python测试命令，将目录改为`-s tests/ci`，分别选择`test_darwin_preparation.py`、`test_darwin_workflow.py`。四平台选择、精确成品与元数据的增量证据见[第二阶段本地验证](agent-notes/implemented/architecture/2026-11-05-darwin-aarch64-native-build-and-ci.md#第二阶段本地验证)。这些既有证据不要求补跑 Linux 实机；原样 example 依赖当时未支持 Darwin 的 FLANN，未纳入该轮验收。统一配方的[阶段证据与缺口](agent-notes/implemented/architecture/2026-11-06-module-recipe-contract-and-macos-validation.md#验证结果)分别记录本机闭环和后续 macos-15、同 Linux Eigen 归档跨平台、PCL/example 验收。
 
@@ -80,13 +80,15 @@ build/tools/gitee-sync-venv/Scripts/python.exe -m pip install -r .github/actions
 build/tools/gitee-sync-venv/Scripts/python.exe -m unittest discover -s tests/ci/gitee-release -p test_publish.py -v
 ```
 
-按修改所有者替换 `-p` 文件名，不重复整套发布测试。HTTP 替身不访问真实 Gitee；Git 测试只用本地临时裸库。Windows 无 Bash 跳过相关分支检查，真实 builder 用例使用上述授权的隔离环境。成品交接、两次准备字节一致及就绪资产重复发布零写入的定向证据由[成品交接记录](agent-notes/implemented/architecture/2026-11-04-ci-packaged-artifact-handoff.md#验证)拥有；既有交付证据由[交付证据](agent-notes/implemented/architecture/2026-11-02-gitee-delivery-reimplementation.md#已有受控证据)拥有。
+按修改所有者替换 `-p` 文件名，不重复无关测试。HTTP 夹具不访问真实平台；Git 测试只用本地临时裸库。`test_cache_sync_lifecycle.py` 使用 OpenSSL、本地 TLS 代理、仓库 SDK 编译的真实 CLI 和 builder 归档，覆盖多 run 累积、零变化零归档传输、同版本链式失效、依赖顺序、版本/平台/整包清理及响应丢失和入口失败后的恢复。代理只接受固定测试域名，不转发真实请求；测试证书、源码、原生轻量产物和编译缓存均位于 `build/`。在上述隔离源码根选择该文件运行，Linux/Darwin 需要 C++ 编译器及 `ar`。
+
+最后阶段跨模块验证使用仓库 SDK 对 `./src/autolib-builder ./src/autolib-ci ./src/autolib-importer` 执行 `test -mod=readonly -p=1 -parallel=1 -count=1`，同步目录执行 `-p 'test_*.py'`。平台脚本按 `tests/ci/test_*preparation.py` 及 `test_*workflow.py` 选择；Windows PowerShell 与 Linux 原生行为只由相应宿主结果证明。上游 `test_upstream_baseline.py` 保证原 multipart 参考入口仍可运行；真实入口消费由 `test_entry_delivery.py` 调度原生 RemoteLoop。
 
 ## 真实交付与手动验收
 
-Gitee 版本化交付及 CI 成品交接已通过用户手动验收。早期构建与摘要空白修复见[交付证据](agent-notes/implemented/architecture/2026-11-02-gitee-delivery-reimplementation.md#真实构建与用户验收)；三平台原生构建 #30、发布 #27 与全部跳过且无新元数据提交的重复发布 #28 见[成品交接验收](agent-notes/implemented/architecture/2026-11-04-ci-packaged-artifact-handoff.md#真实托管验收)。默认分支自动发布、三平台匿名消费及真实故障注入尚无专项通过证据；发布 #27/#28 均没有实际重试，不将成功发布等同于故障恢复通过。
+历史 Gitee 交付和成品 Artifacts 交接已通过用户验收，记录见[交付证据](agent-notes/implemented/architecture/2026-11-02-gitee-delivery-reimplementation.md#真实构建与用户验收)及[成品交接验收](agent-notes/implemented/architecture/2026-11-04-ci-packaged-artifact-handoff.md#真实托管验收)。这些运行不证明 Release 缓存与独立同步的真实四平台行为；历史 run/attempt 交接入口已退役。
 
-复验历史成品交接须使用仍保留原格式成品 Artifacts 的成功 `Representative releases` 构建；未合并时，手动选择任务分支的 `Publish artifacts` 并指定 run/attempt，核对实际控制提交，不假定默认分支自动入口使用任务分支代码。全部附件与元数据就绪后，仅重跑发布并保持 run/attempt、artifacts、目标和 latest 不变，预期 `uploaded=0`、`skipped=selected`、`failed=0`、`metadata_committed=false`，无 DELETE/POST 或新元数据提交。fork 采用流程及受控输入审查，不要求第二账号。CI、Gitee 写入与故障注入按具体授权执行；push 和新库公开由用户负责。
+新同步的真实验收需单独授权仓库、目标和阶段。准备有效缓存后，手动选择普通分支的 `Synchronize Gitee`、`mode=sync`，核对本轮固定 SHA、实际同步目标、逐项摘要及依赖顺序。就绪后再同步应 `uploaded=0`、`skipped=selected`、无归档传输且无新元数据提交。另须按授权验证两个 workflow 的共用互斥及 `queue: max`、成功构建自动触发、两端删除与故障恢复；静态 YAML、本地 TLS 和线程锁均不替代真实调度。匿名下游消费需用户公开 Gitee 库后另行验证，push 及新库公开由用户负责。
 
 ## 安装产物集成验证
 

@@ -49,8 +49,10 @@ def resolve_config(environment: Mapping[str, str]) -> dict:
             or source.get('repository') != trusted or source.get('ref') != ref or source.get('sha') != sha
             or not re.fullmatch(r'[0-9a-f]{40}', sha) or not ref.startswith('refs/heads/')
             or subprocess.run(['git', 'check-ref-format', ref], capture_output=True).returncode
-            or not isinstance(source.get('catalog', {}).get('packages'), dict)
-            or not isinstance(source.get('inputs', {}).get('fingerprints'), dict)):
+            or not isinstance(source.get('catalog'), dict)
+            or not isinstance(source['catalog'].get('packages'), dict)
+            or not isinstance(source.get('inputs'), dict)
+            or not isinstance(source['inputs'].get('fingerprints'), dict)):
         raise ValueError('sync source does not match trusted repository, branch and SHA')
     latest = environment.get('PUBLISH_LATEST', '')
     explicit = json.loads(latest, object_pairs_hook=_object) if latest else {}
@@ -67,6 +69,11 @@ def resolve_config(environment: Mapping[str, str]) -> dict:
                 or not isinstance(cache.get('records'), dict) or not isinstance(cache.get('record_errors'), dict)
                 or not isinstance(cache.get('assets'), list)):
             raise ValueError('cache does not match source facts')
+    try:
+        from sync_scheduler import validate_sync_inputs
+        validate_sync_inputs(source, cache, mode, explicit)
+    except (KeyError, TypeError, AttributeError) as error:
+        raise ValueError('invalid nested sync input') from error
     return {'host': host, 'mode': mode, 'repository': repository, 'tag': tag, 'gitee_token': token,
             'source': source, 'cache': cache, 'cache_tool': tool, 'source_file': str(Path(source_file).resolve()),
             'cache_file': str(Path(cache_file).resolve()) if mode == 'sync' else None,
@@ -204,7 +211,7 @@ def publish_release(config: dict) -> dict:
             result['metadata_commit'] = repository['head']
         api.close()
     for status in ('uploaded', 'skipped', 'failed'):
-        result[status] = sum(item['status'] == status for item in result['items'])
+        result[status] = sum(item['status'] == status or status == 'failed' and item.get('blocking_failure', False) for item in result['items'])
     return result
 
 

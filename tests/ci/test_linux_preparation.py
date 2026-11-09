@@ -149,46 +149,29 @@ class LinuxPreparationTests(unittest.TestCase):
 
 
 class LinuxConsumerWorkflowTests(unittest.TestCase):
-    def test_python_headers_are_prepared_only_for_binding_consumption(self):
-        self.assertIsNotNone(shutil.which('jq'), 'workflow checks require jq')
+    def test_verify_delegates_item_prerequisites_to_ci(self):
         script = step_script(job((ROOT / '.github/workflows/build-platform.yml').read_text(), 'linux'),
                              'Verify selected work')
-        for platform, binding in product(('linux-x86_64', 'linux-aarch64'), (False, True)):
-            with self.subTest(platform=platform, binding=binding), tempfile.TemporaryDirectory(prefix='linux consumer ') as temporary:
+        self.assertNotIn('apt-get', script)
+        self.assertNotIn('pybind11', script)
+        for platform in ('linux-x86_64', 'linux-aarch64'):
+            with self.subTest(platform=platform), tempfile.TemporaryDirectory(prefix='linux consumer ') as temporary:
                 root = Path(temporary)
-                (root / 'build/ci-input').mkdir(parents=True)
-                modules = [{'name': 'pybind11' if binding else 'queue'}]
-                (root / 'build/ci-input/plan.json').write_text(json.dumps({'platforms': [
-                    {'id': platform, 'description': {'modules': modules}}]}))
-                binary = root / 'bin'
-                binary.mkdir()
-                apt = binary / 'apt-get'
-                apt.write_text('#!' + sys.executable + '\n' + textwrap.dedent('''
-                    import os, sys
-                    from pathlib import Path
-                    assert sys.argv[1:] == ['install', '-y', '--no-install-recommends', 'python3-dev']
-                    Path(os.environ['CONSUMER_FIXTURE'], 'python-headers').touch()
-                '''))
-                apt.chmod(0o755)
                 cli = root / 'autolib-ci'
                 cli.write_text('#!' + sys.executable + '\n' + textwrap.dedent('''
                     import os, sys
                     from pathlib import Path
-                    root = Path(os.environ['CONSUMER_FIXTURE'])
-                    if os.environ['REQUIRES_PYTHON'] == '1' and not (root / 'python-headers').exists():
-                        raise SystemExit('binding consumer requires Python development headers')
                     assert sys.argv[sys.argv.index('--layer') + 1] == 'verify'
-                    (root / 'consumer-ran').touch()
+                    assert sys.argv[sys.argv.index('--platform') + 1] == os.environ['PLATFORM']
+                    assert sys.argv[sys.argv.index('--cache') + 1] == 'build/ci-input/cache.json'
+                    Path(os.environ['WORK_ROOT'], 'consumer-ran').touch()
                 '''))
                 cli.chmod(0o755)
-                env = dict(os.environ, PATH=str(binary) + os.pathsep + os.environ['PATH'],
-                           CONSUMER_FIXTURE=str(root), REQUIRES_PYTHON='1' if binding else '0',
-                           WORK_ROOT=str(root), PLATFORM=platform, GITHUB_REPOSITORY='fixture/source',
+                env = dict(os.environ, WORK_ROOT=str(root), PLATFORM=platform, GITHUB_REPOSITORY='fixture/source',
                            GITHUB_WORKSPACE=str(root), CMAKE_COMMAND='cmake', MAKE_PROGRAM='make', BUDGET='4')
                 result = subprocess.run(['bash', '-c', script], cwd=root, env=env, text=True, capture_output=True)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertTrue((root / 'consumer-ran').exists())
-                self.assertEqual((root / 'python-headers').exists(), binding)
 
 
 if __name__ == "__main__":

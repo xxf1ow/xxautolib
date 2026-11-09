@@ -77,7 +77,7 @@ class SyncSchedulerTests(unittest.TestCase):
             self.assertEqual(status[name+'-1-any-any.tar.zst']['status'],'dependency_failed')
             self.assertEqual(status[name+'-1-any-any.tar.zst']['dependency_chain'],[name+'-1-any-any.tar.zst','b-1-any-any.tar.zst'])
             self.assertNotIn(name+'-1-any-any.tar.zst',self.f.server.bodies)
-        self.assertGreater(result['failed'],0)
+        self.assertEqual(result['failed'],3)
 
     def test_missing_dependency_is_coverage_gap_even_when_parent_skips(self):
         assets,config=self.graph()

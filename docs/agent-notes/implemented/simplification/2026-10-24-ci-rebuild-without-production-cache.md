@@ -8,7 +8,7 @@ Status: implemented
 
 ## 决定
 
-跨运行生产包复用及链式失效由[Release 成品缓存与独立 Gitee 精确同步](../../proposed/architecture/2026-11-09-release-cache-and-independent-gitee-sync.md)拥有。现行 CI 在新安装根恢复有效归档，未命中项逐项验证并保存归档和 publication 记录；保留无 label、来源绑定、唯一 publisher 与原生隔离规则。以下每轮重建的取舍及其验证保留历史依据，不约束现行缓存实现。
+跨运行生产包复用及链式失效由[Release 成品缓存与独立 Gitee 精确同步](../../implemented/architecture/2026-11-09-release-cache-and-independent-gitee-sync.md)拥有。现行 CI 在新安装根恢复有效归档，未命中项逐项验证并保存归档和 publication 记录，独立同步复用全部有效缓存并按源码清理两端；保留无 label、来源绑定、唯一 publisher 与原生隔离规则。以下每轮重建的取舍及其验证保留历史依据，不约束现行缓存实现。
 
 历史 CI 每轮在该运行与平台的隔离安装根中，按依赖先序构建所选模块的完整依赖闭包。同轮共享依赖只构建一次，后续层使用已安装的依赖；不从 Release 下载包恢复安装树，不复用其他运行的生产包或工作区原有安装 sentinel。源码、工具和 Go 下载缓存保持各自原有规则。
 

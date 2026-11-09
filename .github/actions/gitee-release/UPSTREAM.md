@@ -20,7 +20,7 @@
 
 `sync_scheduler.py` 拥有依赖顺序、并发上传和单份 Git 工作副本的锁。唯一跳过依据是 Gitee Git 摘要；相同摘要不下载归档，也不检查附件是否存在。需要更新时校验缓存下载字节，删除已有同名附件后上传，每项立即 commit/push 并确认。push 未确认后停止本轮后续元数据写入，不 rebase 或回滚已确认项。源码决定两端删除资格；未知身份和无法判定的声明保持原样。
 
-主进程在至少一个 importer 实际上传后交付一次入口，只修改上传副本中的唯一空来源赋值。工具摘要等待入口成功，库交付独立继续；入口无摘要。latest 保留合法已有值，不要求全平台成品齐备；同版本原地更新不保证整组产物原子切换。机制及限制由[缓存与同步设计](../../../docs/agent-notes/proposed/architecture/2026-11-09-release-cache-and-independent-gitee-sync.md)拥有。
+主进程在至少一个 importer 实际上传后交付一次入口，只修改上传副本中的唯一空来源赋值。工具摘要等待入口成功，库交付独立继续；入口无摘要。latest 保留合法已有值，不要求全平台成品齐备；同版本原地更新不保证整组产物原子切换。机制及限制由[缓存与同步设计](../../../docs/agent-notes/implemented/architecture/2026-11-09-release-cache-and-independent-gitee-sync.md)拥有。
 
 `publish.py` 的 stdout 汇总逐项状态、覆盖缺口、独立操作错误和已确认元数据 HEAD；stderr 即时输出开始、跳过、重试、成功及失败事件，不输出凭据、响应正文或底层异常正文。缺缓存作为待构建缺口，实际上传、清理、入口或 Git 失败返回非零。
 

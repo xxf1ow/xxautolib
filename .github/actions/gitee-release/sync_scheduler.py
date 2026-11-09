@@ -24,7 +24,7 @@ def _dependencies(source):
     return result
 
 
-def _entry(config, source, tools):
+def _raw_entry(source, tools):
     expected = source['entry']
     raw = base64.b64decode(expected['bytes'], validate=True)
     if not raw or hashlib.sha256(raw).hexdigest() != expected['sha256']:
@@ -33,6 +33,24 @@ def _entry(config, source, tools):
     for asset in tools:
         if asset['record'].get('entry') != expected:
             errors[asset['name']] = 'tool entry does not match fixed source'
+    return raw, errors
+
+
+def validate_sync_inputs(source, cache, mode, explicit):
+    """复用消费规则预检嵌套输入；任何远端读取或初始化前完成。"""
+    if mode == 'latest':
+        choose_source_latest({}, {}, source, set(), explicit)
+        return
+    candidates = cache_candidates(source, cache)
+    _dependencies(source)
+    plan_cleanup(source, cache, {'existing_digests': {}, 'existing_latest': {}}, [])
+    tools = [a for a in candidates if a['kind'] == 'importer']
+    if tools:
+        _raw_entry(source, tools)
+
+
+def _entry(config, source, tools):
+    raw, errors = _raw_entry(source, tools)
     data = inject_release_root(raw, config['repository'], config['tag'])
     path = Path(config['work_root']) / 'entry' / 'autolib.cmake'
     path.parent.mkdir(parents=True, exist_ok=True)

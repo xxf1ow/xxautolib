@@ -81,15 +81,19 @@ Git 主来源复用 `git/<包名>/<版本>/`，资源复用 `git/_resources/<包
 
 [手动流水线](../.github/workflows/build-platform.yml)使用当前仓库的普通分支与事件提交，支持fork，拒绝tag。默认四个平台，也可单选；平台、工具与ABI基准见[架构](architecture.md#包与版本)。模块空字符串只准备工具，严格等于`all`才发现全部合资格版本，也可填写逗号分隔的精确引用或裸名；纯空白和变形的`all`拒绝。过滤不算失败；配方错误只阻断相关依赖者，无关项继续。
 
-共享准备生成缓存快照，各平台`run --cache`显式读取。每项恢复或构建、消费验证后立即入库；失败运行中的成功成品仍可复用，汇总保持整体失败。缓存为当前源码仓库的`autolib-cache`，共享准备和平台使用`contents: write`；令牌仅注入缓存步骤，子进程不继承GitHub/Gitee令牌。容量、精确同名文件自动替换及无关文件保护见[缓存设计](agent-notes/proposed/architecture/2026-11-09-release-cache-and-independent-gitee-sync.md#release-成品缓存)。运行互斥不按分支拆组，队列最多等待100个运行。
+共享准备生成缓存快照，各平台`run --cache`显式读取。每项恢复或构建、消费验证后立即入库；失败运行中的成功成品仍可复用，汇总保持整体失败。缓存为当前源码仓库的`autolib-cache`，共享准备和平台使用`contents: write`；令牌仅注入缓存步骤，子进程不继承GitHub/Gitee令牌。容量、精确同名文件自动替换及无关文件保护见[缓存设计](agent-notes/implemented/architecture/2026-11-09-release-cache-and-independent-gitee-sync.md#release-成品缓存)。运行互斥不按分支拆组，队列最多等待100个运行。
 
 同版本输入变化沿依赖链失效，latest单独变化不重建库。命中归档恢复到新安装根，不复用旧安装；CI 仅将已恢复并验证的精确依赖传入 `AUTOLIB_RESTORED_PACKAGES`，其构建目标只读校验冻结安装，不要求上游源码。普通本地复用仍执行原来源比对；Artifacts只保存计划、结果和诊断。零有效库仍验证工具与入口。验证命令及边界见[测试指南](testing.md#ci-验证)。
 
 ### 独立 Gitee 发布
 
-[发布流水线](../.github/workflows/publish-artifacts.yml)关闭自动触发，仅保留历史成品手动发布和显式latest更新。配置`GITEE_REPOSITORY`、`GITEE_RELEASE_TAG`和`GITEE_TOKEN`，缺失或非法即失败。历史发布填写同仓库成功构建的`source_run_id/source_attempt`，要求原格式成品Artifacts仍存在；新缓存不能作为该入口的输入。独立latest更新要求非空映射，不需要构建输入。完整校验、重试、入口注入及失败登记见[发布接口](../.github/actions/gitee-release/UPSTREAM.md#gitee-独立同步适配)。
+[同步流水线](../.github/workflows/publish-artifacts.yml)提供 `sync/latest` 手动入口，同仓库 `Representative releases` 整体成功后自动触发 `sync`。配置 `GITEE_REPOSITORY`、`GITEE_RELEASE_TAG` 和 `GITEE_TOKEN`，缺失或非法即失败。同步任务开始执行后解析普通分支最新 SHA 并只 checkout 一次，不以触发构建的旧 SHA 清理；允许可信 fork，拒绝 tag、PR ref 及跨仓库构建事件。
 
-执行前必须信任控制代码与原构建提交，脱敏不是沙箱。实际写入须取得目标及删除替换授权，并核对控制分支；push未确认仍失败。新库私有，公开后按[验收交接](testing.md#真实交付与手动验收)验证。
+`sync` 从 `autolib-cache` 读取全部当前有效成品，逐项同步和清理；不需要 run/attempt 或成品 Artifacts。缺缓存只报告待构建，保留源码仍存在的 Gitee 成品。`latest` 要求非空 JSON 映射，使用同一源码事实校验版本，但不查询缓存、清理附件或交付入口。合法已有 latest 不自动推进，首次初始化及删除修复可指向尚缺某平台成品的版本，不能据此认为裸名消费已可用。
+
+同步通过仓库 SDK 编译宿主 builder/autolib-ci，只进行源码描述、指纹和缓存操作；不编译库/importer 或重打包。源码描述及依赖安装不接收 Gitee token，缓存 helper 移除该凭据。输入、重试、入口与结果接口见[Action 说明](../.github/actions/gitee-release/UPSTREAM.md#gitee-独立同步适配)。
+
+执行前必须信任同步分支代码，脱敏不是沙箱。实际写入须取得目标及删除替换授权；两个 workflow 共用互斥组，人工维护须等待它们结束。push 未确认会停止本轮后续元数据写入；同版本产物替换不提供整组原子性。新库私有，公开后按[验收交接](testing.md#真实交付与手动验收)验证。
 
 ## 远端构建与源码传输授权
 
