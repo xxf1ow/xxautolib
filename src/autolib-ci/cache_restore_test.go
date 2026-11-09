@@ -64,11 +64,11 @@ func cacheRestoreLibrary(t *testing.T, directory string) ciLocalAsset {
 }
 
 func TestCICacheRestoreNativeConsumer(t *testing.T) {
-	f := installedCIFixture(t)
+	f := cacheRunFixture(t)
 	ctx := context.Background()
 	for _, layer := range []string{"prepare", "layer0"} {
 		f.options.Layer = layer
-		if err := runCILayer(ctx, f.options); err != nil {
+		if err := runCILayerWithCache(ctx, f.options, f.release.client); err != nil {
 			t.Fatal(err)
 		}
 	}

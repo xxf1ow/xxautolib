@@ -20,7 +20,7 @@ func TestCIDarwinNative(t *testing.T) {
 	}
 	for _, selection := range []string{"libraries", "tools", "filtered"} {
 		t.Run(selection, func(t *testing.T) {
-			f := installedCIFixture(t)
+			f := cacheRunFixture(t)
 			config, err := loadCIEnvironment(filepath.Join(f.options.SourceRoot, ".github/ci-tools.json"))
 			if err != nil {
 				t.Fatal(err)
@@ -57,9 +57,7 @@ func TestCIDarwinNative(t *testing.T) {
 			modules := ""
 			if selection == "filtered" {
 				recipe := filepath.Join(f.options.SourceRoot, "src/dependencies/queue/1/module.toml")
-				writeCIFixture(t, f.options.SourceRoot, "src/dependencies/queue/1/module.toml", strings.Replace(mustReadText(t, recipe), "'darwin-aarch64'", "'linux-x86_64'", 1))
-				// Avoid a duplicate whitelist item in the deliberately unsupported root.
-				writeCIFixture(t, f.options.SourceRoot, "src/dependencies/queue/1/module.toml", strings.Replace(mustReadText(t, recipe), "'linux-x86_64','linux-aarch64','linux-x86_64'", "'linux-x86_64','linux-aarch64'", 1))
+				writeCIFixture(t, f.options.SourceRoot, "src/dependencies/queue/1/module.toml", strings.Replace(mustReadText(t, recipe), "package_platforms=['any-any']", "package_platforms=['linux-x86_64']", 1))
 				modules = "queue@1"
 			}
 			if selection != "libraries" {
@@ -74,12 +72,13 @@ func TestCIDarwinNative(t *testing.T) {
 				if err := writeCIJSON(f.options.PlanFile, plan); err != nil {
 					t.Fatal(err)
 				}
-			} else if f.plan.Publishers["queue@1.0"] != "darwin-aarch64" {
-				t.Fatal("Darwin universal publisher missing", f.plan.Publishers["queue@1.0"])
+			} else if f.plan.Publishers["queue@1"] != "darwin-aarch64" {
+				t.Fatal("Darwin universal publisher missing", f.plan.Publishers["queue@1"])
 			}
 			if selection == "tools" {
 				f.options.Budget = 0
 			}
+			f.snapshot(t)
 			phases := []string{"prepare"}
 			for i := range f.plan.Platforms[0].Layers {
 				phases = append(phases, "layer"+string(rune('0'+i)))
@@ -87,7 +86,7 @@ func TestCIDarwinNative(t *testing.T) {
 			phases = append(phases, "verify")
 			for _, phase := range phases {
 				f.options.Layer = phase
-				if err := runCILayer(t.Context(), f.options); err != nil {
+				if err := runCILayerWithCache(t.Context(), f.options, f.release.client); err != nil {
 					t.Fatalf("%s: %v", phase, err)
 				}
 			}

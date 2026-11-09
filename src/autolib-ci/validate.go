@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -18,6 +17,7 @@ import (
 )
 
 type ciValidationOptions struct {
+	Environment                        []string
 	SourceRoot, InstallRoot, BuildRoot string
 	CMakeCommand, MakeProgram          string
 	EvidenceDirectory                  string
@@ -98,7 +98,8 @@ func validateCIRelease(ctx context.Context, o ciValidationOptions) (ciValidation
 		args = append(args, "-D"+name+"="+o.Context.CMakeDefaults[name])
 	}
 	args = append(args, "-P", filepath.Join(roots.source, "tests", "autolib", "run-installed.cmake"))
-	command := exec.CommandContext(ctx, o.CMakeCommand, args...)
+	command := ciExternalCommand(ctx, o.CMakeCommand, args...)
+	command.Env = ciItemEnvironment(o.Environment)
 	output, err := command.CombinedOutput()
 	if err != nil {
 		return ciValidationResult{EvidenceDirectory: roots.evidence}, fmt.Errorf("real consumer validation failed: %w\n%s", err, strings.TrimSpace(string(output)))
@@ -426,7 +427,7 @@ func collectLinuxABIVersions(root string, packageRoots []string) ([]string, erro
 }
 
 func linuxObjdumpVersions(path string) (map[string]bool, map[string]bool, error) {
-	output, err := exec.Command("objdump", "-T", path).CombinedOutput()
+	output, err := ciExternalCommand(context.Background(), "objdump", "-T", path).CombinedOutput()
 	if err != nil {
 		return nil, nil, err
 	}

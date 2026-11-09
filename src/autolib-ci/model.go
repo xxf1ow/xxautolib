@@ -65,6 +65,8 @@ type ciProductionContext struct {
 }
 
 type ciRunOptions struct {
+	CacheFile, PreparedImporter                                      string
+	Environment                                                      []string
 	Repository                                                       string
 	SourceRoot, PlanFile, RunIdentityFile, Platform, Layer, WorkRoot string
 	ImporterFile, CMakeCommand, MakeProgram                          string
@@ -72,14 +74,22 @@ type ciRunOptions struct {
 }
 
 type ciSlotResult struct {
-	Slot     ciSlot `json:"slot"`
-	Built    bool   `json:"built"`
-	Verified bool   `json:"verified"`
+	Status            string         `json:"status"`
+	Error             string         `json:"error"`
+	DependencyChain   []string       `json:"dependency_chain"`
+	Record            *ciCacheRecord `json:"record,omitempty"`
+	EvidenceDirectory string         `json:"evidence_directory,omitempty"`
+	Slot              ciSlot         `json:"slot"`
+	Built             bool           `json:"built"`
+	Verified          bool           `json:"verified"`
 }
 
 type ciImporterResult struct {
-	File     string `json:"file"`
-	Verified bool   `json:"verified"`
+	Status   string         `json:"status"`
+	Error    string         `json:"error"`
+	Record   *ciCacheRecord `json:"record,omitempty"`
+	File     string         `json:"file"`
+	Verified bool           `json:"verified"`
 }
 
 type ciEntryResult struct {
@@ -95,12 +105,15 @@ type ciRootResult struct {
 }
 
 type ciPlatformResult struct {
-	Run      ciRunIdentity    `json:"run"`
-	Platform string           `json:"platform"`
-	Packages []ciSlotResult   `json:"packages"`
-	Roots    []ciRootResult   `json:"roots"`
-	Importer ciImporterResult `json:"importer"`
-	Entry    ciEntryResult    `json:"entry"`
-	Complete bool             `json:"complete"`
-	Error    string           `json:"error"`
+	FailedRoots        []failedRoot      `json:"failed_roots"`
+	SystemDependencies ciDependencyState `json:"system_dependencies"`
+	Processed          bool              `json:"processed"`
+	Run                ciRunIdentity     `json:"run"`
+	Platform           string            `json:"platform"`
+	Packages           []ciSlotResult    `json:"packages"`
+	Roots              []ciRootResult    `json:"roots"`
+	Importer           ciImporterResult  `json:"importer"`
+	Entry              ciEntryResult     `json:"entry"`
+	Complete           bool              `json:"complete"`
+	Error              string            `json:"error"`
 }

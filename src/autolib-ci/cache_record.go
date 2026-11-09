@@ -1,11 +1,11 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"maps"
-	"os/exec"
 	"strings"
 )
 
@@ -105,7 +105,7 @@ func validateCICacheRecord(r ciCacheRecord, repository string, key ciCacheKey, f
 	if !ciRepositoryPattern.MatchString(repository) || o.Repository != repository || !commitPattern.MatchString(o.SHA) || o.CheckoutSHA != o.SHA || !ciRunNumber(o.RunID) || !ciRunNumber(o.Attempt) || !strings.HasPrefix(o.Ref, "refs/heads/") {
 		return fail("invalid original producer identity")
 	}
-	if err := exec.Command("git", "check-ref-format", o.Ref).Run(); err != nil {
+	if err := ciExternalCommand(context.Background(), "git", "check-ref-format", o.Ref).Run(); err != nil {
 		return fail("invalid original branch")
 	}
 	if !digestValue.MatchString(r.Fingerprint) || r.Fingerprint != fingerprint || r.DependencyFingerprints == nil || !maps.Equal(r.DependencyFingerprints, dependencies) {

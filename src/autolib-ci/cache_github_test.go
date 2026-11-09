@@ -175,7 +175,7 @@ func (f *releaseCacheTestFixture) serve(w http.ResponseWriter, r *http.Request) 
 		w.WriteHeader(f.deny)
 		return
 	}
-	base := "/repos/owner/repo/releases"
+	base := "/repos/" + f.client.Repository + "/releases"
 	jsonOut := func(v any) { w.Header().Set("Content-Type", "application/json"); json.NewEncoder(w).Encode(v) }
 	if r.URL.Path == base+"/tags/autolib-cache" || (r.URL.Path == base && r.Method == "POST") {
 		if r.Method == "POST" {

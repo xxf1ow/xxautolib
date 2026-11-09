@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"maps"
-	"os/exec"
 	"path"
 	"path/filepath"
 	"slices"
@@ -28,7 +27,7 @@ func readModuleDescription(ctx context.Context, builderFile, sourceRoot, systemN
 	if len(modules) == 0 {
 		args = append(args, "--discover")
 	}
-	cmd := exec.CommandContext(ctx, builderFile, args...)
+	cmd := ciExternalCommand(ctx, builderFile, args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {

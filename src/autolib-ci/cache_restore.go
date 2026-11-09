@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -73,7 +72,7 @@ func restoreCICacheItem(ctx context.Context, o ciRunOptions, asset ciLocalAsset)
 	name := ciImporterExecutable(o.Platform)
 	for _, mode := range []string{"tf", "tvf"} {
 		var out, diagnostic bytes.Buffer
-		cmd := exec.CommandContext(ctx, o.CMakeCommand, "-E", "tar", mode, archive)
+		cmd := ciExternalCommand(ctx, o.CMakeCommand, "-E", "tar", mode, archive)
 		cmd.Stdout = &out
 		cmd.Stderr = &diagnostic
 		if err := cmd.Run(); err != nil || diagnostic.Len() != 0 {
@@ -114,7 +113,7 @@ func restoreCICacheItem(ctx context.Context, o ciRunOptions, asset ciLocalAsset)
 	}
 	defer os.RemoveAll(staging)
 	var diagnostic bytes.Buffer
-	cmd := exec.CommandContext(ctx, o.CMakeCommand, "-E", "tar", "xf", archive)
+	cmd := ciExternalCommand(ctx, o.CMakeCommand, "-E", "tar", "xf", archive)
 	cmd.Dir = staging
 	cmd.Stderr = &diagnostic
 	if err := cmd.Run(); err != nil || diagnostic.Len() != 0 {

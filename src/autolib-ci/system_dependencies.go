@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -152,7 +151,7 @@ func installCIItemDependency(ctx context.Context, o ciRunOptions, manager, name 
 		if manager == "apt" {
 			environment = append(withoutEnvironment(environment, "DEBIAN_FRONTEND"), "DEBIAN_FRONTEND=noninteractive")
 		}
-		cmd := exec.CommandContext(ctx, command[0], command[1:]...)
+		cmd := ciExternalCommand(ctx, command[0], command[1:]...)
 		cmd.Env = environment
 		var out, diagnostic bytes.Buffer
 		cmd.Stdout = &out

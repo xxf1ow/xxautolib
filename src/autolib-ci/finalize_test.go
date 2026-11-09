@@ -15,7 +15,7 @@ func finalizeFixture() (ciPlan, ciRunIdentity, []ciPlatformResult) {
 	results := []ciPlatformResult{}
 	for _, platform := range []string{"linux-x86_64", "windows-x86_64", "linux-aarch64"} {
 		plan.Platforms = append(plan.Platforms, ciPlatformPlan{ID: platform, Roots: []string{"queue@1"}, Description: moduleDescription{Modules: []describedModule{{Name: "queue", Version: "1", Target: "fixture-queue", PackagePlatform: "any-any"}}}})
-		results = append(results, ciPlatformResult{Run: identity, Platform: platform, Complete: true, Importer: ciImporterResult{File: ciImporterExecutable(platform), Verified: true}, Entry: ciEntryResult{File: "autolib.cmake", SHA256: strings.Repeat("c", 64), Verified: true}, Packages: []ciSlotResult{{Slot: ciSlot{Name: "queue", Version: "1", OS: "any", Arch: "any"}, Built: true, Verified: true}}, Roots: []ciRootResult{{Root: "queue@1", Verified: true}}})
+		results = append(results, ciPlatformResult{Run: identity, Platform: platform, Complete: true, Processed: true, Importer: ciImporterResult{File: ciImporterExecutable(platform), Verified: true, Status: "stored"}, Entry: ciEntryResult{File: "autolib.cmake", SHA256: strings.Repeat("c", 64), Verified: true}, Packages: []ciSlotResult{{Slot: ciSlot{Name: "queue", Version: "1", OS: "any", Arch: "any"}, Built: true, Verified: true, Status: "stored"}}, Roots: []ciRootResult{{Root: "queue@1", Verified: true}}})
 	}
 	return plan, identity, results
 }
@@ -31,9 +31,9 @@ func TestCIFinalize(t *testing.T) {
 	if err := finalizeCI(plan, ciGitHubRepository, run, append(results, results[0])); err == nil {
 		t.Fatal("duplicate results accepted")
 	}
-	results[0].Packages[0].Built = false
+	results[0].Packages[0].Status = "failed"
 	if err := finalizeCI(plan, ciGitHubRepository, run, results); err == nil {
-		t.Fatal("package without current build accepted")
+		t.Fatal("failed package accepted")
 	}
 }
 
@@ -121,5 +121,20 @@ func TestCIRunCLI(t *testing.T) {
 	}
 	if strings.Count(out.String(), "linux-x86_64: filtered local@1: missing_adapter (local@1)\n") != 1 {
 		t.Fatalf("selection summary lost or repeated the filter reason: %s", &out)
+	}
+}
+
+func TestCIFinalizeReusedAndFailed(t *testing.T) {
+	plan, run, results := finalizeFixture()
+	results[0].Packages[0].Built = false
+	results[0].Packages[0].Status = "reused"
+	if err := finalizeCI(plan, ciGitHubRepository, run, results); err != nil {
+		t.Fatal("reused verified product rejected:", err)
+	}
+	results[0].Complete = false
+	results[0].Packages[0].Status = "failed"
+	results[0].Packages[0].Error = "controlled failure"
+	if err := finalizeCI(plan, ciGitHubRepository, run, results); err == nil || !strings.Contains(err.Error(), "queue@1") {
+		t.Fatal("missing named failure:", err)
 	}
 }

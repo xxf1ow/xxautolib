@@ -18,7 +18,7 @@ func TestCIToolOnlySelection(t *testing.T) {
 		if err != nil {
 			t.Fatalf("tool-only plan invoked discovery: %v", err)
 		}
-		if len(plan.Platforms) != 3 || len(plan.RequestedModules) != 0 || len(plan.Publishers) != 0 {
+		if len(plan.Platforms) != 4 || len(plan.RequestedModules) != 0 || len(plan.Publishers) != 0 {
 			t.Fatalf("tool-only platforms lost: %+v", plan)
 		}
 		for _, platform := range plan.Platforms {
@@ -33,7 +33,7 @@ func TestCIToolOnlySelection(t *testing.T) {
 	discoveryModule(t, root, "local", false, "")
 	for _, selection := range []string{"all", "fresh,local", "local"} {
 		plan, err := planCI(context.Background(), ciPlanOptions{SourceRoot: root, BuilderFile: builder, Modules: &selection})
-		if err != nil || len(plan.Platforms) != 3 {
+		if err != nil || len(plan.Platforms) != 4 {
 			t.Fatalf("selection %q lost platform: %+v %v", selection, plan, err)
 		}
 		for _, platform := range plan.Platforms {
@@ -139,6 +139,7 @@ func TestCIEntryTransport(t *testing.T) {
 			case "missing-tool":
 				os.Remove(filepath.Join(f.options.WorkRoot, "install", ciImporterExecutable(f.options.Platform)))
 			case "empty-libraries":
+				f.plan.Publishers = map[string]string{}
 				f.plan.Platforms[0].Roots = []string{}
 				f.plan.Platforms[0].Description.Roots = []string{}
 				f.plan.Platforms[0].Description.Modules = []describedModule{}
@@ -168,7 +169,7 @@ func TestCIEntryTransport(t *testing.T) {
 }
 
 func TestCIToolOnlyRun(t *testing.T) {
-	f := installedCIFixture(t)
+	f := cacheRunFixture(t)
 	f.options.MakeProgram = ""
 	f.options.Budget = 0
 	f.plan.RequestedModules = []string{}
@@ -190,9 +191,10 @@ func TestCIToolOnlyRun(t *testing.T) {
 		}
 		t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	}
+	f.snapshot(t)
 	for _, layer := range []string{"prepare", "verify"} {
 		f.options.Layer = layer
-		if err := runCILayer(context.Background(), f.options); err != nil {
+		if err := runCILayerWithCache(context.Background(), f.options, f.release.client); err != nil {
 			t.Fatalf("%s: %v", layer, err)
 		}
 	}

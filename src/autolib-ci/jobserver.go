@@ -63,9 +63,9 @@ func probeJobserver(ctx context.Context, o ciJobserverOptions) (ciJobserverEvide
 			return ciJobserverEvidence{}, err
 		}
 	}
-	cmd := exec.CommandContext(ctx, makeProgram, fmt.Sprintf("-j%d", o.Budget), "--jobserver-style=fifo", "--no-print-directory", "-f", "Makefile", "LOG="+events, "CMAKE_COMMAND="+cmake)
+	cmd := ciExternalCommand(ctx, makeProgram, fmt.Sprintf("-j%d", o.Budget), "--jobserver-style=fifo", "--no-print-directory", "-f", "Makefile", "LOG="+events, "CMAKE_COMMAND="+cmake)
 	cmd.Dir = o.WorkRoot
-	cmd.Env = prependPath(withoutEnvironment(os.Environ(), "MAKEFLAGS", "CMAKE_BUILD_PARALLEL_LEVEL"), filepath.Dir(makeProgram))
+	cmd.Env = prependPath(withoutEnvironment(ciSafeEnvironment(nil), "MAKEFLAGS", "CMAKE_BUILD_PARALLEL_LEVEL"), filepath.Dir(makeProgram))
 	output, commandErr := cmd.CombinedOutput()
 	warnings, warningErr := validateJobserverWarnings(string(output), o.Budget)
 	evidence := ciJobserverEvidence{Budget: o.Budget, Warnings: warnings}

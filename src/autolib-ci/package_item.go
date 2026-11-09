@@ -96,7 +96,7 @@ func packageCIItem(ctx context.Context, o ciRunOptions, record ciCacheRecord) (c
 		return asset, errors.New("item packaging requires a fresh output directory")
 	}
 	builder := filepath.Join(work, "build", "tools", "autolib-builder")
-	if len(platform.Description.Modules) == 0 {
+	if record.Key.Kind == "importer" || len(platform.Description.Modules) == 0 {
 		builder = filepath.Join(work, "tools", "autolib-builder")
 	}
 	if strings.HasPrefix(o.Platform, "windows-") {

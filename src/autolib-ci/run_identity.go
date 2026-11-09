@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -28,10 +27,10 @@ func validateCIRunIdentity(ctx context.Context, sourceRoot, repository string, r
 	if !strings.HasPrefix(run.Ref, "refs/heads/") || run.Ref == "refs/heads/" {
 		return errors.New("CI requires a same-repository ordinary branch ref")
 	}
-	if err := exec.CommandContext(ctx, "git", "check-ref-format", run.Ref).Run(); err != nil {
+	if err := ciExternalCommand(ctx, "git", "check-ref-format", run.Ref).Run(); err != nil {
 		return errors.New("CI branch ref is invalid")
 	}
-	output, err := exec.CommandContext(ctx, "git", "-C", sourceRoot, "rev-parse", "HEAD").Output()
+	output, err := ciExternalCommand(ctx, "git", "-C", sourceRoot, "rev-parse", "HEAD").Output()
 	if err != nil {
 		return fmt.Errorf("read actual checkout HEAD: %w", err)
 	}
