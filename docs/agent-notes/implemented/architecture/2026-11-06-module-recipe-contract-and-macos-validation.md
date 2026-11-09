@@ -16,7 +16,7 @@ Eigen 的 C++ 模板 API 是纯头文件，但上游还提供可选的 BLAS/LAPA
 
 第一阶段以 `05ad42949ec1ec1d6f9113cdc7e538263836215d` 为起点，其实现和验收修复保留到 `49df3fc45041861fdd251e30b10b4106e3f1a65d`。第二阶段从该收口提交分叉到普通任务分支 `task/darwin-aarch64-sync`，保留 GCC 10.5、HarfBuzz 修复及已确认的字段、通用包和执行基础。旧分支提交 `b0e30938c1830fcfa9ddc7015799330e28f8bf43` 作为调查和产物证据来源；不整体合并或批量移植其第二阶段实现，不 reset 或改写旧历史，不创建 worktree，也不把 master 合入任务分支。
 
-第一阶段已覆盖全部现有配方的字段迁移、相关引擎和 JSON 消费者、安装及消费准备、配方接入技能和对应文档。第二阶段的产品目标是在既有构建、运输及发布链路中增加 macOS 产物，使 `all` 包含已确认的 Darwin 包；独立 workflow 用于验收，不另建发布系统。第二阶段只增加必要的 Darwin 来源、支持声明、系统依赖和构建交付适配，不全面重构独立 CI 工具配置或其他 workflow 输入，不顺带升级上游或调整原平台功能。新增版本包括下文已单独批准的 Asio 1.24.0，以及从独立提交迁入的 ViSP 3.7.0。
+第一阶段已覆盖全部现有配方的字段迁移、相关引擎和 JSON 消费者、安装及消费准备、配方接入技能和对应文档。第二阶段的产品目标是在既有构建、运输及发布链路中增加 macOS 产物，使 `all` 包含已确认的 Darwin 包，不另建发布系统。第二阶段只增加必要的 Darwin 来源、支持声明、系统依赖和构建交付适配，不全面重构独立 CI 工具配置或其他 workflow 输入，不顺带升级上游或调整原平台功能。新增版本包括下文已单独批准的 Asio 1.24.0，以及从独立提交迁入的 ViSP 3.7.0。
 
 ### 原平台基线与 macOS 同步范围
 
@@ -41,6 +41,10 @@ SDL3 已补查原三平台均未启用 libusb 后端。用户批准在公共 cac
 libzmq 已补查原三平台均因未找到 GnuTLS 而不启用 WSS。用户批准在公共 cache 显式设置 `WITH_TLS=false`，供原三平台与 Darwin 同步使用，保留普通 WS 及其他原配置；这是原平台配方冻结规则的另一具名例外。不新增 GnuTLS 系统依赖或修改静动态形态，完成 macOS 功能查询、直接及搬迁消费验收后提交。
 
 字体依赖链允许全平台统一修复 FreeType/HarfBuzz 的集成方向及仓库 zlib 接线；具体能力取舍和理由由 [FreeType 配方注释](../../../../src/dependencies/freetype/2.13.2/module.toml)及 [HarfBuzz 配方注释](../../../../src/dependencies/harfbuzz/8.5.0/module.toml)拥有。OpenCV 保留字体模块并声明其 pkg-config 查找所需的仓库 zlib。FreeType 对 PNG、BZip2、Brotli 三项可选字体格式依赖在所有平台显式关闭，避免引入非各目标系统默认具备的库；不影响 OpenCV 的 PNG 图像编解码。OpenCV 其余后端基线继续沿用原规则。验收覆盖四个平台的字体链原生构建、实际中文字形绘制和打包搬迁消费；完成前不解除这三个包的 Darwin 阻断。
+
+### 预编译二进制包免验
+
+上游预编译二进制包免于独立 API 编译和运行验收；当前适用于 ONNX Runtime，不因 `type = "copy"` 就跳过源码或头文件包验收。ONNX Runtime 仍通过公共入口检查安装与导入，保留来源摘要、精确身份及打包运输校验；不调用其运行时 API、不执行推理，也不将免验记为运行测试通过。
 
 ### ViSP 独立接入
 
@@ -216,7 +220,7 @@ publisher 失败使本次相应交付失败，不阻塞其他平台报告结果�
 
 两个 Eigen 版本使用 `type = "cmake"` 与 `package_platforms = ["any-any"]`，保留固定来源、头文件布局、Config/pkg-config 交付及现有 BLAS/LAPACK 关闭选择，不改 latest。它们交付 Eigen 的模板 API，不宣称包含上游全部可选二进制接口。adapter 通过本包 config 获取 `Eigen3::Eigen`，再提供 `autolib::eigen`；5.0.1 的 C++14 要求由上游目标传递。
 
-PCL 保留明确的 Eigen 3.4.0 依赖及 config 查找，不为通用身份修改它的 Eigen 查找机制。两个 Eigen 版本分别在独立消费者中验证；验证使用精确安装根，不能回退系统 Eigen。
+PCL 保留明确的 Eigen 3.4.0 依赖及 config 查找，不为通用身份修改它的 Eigen 查找机制。两个 Eigen 版本分别在独立消费者中验证；验证使用精确安装根，不能回退系统 Eigen。消费者自行管理外部查找设置，本仓库不为错误的 `Eigen3_DIR` 等配置增加兜底，责任边界见[消费说明](../../../development.md#本地打包与消费)。
 
 验收复用同一份 Linux 生产的 Eigen 归档，在 Windows 和 macOS 解包后完成导入、矩阵运算及路径搬迁消费，记录相同归档摘要。各平台各自重装 Eigen 不替代这项证据。PCL 已支持的平台使用相应平台的 PCL 包导入该 Eigen；macOS PCL 成功适配后必须包含这一组合。任何一方失败都分别记录，不由 Eigen 通用声明推断 PCL 已支持 macOS。
 
@@ -228,13 +232,13 @@ PCL 保留明确的 Eigen 3.4.0 依赖及 config 查找，不为通用身份修�
 
 Asio 1.24.0 和 ViSP 3.7.0 分别作为第 32、33 份配方完成追加验证，不扩大到其他新版本。新分支复用旧调查的方式见“旧分支调查与证据复用”；已有成功只证明对应源码、配置和场景，不自动证明本分支通过。
 
-新增独立的 `validate-macos-recipes.yml` 验收 workflow，名称不匹配现有 Gitee 的 `Representative releases` 监听。复用同一 builder、环境准备和 CI prepare/layers/verify/transport 命令，只保留 Actions 产物和证据，不运行发布入口或写 Gitee。无需依赖密钥缺失、发布故障或默认分支尚未更新来阻止发布，也不全面改造生产 workflow。
+逐包调查曾使用独立的 `validate-macos-recipes.yml` 验收 workflow，名称不匹配 Gitee 的 `Representative releases` 监听。它复用同一 builder、环境准备和 CI prepare/layers/verify/transport 命令，只保留 Actions 产物和证据，不运行发布入口或写 Gitee。该临时 workflow 及其专属测试在逐包验收结束后移除；正式生产 workflow、同 Linux Eigen 归档消费 driver 和历史验收证据保留。后续定向验收使用 `Representative releases` 的 `platforms` 和 `modules` 输入，发布仍按其既定规则和授权执行。
 
-逐包验证以仅匹配当前任务分支的 `push` 触发为完整可用入口，根包在该次提交的验收 workflow 中明确选择；调整候选或修复后推送相应诊断提交，偶发失败可重跑原任务，不要求创建空提交。GitHub 的 [push 规则](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#push)支持尚未合入默认分支的 workflow，不为注册验收入口提前合入主分支。
+该临时入口仅匹配任务分支的 `push`，根包在对应提交中明确选择；偶发失败重跑原任务，不要求创建空提交。GitHub 的 [push 规则](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#push)支持尚未合入默认分支的 workflow，调查期间未为注册验收入口提前合入主分支。
 
-`workflow_dispatch` 仅在当前仓库实际验证可用后作为指定根包的便捷入口，逐包流程不依赖它。GitHub 的 [事件规则](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_dispatch)同时包含默认分支要求和已运行 workflow 的分支 API/CLI 描述；[手动运行指南](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow#configuring-a-workflow-to-run-manually)仍要求默认分支存在该 workflow，因此不将“push 登记后必然可 dispatch”作为执行前提。各触发方式使用同一隔离发布规则，推送时机仍受当前阶段授权限制。
+调查期间的逐包流程不依赖 `workflow_dispatch`。GitHub 的 [事件规则](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_dispatch)同时包含默认分支要求和已运行 workflow 的分支 API/CLI 描述；[手动运行指南](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow#configuring-a-workflow-to-run-manually)仍要求默认分支存在该 workflow，因此未将“push 登记后必然可 dispatch”作为执行前提。触发 CI 和发布仍须在具体授权范围内。
 
-候选包通过任务分支的诊断提交临时启用 Darwin 后试验，不增加第二个平台资格字段或绕过解析器。验收 workflow 要求请求根全部进入有效根；被平台或 adapter 过滤必须显式失败，不能以工具专用成功代替包验证。最终只有符合交付及已验功能要求的候选保留 Darwin 声明，失败候选撤回临时声明并保存具体阻断。通用包保留通用身份，其依赖限制由闭包表达。
+候选包通过任务分支的诊断提交临时启用 Darwin 后试验，不增加第二个平台资格字段或绕过解析器。该临时验收入口要求请求根全部进入有效根，被平台或 adapter 过滤即失败，不能以工具专用成功代替包验证。最终只有符合交付及已验功能要求的候选保留 Darwin 声明，失败候选撤回临时声明并保存具体阻断。通用包保留通用身份，其依赖限制由闭包表达。
 
 每个版本的结果包含获取、构建或复制、安装、导入、链接和必要运行结论，使用的 brew formula、补丁、上游限制、提交及 run/attempt 证据；同时记录与原平台基线对照的关键功能开关、实际模块和依赖探测结果。简单消费复用现有 driver；现有 smoke 未实际调用到的包，补充最小有效 API 使用，不以空 main 或仅创建目标计为运行通过。只对实际修改或自动探测影响的能力增加定向检查，不穷举所有上游功能。设备、图形界面等无法在 runner 完成的功能明确列为未验，不将可构建等同于全部功能支持。
 
@@ -509,7 +513,7 @@ Windows 剩余 12 根的安装及消费证据来自下表。前三个 run 整体
 
 Windows 工具准备为 CMake 下载增加两次、间隔五秒的重试，保持固定 SHA256 校验。pybind11 消费直接使用 runner 现有 Python 开发环境，包导入目标快照排除随后由测试发现的 Python DLL。spdlog smoke 使用平台默认行尾并显式包含其声明；编译库和 header-only 的 LF/CRLF 本地八组检查通过。MSVC 消费工程启用 `/Zc:__cplusplus`，WebSocket++ 的 Windows adapter 传递系统 `ws2_32`，不增加仓库包依赖，仍发布为 `any-any`。
 
-末次 Windows 三根的 CTest 各 1/1 通过，实际命令包含 `/Zc:__cplusplus` 与 `ws2_32.lib`。三包及宿主工具的四个归档经正式发布校验器核对原运输身份、大小和摘要，`complete=true`，transport SHA256 为 `b9d8ee2f6406836817020ec4ae5c90cc67d555b3331d72cac2d019f9fd6135e4`。该次证据覆盖直接安装消费和运输打包，没有独立搬迁消费日志。ONNX Runtime 按上文用户决定人工免验接受；自动化入口仍保留其 API 检查，后续完整生产须落实该免验决定。
+末次 Windows 三根的 CTest 各 1/1 通过，实际命令包含 `/Zc:__cplusplus` 与 `ws2_32.lib`。三包及宿主工具的四个归档经正式发布校验器核对原运输身份、大小和摘要，`complete=true`，transport SHA256 为 `b9d8ee2f6406836817020ec4ae5c90cc67d555b3331d72cac2d019f9fd6135e4`。该次证据覆盖直接安装消费和运输打包，没有独立搬迁消费日志。ONNX Runtime 按上文用户决定人工免验接受；自动化只保留安装导入和通用交付检查，不编译或运行其 API，预编译包免验规则见[测试指南](../../../testing.md#adapter-定向验证)。
 
 Linux 原始汇总位于 `build/release-closure-20261108/native-incremental/summary.json`；其 Windows 条目仅记录早期失败。最新 Windows 逐根生产身份及证据路径位于 `build/release-closure-20261108/windows-winsock-link/consumer-acceptance-summary.json`，末次归档核对位于同目录的 `acceptance-1/archive-audit.json`。这些增量证据不替代同一成功 run/attempt 的正式发布条件。
 

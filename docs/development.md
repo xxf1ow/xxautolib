@@ -67,6 +67,8 @@ Git 主来源复用 `git/<包名>/<版本>/`，资源复用 `git/_resources/<包
 
 入口自身实际路径所在目录是唯一工具和包根，也是远端下载缓存；目录不得含分号。同次 configure 固定入口根和目标平台，工作目录为 `${CMAKE_BINARY_DIR}/autolib`。平台从当前 CMake 目标归一，VS 显式平台优先，工具按宿主选择。公共入口校验完整精确闭包，再按依赖顺序加载 adapter；同次 configure 拒绝同包不同版本。返回 `AUTOLIB_PREPARED_PACKAGES` 及每包的 `AUTOLIB_PACKAGE_DIR_<name>`、`AUTOLIB_PACKAGE_VERSION_<name>`，下游不推断目录层级。
 
+消费者负责管理 CMake 查找路径、cache 和已有目标，避免 `<Package>_DIR`（如 `Eigen3_DIR`）或其他外部设置将依赖指向另一份安装。本仓库不清理、覆盖或为这类错误配置增加检测与兜底；导入错误版本时由消费者修正设置并重新 configure。
+
 源码及本地入口内置远端地址为空；发布入口在上传副本内带实际 Release 地址。调用方不能通过 `AUTOLIB_LOCAL_ROOT`、`AUTOLIB_REMOTE_ROOT` 普通变量、cache 变量或环境变量覆盖来源。完整工具和精确闭包命中时不访问 Git 或 HTTP；只有必需输入缺失且入口内置地址非空时才获取元数据或下载。已有损坏候选立即失败，不自动覆盖；不回退系统库、源码编译或旧格式。直接内部调用参数见 [CLI](../src/autolib-importer/main.go)。
 
 远程使用者先将已发布的单个 `autolib.cmake` 下载到专用可写目录，例如不纳入版本控制的 `3rdparty/`，再 include 并调用 `autolib_import`。入口下载 URL 可为 HTTP(S) 或 `file://`；下载文件不会携带原目录的工具或包，入口也不根据下载 URL 推导来源。远端工具和包沿用 Git 元数据、SHA256 和安全解包校验；完整缓存可离线复用，缺输入时远程入口仍可能尝试联网。严格禁止联网须使用内置地址为空的入口，不提供离线开关。同根写入由调用方串行，目录中的既有文件不会自动清理。

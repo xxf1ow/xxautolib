@@ -1,15 +1,11 @@
 import hashlib
 import io
 import json
-import os
 from pathlib import Path
-import shutil
 import subprocess
 import tarfile
 import tempfile
 import unittest
-
-from test_darwin_workflow import job, step_script
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -17,43 +13,6 @@ DRIVER = ROOT / "tests/autolib/run-eigen-portability.cmake"
 
 
 class EigenPortabilityTests(unittest.TestCase):
-    def test_darwin_pcl_build_uses_original_linux_eigen(self):
-        native = job((ROOT / ".github/workflows/validate-macos-recipes.yml").read_text(), "validate")
-        self.assertIn("- name: Preseed original Linux Eigen for PCL", native)
-        script = step_script(native, "Preseed original Linux Eigen for PCL")
-        self.assertLess(native.index("- name: Prepare platform"), native.index("- name: Preseed original Linux Eigen for PCL"))
-        self.assertLess(native.index("- name: Preseed original Linux Eigen for PCL"), native.index("- name: Produce dependency layers"))
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary) / "source"
-            raw = root / "build/linux-eigen"
-            raw.mkdir(parents=True)
-            archive = raw / "eigen.tar.gz"
-            with tarfile.open(archive, "w:gz") as stream:
-                member = tarfile.TarInfo("eigen/3.4.0/share/eigen3/cmake/Eigen3Config.cmake")
-                content = b"original Linux Eigen"
-                member.size = len(content)
-                stream.addfile(member, io.BytesIO(content))
-            digest = hashlib.sha256(archive.read_bytes()).hexdigest()
-            (raw / "manifest.json").write_text(json.dumps({"3.4.0": {"filename": archive.name, "sha256": digest}}))
-            (raw / "producer.json").write_text('{"repository":"fixture/repo","sha":"abc"}')
-            package = root / "src/dependencies/eigen/package.toml"
-            package.parent.mkdir(parents=True)
-            package.write_text('latest = "5.0.1"\n')
-            work = root / "build/native"
-            env = dict(os.environ, SOURCE_ROOT=str(root), GITHUB_WORKSPACE=str(root.parent),
-                       WORK_ROOT=str(work), GITHUB_REPOSITORY="fixture/repo", EXPECTED_PRODUCER_SHA="abc",
-                       CMAKE_COMMAND=shutil.which("cmake"))
-            result = subprocess.run([os.sys.executable, "-c", script], env=env, text=True, capture_output=True)
-            self.assertEqual(result.returncode, 0, result.stderr)
-            config = work / "install/eigen/3.4.0/share/eigen3/cmake/Eigen3Config.cmake"
-            self.assertEqual(config.read_bytes(), content)
-            self.assertEqual((work / "install/eigen/package.toml").read_bytes(), package.read_bytes())
-            (raw / "manifest.json").write_text(json.dumps({"3.4.0": {"filename": archive.name, "sha256": "0" * 64}}))
-            result = subprocess.run([os.sys.executable, "-c", script], env=env, text=True, capture_output=True)
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("Linux Eigen SHA256 mismatch", result.stderr)
-            self.assertEqual(config.read_bytes(), content)
-
     def test_pcl_requires_native_package_before_creating_output(self):
         self.check_preflight("pcl", "Missing Eigen portability input")
 

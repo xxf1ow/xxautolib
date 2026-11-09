@@ -122,11 +122,7 @@ func describeModule(root string, definition *moduleDefinition, platform string) 
 	}
 
 	paths := map[string]bool{}
-	toRelative := func(value string, allowPlaceholder bool) (string, error) {
-		if allowPlaceholder && directoryTag.MatchString(value) {
-			return value, nil
-		}
-
+	toRelative := func(value string) (string, error) {
 		path := value
 		if !filepath.IsAbs(path) {
 			path = filepath.Join(filepath.Dir(definition.Path), path)
@@ -146,14 +142,14 @@ func describeModule(root string, definition *moduleDefinition, platform string) 
 		return filepath.ToSlash(rel), nil
 	}
 	for _, input := range []string{definition.Path, filepath.Join(filepath.Dir(filepath.Dir(definition.Path)), "package.toml")} {
-		path, err := toRelative(input, false)
+		path, err := toRelative(input)
 		if err != nil {
 			return result, err
 		}
 		paths[path] = true
 	}
 	for _, patch := range definition.Patches {
-		path, err := toRelative(patch.File, false)
+		path, err := toRelative(patch.File)
 		if err != nil {
 			return result, err
 		}
@@ -164,7 +160,7 @@ func describeModule(root string, definition *moduleDefinition, platform string) 
 			if directoryTag.MatchString(value) {
 				continue
 			}
-			path, err := toRelative(value, false)
+			path, err := toRelative(value)
 			if err != nil {
 				return result, err
 			}
@@ -174,7 +170,7 @@ func describeModule(root string, definition *moduleDefinition, platform string) 
 
 	adapter := filepath.Join(filepath.Dir(definition.Path), "autolib-import.cmake")
 	if _, err := os.Stat(adapter); err == nil {
-		result.AdapterFile, err = toRelative(adapter, false)
+		result.AdapterFile, err = toRelative(adapter)
 		if err != nil {
 			return result, err
 		}

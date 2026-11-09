@@ -32,29 +32,31 @@ endfunction()
             self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("No API smoke implementation for untested", result.stdout + result.stderr)
 
-    def test_taskflow_import_does_not_compile_its_cxx20_headers(self):
-        with tempfile.TemporaryDirectory(prefix="taskflow install check ") as temporary:
-            root = Path(temporary)
-            headers = root / "include/taskflow"
-            headers.mkdir(parents=True)
-            (headers / "taskflow.hpp").write_text('#error "Taskflow API smoke must be skipped"\n')
-            entry = root / "entry.cmake"
-            entry.write_text('''add_library(autolib::taskflow INTERFACE IMPORTED GLOBAL)
-set_property(TARGET autolib::taskflow PROPERTY INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_LIST_DIR}/include")
+    def test_exempt_packages_are_imported_without_compiling_their_api(self):
+        for name, header in (("taskflow", "taskflow/taskflow.hpp"),
+                             ("onnxruntime", "onnxruntime_c_api.h")):
+            with self.subTest(package=name), tempfile.TemporaryDirectory(prefix="import-only check ") as temporary:
+                root = Path(temporary)
+                path = root / "include" / header
+                path.parent.mkdir(parents=True)
+                path.write_text('#error "Exempt package API smoke must be skipped"\n')
+                entry = root / "entry.cmake"
+                entry.write_text('''add_library(autolib::NAME INTERFACE IMPORTED GLOBAL)
+set_property(TARGET autolib::NAME PROPERTY INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_LIST_DIR}/include")
 function(autolib_import)
-  target_link_libraries(autolib_smoke PRIVATE autolib::taskflow)
-  set(AUTOLIB_PREPARED_PACKAGES taskflow PARENT_SCOPE)
-  set(AUTOLIB_PACKAGE_VERSION_taskflow 1 PARENT_SCOPE)
+  target_link_libraries(autolib_smoke PRIVATE autolib::NAME)
+  set(AUTOLIB_PREPARED_PACKAGES NAME PARENT_SCOPE)
+  set(AUTOLIB_PACKAGE_VERSION_NAME 1 PARENT_SCOPE)
 endfunction()
-''')
-            build = root / "build"
-            self.cmake("-S", ROOT / "tests/autolib", "-B", build,
-                       f"-DAUTOLIB_ENTRY={entry}", "-DMODULES=taskflow@1")
-            self.assertEqual((build / "prepared-packages.txt").read_text(), "taskflow")
-            self.cmake("--build", build)
-            result = subprocess.run(["ctest", "--test-dir", str(build), "--output-on-failure"],
-                                    capture_output=True, text=True)
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+'''.replace("NAME", name))
+                build = root / "build"
+                self.cmake("-S", ROOT / "tests/autolib", "-B", build,
+                           f"-DAUTOLIB_ENTRY={entry}", f"-DMODULES={name}@1")
+                self.assertEqual((build / "prepared-packages.txt").read_text(), name)
+                self.cmake("--build", build)
+                result = subprocess.run(["ctest", "--test-dir", str(build), "--output-on-failure"],
+                                        capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_link_input_evidence_keeps_libraries_and_excludes_imported_programs(self):
         with tempfile.TemporaryDirectory(prefix="consumer link inputs ") as temporary:
@@ -181,7 +183,7 @@ endif()
 ''')
             self.cmake("-P", check)
 
-    def test_windows_runtime_probes_use_selected_dll_and_import_declaration(self):
+    def test_windows_runtime_probes_use_selected_dll(self):
         with tempfile.TemporaryDirectory(prefix="consumer DLL probes ") as temporary:
             root = Path(temporary)
             consumer = root / "consumer"
@@ -194,7 +196,7 @@ set_property(TARGET opencv_core PROPERTY IMPORTED_LOCATION "${CMAKE_CURRENT_LIST
 add_library(realsense2::realsense2 SHARED IMPORTED GLOBAL)
 set_property(TARGET realsense2::realsense2 PROPERTY IMPORTED_LOCATION "${CMAKE_CURRENT_LIST_DIR}/realsense-selected.dll")
 function(autolib_import)
-  foreach(name IN ITEMS opencv librealsense onnxruntime)
+  foreach(name IN ITEMS opencv librealsense)
     set(AUTOLIB_PACKAGE_VERSION_${name} 1 PARENT_SCOPE)
     set(AUTOLIB_PACKAGE_DIR_${name} "${CMAKE_CURRENT_LIST_DIR}" PARENT_SCOPE)
   endforeach()
@@ -206,12 +208,11 @@ endfunction()
             windows.write_text("set(WIN32 TRUE)\n")
             build = root / "build"
             self.cmake("-S", consumer, "-B", build, f"-DAUTOLIB_ENTRY={entry}",
-                       "-DMODULES=opencv;librealsense;onnxruntime", "-DCMAKE_BUILD_TYPE=Release",
+                       "-DMODULES=opencv;librealsense", "-DCMAKE_BUILD_TYPE=Release",
                        f"-DCMAKE_PROJECT_autolib_smoke_INCLUDE={windows}")
             definitions = (build / "definitions.txt").read_text().split(";")
             self.assertIn('AUTOLIB_OPENCV_DLL=L"opencv-selected.dll"', definitions)
             self.assertIn('AUTOLIB_LIBREALSENSE_DLL=L"realsense-selected.dll"', definitions)
-            self.assertIn("ORT_DLL_IMPORT", definitions)
 
     def test_both_drivers_pass_dll_directories_to_ctest(self):
         for driver in ("run-installed.cmake", "run-github.cmake"):

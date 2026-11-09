@@ -55,9 +55,6 @@ PYBIND11_MODULE(autolib_binding, module)
 #ifdef AUTOLIB_TEST_LIBREALSENSE
 #include <librealsense2/rs.hpp>
 #endif
-#ifdef AUTOLIB_TEST_ONNXRUNTIME
-#include <onnxruntime_c_api.h>
-#endif
 #ifdef AUTOLIB_TEST_ASIO
 #include <asio.hpp>
 #endif
@@ -137,7 +134,7 @@ TEST(AutolibPackage, AssertionRuns) { EXPECT_EQ(6 * 7, 42); }
 #include <dlfcn.h>
 #endif
 
-#if defined(AUTOLIB_TEST_FLANN) || defined(AUTOLIB_TEST_OPENCV) || defined(AUTOLIB_TEST_LIBREALSENSE) || defined(AUTOLIB_TEST_ONNXRUNTIME)
+#if defined(AUTOLIB_TEST_FLANN) || defined(AUTOLIB_TEST_OPENCV) || defined(AUTOLIB_TEST_LIBREALSENSE)
 namespace
 {
 #ifdef _WIN32
@@ -405,24 +402,6 @@ int main()
 #endif
     if (!realsense_address || !check_runtime("librealsense", reinterpret_cast<const void *>(realsense_address), AUTOLIB_EXPECT_LIBREALSENSE_ROOT))
         return 18;
-#endif
-#ifdef AUTOLIB_TEST_ONNXRUNTIME
-    const auto *api_base = OrtGetApiBase();
-    if (!api_base || !api_base->GetApi(ORT_API_VERSION))
-        return 19;
-    const auto *api = api_base->GetApi(ORT_API_VERSION);
-    OrtEnv *environment = nullptr;
-    if (auto *status = api->CreateEnv(ORT_LOGGING_LEVEL_WARNING, "autolib-smoke", &environment)) {
-        std::cerr << api->GetErrorMessage(status) << '\n';
-        api->ReleaseStatus(status);
-        return 40;
-    }
-    api->ReleaseEnv(environment);
-    if (std::string(api_base->GetVersionString()) != "1.24.4")
-        return 41;
-    std::cout << "onnxruntime_version=" << api_base->GetVersionString() << '\n';
-    if (!check_runtime("onnxruntime", reinterpret_cast<const void *>(&OrtGetApiBase), AUTOLIB_EXPECT_ONNXRUNTIME_ROOT))
-        return 20;
 #endif
 #ifdef AUTOLIB_TEST_EIGEN
 #ifdef EIGEN_PATCH_VERSION
