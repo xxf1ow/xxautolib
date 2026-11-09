@@ -16,6 +16,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && args[0] == "transport" {
 		return runCITransport(args[1:], stdout, stderr)
 	}
+	if len(args) > 0 && args[0] == "cache-prepare" {
+		return runCICachePrepare(args[1:], stdout, stderr)
+	}
 	if len(args) > 0 && args[0] == "run" {
 		return runCIRun(args[1:], stdout, stderr)
 	}
