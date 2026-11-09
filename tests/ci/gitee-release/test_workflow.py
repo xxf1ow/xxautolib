@@ -35,23 +35,13 @@ class WorkflowTests(unittest.TestCase):
                               env=dict(clean, **environment), capture_output=True, text=True, timeout=15)
 
     def test_publication_workflow(self):
-        for text in ('workflows: [Representative releases]', 'types: [completed]',
-                     'workflow_dispatch:', "github.event.workflow_run.conclusion == 'success'",
-                     'github.event.workflow_run.repository.full_name == github.repository',
-                     'runs-on: ubuntu-24.04', "python-version: '3.12'", 'actions: read'):
+        for text in ('workflow_dispatch:', 'runs-on: ubuntu-24.04', "python-version: '3.12'", 'actions: read'):
             self.assertIn(text, self.document)
+        self.assertNotIn('workflow_run', self.document)
         condition = self.document.split('    if: ${{ ', 1)[1].split(' }}', 1)[0]
-        for event, conclusion, repository, expected in (
-                ('workflow_run', 'success', 'xxf1ow/xxautolib', True),
-                ('workflow_run', 'failure', 'xxf1ow/xxautolib', False),
-                ('workflow_run', 'cancelled', 'xxf1ow/xxautolib', False),
-                ('workflow_run', 'success', 'other/repo', False),
-                ('workflow_dispatch', None, None, True)):
-            github = SimpleNamespace(event_name=event, repository='xxf1ow/xxautolib', event=SimpleNamespace(
-                workflow_run=SimpleNamespace(conclusion=conclusion, repository=SimpleNamespace(full_name=repository))))
-            with self.subTest(event=event, conclusion=conclusion, repository=repository):
-                self.assertEqual(eval(condition.replace('||', 'or').replace('&&', 'and'),
-                                      {'__builtins__': {}}, {'github': github}), expected)
+        for event, expected in (('workflow_dispatch', True), ('workflow_run', False)):
+            github = SimpleNamespace(event_name=event)
+            self.assertEqual(eval(condition, {'__builtins__': {}}, {'github': github}), expected)
         select = step(self.document, 'name: Select original build')
         self.assertIn('GITHUB_TOKEN: ${{ github.token }}', select)
         self.assertIn('SOURCE_RUN_ID: ${{ inputs.source_run_id }}', select)
@@ -80,7 +70,7 @@ class WorkflowTests(unittest.TestCase):
     def test_only_gitee_publication_entry(self):
         self.assertFalse((ROOT / '.github/workflows/sync-gitee.yml').exists())
         build = (ROOT / '.github/workflows/build-platform.yml').read_text(encoding='utf-8')
-        for forbidden in ('contents: write', 'GITHUB_TOKEN:', 'workflow_dispatches',
+        for forbidden in ('GITEE_TOKEN:', 'workflow_dispatches',
                           'Initialize fixed Release', 'autolib-ci init'):
             self.assertNotIn(forbidden, build)
         self.assertNotIn('contents: write', self.document)

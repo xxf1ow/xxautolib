@@ -1,9 +1,6 @@
 name: Publish artifacts to Gitee
 
 on:
-  workflow_run:
-    workflows: [Representative releases]
-    types: [completed]
   workflow_dispatch:
     inputs:
       host:
@@ -37,15 +34,15 @@ concurrency:
 
 jobs:
   publish:
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.repository.full_name == github.repository) }}
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     defaults:
       run:
         shell: bash
     env:
-      PUBLISH_HOST: ${{ github.event_name == 'workflow_run' && 'gitee' || inputs.host }}
-      PUBLISH_MODE: ${{ github.event_name == 'workflow_run' && 'artifacts' || inputs.mode }}
+      PUBLISH_HOST: ${{ inputs.host }}
+      PUBLISH_MODE: ${{ inputs.mode }}
       GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}
       GITEE_RELEASE_TAG: ${{ vars.GITEE_RELEASE_TAG }}
     steps:
