@@ -91,6 +91,7 @@ TEST(AutolibPackage, AssertionRuns) { EXPECT_EQ(6 * 7, 42); }
 #include <SDL3/SDL.h>
 #endif
 #ifdef AUTOLIB_TEST_SPDLOG
+#include <spdlog/details/os.h>
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/ostream_sink.h>
 #include <sstream>
@@ -340,7 +341,7 @@ int main()
     logger.set_pattern("%v");
     logger.info("answer {}", 42);
     logger.flush();
-    if (logged.str() != "answer 42\n")
+    if (logged.str() != std::string("answer 42") + spdlog::details::os::default_eol)
         return 36;
 #endif
 #ifdef AUTOLIB_TEST_YAML_CPP
