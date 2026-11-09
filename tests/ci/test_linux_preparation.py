@@ -30,6 +30,8 @@ if name == "dpkg":
     print(os.environ["PREPARATION_ARCH"])
 elif name in ("gcc-10", "g++-10"):
     print("10.5.0")
+elif name == "apt-get" and "bad-recipe-package" in args:
+    sys.exit(72)
 elif name == "nproc":
     print("4")
 elif name == "jq":
@@ -116,7 +118,7 @@ class LinuxPreparationTests(unittest.TestCase):
                     (binary / name).symlink_to(root / "stub")
                 plan = root / "plan.json"
                 plan.write_text(json.dumps({"platforms": [{"id": platform, "roots": ["queue@1"] if libraries else [],
-                                                         "system_dependencies": {"apt": []}}]}))
+                                                         "system_dependencies": {"apt": ["bad-recipe-package"]}}]}))
                 config = root / "ci-tools.json"
                 configuration = json.loads((ROOT / ".github/ci-tools.json").read_text())
                 configuration["production"]["linux"]["gcc_version"] = "10.5"
@@ -130,6 +132,7 @@ class LinuxPreparationTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 output = json.loads(result.stdout)
                 self.assertTrue(Path(output["cmake_command"]).is_file())
+                self.assertNotIn("bad-recipe-package", (root / "events").read_text())
                 self.assertEqual(output["budget"], 4 if libraries else 0)
                 if libraries:
                     self.assertTrue(Path(output["make_program"]).is_file())

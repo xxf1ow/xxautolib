@@ -31,31 +31,6 @@ work_root=$(cd "$work_root" && pwd)
 tools="$work_root/ci-tools"
 mkdir -p "$tools/bin" "$tools/src"
 
-formula_json=$(jq -ce --arg platform "$platform" '
-  .platforms[] | select(.id == $platform) | (.system_dependencies // {}) |
-  (if has("brew") then .brew else [] end) |
-  if type == "array" and all(.[]; type == "string" and test("^[a-z0-9][a-z0-9+_.@-]*$"))
-  then reduce .[] as $formula ([]; if index($formula) then . else . + [$formula] end)
-  else error("Invalid system_dependencies.brew formula array") end' "$plan")
-formulas=()
-while IFS= read -r formula; do formulas+=("$formula"); done < <(jq -r '.[]' <<<"$formula_json")
-if ((${#formulas[@]})); then
-  HOMEBREW_NO_AUTO_UPDATE=1 brew install "${formulas[@]}"
-  brew list --versions "${formulas[@]}"
-  formula_prefixes=
-  formula_pkgconfig=
-  for formula in "${formulas[@]}"; do
-    prefix=$(brew --prefix "$formula")
-    formula_prefixes+="${formula_prefixes:+:}$prefix"
-    formula_pkgconfig+="${formula_pkgconfig:+:}$prefix/lib/pkgconfig:$prefix/share/pkgconfig"
-  done
-  export CMAKE_PREFIX_PATH="$formula_prefixes${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
-  export PKG_CONFIG_PATH="$formula_pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
-  if [[ -n "${GITHUB_ENV:-}" ]]; then
-    printf 'CMAKE_PREFIX_PATH=%s\nPKG_CONFIG_PATH=%s\n' "$CMAKE_PREFIX_PATH" "$PKG_CONFIG_PATH" >>"$GITHUB_ENV"
-  fi
-fi
-
 cmake_version=$(jq -er '.cmake.version' "$config")
 cmake_file=$(jq -er --arg platform "$platform" '.cmake.assets[] | select(.platform == $platform) | .filename' "$config")
 cmake_url=$(jq -er --arg platform "$platform" '.cmake.assets[] | select(.platform == $platform) | .url' "$config")
