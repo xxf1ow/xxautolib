@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -75,97 +74,6 @@ func TestCIForkContext(t *testing.T) {
 	if err := validateCIRunIdentity(context.Background(), root, "another-owner/another-repository", identity); err == nil {
 		t.Fatal("fork with mismatched checkout accepted")
 	}
-	f := transportInputFixture(t)
-	f.options.Repository = "another-owner/another-repository"
-	f.identity.Repository = f.options.Repository
-	if err := writeCIJSON(f.options.RunIdentityFile, f.identity); err != nil {
-		t.Fatal(err)
-	}
-	resultFile := filepath.Join(f.options.WorkRoot, "results", f.options.Platform+".json")
-	var result ciPlatformResult
-	if err := decodeStrictJSONFile(resultFile, &result); err != nil {
-		t.Fatal(err)
-	}
-	result.Run = f.identity
-	if err := writeCIJSON(resultFile, result); err != nil {
-		t.Fatal(err)
-	}
-	members := f.transport(t, true)
-	if err := json.Unmarshal(members["result.json"], &result); err != nil {
-		t.Fatal(err)
-	}
-	if err := finalizeCI(f.plan, "another-owner/another-repository", f.identity, []ciPlatformResult{result}); err != nil {
-		t.Fatalf("fork finalize: %v", err)
-	}
-	if err := finalizeCI(f.plan, ciGitHubRepository, f.identity, []ciPlatformResult{result}); err == nil {
-		t.Fatal("self-reported fork replaced trusted finalize repository")
-	}
-	f.options.Repository = ciGitHubRepository
-	if err := writeCITransport(context.Background(), f.options, filepath.Join(f.options.WorkRoot, "untrusted.tar")); err == nil {
-		t.Fatal("self-reported fork replaced trusted transport repository")
-	}
-}
-
-func TestCIEntryTransport(t *testing.T) {
-	for _, change := range []string{"valid", "missing", "corrupt", "directory", "symlink", "unverified", "wrong-file", "wrong-digest", "missing-tool", "empty-libraries"} {
-		t.Run(change, func(t *testing.T) {
-			f := transportInputFixture(t)
-			entry := "set(_autolib_release_root \"\")\n# source entry\n"
-			writeCIFixture(t, f.options.SourceRoot, "src/autolib.cmake", entry)
-			writeCIFixture(t, f.options.WorkRoot, "install/autolib.cmake", entry)
-			resultFile := filepath.Join(f.options.WorkRoot, "results", f.options.Platform+".json")
-			var result map[string]any
-			json.Unmarshal([]byte(mustReadText(t, resultFile)), &result)
-			entryResult := map[string]any{"file": "autolib.cmake", "sha256": testDigest([]byte(entry)), "verified": true}
-			result["entry"] = entryResult
-			installedEntry := filepath.Join(f.options.WorkRoot, "install", "autolib.cmake")
-			switch change {
-			case "missing":
-				os.Remove(installedEntry)
-			case "corrupt":
-				os.WriteFile(installedEntry, []byte("corrupt\n"), 0644)
-			case "directory":
-				os.Remove(installedEntry)
-				os.Mkdir(installedEntry, 0755)
-			case "symlink":
-				os.Remove(installedEntry)
-				createCITransportSymlink(t, filepath.Join(f.options.SourceRoot, "src/autolib.cmake"), installedEntry)
-			case "unverified":
-				entryResult["verified"] = false
-			case "wrong-file":
-				entryResult["file"] = "other.cmake"
-			case "wrong-digest":
-				entryResult["sha256"] = strings.Repeat("a", 64)
-			case "missing-tool":
-				os.Remove(filepath.Join(f.options.WorkRoot, "install", ciImporterExecutable(f.options.Platform)))
-			case "empty-libraries":
-				f.plan.Publishers = map[string]string{}
-				f.plan.Platforms[0].Roots = []string{}
-				f.plan.Platforms[0].Description.Roots = []string{}
-				f.plan.Platforms[0].Description.Modules = []describedModule{}
-				f.plan.Platforms[0].Layers = [][]string{}
-				result["packages"], result["roots"] = []any{}, []any{}
-				if err := writeCIJSON(f.options.PlanFile, f.plan); err != nil {
-					t.Fatal(err)
-				}
-			}
-			if err := writeCIJSON(resultFile, result); err != nil {
-				t.Fatal(err)
-			}
-			before := transportSnapshot(t, filepath.Join(f.options.WorkRoot, "install"))
-			members := f.transport(t, change == "valid" || change == "empty-libraries")
-			if members != nil {
-				var manifest map[string]any
-				json.Unmarshal(members["transport.json"], &manifest)
-				if manifest["entry"] != "autolib.cmake" || !bytes.Equal(members["autolib.cmake"], []byte(entry)) {
-					t.Fatalf("entry bytes/path missing: %s", members["transport.json"])
-				}
-			}
-			if !reflect.DeepEqual(before, transportSnapshot(t, filepath.Join(f.options.WorkRoot, "install"))) {
-				t.Fatal("transport modified input")
-			}
-		})
-	}
 }
 
 func TestCIToolOnlyRun(t *testing.T) {
@@ -215,5 +123,4 @@ func TestCIToolOnlyRun(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(f.options.WorkRoot, "jobserver.json")); !os.IsNotExist(err) {
 		t.Fatalf("tool-only ran the library jobserver probe: %v", err)
 	}
-	f.transport(t, true)
 }

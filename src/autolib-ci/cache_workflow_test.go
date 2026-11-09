@@ -49,7 +49,9 @@ func TestCICacheWorkflow(t *testing.T) {
 		}
 	}
 	publish := mustReadText(t, "../../.github/workflows/publish-artifacts.yml")
-	if strings.Contains(publish, "workflow_run") {
-		t.Fatal("old automatic publication is still enabled")
+	for _, text := range []string{"workflow_run:", "queue: max", "group: ${{ github.repository }}-autolib-release"} {
+		if !strings.Contains(publish, text) {
+			t.Fatal("missing independent sync policy", text)
+		}
 	}
 }

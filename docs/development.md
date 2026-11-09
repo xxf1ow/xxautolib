@@ -87,7 +87,7 @@ Git 主来源复用 `git/<包名>/<版本>/`，资源复用 `git/_resources/<包
 
 ### 独立 Gitee 发布
 
-[发布流水线](../.github/workflows/publish-artifacts.yml)关闭自动触发，仅保留历史成品手动发布和显式latest更新。配置`GITEE_REPOSITORY`、`GITEE_RELEASE_TAG`和`GITEE_TOKEN`，缺失或非法即失败。历史发布填写同仓库成功构建的`source_run_id/source_attempt`，要求原格式成品Artifacts仍存在；新缓存不能作为该入口的输入。独立latest更新要求非空映射，不需要构建输入。完整校验、重试、入口注入及失败登记见[发布接口](../.github/actions/gitee-release/UPSTREAM.md#gitee-版本化发布适配)。
+[发布流水线](../.github/workflows/publish-artifacts.yml)关闭自动触发，仅保留历史成品手动发布和显式latest更新。配置`GITEE_REPOSITORY`、`GITEE_RELEASE_TAG`和`GITEE_TOKEN`，缺失或非法即失败。历史发布填写同仓库成功构建的`source_run_id/source_attempt`，要求原格式成品Artifacts仍存在；新缓存不能作为该入口的输入。独立latest更新要求非空映射，不需要构建输入。完整校验、重试、入口注入及失败登记见[发布接口](../.github/actions/gitee-release/UPSTREAM.md#gitee-独立同步适配)。
 
 执行前必须信任控制代码与原构建提交，脱敏不是沙箱。实际写入须取得目标及删除替换授权，并核对控制分支；push未确认仍失败。新库私有，公开后按[验收交接](testing.md#真实交付与手动验收)验证。
 

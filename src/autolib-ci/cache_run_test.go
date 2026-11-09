@@ -273,7 +273,6 @@ func TestCICacheRunCancellation(t *testing.T) {
 	if r.Processed || r.Complete || len(r.Packages) != 0 {
 		t.Fatal("cancel fabricated package results", r)
 	}
-	f.transport(t, false)
 }
 
 func nextCacheRun(t *testing.T, f *cacheRunTestFixture) {

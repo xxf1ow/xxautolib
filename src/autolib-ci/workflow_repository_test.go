@@ -54,3 +54,17 @@ func TestCIWorkflowTrustedRepository(t *testing.T) {
 		}
 	}
 }
+
+func TestCISyncWorkflowBranch(t *testing.T) {
+	document := mustReadText(t, "../../.github/workflows/publish-artifacts.yml")
+	for _, text := range []string{"sync-source", "--repository \"$GITHUB_REPOSITORY\"", "--ref \"$SYNC_REF\"", "ref: ${{ steps.snapshot.outputs.sha }}", "persist-credentials: false"} {
+		if !strings.Contains(document, text) {
+			t.Fatal("missing fixed source binding", text)
+		}
+	}
+	for _, text := range []string{"source_run_id", "source_attempt", "actions/download-artifact", " transport "} {
+		if strings.Contains(document, text) {
+			t.Fatal("retired sync input", text)
+		}
+	}
+}

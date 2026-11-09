@@ -34,7 +34,7 @@ func TestCIPublishersByPackage(t *testing.T) {
 	}
 }
 
-func TestCIPublisherTransportBinding(t *testing.T) {
+func TestCIPublisherCompletionBinding(t *testing.T) {
 	for _, publishers := range []map[string]string{nil, {}, {"queue@1": "windows-x86_64"}, {"queue@1": "darwin-aarch64"}, {"queue": "linux-x86_64"}, {"queue@1": "linux-x86_64", "extra@1": "linux-x86_64"}} {
 		t.Run("invalid-plan", func(t *testing.T) {
 			plan, run, results := finalizeFixture()
@@ -44,7 +44,7 @@ func TestCIPublisherTransportBinding(t *testing.T) {
 			}
 		})
 	}
-	t.Run("nonpublisher-transport", func(t *testing.T) {
+	t.Run("nonpublisher-completion", func(t *testing.T) {
 		f := transportInputFixture(t)
 		other := "linux-x86_64"
 		if f.options.Platform == other {
@@ -55,9 +55,6 @@ func TestCIPublisherTransportBinding(t *testing.T) {
 		f.plan.Platforms = append(f.plan.Platforms, candidate)
 		f.plan.Publishers = map[string]string{"queue@1": other}
 		if err := writeCIJSON(f.options.PlanFile, f.plan); err != nil {
-			t.Fatal(err)
-		}
-		if err := writeCITransport(context.Background(), f.options, filepath.Join(f.options.WorkRoot, "nonpublisher.tar")); err != nil {
 			t.Fatal(err)
 		}
 		// The absent publisher result still prevents global completion.

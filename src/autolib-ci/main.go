@@ -19,9 +19,6 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runCISyncSource(args[1:], stdout, stderr)
 	}
 	fail := func(err error) int { fmt.Fprintln(stderr, err); return 1 }
-	if len(args) > 0 && args[0] == "transport" {
-		return runCITransport(args[1:], stdout, stderr)
-	}
 	if len(args) > 0 && args[0] == "cache-prepare" {
 		return runCICachePrepare(args[1:], stdout, stderr)
 	}
@@ -32,7 +29,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runCIFinalize(args[1:], stdout, stderr)
 	}
 	if len(args) < 1 || args[0] != "plan" {
-		return fail(fmt.Errorf("usage: autolib-ci <plan|run|transport|finalize> [options]"))
+		return fail(fmt.Errorf("usage: autolib-ci <plan|run|finalize|cache-prepare|sync-source|sync-cache|cache-download|cache-delete> [options]"))
 	}
 	flags := flag.NewFlagSet("plan", flag.ContinueOnError)
 	flags.SetOutput(stderr)

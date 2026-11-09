@@ -93,7 +93,7 @@ func TestCIResultBinding(t *testing.T) {
 }
 
 func TestCIRunCLI(t *testing.T) {
-	for _, command := range []string{"run", "transport", "finalize"} {
+	for _, command := range []string{"run", "finalize"} {
 		var out, diagnostic bytes.Buffer
 		if code := run([]string{command}, &out, &diagnostic); code == 0 || !strings.Contains(diagnostic.String(), "--plan") {
 			t.Fatalf("missing %s inputs accepted: %d %s", command, code, diagnostic.String())
