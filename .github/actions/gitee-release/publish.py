@@ -136,7 +136,9 @@ def publish_one(api: GiteeAPI, release_id: int, asset: dict, initial_matches: li
     try:
         _log('start', name)
         digest_path = metadata_path(asset)
+        _log('cache_download_start', name)
         file = Path(fetch_asset(asset))
+        _log('cache_download_complete', name)
         if file.is_symlink() or file.is_junction() or not stat.S_ISREG(file.lstat().st_mode):
             raise ValueError('asset must remain a regular file')
         with tempfile.TemporaryDirectory(prefix='autolib-upload-', dir=file.parent) as directory:
@@ -155,7 +157,9 @@ def publish_one(api: GiteeAPI, release_id: int, asset: dict, initial_matches: li
                         raise GiteeAPIError('select_asset', reason='invalid_or_ambiguous_asset')
                     if matches:
                         api.delete_asset(release_id, matches[0]['id'])
+                    _log('gitee_upload_start', name, attempt=attempt + 1)
                     api.upload_asset(release_id, asset, snapshot)
+                    _log('gitee_upload_complete', name, attempt=attempt + 1)
                     break
                 except GiteeAPIError as error:
                     if not error.retryable or attempt == len(ATTACHMENT_RETRY_DELAYS):

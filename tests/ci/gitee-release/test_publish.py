@@ -192,6 +192,36 @@ class PublishTests(unittest.TestCase):
         self.assertEqual(git(self.bare, 'rev-parse', 'HEAD'), previous)
         self.assertFalse(any(m in {'DELETE', 'POST'} or '/releases/download/' in u for m,u in self.server.events))
 
+    def test_stage_logs_identify_each_blocking_operation(self):
+        asset = self.asset()
+        self.remote()
+        output = io.StringIO()
+        def last_event():
+            return json.loads(output.getvalue().splitlines()[-1])['event']
+        def fetch(item):
+            self.assertEqual(last_event(), 'cache_download_start')
+            return asset['path']
+        def send(method, url, **options):
+            if method == 'POST' and url.endswith('/attach_files'):
+                self.assertEqual(last_event(), 'gitee_upload_start')
+            return self.server.request(method, url, **options)
+        self.fetch_asset = fetch
+        import sync_scheduler
+        commit = sync_scheduler.commit_metadata
+        def confirm(repository, records, latest, **options):
+            if records:
+                self.assertEqual(last_event(), 'metadata_commit_start')
+            return commit(repository, records, latest, **options)
+        with contextlib.redirect_stderr(output), \
+                patch('requests.sessions.Session.request', side_effect=send), \
+                patch('sync_scheduler.commit_metadata', side_effect=confirm):
+            result = self.run_release(self.config([asset]))
+        self.assertEqual((result['uploaded'], result['failed']), (1, 0))
+        self.assertEqual([json.loads(line)['event'] for line in output.getvalue().splitlines()], [
+            'start', 'cache_download_start', 'cache_download_complete',
+            'gitee_upload_start', 'gitee_upload_complete',
+            'metadata_commit_start', 'metadata_commit_complete', 'success'])
+
     def test_identical_attachment_without_digest_is_deleted_and_uploaded(self):
         asset = self.asset()
         self.remote()

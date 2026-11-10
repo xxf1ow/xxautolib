@@ -129,6 +129,7 @@ def run_sync(config: dict, source: dict, cache: dict, *, api, repository: dict,
     for name in outcomes:
         prune_old_copy(name)
     def confirm(asset):
+        _log('metadata_commit_start', asset['name'])
         with lock:
             if stopped.is_set():
                 raise RuntimeError('metadata writes stopped')
@@ -141,6 +142,7 @@ def run_sync(config: dict, source: dict, cache: dict, *, api, repository: dict,
             except Exception:
                 stopped.set()
                 raise
+        _log('metadata_commit_complete', asset['name'])
     def confirm_only(asset):
         try:
             confirm(asset)
