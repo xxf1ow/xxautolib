@@ -553,7 +553,7 @@ func ciSafeEnvironment(environment []string) []string {
 	if environment == nil {
 		environment = os.Environ()
 	}
-	return withoutEnvironment(environment, "GITHUB_TOKEN", "GH_TOKEN", "GITEE_TOKEN")
+	return withoutEnvironment(environment, "GITHUB_TOKEN", "GH_TOKEN", "GITEE_TOKEN", "AUTOLIB_CACHE_ASKPASS", "AUTOLIB_CACHE_GIT_LOGIN", "AUTOLIB_CACHE_GIT_TOKEN", "GIT_ASKPASS", "SSH_ASKPASS")
 }
 func ciItemEnvironment(overrides []string) []string {
 	environment := os.Environ()
