@@ -20,7 +20,7 @@
 
 ## 后续维护方向
 
-[构建缓存记录迁入 Gitee](agent-notes/proposed/architecture/2026-11-10-gitee-build-cache-records.md#本地验证与切换状态)已完成本地实现与受控验证，真实迁移及源码部署尚待完成；旧 GitHub JSON 在切换条件满足前保留。本次范围仅调整记录存储，不包含 OpenCV/ONNX 上传优化。
+[构建缓存记录迁入 Gitee](agent-notes/proposed/architecture/2026-11-10-gitee-build-cache-records.md#本地验证与切换状态)已完成本地实现、受控验证及 34 份真实记录的复制与回读；源码部署及旧 GitHub JSON 清理尚待完成。本次范围仅调整记录存储，不包含 OpenCV/ONNX 上传优化。
 
 待实施：增加轻量回归CI，复用现有Go测试、vet及独立发布单元测试；不持有发布凭据、不修改Release、不重编全部第三方库。完成标志是代码检查自动运行、失败可见且不触发发布；触发条件与平台范围在实施前确认。
 
