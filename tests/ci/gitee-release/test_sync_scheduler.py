@@ -3,6 +3,7 @@
 import base64
 import hashlib
 import importlib
+import json
 from pathlib import Path
 import threading
 import unittest
@@ -32,6 +33,72 @@ class SyncSchedulerTests(unittest.TestCase):
                 config['cache']['records'][asset['name']]['dependency_fingerprints']={'b@1':'a'*64}
         config['source']['plan']={'platforms':[{'id':'linux-x86_64','description':{'modules':modules,'failed_roots':[],'filtered_roots':[]}}]}
         return assets,config
+
+    def test_size_limit_metadata_only_waits_for_push(self):
+        assets, config = self.graph()
+        config['cache']['records'][assets[1]['name']]['archive']['size'] = 100000001
+        entered, release = threading.Event(), threading.Event()
+        started, results = [], []
+        original = self.scheduler.commit_metadata
+        def commit(repo, records, latest, **kwargs):
+            if any(p.startswith('b/') for p in records):
+                entered.set()
+                if not release.wait(10): raise RuntimeError('test timeout')
+            return original(repo, records, latest, **kwargs)
+        def fetch(asset):
+            started.append(asset['name'])
+            if asset['name'] == assets[1]['name']: raise AssertionError('oversized archive fetched')
+            return self.f.root / asset['name']
+        self.f.fetch_asset = fetch
+        with patch('sync_scheduler.commit_metadata', side_effect=commit):
+            thread = threading.Thread(target=lambda: results.append(self.f.run_release(config)))
+            thread.start()
+            try:
+                self.assertTrue(entered.wait(10))
+                self.assertNotIn(assets[0]['name'], started)
+                self.assertNotIn(assets[2]['name'], started)
+            finally: release.set(); thread.join(10)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual((results[0]['metadata_only'], results[0]['uploaded'], results[0]['failed']), (1, 3, 0))
+        record = json.loads(git(self.f.bare, 'show', 'HEAD:b/1/' + assets[1]['name'] + '.json'))
+        self.assertEqual(record['urls'], ['https://github.com/owner/repo/releases/download/autolib-cache/' + assets[1]['name']])
+        self.assertNotIn(assets[1]['name'], self.f.server.bodies)
+
+    def test_github_only_prunes_old_attachment_after_push_and_retries(self):
+        asset = self.f.asset()
+        config = self.f.config([asset])
+        config['cache']['records'][asset['name']]['archive']['size'] = 100000001
+        self.f.server.add_asset(asset['name'], b'old bytes', asset_id=99)
+        self.f.fetch_asset = lambda a: self.fail('oversized archive fetched')
+        def fail(api, release, identity):
+            value = json.loads(git(self.f.bare, 'show', 'HEAD:queue/1/' + asset['name'] + '.json'))
+            self.assertEqual(value['size'], 100000001)
+            raise RuntimeError('controlled deletion failure')
+        with patch('gitee_api.GiteeAPI.delete_asset', new=fail):
+            result = self.f.run_release(config)
+        self.assertEqual(result['metadata_only'], 1)
+        self.assertTrue(result['errors'])
+        self.assertIn(asset['name'], self.f.server.bodies)
+        config['work_root'] = self.f.root / 'retry'
+        result = self.f.run_release(config)
+        self.assertEqual((result['skipped'], result['failed']), (1, 0))
+        self.assertFalse(result['errors'])
+        self.assertNotIn(asset['name'], [a['name'] for a in self.f.server.assets])
+
+    def test_delivery_metadata_changes_avoid_unnecessary_upload(self):
+        asset = self.f.asset()
+        self.f.run_release(self.f.config([asset]))
+        config = self.f.config([asset])
+        config['source']['repository'] = config['cache']['repository'] = 'fork/source'
+        self.f.fetch_asset = lambda a: self.fail('confirmed Gitee bytes fetched again')
+        result = self.f.run_release(config)
+        self.assertEqual((result['metadata_only'], result['uploaded'], result['failed']), (1, 0, 0))
+        self.assertEqual(result['items'][0]['reason'], 'delivery_metadata_changed')
+        self.f.server.events.clear()
+        config['work_root'] = self.f.root / 'same'
+        result = self.f.run_release(config)
+        self.assertEqual(result['skipped'], 1)
+        self.assertFalse(any(m in {'POST', 'DELETE'} for m, _ in self.f.server.events))
 
     def test_dependencies_wait_for_confirmed_push_and_independent_item_completes(self):
         assets,config=self.graph()
@@ -188,7 +255,7 @@ class SyncSchedulerTests(unittest.TestCase):
         self.assertEqual(sum(a['name']=='autolib.cmake' for a in self.f.server.assets),1)
         self.assertIn(b'https://gitee.com/fixture/mirror/releases/download/fixed',self.f.server.bodies['autolib.cmake'])
         self.assertEqual(base64.b64decode(config['source']['entry']['bytes']),raw)
-        self.assertNotIn('autolib.cmake.sha256',git(self.f.bare,'ls-tree','-r','--name-only','HEAD').decode())
+        self.assertNotIn('autolib.cmake.json',git(self.f.bare,'ls-tree','-r','--name-only','HEAD').decode())
         self.f.server.events.clear()
         config['work_root']=self.f.root/'again'
         result=self.f.run_release(config)

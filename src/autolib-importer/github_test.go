@@ -81,7 +81,7 @@ func TestReleaseDownload(t *testing.T) {
 				client.Transport = transport
 				defer transport.CloseIdleConnections()
 			}
-			a := releaseAsset{Name: "demo", URL: testReleaseURL + "/demo", SHA256: fmt.Sprintf("%x", sha256.Sum256([]byte("payload")))}
+			a := releaseAsset{Name: "demo", URLs: []string{testReleaseURL + "/demo"}, Size: 7, SHA256: fmt.Sprintf("%x", sha256.Sum256([]byte("payload")))}
 			file := filepath.Join(t.TempDir(), "download")
 			err := downloadReleaseAsset(context.Background(), client, a, file, newDownloadProgress(io.Discard, "demo"))
 			if kind == "bad certificate" {
@@ -125,7 +125,7 @@ func TestReleaseDownloadExisting(t *testing.T) {
 		fmt.Fprint(w, "payload")
 	}))
 	destination := putTestFile(t, filepath.Join(t.TempDir(), "download"), "user content")
-	asset := releaseAsset{Name: "demo", URL: "https://gitee.com/owner/repo/releases/download/v1/demo", SHA256: "239f59ed55e737c77147cf55ad0c1b030b6d7ee748a7426952f9b852d5a935e5"}
+	asset := releaseAsset{Name: "demo", URLs: []string{"https://gitee.com/owner/repo/releases/download/v1/demo"}, Size: 7, SHA256: "239f59ed55e737c77147cf55ad0c1b030b6d7ee748a7426952f9b852d5a935e5"}
 	if err := downloadReleaseAsset(context.Background(), client, asset, destination, newDownloadProgress(io.Discard, "demo")); err == nil {
 		t.Fatal("overwrote existing destination")
 	}

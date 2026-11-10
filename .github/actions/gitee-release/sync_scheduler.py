@@ -9,7 +9,7 @@ import threading
 
 from cleanup import execute_cleanup, plan_cleanup
 from metadata_repository import commit_metadata
-from publication_rules import choose_source_latest, inject_release_root, metadata_path
+from publication_rules import choose_source_latest, inject_release_root, metadata_path, delivery_record, GITEE_ASSET_LIMIT
 from publish import cache_candidates, list_assets, publish_one, _log
 
 
@@ -43,7 +43,7 @@ def validate_sync_inputs(source, cache, mode, explicit):
         return
     candidates = cache_candidates(source, cache)
     _dependencies(source)
-    plan_cleanup(source, cache, {'existing_digests': {}, 'existing_latest': {}}, [])
+    plan_cleanup(source, cache, {'existing_records': {}, 'existing_latest': {}}, [])
     tools = [a for a in candidates if a['kind'] == 'importer']
     if tools:
         _raw_entry(source, tools)
@@ -65,7 +65,7 @@ def run_sync(config: dict, source: dict, cache: dict, *, api, repository: dict,
 
     唯一入口在主进程执行，工具 worker 上传后即返回；入口异常不会留下等待线程。
     """
-    result = {'selected': 0, 'uploaded': 0, 'skipped': 0, 'failed': 0, 'blocked': 0,
+    result = {'selected': 0, 'uploaded': 0, 'metadata_only': 0, 'skipped': 0, 'failed': 0, 'blocked': 0,
               'items': [], 'coverage': {}, 'errors': {}}
     lock, stopped = threading.Lock(), threading.Event()
     if config['mode'] == 'latest':
@@ -96,16 +96,40 @@ def run_sync(config: dict, source: dict, cache: dict, *, api, repository: dict,
     result['errors'].update(cleanup['errors'])
     deleted = set(cleanup['deleted'])
     remote_assets = [a for a in remote_assets if a['name'] not in deleted]
-    outcomes, pending = {}, set()
+    expected = {name: delivery_record(asset, repository=config['repository'], tag=config['tag'],
+                                     github_repository=source['repository']) for name, asset in candidates.items()}
+    outcomes, pending, metadata_only = {}, set(), {}
     for name, asset in candidates.items():
-        if repository['existing_digests'].get(metadata_path(asset)) == asset['sha256']:
+        current = repository['existing_records'].get(metadata_path(asset))
+        record = expected[name]
+        if current == record:
             outcomes[name] = {'name': name, 'status': 'skipped'}
             _log('skipped', name)
         else:
             pending.add(name)
-    if pending and release is None:
+            if len(record['urls']) == 1:
+                metadata_only[name] = 'gitee_size_limit'
+            elif (current is not None and current['sha256'] == record['sha256']
+                  and current['size'] == record['size'] and record['urls'][0] in current['urls']):
+                metadata_only[name] = 'delivery_metadata_changed'
+    if pending - metadata_only.keys() and release is None:
         release = api.create_release(config['tag'], repository['head'])
+    def prune_old_copy(name):
+        if len(expected[name]['urls']) != 1:
+            return
+        matches = [a for a in remote_assets if a['name'] == name]
+        if not matches:
+            return
+        try:
+            if len(matches) != 1 or type(matches[0].get('id')) is not int or matches[0]['id'] <= 0:
+                raise ValueError('ambiguous managed attachment')
+            api.delete_asset(release['id'], matches[0]['id'])
+        except (OSError, RuntimeError, ValueError):
+            result['errors'][name + ':gitee'] = 'superseded Gitee attachment deletion unconfirmed'
+    for name in outcomes:
+        prune_old_copy(name)
     def confirm(asset):
+        _log('metadata_commit_start', asset['name'])
         with lock:
             if stopped.is_set():
                 raise RuntimeError('metadata writes stopped')
@@ -113,11 +137,20 @@ def run_sync(config: dict, source: dict, cache: dict, *, api, repository: dict,
                 initial = {asset['package']['name']: asset['record']['latest_candidate']} if asset['kind'] == 'library' else {}
                 latest, removed, errors = choose_source_latest(repository['existing_latest'], initial, source, set(initial), {})
                 result['errors'].update(errors)
-                commit_metadata(repository, {metadata_path(asset): asset['sha256']}, latest,
+                commit_metadata(repository, {metadata_path(asset): expected[asset['name']]}, latest,
                                 remove_paths=tuple(n + '/package.toml' for n in removed))
             except Exception:
                 stopped.set()
                 raise
+        _log('metadata_commit_complete', asset['name'])
+    def confirm_only(asset):
+        try:
+            confirm(asset)
+        except Exception:
+            return {'name': asset['name'], 'status': 'failed', 'operation': 'metadata_commit'}
+        reason = metadata_only[asset['name']]
+        _log('metadata_only', asset['name'], reason=reason, size=asset['size'], threshold=GITEE_ASSET_LIMIT)
+        return {'name': asset['name'], 'status': 'metadata_only', 'reason': reason}
     def dependency_status(name):
         ready = True
         for dependency in dependencies.get(name, []):
@@ -129,7 +162,7 @@ def run_sync(config: dict, source: dict, cache: dict, *, api, repository: dict,
             child_ready, chain, failed = dependency_status(dependency)
             if chain:
                 return False, [name, *chain], failed
-            ready = ready and child_ready and status in {'uploaded', 'skipped'}
+            ready = ready and child_ready and status in {'uploaded', 'metadata_only', 'skipped'}
         return ready, None, False
     entry_result = None
     cpu = len(os.sched_getaffinity(0)) if hasattr(os, 'sched_getaffinity') else os.cpu_count() or 1
@@ -152,8 +185,11 @@ def run_sync(config: dict, source: dict, cache: dict, *, api, repository: dict,
                     continue
                 asset = candidates[name]
                 callback = (lambda asset: False) if asset['kind'] == 'importer' else confirm
-                future = pool.submit(publish_one, api, release['id'], asset,
-                                     [a for a in remote_assets if a['name'] == name], fetch_asset=fetch_asset, confirm_item=callback)
+                if name in metadata_only:
+                    future = pool.submit(confirm_only, asset)
+                else:
+                    future = pool.submit(publish_one, api, release['id'], asset,
+                                         [a for a in remote_assets if a['name'] == name], fetch_asset=fetch_asset, confirm_item=callback)
                 active[future] = name
                 pending.remove(name)
             if not active:
@@ -187,18 +223,20 @@ def run_sync(config: dict, source: dict, cache: dict, *, api, repository: dict,
                     else:
                         item.update(status='failed', operation='entry')
                 outcomes[name] = item
+                if item['status'] == 'metadata_only':
+                    prune_old_copy(name)
     if stopped.is_set():
         result['errors']['metadata_commit'] = 'metadata writes stopped after unconfirmed push'
     else:
         for name, asset in sorted(candidates.items()):
-            if asset['kind'] == 'library' and outcomes.get(name, {}).get('status') in {'uploaded', 'skipped'}:
+            if asset['kind'] == 'library' and outcomes.get(name, {}).get('status') in {'uploaded', 'metadata_only', 'skipped'}:
                 initial = {asset['package']['name']: asset['record']['latest_candidate']}
                 latest, removed, errors = choose_source_latest(repository['existing_latest'], initial, source, set(initial), {})
                 result['errors'].update(errors)
                 with lock:
                     commit_metadata(repository, {}, latest, remove_paths=tuple(n + '/package.toml' for n in removed))
     result['items'] = list(outcomes.values())
-    for status in ('uploaded', 'skipped'):
+    for status in ('uploaded', 'metadata_only', 'skipped'):
         result[status] = sum(i['status'] == status for i in result['items'])
     result['blocked'] = sum(i['status'] == 'dependency_failed' for i in result['items'])
     result['failed'] = sum(i['status'] == 'failed' or i.get('blocking_failure', False) for i in result['items'])

@@ -87,6 +87,14 @@ class Server:
             return response
 
 
+def delivery_bytes(asset):
+    name = asset['name']
+    value = {'sha256': asset['sha256'], 'size': asset['size'], 'urls': [
+        'https://gitee.com/fixture/mirror/releases/download/fixed/' + name,
+        'https://github.com/owner/repo/releases/download/autolib-cache/' + name]}
+    return (json.dumps(value, sort_keys=True, indent=2) + '\n').encode()
+
+
 class PublishTests(unittest.TestCase):
     def setUp(self):
         self.assertIsNotNone(importlib.util.find_spec('publish'), 'local publication is not implemented')
@@ -105,6 +113,12 @@ class PublishTests(unittest.TestCase):
         clock = patch('time.sleep')
         self.clock = clock.start()
         self.addCleanup(clock.stop)
+        # HTTP 替身留在本进程；真实进程与总预算由 test_attachment_upload.py 验证。
+        from attachment_upload import _update_attachment
+        worker = patch('publish.upload_attachment', side_effect=lambda api, release_id, asset, snapshot, matches:
+                       _update_attachment(api, release_id, asset, snapshot, matches))
+        worker.start()
+        self.addCleanup(worker.stop)
 
     def asset(self, name='queue', version='1', body=b'archive\0bytes'):
         filename = f'{name}-{version}-any-any.tar.zst'
@@ -175,7 +189,7 @@ class PublishTests(unittest.TestCase):
         asset = self.asset()
         self.remote({'.autolib-repository.json': json.dumps(IDENTITY).encode(),
                      'queue/package.toml': b'latest="1"\n',
-                     'queue/1/' + asset['name'] + '.sha256': (asset['sha256'] + '\n').encode()})
+                     'queue/1/' + asset['name'] + '.json': delivery_bytes(asset)})
         config = self.config([asset])
         self.fetch_asset = lambda asset: self.fail('unchanged archive downloaded')
         previous = git(self.bare, 'rev-parse', 'HEAD')
@@ -183,6 +197,36 @@ class PublishTests(unittest.TestCase):
         self.assertEqual((result['uploaded'], result['skipped'], result['failed']), (0, 1, 0))
         self.assertEqual(git(self.bare, 'rev-parse', 'HEAD'), previous)
         self.assertFalse(any(m in {'DELETE', 'POST'} or '/releases/download/' in u for m,u in self.server.events))
+
+    def test_stage_logs_identify_each_blocking_operation(self):
+        asset = self.asset()
+        self.remote()
+        output = io.StringIO()
+        def last_event():
+            return json.loads(output.getvalue().splitlines()[-1])['event']
+        def fetch(item):
+            self.assertEqual(last_event(), 'cache_download_start')
+            return asset['path']
+        def send(method, url, **options):
+            if method == 'POST' and url.endswith('/attach_files'):
+                self.assertEqual(last_event(), 'gitee_upload_start')
+            return self.server.request(method, url, **options)
+        self.fetch_asset = fetch
+        import sync_scheduler
+        commit = sync_scheduler.commit_metadata
+        def confirm(repository, records, latest, **options):
+            if records:
+                self.assertEqual(last_event(), 'metadata_commit_start')
+            return commit(repository, records, latest, **options)
+        with contextlib.redirect_stderr(output), \
+                patch('requests.sessions.Session.request', side_effect=send), \
+                patch('sync_scheduler.commit_metadata', side_effect=confirm):
+            result = self.run_release(self.config([asset]))
+        self.assertEqual((result['uploaded'], result['failed']), (1, 0))
+        self.assertEqual([json.loads(line)['event'] for line in output.getvalue().splitlines()], [
+            'start', 'cache_download_start', 'cache_download_complete',
+            'gitee_upload_start', 'gitee_upload_complete',
+            'metadata_commit_start', 'metadata_commit_complete', 'success'])
 
     def test_identical_attachment_without_digest_is_deleted_and_uploaded(self):
         asset = self.asset()
@@ -192,7 +236,18 @@ class PublishTests(unittest.TestCase):
         self.assertEqual((result['uploaded'], result['skipped'], result['failed']), (1, 0, 0))
         self.assertEqual([m for m,u in self.server.events if m in {'DELETE','POST'}], ['DELETE','POST'])
         self.assertFalse(any('/releases/download/' in u for _,u in self.server.events))
-        self.assertEqual(git(self.bare,'show','HEAD:queue/1/'+asset['name']+'.sha256'),(asset['sha256']+'\n').encode())
+        self.assertEqual(git(self.bare,'show','HEAD:queue/1/'+asset['name']+'.json'),delivery_bytes(asset))
+
+    def test_adding_gitee_source_requires_real_upload(self):
+        asset = self.asset()
+        record = json.loads(delivery_bytes(asset))
+        record['urls'] = record['urls'][1:]
+        self.remote({'.autolib-repository.json': json.dumps(IDENTITY).encode(),
+                     'queue/package.toml': b'latest="1"\n',
+                     'queue/1/' + asset['name'] + '.json': json.dumps(record).encode()})
+        result = self.run_release(self.config([asset]))
+        self.assertEqual((result['uploaded'], result['metadata_only'], result['failed']), (1, 0, 0))
+        self.assertEqual(self.server.bodies[asset['name']], Path(asset['path']).read_bytes())
 
     def test_response_lost_refreshes_then_deletes_and_reuploads(self):
         self.remote()
@@ -211,7 +266,7 @@ class PublishTests(unittest.TestCase):
         self.assertEqual((result['uploaded'],result['failed']),(1,0))
         self.assertEqual([m for m,u in self.server.events if m in {'DELETE','POST'}],['POST','DELETE','POST'])
         self.assertEqual(sum(m=='GET' and u.endswith('/attach_files') for m,u in self.server.events),2)
-        self.assertEqual([c.args[0] for c in self.clock.call_args_list],[2])
+        self.assertEqual([c.args[0] for c in self.clock.call_args_list],[10])
 
     def test_wrong_local_bytes_never_delete_remote(self):
         asset=self.asset()
@@ -227,7 +282,7 @@ class PublishTests(unittest.TestCase):
         unchanged,changed=self.asset('a'),self.asset('b')
         self.remote({'.autolib-repository.json':json.dumps(IDENTITY).encode(),
                      'a/package.toml':b'latest="1"\n',
-                     'a/1/'+unchanged['name']+'.sha256':(unchanged['sha256']+'\n').encode()})
+                     'a/1/'+unchanged['name']+'.json':delivery_bytes(unchanged)})
         config=self.config([unchanged,changed])
         fetched=[]
         def fetch(asset):
@@ -262,7 +317,7 @@ class PublishTests(unittest.TestCase):
             result=self.module.publish_one(self.api,3,asset,[],fetch_asset=lambda a:a['path'],confirm_item=lambda a:self.fail('failed upload confirmed'))
         self.assertEqual(result['status'],'failed')
         self.assertEqual(sum(m=='POST' for m,u in self.server.events),11)
-        self.assertEqual([c.args[0] for c in self.clock.call_args_list],[2,4,8,16,32,32,32,32,32,32])
+        self.assertEqual([c.args[0] for c in self.clock.call_args_list],[10]*10)
         self.assertNotIn('fake-secret',errors.getvalue())
 
     def test_fast_item_is_committed_while_slow_upload_is_in_flight(self):
@@ -288,7 +343,7 @@ class PublishTests(unittest.TestCase):
             try:
                 self.assertTrue(entered.wait(10))
                 self.assertTrue(confirmed.wait(10))
-                self.assertEqual(git(self.bare,'show','HEAD:fast/1/'+fast['name']+'.sha256'),(fast['sha256']+'\n').encode())
+                self.assertEqual(git(self.bare,'show','HEAD:fast/1/'+fast['name']+'.json'),delivery_bytes(fast))
             finally:
                 release.set();thread.join(10)
         self.assertFalse(thread.is_alive())

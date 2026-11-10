@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -35,15 +36,11 @@ func (p *downloadProgress) report() {
 		prefix, suffix = "\r-- ", ""
 	}
 	const mib = 1024 * 1024
-	if p.total > 0 {
-		percent := min(100, p.downloaded*100/p.total)
-		filled := int(percent / 10)
-		fmt.Fprintf(p.output, "%s[AutoLib] Downloading %s: [%s%s] %d%%  %.1f/%.1f MiB%s", prefix, p.ref,
-			strings.Repeat("=", filled), strings.Repeat("-", 10-filled), percent,
-			float64(p.downloaded)/mib, float64(p.total)/mib, suffix)
-	} else {
-		fmt.Fprintf(p.output, "%s[AutoLib] Downloading %s: %.1f MiB%s", prefix, p.ref, float64(p.downloaded)/mib, suffix)
-	}
+	percent := min(100, p.downloaded*100/p.total)
+	filled := int(percent / 10)
+	fmt.Fprintf(p.output, "%s[AutoLib] Downloading %s: [%s%s] %d%%  %.1f/%.1f MiB%s", prefix, p.ref,
+		strings.Repeat("=", filled), strings.Repeat("-", 10-filled), percent,
+		float64(p.downloaded)/mib, float64(p.total)/mib, suffix)
 	p.reported, p.updated = p.downloaded, time.Now()
 }
 
@@ -67,4 +64,19 @@ func (p *downloadProgress) finish() {
 	if p.terminal {
 		fmt.Fprintln(p.output)
 	}
+}
+
+func (p *downloadProgress) startSource(index, count int, address string, size int64) {
+	p.total, p.downloaded, p.reported = size, 0, 0
+	host, _ := url.Parse(address)
+	fmt.Fprintf(p.output, "-- [AutoLib] Downloading %s from source %d/%d (%s)\n", p.ref, index, count, host.Host)
+	p.report()
+}
+
+func (p *downloadProgress) sourceFailed(index int, address string, err error) {
+	if p.terminal {
+		fmt.Fprintln(p.output)
+	}
+	host, _ := url.Parse(address)
+	fmt.Fprintf(p.output, "-- [AutoLib] Download source %d (%s) failed: %v\n", index, host.Host, safeDownloadError(err))
 }

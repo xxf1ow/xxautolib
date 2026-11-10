@@ -10,6 +10,8 @@ Status: proposed
 
 ## 方案
 
+[JSON 交付元数据与有序双来源下载](../../implemented/architecture/2026-11-09-dual-source-artifact-downloads.md)拥有消费 JSON、schema 2 和有序双来源；本文继续约束版本、依赖、安装布局及 latest。
+
 采用精确版本包、独立 latest 指针、统一安装结果和专用 Git 元数据仓库。实际归档放在同仓库的固定 Release 中，按完整文件名定位；消费端只克隆元数据并下载归档，不编译源码。[架构](../../../architecture.md)是开发入口，本文保留版本、缓存、Git 元数据及前三阶段已验收的契约和证据。第四阶段由已验收的[Gitee 交付重做](../../implemented/architecture/2026-11-02-gitee-delivery-reimplementation.md)独立拥有；本文的第四阶段方案仅供参考，不要求兼容或并存两套实现。
 
 [自定位消费入口与工具专用 CI](../../implemented/architecture/2026-11-03-entry-delivery-and-tool-only-ci.md)拥有已实现的入口安装、来源不可配置及缓存自定位，部分替代本文独立本地来源及四步选择；本文的版本、依赖、Git 快照、完整性校验和历史验证依据继续适用，历史复制或本地归档用例不表示这些路径仍可调用。
@@ -100,7 +102,7 @@ CI 安装验证后调用同提交 builder 生成最终归档，再运输到独�
 
 ### 包导入消息
 
-包的实际下载由 Go importer 实时输出 `-- [AutoLib] Downloading <name>@<version>: <进度>`，成功后输出 `Download complete`；实际解压前后分别输出 `Extracting` 和 `Extraction complete`。已知响应长度时进度包含进度条、百分比及已下载/总大小，未知长度时只显示已下载大小；交互终端原地刷新，CI 或重定向输出节流换行。下载完成不表示摘要或解包验证已通过，原有失败处理保持不变。
+包的实际下载由 Go importer 输出来源序号及 `-- [AutoLib] Downloading <name>@<version>: <进度>`，大小以 JSON 为准；换源时计数清零。交互终端原地刷新，重定向输出节流换行；成功后输出 Download complete，实际解压前后输出 Extracting 和 Extraction complete。
 
 每次 `autolib_import` 成功使用的完整依赖闭包都按依赖顺序为消费目标打印 `-- [Info] [<target>] <name> : <version>`；同次调用内每包一次，重复调用、其他目标和重新 configure 均重新打印。完整缓存命中及同配置已加载包不输出 Reusing、Cache hit、Already loaded 或虚假的下载、解压消息。不增加入口下载、importer 获取或工具复用的过程打印，失败诊断照常保留。
 
@@ -120,7 +122,7 @@ importer 先检查入口同根已有包，尚需远端但没有快照时向 CMak
 
 ### Git 元数据与 Release 布局
 
-GitHub、Gitee 都使用专用公开产物仓库，不在源码仓库中混放元数据。仓库工作树只保存 README、仓库身份、包级选择和独立摘要，实际归档位于同仓库的固定 Release：
+Gitee 专用仓库保存消费元数据，GitHub 源码仓库的固定 `autolib-cache` 保存归档及 publication。Git 树只保存说明、身份、latest 和独立 JSON，不保存归档；地址由同步端生成。
 
 ```text
 产物仓库/
@@ -128,23 +130,23 @@ GitHub、Gitee 都使用专用公开产物仓库，不在源码仓库中混放�
 ├─ LICENSE
 ├─ .autolib-repository.json
 ├─ autolib-importer/
-│  └─ autolib-importer-….tar.xz.sha256
+│  └─ autolib-importer-….tar.xz.json
 └─ eigen/
    ├─ package.toml
    ├─ 3.4.0/
-   │  ├─ eigen-3.4.0-linux-x86_64.tar.zst.sha256
-   │  └─ eigen-3.4.0-windows-x86_64.tar.zst.sha256
+   │  ├─ eigen-3.4.0-linux-x86_64.tar.zst.json
+   │  └─ eigen-3.4.0-windows-x86_64.tar.zst.json
    └─ 5.0.1/
       └─ …
 ```
 
-latest 在源码、安装结果和远端元数据中使用相同的包级 `package.toml` 格式，区别只在来源。每个 `.sha256` 文件仅保存对应归档的 SHA256；去掉该后缀就是完整资产文件名。库包使用版本化 tar.zst，工具使用现有宿主命名的单程序 tar.xz。不再用 JSON 重复存储包名、版本、OS、架构、附件 ID 或 URL，也不在 Release 正文聚合摘要。
+latest 在源码、安装和远端元数据使用相同的包级 `package.toml` 格式。独立 `.json` 包含 sha256、size 和 urls；库使用 tar.zst，工具使用单程序 tar.xz。JSON 不重复包身份和附件 ID，不在 Release 正文聚合索引；builder 本地打包摘要与 CI restore 保持原用途。
 
-已落地身份文件为 `{"type":"xxautolib-artifacts","schema":1,"upstream":"https://github.com/xxf1ow/xxautolib"}`，消费入口核对这三个字段的类型及精确值。包级选择只有 TOML `latest` 字符串；独立摘要为 64 位小写十六进制 SHA256 加 LF，分别位于 `autolib-importer/<工具归档名>.sha256` 与 `<name>/<version>/<完整库归档名>.sha256`，Windows 工具保留 `.exe.tar.xz` 命名。消费端统一忽略摘要首尾的空格、Tab、CR、LF，再严格校验，不删除内部字符；工具目录不接受包级 latest，也不回退 tools 路径。未登记摘要视为无该资产，摘要非法或已登记资产下载 404 直接失败，不换版本或来源。LICENSE 是合法根文件；初始化及发布端规则由[Gitee 交付记录](../../implemented/architecture/2026-11-02-gitee-delivery-reimplementation.md)拥有。
+身份文件 `.autolib-repository.json` 使用整数 schema 2，消费入口核对固定字段及类型。库记录位于 `<name>/<version>/<完整归档名>.json`，工具记录位于 `autolib-importer/<工具归档名>.json`；工具无 latest，不回退 tools 目录。旧远端裸摘要不受支持，三字段校验及换源规则由上述 JSON 记录拥有。
 
 发布和消费根据精确包版本、目标平台及既有平台无关规则定位归档文件名，包内身份是第二层校验。文件名必须安全、可确定且在 Release 中无歧义，不通过包含匹配或任意子串选择资产。固定 Release 不按每个版本新建 tag；版本由归档名与 Git 元数据目录表达。
 
-两托管的远端 base URL 统一为 `https://<github.com|gitee.com>/<owner>/<repo>/releases/download/<encoded-tag>`，据此推导仓库 `.git` 地址与精确资产 URL。拒绝凭据、query/fragment、额外路径及 `/releases/tag/`，不增加兼容转换；仅实际需要远端时解析，未使用的远端配置不阻止完整本地路径。消费不调用 GitHub contents、Release 或附件 API，不使用 Gitee Raw、发行版正文、静态站点或 Git 仓库中的源码发现摘要；也不自动跨来源回退。GitHub 和 Gitee 的区别限于发布端的建库、Release 和上传 API 以及写入凭据。
+入口内置 Release root 只用于定位元数据 Git 仓库，归档 URL 完整保存在 JSON 中，消费者不再拼接。root 拒绝凭据、query/fragment 和额外路径；消费不调用 contents、Release 或附件 API，不使用 Raw、正文或静态站点。元数据仍依赖 Gitee，归档按记录在 Gitee/GitHub 间依序尝试。
 
 ### 专用仓库初始化与检查
 
@@ -162,7 +164,7 @@ README 面向使用者说明产物用途、源码地址和使用方式，不写�
 
 源码仓库停止后续二进制 Release 上传，以构建 artifacts 交接安装结果到独立发布任务；不要求保留 GitHub 源码仓库 Release 作为 Gitee 同步源。自动发布使用触发它的那次构建结果，手动重跑不必重编三方库，不误取另一次运行的产物。历史 Release 和现有本地数据不自动迁移或删除。
 
-发布任务使用构建结果携带的消费信息及包级元数据，调用统一打包机制生成归档和摘要。归档上传成功后，只更新其独立 `.sha256` 文件；并行上传结束后由协调器一次 commit/push。未选择的文件保持原样，不整树覆盖，不聚合重写其他包记录。部分上传失败也提交成功项，任务整体报告失败。
+构建逐项生成归档与 publication，独立同步复用跨 run 的有效缓存。每项交付成功后在共用 Git 锁内即时提交并确认消费 JSON；成功项不等待全部上传结束，部分失败仍报告整体失败。
 
 latest 是独立选择，不是产物发布完成标志。可以没有编译或上传输入，仅提交选中包的 `package.toml`；不要求对应版本产物存在或所有平台齐备。产物上传成功不自动推进 latest，上传失败也不构成阻止独立 latest 变更的条件。两类变更可以同一次提交，但各自根据本次明确选择决定内容；只发布旧版本或补平台产物不隐式改变 latest。
 
@@ -170,7 +172,7 @@ latest 指向的版本没有当前平台产物时，消费按缺包失败，不�
 
 同包名、版本和平台继续允许同名替换。先更新附件、后提交摘要可能短暂不一致；摘要不符直接失败，不导入不匹配字节。不增加不可变修订、备份回滚、跨附件事务或内容寻址。元数据 push 失败使任务失败，已经上传的附件不回滚；允许有限重试，仍未确认时显式重跑。重跑不能只因附件存在就跳过摘要登记，必须补齐有效的提交。
 
-重跑以明确选定的原构建结果为输入，重新生成待上传归档并计算实际上传字节的 SHA256；不要求重新打包与上次产生完全相同的归档字节。同名附件即使已经存在，也重新完成本次上传，成功后才登记与本次字节对应的摘要；不能仅凭附件存在、名称或大小认定完成，也不能把旧附件配上重新打包后的摘要。重跑从本次启动时获取的仓库状态更新成功项，保留无关记录；确认元数据 push 成功才报告本次相应发布成功。若没有可用的原构建结果则明确失败，不从另一次构建猜测输入；不另存发布进度数据库，也不恢复旧附件。
+重跑从触发分支最新源码快照和有效缓存重新判断，不依赖单次完整成功 run。归档不重新打包；完整 JSON 相同跳过，未确认变化项按删除重传规则恢复。GitHub-only 项确认 JSON 后继续清理过期 Gitee 副本，不增加恢复数据库。
 
 ### 设计归属与实施范围
 

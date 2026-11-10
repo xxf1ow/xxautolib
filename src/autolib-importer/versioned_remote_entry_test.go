@@ -2,7 +2,6 @@ package main
 
 import (
 	"archive/tar"
-	"crypto/sha256"
 	"fmt"
 	"net/http"
 	"os"
@@ -21,6 +20,7 @@ type versionedRemoteEntry struct {
 	status                              map[string]int
 	redirects                           map[string]string
 	requests                            map[string]int
+	extraDownloads                      map[string]string
 	offline                             bool
 	apiRequests                         int
 	stopHTTP                            func()
@@ -38,7 +38,7 @@ func remoteEntryTarget(t *testing.T, host, repository, encodedTag string) *versi
 	}
 	e := &versionedRemoteEntry{f: f, host: host, trace: filepath.Join(f.root, "git.trace"), assets: map[string]string{}, status: map[string]int{}, redirects: map[string]string{}, requests: map[string]int{}}
 	e.downloadPath = "/" + repository + "/releases/download/" + encodedTag + "/"
-	e.repo = snapshotRepository(t, metadataRepositoryCase{Files: map[string]string{".autolib-repository.json": `{"type":"xxautolib-artifacts","schema":1,"upstream":"https://github.com/xxf1ow/xxautolib"}`}})
+	e.repo = snapshotRepository(t, metadataRepositoryCase{Files: map[string]string{".autolib-repository.json": `{"type":"xxautolib-artifacts","schema":2,"upstream":"https://github.com/xxf1ow/xxautolib"}`}})
 	redirect := "url.file://" + filepath.ToSlash(e.repo) + ".insteadOf=https://" + host + "/" + repository + ".git"
 	t.Setenv("GIT_CONFIG_PARAMETERS", "'"+strings.ReplaceAll(redirect, "'", "'\\''")+"'")
 	t.Setenv("GIT_TRACE", e.trace)
@@ -50,13 +50,21 @@ func remoteEntryTarget(t *testing.T, host, repository, encodedTag string) *versi
 		if r.Header.Get("Authorization") != "" {
 			t.Error("consumer sent credentials")
 		}
-		if r.Host != host || !strings.HasPrefix(r.URL.EscapedPath(), e.downloadPath) || strings.Contains(r.URL.Path, "/api/") || strings.Contains(r.URL.Path, "/contents/") {
+		downloadPath := e.downloadPath
+		if r.Host != host {
+			downloadPath = e.extraDownloads[r.Host]
+		}
+		if downloadPath == "" || !strings.HasPrefix(r.URL.EscapedPath(), downloadPath) || strings.Contains(r.URL.Path, "/api/") || strings.Contains(r.URL.Path, "/contents/") {
 			e.apiRequests++
 			t.Errorf("forbidden request: %s%s", r.Host, r.URL)
 			w.WriteHeader(500)
 			return
 		}
 		name := filepath.Base(r.URL.Path)
+		if status := e.status[r.Host+"/"+name]; status != 0 {
+			w.WriteHeader(status)
+			return
+		}
 		if status := e.status[name]; status != 0 {
 			w.WriteHeader(status)
 			return
@@ -78,7 +86,7 @@ func remoteEntryTarget(t *testing.T, host, repository, encodedTag string) *versi
 func (e *versionedRemoteEntry) asset(t *testing.T, path, body string) {
 	t.Helper()
 	e.assets[filepath.Base(path)] = body
-	putTestFile(t, filepath.Join(e.repo, filepath.FromSlash(path)+".sha256"), fmt.Sprintf("%x\n", sha256.Sum256([]byte(body))))
+	putTestFile(t, filepath.Join(e.repo, filepath.FromSlash(path)+".json"), deliveryFixture(t, body, "https://"+e.host+e.downloadPath+filepath.Base(path)))
 }
 
 func (e *versionedRemoteEntry) pkg(t *testing.T, name, version, dependencies string) string {
@@ -120,11 +128,15 @@ func (e *versionedRemoteEntry) counts(t *testing.T, clones int, want map[string]
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if len(e.requests) != len(want) {
+	actual := map[string]int{}
+	for address, n := range e.requests {
+		actual[filepath.Base(address)] += n
+	}
+	if len(actual) != len(want) {
 		t.Errorf("requests %v want %v", e.requests, want)
 	}
 	for asset, n := range want {
-		if e.requests[e.host+e.downloadPath+asset] != n {
+		if actual[asset] != n {
 			t.Errorf("requests %v want %v", e.requests, want)
 		}
 	}
@@ -165,7 +177,7 @@ func TestVersionedRemoteBootstrap(t *testing.T) {
 				}
 				toolAsset := f.toolAsset + ".tar.xz"
 				e.asset(t, "autolib-importer/"+toolAsset, tool)
-				digest := filepath.Join(e.repo, "autolib-importer", toolAsset+".sha256")
+				digest := filepath.Join(e.repo, "autolib-importer", toolAsset+".json")
 				success := slices.Contains([]string{"empty cache", "crlf digest", "padded digest"}, kind)
 				sum := readTestFile(t, digest)
 				switch kind {
@@ -174,12 +186,12 @@ func TestVersionedRemoteBootstrap(t *testing.T) {
 				case "padded digest":
 					putTestFile(t, digest, " \t\r\n"+sum+"\r\n\t ")
 				case "embedded whitespace digest":
-					putTestFile(t, digest, sum[:32]+" "+sum[32:])
+					putTestFile(t, digest, strings.Replace(sum, `"sha256":"`, `"sha256":" `, 1))
 				case "multiple digests":
 					putTestFile(t, digest, sum+sum)
 				}
 				if kind == "bad digest" {
-					putTestFile(t, digest, strings.Repeat("0", 64)+"\n")
+					putTestFile(t, digest, strings.Replace(sum, sum[strings.Index(sum, `"sha256":"`)+10:strings.Index(sum, `"sha256":"`)+74], strings.Repeat("0", 64), 1))
 				}
 				if kind == "invalid digest" {
 					putTestFile(t, digest, "invalid\n")
@@ -190,7 +202,7 @@ func TestVersionedRemoteBootstrap(t *testing.T) {
 					}
 				}
 				pkg := e.pkg(t, "demo", "1.0", "")
-				packageDigest := filepath.Join(e.repo, "demo", "1.0", pkg+".sha256")
+				packageDigest := filepath.Join(e.repo, "demo", "1.0", pkg+".json")
 				if kind == "crlf digest" {
 					putTestFile(t, packageDigest, strings.TrimSuffix(readTestFile(t, packageDigest), "\n")+"\r\n")
 				}
@@ -375,4 +387,85 @@ message(STATUS "selected_probe=${AUTOLIB_PACKAGE_VERSION_probe} directory=${AUTO
 	e.counts(t, 2, map[string]int{asset: 1})
 	requireNoPackageStaging(t, cache)
 	t.Log("pinned: remote_latest=3 selected=2 clone=2 ls-tree=2 package_downloads=1 Git_HTTP_delta=0 version_cache=unchanged")
+}
+
+func TestCMakeToolSourceFallback(t *testing.T) {
+	for _, kind := range []string{"http", "truncated", "size", "hash", "all failed", "semicolon"} {
+		t.Run(kind, func(t *testing.T) {
+			e := remoteEntry(t, "gitee.com")
+			name := e.f.toolAsset + ".tar.xz"
+			body := readTestFile(t, e.f.importerArchive(e.f.toolAsset, readTestFile(t, e.f.tool)))
+			e.asset(t, "autolib-importer/"+name, body)
+			e.assets["backup"] = body
+			switch kind {
+			case "http", "all failed":
+				e.status[name] = 404
+			case "truncated":
+				e.assets[name] = body[:len(body)/2]
+			case "size":
+				e.assets[name] = body + "extra"
+			case "hash":
+				e.assets[name] = strings.Repeat("x", len(body))
+			}
+			if kind == "all failed" {
+				e.status["backup"] = 500
+			}
+			first := "https://" + e.host + e.downloadPath + name
+			if kind == "semicolon" {
+				first += "?token=one;two"
+			}
+			putTestFile(t, filepath.Join(e.repo, "autolib-importer", name+".json"), deliveryFixture(t, body, first, "https://"+e.host+e.downloadPath+"backup"))
+			e.pkg(t, "demo", "1", "")
+			e.consumer(t, "demo@1", "")
+			out, err := e.configure(t)
+			if (err == nil) != (kind != "all failed") {
+				t.Fatalf("configure: %v\n%s", err, out)
+			}
+			if kind == "all failed" && (!strings.Contains(out, "source 1") || !strings.Contains(out, "source 2")) {
+				t.Fatalf("missing source diagnostics: %s", out)
+			}
+			e.mu.Lock()
+			backup := e.requests[e.host+e.downloadPath+"backup"]
+			e.mu.Unlock()
+			want := 1
+			if kind == "semicolon" {
+				want = 0
+			}
+			if backup != want {
+				t.Fatalf("backup requests=%d want=%d", backup, want)
+			}
+			requireNoPackageStaging(t, entryCache(e.f))
+		})
+	}
+}
+
+func TestCMakeTrustedToolFailureDoesNotFallback(t *testing.T) {
+	for _, kind := range []string{"member", "link", "identity"} {
+		t.Run(kind, func(t *testing.T) {
+			e := remoteEntry(t, "gitee.com")
+			f := e.f
+			member := archiveMember{Name: "unexpected", Body: "bad program"}
+			if kind == "link" {
+				member = archiveMember{Name: f.toolAsset, Link: "../outside", Kind: tar.TypeSymlink}
+			}
+			if kind == "identity" {
+				member = archiveMember{Name: "autolib-importer-wrong-platform", Body: "wrong identity"}
+			}
+			body := readTestFile(t, testArchive(t, []archiveMember{member}))
+			name := f.toolAsset + ".tar.xz"
+			e.asset(t, "autolib-importer/"+name, body)
+			e.assets["backup"] = body
+			putTestFile(t, filepath.Join(e.repo, "autolib-importer", name+".json"), deliveryFixture(t, body, "https://"+e.host+e.downloadPath+name, "https://"+e.host+e.downloadPath+"backup"))
+			e.consumer(t, "demo@1", "")
+			out, err := e.configure(t)
+			if err == nil {
+				t.Fatalf("invalid tool accepted: %s", out)
+			}
+			if _, err := os.Stat(filepath.Join(entryCache(f), f.toolAsset)); !os.IsNotExist(err) {
+				t.Fatal("bad archive committed tool")
+			}
+			e.counts(t, 1, map[string]int{name: 1})
+			requireNoPackageStaging(t, entryCache(f))
+		})
+	}
 }

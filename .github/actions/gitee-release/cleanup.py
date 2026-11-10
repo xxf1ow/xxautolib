@@ -63,7 +63,7 @@ def plan_cleanup(source: dict, cache: dict, repository: dict, assets: list[dict]
                 add(dict(kind='library', name=name, version=version, os=os_name, arch=arch))
     for record in cache['records'].values():
         add(record['key'])
-    for path in repository['existing_digests']:
+    for path in repository['existing_records']:
         parts = path.split('/')
         if len(parts) != 3:
             continue
@@ -87,7 +87,7 @@ def plan_cleanup(source: dict, cache: dict, repository: dict, assets: list[dict]
         name, path = asset['name'], metadata_path(asset)
         matches = gitee[name]
         cached = github[name + '.publication.json'] + github[name]
-        if not matches and not cached and path not in repository['existing_digests']:
+        if not matches and not cached and path not in repository['existing_records']:
             continue
         if (len(by_name[name]) != 1 or len(matches) > 1
                 or len(github[name]) > 1 or len(github[name + '.publication.json']) > 1
@@ -96,7 +96,7 @@ def plan_cleanup(source: dict, cache: dict, repository: dict, assets: list[dict]
             continue
         group = groups.setdefault(key['name'], {'items': [], 'latest': {}, 'remove_latest': False})
         group['items'].append({'key': key, 'name': name, 'github': cached, 'gitee': matches,
-                               'metadata_paths': [path] if path in repository['existing_digests'] else []})
+                               'metadata_paths': [path] if path in repository['existing_records'] else []})
     updates, removed, latest_errors = choose_source_latest(repository['existing_latest'], {}, source, set(), {})
     errors.update({name + '/package.toml': error for name, error in latest_errors.items()})
     for name in updates.keys() | removed:

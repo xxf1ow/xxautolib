@@ -1,8 +1,6 @@
 package main
 
 import (
-	"crypto/sha256"
-	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -35,7 +33,7 @@ func newRemotePrepareFixture(t *testing.T, hosts ...string) *remotePrepareFixtur
 
 func (f *remotePrepareFixture) digest(t *testing.T, name, version, asset string) string {
 	t.Helper()
-	return putTestFile(t, filepath.Join(f.root, name, version, asset+".sha256"), fmt.Sprintf("%x\n", sha256.Sum256([]byte(f.assets[asset]))))
+	return putTestFile(t, filepath.Join(f.root, name, version, asset+".json"), deliveryFixture(t, f.assets[asset], "https://"+f.host+"/owner/repo/releases/download/v1/"+asset))
 }
 
 func TestPrepareRemote(t *testing.T) {

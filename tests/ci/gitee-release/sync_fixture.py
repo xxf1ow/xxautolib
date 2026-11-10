@@ -23,7 +23,9 @@ class Remote:
         self.calls, self.downloads, self.uploads = [], [], []
         self.next_id = 100
         self.fail_entry = False
+        self.fail_deletes, self.fail_uploads = set(), set()
         self.lose_upload = None
+        self.pause_uploads = {}
         self.errors = []
         directory = Path(directory)
         self.cert = directory / 'fixture.pem'
@@ -56,11 +58,20 @@ class Remote:
                 if status is None:
                     self.close_connection = True
                     return
+                if self.command == 'POST' and isinstance(data, dict):
+                    pause = remote.pause_uploads.get(data.get('name'))
+                    if pause is not None:
+                        entered, release = pause
+                        entered.set()
+                        release.wait(10)
                 data = data if isinstance(data, bytes) else json.dumps(data).encode()
                 self.send_response(status)
                 self.send_header('Content-Length', str(len(data)))
                 self.send_header('Content-Type', 'application/json')
-                self.end_headers(); self.wfile.write(data)
+                try:
+                    self.end_headers(); self.wfile.write(data)
+                except (BrokenPipeError, ConnectionResetError, ssl.SSLEOFError):
+                    pass
             do_GET = do_POST = do_DELETE = serve
         self.server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
@@ -120,13 +131,16 @@ class Remote:
             if method == 'GET' and path == GT + '/releases/42/attach_files':
                 page = int(query['page'][0]); return 200, self.targets[(page-1)*100:page*100]
             if method == 'DELETE' and path.startswith(GT + '/releases/42/attach_files/'):
-                identity = int(path.rsplit('/', 1)[1]); self.targets[:] = [a for a in self.targets if a['id'] != identity]
+                identity = int(path.rsplit('/', 1)[1])
+                if next(a for a in self.targets if a['id'] == identity)['name'] in self.fail_deletes: return 403, {}
+                self.targets[:] = [a for a in self.targets if a['id'] != identity]
                 return 204, b''
             if method == 'POST' and path == GT + '/releases/42/attach_files':
                 parts = MultipartDecoder(body, headers['Content-Type']).parts
                 assert parts[0].content == TOKEN.encode()
                 part = parts[1]; name = part.headers[b'Content-Disposition'].decode().split('filename="')[1][:-1]
                 self.uploads.append(name)
+                if name in self.fail_uploads: return 403, {}
                 if self.fail_entry and name == 'autolib.cmake': return 403, {}
                 asset = self.add_target(name, part.content)
                 if self.lose_upload == name:

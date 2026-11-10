@@ -18,13 +18,13 @@
 
 `action.yml` 接收固定源码事实、有效缓存快照、仓库构建的 `autolib-ci` 路径，以及可信分支和 SHA，调用 `publish.py`。sync 模式从跨 run 累积的 Release 缓存按需下载；latest 模式仅更新显式指针，不查询缓存或清理附件。workflow 隔离安装依赖，仅交付步骤注入 `GITEE_TOKEN`；缓存子进程移除该凭据，只使用 GitHub 凭据。目标及运行前提见[开发指南](../../../docs/development.md#独立-gitee-发布)。
 
-`sync_scheduler.py` 拥有依赖顺序、并发上传和单份 Git 工作副本的锁。唯一跳过依据是 Gitee Git 摘要；相同摘要不下载归档，也不检查附件是否存在。需要更新时校验缓存下载字节，删除已有同名附件后上传，每项立即 commit/push 并确认。push 未确认后停止本轮后续元数据写入，不 rebase 或回滚已确认项。源码决定两端删除资格；未知身份和无法判定的声明保持原样。
+`sync_scheduler.py` 拥有依赖顺序、并发上传和单份 Git 工作副本的锁。唯一跳过依据是 Gitee Git 消费 JSON，三个字段语义相同才跳过；不下载或检查 Gitee 归档。普通变化项删除同名附件后上传，即时 commit/push 并确认；仅备用地址变化且 Gitee 字节已确认时只更新 JSON。超过 100000000 字节只登记 GitHub 地址，JSON 确认后删除精确受管 Gitee 旧副本，失败报告独立错误，重跑相同 JSON 仍清理。push 未确认后停写，不 rebase 或回滚；源码决定身份删除，未知内容保留。
 
-主进程在至少一个 importer 实际上传后交付一次入口，只修改上传副本中的唯一空来源赋值。工具摘要等待入口成功，库交付独立继续；入口无摘要。latest 保留合法已有值，不要求全平台成品齐备；同版本原地更新不保证整组产物原子切换。机制及限制由[缓存与同步设计](../../../docs/agent-notes/implemented/architecture/2026-11-09-release-cache-and-independent-gitee-sync.md)拥有。
+主进程在至少一个 importer 实际上传后交付一次入口，只修改上传副本中的唯一空来源赋值；工具 JSON 等待入口成功，库独立继续，仅工具地址变化不更新入口。入口无摘要，latest 不要求全平台齐备；同版本更新不保证整组原子切换。消费 JSON/schema 2 由[双来源设计](../../../docs/agent-notes/implemented/architecture/2026-11-09-dual-source-artifact-downloads.md)拥有，`.publication.json` 保持 CI 缓存原职责。
 
-`publish.py` 的 stdout 汇总逐项状态、覆盖缺口、独立操作错误和已确认元数据 HEAD；stderr 即时输出开始、跳过、重试、成功及失败事件，不输出凭据、响应正文或底层异常正文。缺缓存作为待构建缺口，实际上传、清理、入口或 Git 失败返回非零。
+`publish.py` 的 stdout 汇总 uploaded、metadata_only、skipped、failed、blocked、覆盖缺口、独立操作错误和已确认 HEAD；metadata_only 原因为 gitee_size_limit 或 delivery_metadata_changed。stderr 即时输出脱敏事件；缺缓存是待构建缺口，实际上传、清理、入口或 Git 失败返回非零。
 
-`publish_one` 拥有附件更新的唯一重试循环：首次使用本轮完整附件列表，重试重新查询并删除重传，不读取 Gitee 归档内容。临时网络错误、HTTP 408、429 和 5xx 触发最多十次额外重试，退避为 2、4、8、16、32、32、32、32、32、32 秒。认证、权限、输入或响应结构错误及未分类 409/422 直接失败；未确认删除不继续上传。
+`publish_one` 校验字节后调用 `attachment_upload`，在可终止子进程中执行附件更新的唯一重试循环：首次使用本轮完整附件列表，重试重新查询并删除重传，不读取 Gitee 归档内容。临时网络错误、HTTP 408、429 和 5xx 触发最多十次额外重试，间隔固定为 10 秒，全部请求与等待合计最多 600 秒；耗尽预算即杀死并回收子进程，不确认该项 JSON。认证、权限、输入或响应结构错误及未分类 409/422 直接失败；未确认删除不继续上传。Git 确认留在原协调器；超时的下轮恢复规则见[同步设计](../../../docs/agent-notes/implemented/architecture/2026-11-09-release-cache-and-independent-gitee-sync.md#gitee-摘要比较与逐项登记)。
 
 `gitee_api.py` 拥有 Header 认证、JSON 普通请求及每线程连接。附件查询、删除、上传不在 HTTP 层重试；其他读取保留有界重试，创建仓库或 Release 的未知写入不自动重放。附件上传借用 `gitee_release.py` 无装饰器的 `upload_asset_details`，保留其 multipart 字段、boundary 和文件句柄管理；参考本体不变。
 

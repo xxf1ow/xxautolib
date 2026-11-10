@@ -13,7 +13,7 @@ func TestGiteePrepare(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			f := newRemotePrepareFixture(t, "gitee.com")
 			o := f.options
-			digest := filepath.Join(f.root, "flann/1.0", f.flann+".sha256")
+			digest := filepath.Join(f.root, "flann/1.0", f.flann+".json")
 			switch kind {
 			case "digest":
 				f.assets[f.flann] = "changed"
@@ -22,7 +22,7 @@ func TestGiteePrepare(t *testing.T) {
 					t.Fatal(err)
 				}
 			case "mixed":
-				putTestFile(t, filepath.Join(f.root, "flann/1.0/flann-1.0-any-any.tar.zst.sha256"), strings.Repeat("a", 64)+"\n")
+				putTestFile(t, filepath.Join(f.root, "flann/1.0/flann-1.0-any-any.tar.zst.json"), deliveryFixture(t, "fixture", "https://gitee.com/owner/repo/releases/download/v1/flann-1.0-any-any.tar.zst"))
 			case "download-error":
 				f.status[f.flann] = 404
 			case "corrupt":

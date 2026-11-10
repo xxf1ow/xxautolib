@@ -53,9 +53,20 @@ class CleanupTests(unittest.TestCase):
         self.fixture.make_remote()
         return self.fixture.open()
 
+    def test_github_only_source_removal_cleans_json_and_latest(self):
+        repo = self.open()
+        present = source_facts({'queue': package({'1': ['any-any']})})
+        path = 'queue/1/queue-1-any-any.tar.zst.json'
+        self.assertFalse(self.cleanup.plan_cleanup(present, cache_facts(), repo, [])['groups'])
+        plan = self.cleanup.plan_cleanup(source_facts({}), cache_facts(), repo, [])
+        self.cleanup.execute_cleanup(plan, delete_cache=lambda key: self.fail('no cache exists'),
+            api=CleanupAPI([]), release_id=None, repository=repo, git_lock=threading.Lock())
+        self.assertNotIn(path, repo['existing_records'])
+        self.assertNotIn('queue', repo['existing_latest'])
+
     def test_deleted_version_and_orphan_asset_are_removed_with_latest_repair(self):
         repo = self.open({'b/package.toml': b'latest="2"\n',
-                          'b/2/b-2-any-any.tar.zst.sha256': b'b' * 64 + b'\n'})
+                          'b/2/b-2-any-any.tar.zst.json': repositories.record_bytes('b' * 64)})
         assets = [{'id': 1, 'name': 'b-2-any-any.tar.zst'}, {'id': 2, 'name': 'gone-1-any-any.tar.zst'},
                   {'id': 3, 'name': 'unknown-1-any-any.tar.zst', 'content': b'preserve'},
                   {'id': 4, 'name': 'autolib.cmake'}]
@@ -73,7 +84,7 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual({a['name'] for a in api.assets.values()}, {'unknown-1-any-any.tar.zst', 'autolib.cmake'})
         self.assertEqual(api.assets[3]['content'], b'preserve')
         tree = repositories.git(self.fixture.bare, 'ls-tree', '-r', '--name-only', 'HEAD').decode()
-        self.assertNotIn('b/2/b-2-any-any.tar.zst.sha256', tree)
+        self.assertNotIn('b/2/b-2-any-any.tar.zst.json', tree)
         self.assertEqual(repositories.git(self.fixture.bare, 'show', 'HEAD:b/package.toml'), b'latest = "1"\n')
         self.assertEqual(repositories.git(self.fixture.bare, 'rev-list', '--count', before + '..HEAD').strip(), b'1')
         self.assertIn(key, deleted)
@@ -89,10 +100,10 @@ class CleanupTests(unittest.TestCase):
                 self.cleanup.execute_cleanup(plan, delete_cache=lambda key: self.fail('cache deletion'), api=api,
                                              release_id=7, repository=repo, git_lock=threading.Lock())
                 self.assertIn(1, api.assets)
-                self.assertIn('queue/1/queue-1-any-any.tar.zst.sha256', repo['existing_digests'])
+                self.assertIn('queue/1/queue-1-any-any.tar.zst.json', repo['existing_records'])
 
     def test_platform_removal_to_any_is_exact(self):
-        repo = self.open({'b/1/b-1-linux-x86_64.tar.zst.sha256': b'b' * 64 + b'\n'})
+        repo = self.open({'b/1/b-1-linux-x86_64.tar.zst.json': repositories.record_bytes('b' * 64)})
         assets = [{'id': 1, 'name': 'b-1-linux-x86_64.tar.zst'}, {'id': 2, 'name': 'b-1-any-any.tar.zst'}]
         source = source_facts({'queue': package({'1': ['any-any']}), 'b': package({'1': ['any-any']})})
         plan = self.cleanup.plan_cleanup(source, cache_facts(), repo, assets)
@@ -110,13 +121,13 @@ class CleanupTests(unittest.TestCase):
         result = self.cleanup.execute_cleanup(plan, delete_cache=lambda key: None, api=api, release_id=7,
                                              repository=repo, git_lock=threading.Lock())
         self.assertTrue(result['errors'])
-        self.assertIn('queue/1/queue-1-any-any.tar.zst.sha256', repo['existing_digests'])
+        self.assertIn('queue/1/queue-1-any-any.tar.zst.json', repo['existing_records'])
         api.fail = None
         plan = self.cleanup.plan_cleanup(source, cache_facts(), repo, list(api.assets.values()))
         result = self.cleanup.execute_cleanup(plan, delete_cache=lambda key: None, api=api, release_id=7,
                                              repository=repo, git_lock=threading.Lock())
         self.assertFalse(result['errors'])
-        self.assertFalse(repo['existing_digests'])
+        self.assertFalse(repo['existing_records'])
         self.assertNotIn('queue', repo['existing_latest'])
 
     def test_failed_orphan_deletion_preserves_identity_for_next_run(self):
@@ -163,7 +174,7 @@ class CleanupTests(unittest.TestCase):
                                              repository=repo, git_lock=threading.Lock())
         self.assertTrue(result['errors'])
         self.assertEqual(set(api.assets), {1, 2})
-        self.assertIn('queue/1/queue-1-any-any.tar.zst.sha256', repo['existing_digests'])
+        self.assertIn('queue/1/queue-1-any-any.tar.zst.json', repo['existing_records'])
 
 
 if __name__ == '__main__':

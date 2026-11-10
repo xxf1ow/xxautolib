@@ -10,10 +10,10 @@ import tempfile
 import tomllib
 from urllib.parse import quote
 
-from publication_rules import IMPORTERS, PLATFORMS, check_case, component, latest_mapping
+from publication_rules import IMPORTERS, PLATFORMS, check_case, component, latest_mapping, validate_delivery_record, _object
 
 
-IDENTITY = {'type': 'xxautolib-artifacts', 'schema': 1, 'upstream': 'https://github.com/xxf1ow/xxautolib'}
+IDENTITY = {'type': 'xxautolib-artifacts', 'schema': 2, 'upstream': 'https://github.com/xxf1ow/xxautolib'}
 README = """# xxautolib 预编译产物发布仓库
 
 本仓库发布和分发 [xxautolib](https://github.com/xxf1ow/xxautolib) 的预编译第三方库与 autolib-importer，供下游 CMake 工程直接获取和使用。
@@ -22,7 +22,7 @@ README = """# xxautolib 预编译产物发布仓库
 
 源码仓库维护构建配方，并通过原生构建流程编译、安装和验证第三方库。CI 生成库和工具归档，发布流程核对后原样上传，不重新编译或打包。本发布仓库不编译第三方源码。
 
-Git 默认分支保存版本选择、独立 SHA256 摘要和仓库身份；入口、库与工具归档通过同仓库固定 Release 分发。源码、构建配置及使用说明见 [xxautolib](https://github.com/xxf1ow/xxautolib)。
+Git 默认分支保存版本选择、交付 JSON 和仓库身份；JSON 保存归档大小、SHA256 与有序下载地址，普通归档优先 Gitee、失败后尝试 GitHub，超过 100000000 字节的归档仅从 GitHub 下载。入口通过本仓库固定 Release 分发。源码、构建配置及使用说明见 [xxautolib](https://github.com/xxf1ow/xxautolib)。
 
 ## 使用
 
@@ -102,8 +102,8 @@ def _repository_url(config):
 def _kind(name):
     if name in {'README.md', 'LICENSE', '.autolib-repository.json'}:
         return 'identity'
-    if name in {'autolib-importer/' + value + '.sha256' for value in IMPORTERS.values()}:
-        return 'digest'
+    if name in {'autolib-importer/' + value + '.json' for value in IMPORTERS.values()}:
+        return 'record'
     parts = name.split('/')
     if len(parts) in {2, 3}:
         package = component(parts[0])
@@ -112,9 +112,9 @@ def _kind(name):
             return 'latest'
         if len(parts) == 3:
             version = component(parts[1])
-            if parts[2] in {package + '-' + version + '-' + platform + '.tar.zst.sha256'
+            if parts[2] in {package + '-' + version + '-' + platform + '.tar.zst.json'
                             for platform in PLATFORMS | {'any-any'}}:
-                return 'digest'
+                return 'record'
     raise ValueError('unexpected metadata repository path')
 
 
@@ -158,22 +158,19 @@ def _validate(path, paths):
         if (not isinstance(identity, dict) or type(identity.get('schema')) is not int
                 or any(type(identity.get(key)) is not type(value) or identity[key] != value for key, value in IDENTITY.items())):
             raise ValueError('metadata repository identity mismatch')
-        existing, digests = {}, {}
+        existing, records = {}, {}
         for name, kind in kinds.items():
             if kind == 'latest':
                 data = tomllib.loads((path / name).read_text(encoding='utf-8'))
                 if set(data) != {'latest'}:
                     raise ValueError('package.toml must only contain latest')
                 existing[name.split('/')[0]] = data['latest']
-            elif kind == 'digest':
-                content = (path / name).read_bytes()
-                if not re.fullmatch(rb'[0-9a-f]{64}\n', content):
-                    raise ValueError('metadata digest requires lowercase SHA256 and LF')
-                digests[name] = content[:-1].decode('ascii')
+            elif kind == 'record':
+                records[name] = validate_delivery_record(json.loads((path / name).read_bytes(), object_pairs_hook=_object))
         latest_mapping(existing)
     except (UnicodeError, json.JSONDecodeError, tomllib.TOMLDecodeError):
         raise ValueError('invalid metadata identity or latest') from None
-    return existing, digests
+    return existing, records
 
 
 def _push(repository, head):
@@ -182,7 +179,7 @@ def _push(repository, head):
 
 
 def open_repository(config: dict, api, work_root: Path) -> dict:
-    """创建或克隆唯一工作副本，返回 path/branch/已确认 head、latest 和摘要。
+    """创建或克隆唯一工作副本，返回 path/branch/已确认 head、latest 和交付记录。
 
     仅查询明确 404 才建库；新库初始化并确认 push 后返回。已有非法树在 Release 写入前失败，
     不认领或清理已有内容。工作目录已存在、API/Git 错误或非法元数据均失败。
@@ -228,26 +225,27 @@ def open_repository(config: dict, api, work_root: Path) -> dict:
         _git(['add', '--', *selected], path=path)
         _git(['commit', '-m', 'Initialize xxautolib artifact repository', '--', *selected], path=path)
         paths = _tree(path)
-    existing, digests = _validate(path, paths)
+    existing, records = _validate(path, paths)
     head = _git(['rev-parse', 'HEAD'], path=path).decode().strip()
-    repository = {'path': path, 'branch': branch, 'head': head, 'existing_latest': existing, 'existing_digests': digests, '_auth': auth, '_paths': paths}
+    repository = {'path': path, 'branch': branch, 'head': head, 'existing_latest': existing, 'existing_records': records, '_auth': auth, '_paths': paths}
     if created:
         _push(repository, head)
     return repository
 
 
-def commit_metadata(repository: dict, digests: dict[str, str], latest: dict[str, str], *,
+def commit_metadata(repository: dict, records: dict[str, dict], latest: dict[str, str], *,
                     remove_paths: tuple[str, ...] = ()) -> str:
-    """一次提交并 push 选中摘要和 latest，确认后返回 SHA；未选择文件保持原样。
+    """一次提交并 push 选中交付记录和 latest，确认后返回 SHA；未选择文件保持原样。
 
     无变化返回已确认 SHA。非法目标在写文件前失败；push 未确认则抛错并保留旧 confirmed head，
     不回滚附件或伪报元数据已发布。调用者不得在失败后继续复用本次副本发布。
     """
     path, updates = repository['path'], {}
-    for name, digest in digests.items():
-        if _kind(name) != 'digest' or not isinstance(digest, str) or not re.fullmatch(r'[0-9a-f]{64}', digest):
-            raise ValueError('invalid selected metadata digest')
-        updates[name] = (digest + '\n').encode()
+    for name, record in records.items():
+        if _kind(name) != 'record':
+            raise ValueError('invalid selected metadata path')
+        validate_delivery_record(record)
+        updates[name] = (json.dumps(record, sort_keys=True, indent=2, ensure_ascii=False) + '\n').encode('utf-8')
     latest_mapping(latest)
     for name, version in latest.items():
         target = name + '/package.toml'
@@ -255,14 +253,15 @@ def commit_metadata(repository: dict, digests: dict[str, str], latest: dict[str,
             raise ValueError('invalid selected latest path')
         updates[target] = ('latest = "' + version + '"\n').encode()
     if (len(set(remove_paths)) != len(remove_paths) or set(remove_paths) & set(updates)
-            or any(_kind(name) not in {'digest', 'latest'} for name in remove_paths)):
+            or any(_kind(name) not in {'record', 'latest'} for name in remove_paths)):
         raise ValueError('invalid or conflicting metadata removal')
     check_case(repository['_paths'] + list(updates) + list(remove_paths))
     targets = {name: _regular_target(path, name) for name in [*updates, *remove_paths]}
     changed = []
     for name, content in updates.items():
         target = targets[name]
-        if target.exists() and target.read_bytes() == content:
+        if target.exists() and (target.read_bytes() == content or
+                name in records and repository['existing_records'].get(name) == records[name]):
             continue
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(content)
@@ -279,11 +278,11 @@ def commit_metadata(repository: dict, digests: dict[str, str], latest: dict[str,
     head = _git(['rev-parse', 'HEAD'], path=path).decode().strip()
     _push(repository, head)
     confirmed_latest = {**repository['existing_latest'], **latest}
-    confirmed_digests = {**repository['existing_digests'], **digests}
+    confirmed_records = {**repository['existing_records'], **records}
     for name in remove_paths:
-        confirmed_digests.pop(name, None)
+        confirmed_records.pop(name, None)
         if _kind(name) == 'latest':
             confirmed_latest.pop(name.split('/')[0], None)
-    repository.update(head=head, existing_latest=confirmed_latest, existing_digests=confirmed_digests,
+    repository.update(head=head, existing_latest=confirmed_latest, existing_records=confirmed_records,
                       _paths=sorted((set(repository['_paths']) | set(updates)) - set(remove_paths)))
     return head

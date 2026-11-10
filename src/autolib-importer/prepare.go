@@ -11,6 +11,7 @@ import (
 )
 
 type prepareOptions struct {
+	Context                                                   context.Context
 	RemoteRoot, CacheRoot, OS, Arch, ResultPath, MetadataRoot string
 	Packages                                                  []string
 	Output                                                    io.Writer
@@ -20,16 +21,28 @@ var errMetadataRequired = errors.New("metadata snapshot required")
 
 // Writes to one cache root must be serialized by the caller. Completed directories are authoritative.
 func prepare(o prepareOptions) (packages []preparedPackage, err error) {
+	if o.Context == nil {
+		o.Context = context.Background()
+	}
 	if o.ResultPath != "" {
 		if err := os.Remove(o.ResultPath); err != nil && !os.IsNotExist(err) {
 			return nil, err
 		}
 	}
 	defer func() {
+		if err == nil {
+			err = o.Context.Err()
+		}
+		if err != nil {
+			packages = nil
+		}
 		if err != nil && o.ResultPath != "" {
 			_ = os.Remove(o.ResultPath)
 		}
 	}()
+	if err := o.Context.Err(); err != nil {
+		return nil, err
+	}
 	if err := validatePlatform(o.OS, o.Arch); err != nil {
 		return nil, err
 	}
@@ -58,7 +71,6 @@ func prepare(o prepareOptions) (packages []preparedPackage, err error) {
 	chains := map[string]string{}
 	state := map[string]uint8{}
 	latest := map[string]string{}
-	var remote metadataSource
 	requireMetadata := func() error {
 		if o.RemoteRoot == "" {
 			return fmt.Errorf("missing package input: remote source is disabled")
@@ -73,11 +85,13 @@ func prepare(o prepareOptions) (packages []preparedPackage, err error) {
 		if !info.IsDir() {
 			return fmt.Errorf("metadata snapshot is not a directory: %s", o.MetadataRoot)
 		}
-		remote, err = parseMetadataSource(o.RemoteRoot)
-		return err
+		return validateMetadataSource(o.RemoteRoot)
 	}
 	var visit func(packageRef, []string, bool) error
 	visit = func(ref packageRef, chain []string, root bool) (visitErr error) {
+		if err := o.Context.Err(); err != nil {
+			return err
+		}
 		bare := ref.Version == ""
 		if bare {
 			version, err := readPackageLatest(cache, ref.Name)
@@ -137,11 +151,11 @@ func prepare(o prepareOptions) (packages []preparedPackage, err error) {
 			if err := requireMetadata(); err != nil {
 				return err
 			}
-			asset, identity, err := metadataPackageAsset(o.MetadataRoot, remote, id)
+			asset, identity, err := metadataPackageAsset(o.MetadataRoot, id)
 			if err != nil {
 				return err
 			}
-			candidate, err = stageRemotePackage(cache, asset, identity, o.Output)
+			candidate, err = stageRemotePackage(o.Context, cache, asset, identity, o.Output)
 			if err != nil {
 				return err
 			}
@@ -166,6 +180,9 @@ func prepare(o prepareOptions) (packages []preparedPackage, err error) {
 			}
 		}
 		// A missing root stays staged until its dependencies succeed, so a stale latest cannot revive on failure.
+		if err := o.Context.Err(); err != nil {
+			return err
+		}
 		if !found {
 			if err := commitPreparedPackage(candidate, directory); err != nil {
 				return err
@@ -181,11 +198,17 @@ func prepare(o prepareOptions) (packages []preparedPackage, err error) {
 		}
 	}
 	for _, p := range packages {
+		if err := o.Context.Err(); err != nil {
+			return nil, err
+		}
 		if version, ok := latest[p.Name]; ok {
 			if err := writePackageLatest(cache, p.Name, version); err != nil {
 				return nil, err
 			}
 		}
+	}
+	if err := o.Context.Err(); err != nil {
+		return nil, err
 	}
 	if err := writePreparedResult(o.ResultPath, packages); err != nil {
 		return nil, err
@@ -193,7 +216,7 @@ func prepare(o prepareOptions) (packages []preparedPackage, err error) {
 	return packages, nil
 }
 
-func stageRemotePackage(cache string, asset releaseAsset, id packageIdentity, output io.Writer) (candidate string, err error) {
+func stageRemotePackage(ctx context.Context, cache string, asset releaseAsset, id packageIdentity, output io.Writer) (candidate string, err error) {
 	work, err := os.MkdirTemp(cache, ".remote-")
 	if err != nil {
 		return "", err
@@ -201,11 +224,14 @@ func stageRemotePackage(cache string, asset releaseAsset, id packageIdentity, ou
 	defer func() { err = errors.Join(err, removePackageStaging(work)) }()
 	archive := filepath.Join(work, asset.Name)
 	progress := newDownloadProgress(output, id.Name+"@"+id.Version)
-	if err := downloadReleaseAsset(context.Background(), nil, asset, archive, progress); err != nil {
+	if err := downloadReleaseAsset(ctx, nil, asset, archive, progress); err != nil {
 		return "", err
 	}
 	fmt.Fprintf(progress.output, "-- [AutoLib] Download complete: %s\n", progress.ref)
 	fmt.Fprintf(progress.output, "-- [AutoLib] Extracting %s: ...\n", progress.ref)
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	candidate, err = extractPackage(archive, cache, id)
 	if err == nil {
 		fmt.Fprintf(progress.output, "-- [AutoLib] Extraction complete: %s\n", progress.ref)

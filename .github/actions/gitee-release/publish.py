@@ -14,11 +14,10 @@ import time
 from typing import Mapping
 import unicodedata
 
+from attachment_upload import ATTACHMENT_RETRY_DELAYS, _log, upload_attachment
 from gitee_api import GiteeAPI, GiteeAPIError
 from metadata_repository import open_repository
 from publication_rules import _object, metadata_path
-
-ATTACHMENT_RETRY_DELAYS = (2, 4, 8, 16, 32, 32, 32, 32, 32, 32)
 
 
 def _read_json(value):
@@ -122,10 +121,6 @@ def cache_candidates(source, cache):
     return assets
 
 
-def _log(event, name=None, **fields):
-    print(json.dumps({'event': event, **({'asset': name} if name else {}), **fields}, sort_keys=True), file=sys.stderr, flush=True)
-
-
 def publish_one(api: GiteeAPI, release_id: int, asset: dict, initial_matches: list[dict], *,
                 fetch_asset, confirm_item) -> dict:
     """按需固定并校验本地字节，删除重传；确认回调成功后才报告 uploaded。
@@ -136,7 +131,9 @@ def publish_one(api: GiteeAPI, release_id: int, asset: dict, initial_matches: li
     try:
         _log('start', name)
         digest_path = metadata_path(asset)
+        _log('cache_download_start', name)
         file = Path(fetch_asset(asset))
+        _log('cache_download_complete', name)
         if file.is_symlink() or file.is_junction() or not stat.S_ISREG(file.lstat().st_mode):
             raise ValueError('asset must remain a regular file')
         with tempfile.TemporaryDirectory(prefix='autolib-upload-', dir=file.parent) as directory:
@@ -147,22 +144,7 @@ def publish_one(api: GiteeAPI, release_id: int, asset: dict, initial_matches: li
                 digest = hashlib.file_digest(stream, 'sha256').hexdigest()
             if snapshot.stat().st_size != asset['size'] or digest != asset['sha256']:
                 raise ValueError('downloaded asset size or digest mismatch')
-            for attempt in range(len(ATTACHMENT_RETRY_DELAYS) + 1):
-                try:
-                    matches = initial_matches if attempt == 0 else [a for a in api.target_assets(release_id) if a['name'] == name]
-                    if (len(matches) > 1 or matches and
-                            (type(matches[0].get('id')) is not int or matches[0]['id'] <= 0)):
-                        raise GiteeAPIError('select_asset', reason='invalid_or_ambiguous_asset')
-                    if matches:
-                        api.delete_asset(release_id, matches[0]['id'])
-                    api.upload_asset(release_id, asset, snapshot)
-                    break
-                except GiteeAPIError as error:
-                    if not error.retryable or attempt == len(ATTACHMENT_RETRY_DELAYS):
-                        raise
-                    delay = ATTACHMENT_RETRY_DELAYS[attempt]
-                    _log('retry', name, retry=attempt + 1, delay_seconds=delay, **error.diagnostic())
-                    time.sleep(delay)
+            upload_attachment(api, release_id, asset, snapshot, initial_matches)
             operation = 'metadata_commit'
             confirmed = confirm_item(asset)
             if confirmed is False:
@@ -190,7 +172,7 @@ def list_assets(api, release_id):
 
 def publish_release(config: dict) -> dict:
     """单个进程拥有 Git 副本；并发上传，每项立即提交，push 未确认即停止写入。"""
-    result = {'selected': 0, 'uploaded': 0, 'skipped': 0, 'failed': 0, 'items': [], 'coverage': {}, 'errors': {},
+    result = {'selected': 0, 'uploaded': 0, 'metadata_only': 0, 'skipped': 0, 'failed': 0, 'items': [], 'coverage': {}, 'errors': {},
               'metadata_committed': False, 'metadata_commit': None}
     api, repository = GiteeAPI(config['gitee_token'], config['repository']), None
     operation = 'repository'
