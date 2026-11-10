@@ -29,6 +29,8 @@ Status: implemented
 
 ### 两种 JSON 的职责
 
+[构建缓存记录迁入 Gitee 独立分支](../../proposed/architecture/2026-11-10-gitee-build-cache-records.md)提议调整 publication 记录的位置；本文继续拥有消费 JSON、来源顺序、阈值及下载规则。
+
 GitHub 缓存中的 `<归档名>.publication.json` 继续描述生产身份、原始来源、输入和依赖指纹、验证证据及绑定的归档字节。它属于 CI，不直接交给消费者，也不写入 Gitee 完成状态。
 
 Gitee Git 中的消费者记录为 `<归档名>.json`：库位于 `<包名>/<版本>/<归档名>.json`，工具位于 `autolib-importer/<归档名>.json`。包级 `<包名>/package.toml` 仍只保存 latest。独立 `autolib.cmake` 没有交付 JSON，也没有摘要；仍只随本轮实际上传成功的 importer 更新一次。
