@@ -197,6 +197,20 @@ func TestCIFingerprintUniversalAndTools(t *testing.T) {
 			t.Fatalf("entry invalidated library %s", key)
 		}
 	}
+	writeCIFixture(t, root, "src/autolib-importer/main.go", "package main\n// protocol changed\n")
+	importer, err := computeCIFingerprints(root, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key, value := range entry.Fingerprints {
+		if strings.HasPrefix(key, "autolib-importer-") {
+			if value == importer.Fingerprints[key] {
+				t.Fatal("importer source did not invalidate tool")
+			}
+		} else if value != importer.Fingerprints[key] {
+			t.Fatalf("importer source invalidated library %s", key)
+		}
+	}
 	var config map[string]any
 	data, err := os.ReadFile(filepath.Join(root, ".github/ci-tools.json"))
 	if err != nil {

@@ -71,11 +71,11 @@ Git 主来源复用 `git/<包名>/<版本>/`，资源复用 `git/_resources/<包
 
 源码及本地入口内置远端地址为空；发布入口在上传副本内带实际 Release 地址。调用方不能通过 `AUTOLIB_LOCAL_ROOT`、`AUTOLIB_REMOTE_ROOT` 普通变量、cache 变量或环境变量覆盖来源。完整工具和精确闭包命中时不访问 Git 或 HTTP；只有必需输入缺失且入口内置地址非空时才获取元数据或下载。已有损坏候选立即失败，不自动覆盖；不回退系统库、源码编译或旧格式。直接内部调用参数见 [CLI](../src/autolib-importer/main.go)。
 
-远程使用者先将已发布的单个 `autolib.cmake` 下载到专用可写目录，例如不纳入版本控制的 `3rdparty/`，再 include 并调用 `autolib_import`。入口下载 URL 可为 HTTP(S) 或 `file://`；下载文件不会携带原目录的工具或包，入口也不根据下载 URL 推导来源。远端工具和包沿用 Git 元数据、SHA256 和安全解包校验；完整缓存可离线复用，缺输入时远程入口仍可能尝试联网。严格禁止联网须使用内置地址为空的入口，不提供离线开关。同根写入由调用方串行，目录中的既有文件不会自动清理。
+远程使用者将发布的 `autolib.cmake` 放入专用可写、忽略版本控制的目录，再按公共入口导入。工具和包读取JSON 中的完整地址并校验大小和摘要，完整缓存可离线复用；缺输入仍可联网，同根写入须串行。入口下载方式及实际根验证见[下载验证](testing.md#release-下载验证)。
 
 已有目录核对五行包头和导入文件，adapter 使用标准发现命令或直接暴露头文件，不预检查完整载荷或逐文件散列；内容校验不认证来源，工具及包内 CMake 必须可信。缓存包和 latest 不自动追随远端，精确请求不改 latest；删除缓存 latest 指向的版本目录后，裸名请求重新发现远端选择，不更新无关缓存。刷新前保护修改，只处理入口缓存的 `<包名>/<版本>/`，不删共享依赖；损坏包不是缺包，必须明确处理而非自动重选。FLANN 的包依赖仅 lz4，OpenMP、C++ ABI 和系统运行库由消费环境满足。
 
-每次成功导入都打印 `-- [Info] [<消费目标>] <库名> : <版本>`，包含传递依赖、缓存包和重复调用，单次调用内去重。仅实际下载和解压打印进度及成功消息；缓存复用、入口和工具获取不打印过程。进度模式及短版本规则见[统一交付设计](agent-notes/proposed/architecture/2026-10-29-versioned-artifact-delivery.md#包导入消息)。
+成功导入消息包含传递依赖、缓存包和重复调用，单次调用内去重。包进度按 JSON 大小显示来源与百分比，换源清零；缓存及工具成功获取静默，工具换源打印脱敏诊断。消息格式、计时与失败边界见[双来源设计](agent-notes/implemented/architecture/2026-11-09-dual-source-artifact-downloads.md)。
 
 ## CI 开发与运行
 
@@ -89,7 +89,7 @@ Git 主来源复用 `git/<包名>/<版本>/`，资源复用 `git/_resources/<包
 
 [同步流水线](../.github/workflows/publish-artifacts.yml)提供 `sync/latest` 手动入口，同仓库 `Representative releases` 整体成功后自动触发 `sync`。配置 `GITEE_REPOSITORY`、`GITEE_RELEASE_TAG` 和 `GITEE_TOKEN`，缺失或非法即失败。同步任务开始执行后解析普通分支最新 SHA 并只 checkout 一次，不以触发构建的旧 SHA 清理；允许可信 fork，拒绝 tag、PR ref 及跨仓库构建事件。
 
-`sync` 从 `autolib-cache` 读取全部当前有效成品，逐项同步和清理；不需要 run/attempt 或成品 Artifacts。缺缓存只报告待构建，保留源码仍存在的 Gitee 成品。`latest` 要求非空 JSON 映射，使用同一源码事实校验版本，但不查询缓存、清理附件或交付入口。合法已有 latest 不自动推进，首次初始化及删除修复可指向尚缺某平台成品的版本，不能据此认为裸名消费已可用。
+`sync` 复用全部有效缓存并按源码清理；缺缓存只报告待构建，失效不等于删除。超限包只登记GitHub来源，JSON 确认后清理同名 Gitee 旧副本。`latest` 仅校验显式映射，不查询缓存、清理附件或交付入口；合法指针不保证全平台齐备。记录与恢复规则见下述 Action 说明。
 
 同步通过仓库 SDK 编译宿主 builder/autolib-ci，只进行源码描述、指纹和缓存操作；不编译库/importer 或重打包。源码描述及依赖安装不接收 Gitee token，缓存 helper 移除该凭据。输入、重试、入口与结果接口见[Action 说明](../.github/actions/gitee-release/UPSTREAM.md#gitee-独立同步适配)。
 

@@ -82,15 +82,15 @@ build/tools/gitee-sync-venv/Scripts/python.exe -m unittest discover -s tests/ci/
 
 按修改所有者替换 `-p` 文件名，不重复无关测试。HTTP 夹具不访问真实平台；Git 测试只用本地临时裸库。`test_cache_sync_lifecycle.py` 使用 OpenSSL、本地 TLS 代理、仓库 SDK 编译的真实 CLI 和 builder 归档，覆盖多 run 累积、零变化零归档传输、同版本链式失效、依赖顺序、版本/平台/整包清理及响应丢失和入口失败后的恢复。代理只接受固定测试域名，不转发真实请求；测试证书、源码、原生轻量产物和编译缓存均位于 `build/`。在上述隔离源码根选择该文件运行，Linux/Darwin 需要 C++ 编译器及 `ar`。
 
-最后阶段跨模块验证使用仓库 SDK 对 `./src/autolib-builder ./src/autolib-ci ./src/autolib-importer` 执行 `test -mod=readonly -p=1 -parallel=1 -count=1`，同步目录执行 `-p 'test_*.py'`。平台脚本按 `tests/ci/test_*preparation.py` 及 `test_*workflow.py` 选择；Windows PowerShell 与 Linux 原生行为只由相应宿主结果证明。上游 `test_upstream_baseline.py` 保证原 multipart 参考入口仍可运行；真实入口消费由 `test_entry_delivery.py` 调度原生 RemoteLoop。
+最后阶段跨模块验证在 `build/` 隔离源码根使用仓库 SDK：`cmake -P src/autolib-builder/go-sdk.cmake -- test -mod=readonly -p=1 -parallel=1 ./src/autolib-builder ./src/autolib-ci ./src/autolib-importer -skip '^TestVersionedRemoteLoop$' -count=1 -v`；同步目录执行 Python `-p 'test_*.py'`，由 `test_entry_delivery.py` 唯一桥接 RemoteLoop，避免漏测或重复。该闭环验证生产 JSON、Gitee 故障后 GitHub 下载、GitHub-only 小归档、原生链接运行及搬迁离线消费。上游参考由 test_upstream_baseline.py 检查；Windows PowerShell 和 Linux 行为只由对应宿主结果证明。
 
 ## 真实交付与手动验收
 
 历史交付与成品交接已通过用户验收，见[交付证据](agent-notes/implemented/architecture/2026-11-02-gitee-delivery-reimplementation.md#真实构建与用户验收)及[成品交接验收](agent-notes/implemented/architecture/2026-11-04-ci-packaged-artifact-handoff.md#真实托管验收)；这些证据不证明新同步的四平台行为，历史交接入口已退役。
 
-缓存与独立同步阶段已通过用户验收，实机范围及本次跳过的 PCL 见[Windows 记录](agent-notes/implemented/architecture/2026-11-09-release-cache-and-independent-gitee-sync.md#windows-真实构建与独立同步验收)。当前无超限自动跳过或双来源下载；其他平台恢复、自动触发、真实清理及匿名消费仍须另行验收。
+缓存与独立同步阶段已通过用户验收，实机范围及当时跳过的 PCL 见[Windows 记录](agent-notes/implemented/architecture/2026-11-09-release-cache-and-independent-gitee-sync.md#windows-真实构建与独立同步验收)。双来源 JSON 的受控范围与真实服务缺口见[双来源记录](agent-notes/implemented/architecture/2026-11-09-dual-source-artifact-downloads.md#验证范围)；历史实机结果不证明新协议的 Windows/PCL、四平台或匿名消费通过。
 
-后续实机验收需明确仓库、目标和阶段授权。准备有效缓存后，在普通分支手动运行 `Synchronize Gitee` 的同步模式，核对固定提交、实际目标、逐项摘要及依赖顺序；再次同步应全部跳过、零归档传输且无新元数据提交。另须验证工作流共用互斥、最大排队容量、成功构建自动触发、两端删除及故障恢复；静态接线、本地代理和线程锁不替代真实调度。推送及新库公开由用户负责，公开后另验匿名消费。
+后续实机验收需明确目标及阶段授权：先停止旧写者并核对无运行/排队，由用户手动删除旧专用 Gitee 库；再准备新 Windows importer、复用有效库缓存并执行新同步，核对 schema 2、JSON、阈值分流及依赖顺序。用户公开新库后，从独立根匿名消费普通库及实际 PCL，分别记录下载、准备与可执行 smoke。重同步应零归档传输且无新元数据提交；真实排队、自动触发、删除与故障恢复仍需实机证据。本地阶段不执行这些远端动作。
 
 ## 安装产物集成验证
 

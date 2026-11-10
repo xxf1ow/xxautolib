@@ -11,7 +11,7 @@ import unittest
 def prepare_native_fixture(source, installed, builder, system, arch):
     source, installed = source.resolve(), installed.resolve()
     sys.path.insert(0, str(Path(__file__).resolve().parents[3] / '.github/actions/gitee-release'))
-    from publication_rules import inject_release_root
+    from publication_rules import inject_release_root, delivery_record
     output = source / 'build/entry-delivery-publication'
     output.mkdir(parents=True)
     original = (installed / 'autolib.cmake').read_bytes()
@@ -26,6 +26,15 @@ def prepare_native_fixture(source, installed, builder, system, arch):
         (output / name).write_bytes(data)
         assets.append(dict(kind='library' if version else 'importer',name=name,path=name,size=len(data),
                            sha256=hashlib.sha256(data).hexdigest(),package=dict(name=package,version=version)))
+    for asset in assets:
+        if asset['kind'] != 'entry':
+            identity = dict(asset, platform=system + '-' + arch)
+            if asset['kind'] == 'library':
+                identity['package'] = dict(asset['package'], os=system, arch=arch)
+            asset['delivery'] = delivery_record(identity, repository='fixture/mirror', tag='中文/release', github_repository='xxf1ow/xxautolib')
+            # A small real archive exercises the GitHub-only consumer path without a synthetic byte size.
+            if asset['package'] == dict(name='dep', version='1'):
+                asset['delivery']['urls'] = asset['delivery']['urls'][1:]
     if (installed / 'autolib.cmake').read_bytes() != original:
         raise AssertionError('entry injection changed native installation')
     manifest=output/'consumer-assets.json'

@@ -164,7 +164,8 @@ class CacheSyncLifecycleTests(unittest.TestCase):
         for name in ['a','b','c','d']:
             archive=f'{name}-1-'+(self.native if name=='b' else 'any-any')+'.tar.zst'
             body=self.remote.target_bytes[self.remote.target(archive)['id']]
-            self.assertEqual(git(self.bare,'show','HEAD:'+name+'/1/'+archive+'.sha256'),(hashlib.sha256(body).hexdigest()+'\n').encode())
+            record=json.loads(git(self.bare,'show','HEAD:'+name+'/1/'+archive+'.json'))
+            self.assertEqual((record['sha256'],record['size']),(hashlib.sha256(body).hexdigest(),len(body)))
         self.recipe('a',version='2');self.snapshot();self.store('a',30,version='2');self.sync()
         self.remote.add_source('unknown.bin',b'keep');unknown=self.remote.add_target('unknown.bin',b'keep')
         shutil.rmtree(self.source/'src/dependencies/a/1');(self.source/'src/dependencies/a/package.toml').write_text("latest='2'\n")
@@ -177,6 +178,56 @@ class CacheSyncLifecycleTests(unittest.TestCase):
         self.assertEqual(git(self.bare,'show','HEAD:a/package.toml'),b'latest = "2"\n')
         self.assertNotIn('d/package.toml',git(self.bare,'ls-tree','-r','--name-only','HEAD').decode())
         self.assertEqual(self.remote.target_bytes[unknown['id']],b'keep')
+
+    def test_json_delivery_fallback_and_source_pruning(self):
+        b, body = self.store('b', 51)
+        self.store('a', 52); self.store('d', 53)
+        name = b['archive']['name']
+        # Only the declared size is synthetic: this branch must never fetch archive bytes.
+        b['archive']['size'] = 100000001
+        next(a for a in self.remote.sources if a['name'] == name)['size'] = b['archive']['size']
+        self.remote.add_source(name + '.publication.json', json.dumps(b).encode())
+        self.remote.add_target(name, b'previous small package')
+        self.remote.fail_deletes = {name}
+        self.remote.fail_uploads = {'d-1-any-any.tar.zst'}
+        first = self.sync(expected=1)
+        self.assertEqual((first['metadata_only'], first['uploaded'], first['failed']), (1, 1, 1))
+        bpath = 'b/1/' + name + '.json'
+        record = json.loads(git(self.bare, 'show', 'HEAD:' + bpath))
+        self.assertEqual(record['urls'], ['https://github.com/xxf1ow/xxautolib/releases/download/autolib-cache/' + name])
+        self.assertEqual(record['size'], 100000001)
+        self.assertNotIn(name, self.remote.downloads)
+        self.assertNotIn(name, self.remote.uploads)
+        arecord = json.loads(git(self.bare, 'show', 'HEAD:a/1/a-1-any-any.tar.zst.json'))
+        self.assertEqual([u.split('/')[2] for u in arecord['urls']], ['gitee.com', 'github.com'])
+        changes = git(self.bare, 'log', '--reverse', '--format=', '--name-only', first['metadata_commit']).decode()
+        self.assertLess(changes.index(bpath), changes.index('a/1/a-1-any-any.tar.zst.json'))
+        self.assertIn(name + ':gitee', first['errors'])
+        self.remote.fail_deletes.clear(); self.remote.fail_uploads.clear()
+        retry = self.sync()
+        self.assertEqual((retry['uploaded'], retry['skipped']), (1, 2))
+        self.assertNotIn(name, {a['name'] for a in self.remote.targets})
+        self.remote.downloads.clear(); self.remote.uploads.clear()
+        unchanged = self.sync()
+        self.assertEqual(unchanged['metadata_commit'], retry['metadata_commit'])
+        self.assertEqual((unchanged['metadata_only'], unchanged['uploaded']), (0, 0))
+        self.assertFalse([n for n in self.remote.downloads if not n.endswith('.publication.json')])
+        self.assertFalse(self.remote.uploads)
+        # Probe public routing only; size/SHA-checked GitHub-only consumption is covered by the native bridge.
+        import requests
+        session = requests.Session(); session.trust_env = False
+        session.proxies = {'https': self.env['HTTPS_PROXY']}
+        response = session.get(record['urls'][0], verify=str(self.remote.cert), timeout=10)
+        self.assertEqual(response.content, body)
+        session.close()
+        shutil.rmtree(self.source / 'src/dependencies/b')
+        shutil.rmtree(self.source / 'src/dependencies/a')
+        shutil.rmtree(self.source / 'src/dependencies/c')
+        self.snapshot(); self.sync()
+        tree = git(self.bare, 'ls-tree', '-r', '--name-only', 'HEAD').decode()
+        self.assertNotIn(bpath, tree); self.assertNotIn('b/package.toml', tree)
+        self.assertNotIn(name, {a['name'] for a in self.remote.sources})
+        self.assertNotIn(name + '.publication.json', {a['name'] for a in self.remote.sources})
 
     def test_lost_response_and_entry_failure_recover_next_run(self):
         self.store('d',41)

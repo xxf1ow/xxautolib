@@ -20,6 +20,7 @@ type versionedRemoteEntry struct {
 	status                              map[string]int
 	redirects                           map[string]string
 	requests                            map[string]int
+	extraDownloads                      map[string]string
 	offline                             bool
 	apiRequests                         int
 	stopHTTP                            func()
@@ -49,13 +50,21 @@ func remoteEntryTarget(t *testing.T, host, repository, encodedTag string) *versi
 		if r.Header.Get("Authorization") != "" {
 			t.Error("consumer sent credentials")
 		}
-		if r.Host != host || !strings.HasPrefix(r.URL.EscapedPath(), e.downloadPath) || strings.Contains(r.URL.Path, "/api/") || strings.Contains(r.URL.Path, "/contents/") {
+		downloadPath := e.downloadPath
+		if r.Host != host {
+			downloadPath = e.extraDownloads[r.Host]
+		}
+		if downloadPath == "" || !strings.HasPrefix(r.URL.EscapedPath(), downloadPath) || strings.Contains(r.URL.Path, "/api/") || strings.Contains(r.URL.Path, "/contents/") {
 			e.apiRequests++
 			t.Errorf("forbidden request: %s%s", r.Host, r.URL)
 			w.WriteHeader(500)
 			return
 		}
 		name := filepath.Base(r.URL.Path)
+		if status := e.status[r.Host+"/"+name]; status != 0 {
+			w.WriteHeader(status)
+			return
+		}
 		if status := e.status[name]; status != 0 {
 			w.WriteHeader(status)
 			return
@@ -119,11 +128,15 @@ func (e *versionedRemoteEntry) counts(t *testing.T, clones int, want map[string]
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if len(e.requests) != len(want) {
+	actual := map[string]int{}
+	for address, n := range e.requests {
+		actual[filepath.Base(address)] += n
+	}
+	if len(actual) != len(want) {
 		t.Errorf("requests %v want %v", e.requests, want)
 	}
 	for asset, n := range want {
-		if e.requests[e.host+e.downloadPath+asset] != n {
+		if actual[asset] != n {
 			t.Errorf("requests %v want %v", e.requests, want)
 		}
 	}

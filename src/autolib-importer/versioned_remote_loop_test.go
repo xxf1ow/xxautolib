@@ -34,6 +34,7 @@ func nativePublication(t *testing.T, native nativeLoopFixture) (string, map[stri
 	var publication struct {
 		Assets []struct {
 			Kind, Name, Path, SHA256 string
+			Delivery                 json.RawMessage
 			Size                     int64
 			Package                  struct{ Name, Version string }
 		}
@@ -60,7 +61,14 @@ func nativePublication(t *testing.T, native nativeLoopFixture) (string, map[stri
 		if asset.Kind == "library" {
 			path = asset.Package.Name + "/" + asset.Package.Version + "/" + asset.Name
 		}
-		assets[path], digests[path] = body, digest+"\n"
+		if len(asset.Delivery) == 0 {
+			t.Fatalf("production delivery JSON missing for %s", asset.Name)
+		}
+		record, err := parseDeliveryRecord(path+".json", asset.Delivery)
+		if err != nil || record.SHA256 != digest || record.Size != asset.Size {
+			t.Fatalf("production delivery JSON mismatch: %+v %v", record, err)
+		}
+		assets[path], digests[path] = body, string(asset.Delivery)
 	}
 	if entry == "" || len(assets) != 4 {
 		t.Fatal("production preparation omitted entry, tool or native packages")
@@ -95,6 +103,7 @@ func TestVersionedRemoteLoop(t *testing.T) {
 			if host == "gitee.com" {
 				e = remoteEntryTarget(t, host, "fixture/mirror", "%E4%B8%AD%E6%96%87%2Frelease")
 				currentAssets, currentDigests = publishedAssets, publishedDigests
+				e.extraDownloads = map[string]string{"github.com": "/xxf1ow/xxautolib/releases/download/autolib-cache/"}
 			} else {
 				e = remoteEntry(t, host)
 			}
@@ -107,7 +116,16 @@ func TestVersionedRemoteLoop(t *testing.T) {
 			}
 			for path, body := range currentAssets {
 				e.asset(t, path, body)
-				if got, err := parseDeliveryRecord(path+".json", []byte(readTestFile(t, filepath.Join(e.repo, filepath.FromSlash(path)+".json")))); err != nil || got.SHA256 != strings.TrimSpace(currentDigests[path]) {
+				expectedDigest := strings.TrimSpace(currentDigests[path])
+				if host == "gitee.com" {
+					putTestFile(t, filepath.Join(e.repo, filepath.FromSlash(path)+".json"), currentDigests[path])
+					if !strings.HasPrefix(path, "dep/1/") {
+						e.status["gitee.com/"+filepath.Base(path)] = 503
+					}
+
+					expectedDigest = fmt.Sprintf("%x", sha256.Sum256([]byte(body)))
+				}
+				if got, err := parseDeliveryRecord(path+".json", []byte(readTestFile(t, filepath.Join(e.repo, filepath.FromSlash(path)+".json")))); err != nil || got.SHA256 != expectedDigest {
 					t.Fatalf("metadata does not preserve builder digest for %s: %+v", path, got)
 				}
 			}
@@ -162,6 +180,10 @@ func TestVersionedRemoteLoop(t *testing.T) {
 			depAsset := "dep-1-" + runtime.GOOS + "-" + native.arch + ".tar.zst"
 			probeAsset := "probe-1-" + runtime.GOOS + "-" + native.arch + ".tar.zst"
 			want := map[string]int{toolAsset: 1, depAsset: 1, probeAsset: 1}
+			if host == "gitee.com" {
+				want[toolAsset] = 2
+				want[probeAsset] = 2
+			}
 			consume("first", consumer)
 			e.counts(t, 1, want)
 			depBefore := sourceSnapshot(t, filepath.Join(cache, "dep/1"))
@@ -205,6 +227,9 @@ autolib_import(TARGET consumer INTERFACE %s)
 			writeRequest(newSource, "dep@2")
 			loopCommand(t, "cmake", "-S", newSource, "-B", filepath.Join(e.f.root, "next-configure"), "-G", native.generator, "-DCMAKE_TLS_CAINFO="+e.ca)
 			want["dep-2-"+runtime.GOOS+"-"+native.arch+".tar.zst"] = 1
+			if host == "gitee.com" {
+				want["dep-2-"+runtime.GOOS+"-"+native.arch+".tar.zst"] = 2
+			}
 			e.counts(t, 2, want)
 			writeRequest(newSource, "broken@1")
 			out, err = exec.Command("cmake", append([]string{"-S", newSource, "-B", filepath.Join(e.f.root, "bad-identity"), "-G", native.generator, "-DCMAKE_TLS_CAINFO=" + e.ca}, nativeLoopCMakeArgs(t)...)...).CombinedOutput()

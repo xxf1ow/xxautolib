@@ -85,6 +85,35 @@ class MetadataRepositoryTests(unittest.TestCase):
                 'queue/package.toml': b'latest = "1"\n',
                 'queue/1/queue-1-any-any.tar.zst.json': record_bytes('a' * 64), **extra}
 
+    def test_shared_repository_contract(self):
+        cases = json.loads((ROOT / 'tests/autolib/metadata-repository-cases.json').read_bytes())['repositories']
+        for case in cases:
+            with self.subTest(name=case['name']):
+                fixture = MetadataRepositoryTests()
+                fixture.setUp()
+                try:
+                    fixture.seed_files({'README.md': b'fixture', **{name: body.encode() for name, body in case['files'].items()}})
+                    for name, body in case.get('symlinks', {}).items():
+                        identity = git(fixture.seed, 'hash-object', '-w', '--stdin', input=body.encode()).decode().strip()
+                        git(fixture.seed, 'update-index', '--add', '--cacheinfo', '120000,' + identity + ',' + name)
+                    if case.get('gitlink'):
+                        identity = git(fixture.seed, 'rev-parse', 'HEAD').decode().strip()
+                        git(fixture.seed, 'update-index', '--add', '--cacheinfo', '160000,' + identity + ',' + case['gitlink'])
+                    if case['name'] == 'case-collision':
+                        for name, body in case['files'].items():
+                            identity = git(fixture.seed, 'hash-object', '-w', '--stdin', input=body.encode()).decode().strip()
+                            git(fixture.seed, 'update-index', '--add', '--cacheinfo', '100644,' + identity + ',' + name)
+                    git(fixture.seed, 'commit', '--allow-empty', '-m', 'contract case')
+                    fixture.make_remote()
+                    # Publication supports the four configured native platforms.
+                    if case.get('publisher_valid', case['valid']):
+                        fixture.open()
+                    else:
+                        with self.assertRaises((ValueError, RuntimeError)):
+                            fixture.open()
+                finally:
+                    fixture.doCleanups()
+
     def test_initialize_and_validate_repository(self):
         self.config['tag'] = '中文/release+v1:@'
         self.seed_files({'README.md': b'server template', 'README.en.md': b'default'})
