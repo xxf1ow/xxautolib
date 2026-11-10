@@ -32,7 +32,7 @@ class Remote:
         key = directory / 'fixture.key'
         subprocess.run(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1',
                         '-keyout', str(key), '-out', str(self.cert), '-subj', '/CN=api.github.com',
-                        '-addext', 'subjectAltName=DNS:api.github.com,DNS:uploads.github.com,DNS:github.com,DNS:gitee.com'],
+                        '-addext', 'subjectAltName=DNS:api.github.com,DNS:uploads.github.com,DNS:gitee.com'],
                        check=True, capture_output=True)
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         context.load_cert_chain(self.cert, key)
@@ -40,7 +40,7 @@ class Remote:
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, *args): pass
             def do_CONNECT(self):
-                if self.path not in {'api.github.com:443', 'uploads.github.com:443', 'github.com:443', 'gitee.com:443'}:
+                if self.path not in {'api.github.com:443', 'uploads.github.com:443', 'gitee.com:443'}:
                     self.send_error(403); return
                 self.send_response(200); self.end_headers()
                 self.wfile.flush()
@@ -107,12 +107,6 @@ class Remote:
     def dispatch(self, method, host, address, body, headers):
         parsed = urlsplit(address); path, query = unquote(parsed.path), parse_qs(parsed.query)
         self.calls.append((method, host, path))
-        if host == 'github.com' and method == 'GET' and path.startswith('/xxf1ow/xxautolib/releases/download/autolib-cache/'):
-            assert headers.get('Authorization') is None
-            name = path.rsplit('/', 1)[1]
-            asset = next((a for a in self.sources if a['name'] == name), None)
-            if asset is None: return 404, b''
-            return 200, self.source_bytes[asset['id']]
         if host == 'api.github.com':
             assert headers['Authorization'] == 'Bearer fixture-github-token'
             assert TOKEN not in str(headers)

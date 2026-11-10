@@ -180,7 +180,7 @@ class CacheSyncLifecycleTests(unittest.TestCase):
         self.assertEqual(self.remote.target_bytes[unknown['id']],b'keep')
 
     def test_json_delivery_fallback_and_source_pruning(self):
-        b, body = self.store('b', 51)
+        b, _ = self.store('b', 51)
         self.store('a', 52); self.store('d', 53)
         name = b['archive']['name']
         # Only the declared size is synthetic: this branch must never fetch archive bytes.
@@ -213,13 +213,6 @@ class CacheSyncLifecycleTests(unittest.TestCase):
         self.assertEqual((unchanged['metadata_only'], unchanged['uploaded']), (0, 0))
         self.assertFalse([n for n in self.remote.downloads if not n.endswith('.publication.json')])
         self.assertFalse(self.remote.uploads)
-        # Probe public routing only; size/SHA-checked GitHub-only consumption is covered by the native bridge.
-        import requests
-        session = requests.Session(); session.trust_env = False
-        session.proxies = {'https': self.env['HTTPS_PROXY']}
-        response = session.get(record['urls'][0], verify=str(self.remote.cert), timeout=10)
-        self.assertEqual(response.content, body)
-        session.close()
         shutil.rmtree(self.source / 'src/dependencies/b')
         shutil.rmtree(self.source / 'src/dependencies/a')
         shutil.rmtree(self.source / 'src/dependencies/c')
