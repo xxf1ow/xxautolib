@@ -158,17 +158,22 @@ def _validate(path, paths):
         if (not isinstance(identity, dict) or type(identity.get('schema')) is not int
                 or any(type(identity.get(key)) is not type(value) or identity[key] != value for key, value in IDENTITY.items())):
             raise ValueError('metadata repository identity mismatch')
-        existing = {}
+        existing, digests = {}, {}
         for name, kind in kinds.items():
             if kind == 'latest':
                 data = tomllib.loads((path / name).read_text(encoding='utf-8'))
                 if set(data) != {'latest'}:
                     raise ValueError('package.toml must only contain latest')
                 existing[name.split('/')[0]] = data['latest']
+            elif kind == 'digest':
+                content = (path / name).read_bytes()
+                if not re.fullmatch(rb'[0-9a-f]{64}\n', content):
+                    raise ValueError('metadata digest requires lowercase SHA256 and LF')
+                digests[name] = content[:-1].decode('ascii')
         latest_mapping(existing)
     except (UnicodeError, json.JSONDecodeError, tomllib.TOMLDecodeError):
         raise ValueError('invalid metadata identity or latest') from None
-    return existing
+    return existing, digests
 
 
 def _push(repository, head):
@@ -177,7 +182,7 @@ def _push(repository, head):
 
 
 def open_repository(config: dict, api, work_root: Path) -> dict:
-    """创建或克隆唯一工作副本，返回 path/branch/已确认 head/existing_latest。
+    """创建或克隆唯一工作副本，返回 path/branch/已确认 head、latest 和摘要。
 
     仅查询明确 404 才建库；新库初始化并确认 push 后返回。已有非法树在 Release 写入前失败，
     不认领或清理已有内容。工作目录已存在、API/Git 错误或非法元数据均失败。
@@ -223,15 +228,16 @@ def open_repository(config: dict, api, work_root: Path) -> dict:
         _git(['add', '--', *selected], path=path)
         _git(['commit', '-m', 'Initialize xxautolib artifact repository', '--', *selected], path=path)
         paths = _tree(path)
-    existing = _validate(path, paths)
+    existing, digests = _validate(path, paths)
     head = _git(['rev-parse', 'HEAD'], path=path).decode().strip()
-    repository = {'path': path, 'branch': branch, 'head': head, 'existing_latest': existing, '_auth': auth, '_paths': paths}
+    repository = {'path': path, 'branch': branch, 'head': head, 'existing_latest': existing, 'existing_digests': digests, '_auth': auth, '_paths': paths}
     if created:
         _push(repository, head)
     return repository
 
 
-def commit_metadata(repository: dict, digests: dict[str, str], latest: dict[str, str]) -> str:
+def commit_metadata(repository: dict, digests: dict[str, str], latest: dict[str, str], *,
+                    remove_paths: tuple[str, ...] = ()) -> str:
     """一次提交并 push 选中摘要和 latest，确认后返回 SHA；未选择文件保持原样。
 
     无变化返回已确认 SHA。非法目标在写文件前失败；push 未确认则抛错并保留旧 confirmed head，
@@ -248,8 +254,11 @@ def commit_metadata(repository: dict, digests: dict[str, str], latest: dict[str,
         if _kind(target) != 'latest':
             raise ValueError('invalid selected latest path')
         updates[target] = ('latest = "' + version + '"\n').encode()
-    check_case(repository['_paths'] + list(updates))
-    targets = {name: _regular_target(path, name) for name in updates}
+    if (len(set(remove_paths)) != len(remove_paths) or set(remove_paths) & set(updates)
+            or any(_kind(name) not in {'digest', 'latest'} for name in remove_paths)):
+        raise ValueError('invalid or conflicting metadata removal')
+    check_case(repository['_paths'] + list(updates) + list(remove_paths))
+    targets = {name: _regular_target(path, name) for name in [*updates, *remove_paths]}
     changed = []
     for name, content in updates.items():
         target = targets[name]
@@ -258,12 +267,23 @@ def commit_metadata(repository: dict, digests: dict[str, str], latest: dict[str,
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(content)
         changed.append(name)
+    for name in remove_paths:
+        target = targets[name]
+        if target.exists():
+            target.unlink()
+            changed.append(name)
     if not changed:
         return repository['head']
     _git(['add', '--', *changed], path=path)
     _git(['commit', '-m', 'Update artifact metadata', '--', *changed], path=path)
     head = _git(['rev-parse', 'HEAD'], path=path).decode().strip()
     _push(repository, head)
-    repository.update(head=head, existing_latest={**repository['existing_latest'], **latest},
-                      _paths=list(set(repository['_paths']) | set(updates)))
+    confirmed_latest = {**repository['existing_latest'], **latest}
+    confirmed_digests = {**repository['existing_digests'], **digests}
+    for name in remove_paths:
+        confirmed_digests.pop(name, None)
+        if _kind(name) == 'latest':
+            confirmed_latest.pop(name.split('/')[0], None)
+    repository.update(head=head, existing_latest=confirmed_latest, existing_digests=confirmed_digests,
+                      _paths=sorted((set(repository['_paths']) | set(updates)) - set(remove_paths)))
     return head

@@ -6,6 +6,7 @@ type moduleDescription struct {
 	Roots          []string          `json:"roots"`
 	RequestedRoots []string          `json:"requested_roots"`
 	FilteredRoots  []filteredRoot    `json:"filtered_roots"`
+	FailedRoots    []failedRoot      `json:"failed_roots"`
 	Modules        []describedModule `json:"modules"`
 	GoModuleFiles  []string          `json:"go_module_files"`
 	BuilderFiles   []string          `json:"builder_files"`
@@ -15,6 +16,13 @@ type filteredRoot struct {
 	Root  string   `json:"root"`
 	Code  string   `json:"code"`
 	Chain []string `json:"chain"`
+}
+
+type failedRoot struct {
+	Root    string   `json:"root"`
+	Code    string   `json:"code"`
+	Message string   `json:"message"`
+	Chain   []string `json:"chain"`
 }
 
 type describedModule struct {
@@ -34,13 +42,13 @@ type ciPlanOptions struct {
 }
 
 type ciPlatformPlan struct {
-	ID                 string              `json:"id"`
-	RequestedRoots     []string            `json:"requested_roots"`
-	FilteredRoots      []string            `json:"filtered_roots"`
-	Roots              []string            `json:"roots"`
-	Description        moduleDescription   `json:"description"`
-	Layers             [][]string          `json:"layers"`
-	SystemDependencies map[string][]string `json:"system_dependencies"`
+	ID             string            `json:"id"`
+	RequestedRoots []string          `json:"requested_roots"`
+	FilteredRoots  []string          `json:"filtered_roots"`
+	FailedRoots    []failedRoot      `json:"failed_roots"`
+	Roots          []string          `json:"roots"`
+	Description    moduleDescription `json:"description"`
+	Layers         [][]string        `json:"layers"`
 }
 
 type ciPlan struct {
@@ -56,6 +64,9 @@ type ciProductionContext struct {
 }
 
 type ciRunOptions struct {
+	CacheFile, PreparedImporter                                      string
+	Environment                                                      []string
+	RestoredPackages                                                 []string
 	Repository                                                       string
 	SourceRoot, PlanFile, RunIdentityFile, Platform, Layer, WorkRoot string
 	ImporterFile, CMakeCommand, MakeProgram                          string
@@ -63,14 +74,22 @@ type ciRunOptions struct {
 }
 
 type ciSlotResult struct {
-	Slot     ciSlot `json:"slot"`
-	Built    bool   `json:"built"`
-	Verified bool   `json:"verified"`
+	Status            string         `json:"status"`
+	Error             string         `json:"error"`
+	DependencyChain   []string       `json:"dependency_chain"`
+	Record            *ciCacheRecord `json:"record,omitempty"`
+	EvidenceDirectory string         `json:"evidence_directory,omitempty"`
+	Slot              ciSlot         `json:"slot"`
+	Built             bool           `json:"built"`
+	Verified          bool           `json:"verified"`
 }
 
 type ciImporterResult struct {
-	File     string `json:"file"`
-	Verified bool   `json:"verified"`
+	Status   string         `json:"status"`
+	Error    string         `json:"error"`
+	Record   *ciCacheRecord `json:"record,omitempty"`
+	File     string         `json:"file"`
+	Verified bool           `json:"verified"`
 }
 
 type ciEntryResult struct {
@@ -86,12 +105,15 @@ type ciRootResult struct {
 }
 
 type ciPlatformResult struct {
-	Run      ciRunIdentity    `json:"run"`
-	Platform string           `json:"platform"`
-	Packages []ciSlotResult   `json:"packages"`
-	Roots    []ciRootResult   `json:"roots"`
-	Importer ciImporterResult `json:"importer"`
-	Entry    ciEntryResult    `json:"entry"`
-	Complete bool             `json:"complete"`
-	Error    string           `json:"error"`
+	FailedRoots        []failedRoot      `json:"failed_roots"`
+	SystemDependencies ciDependencyState `json:"system_dependencies"`
+	Processed          bool              `json:"processed"`
+	Run                ciRunIdentity     `json:"run"`
+	Platform           string            `json:"platform"`
+	Packages           []ciSlotResult    `json:"packages"`
+	Roots              []ciRootResult    `json:"roots"`
+	Importer           ciImporterResult  `json:"importer"`
+	Entry              ciEntryResult     `json:"entry"`
+	Complete           bool              `json:"complete"`
+	Error              string            `json:"error"`
 }

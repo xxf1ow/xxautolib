@@ -42,7 +42,7 @@ func TestConsumptionPreparation(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	consumptionModule(f, "demo", "depends=['zlib@1.0','lz4@1.0','zlib@1.0']\n")
+	consumptionModule(f, "demo", "depends=['zlib@1.0','lz4@1.0']\n")
 	if err := consumptionCommand(f, "demo", "reuse"); err != nil {
 		t.Fatal(err)
 	}
@@ -58,13 +58,14 @@ func TestConsumptionPreparation(t *testing.T) {
 		t.Fatal("unchanged preparation rewrote metadata")
 	}
 	definitionFile(t, f.root, "demo", "cmake", "depends=['zlib@1.0','zlib@1.0','lz4@1.0']\n"+testSource)
-	if err := consumptionCommand(f, "demo", "reuse"); err != nil {
-		t.Fatal(err)
+	if err := consumptionCommand(f, "demo", "reuse"); err == nil || !strings.Contains(err.Error(), "duplicate package") {
+		t.Fatalf("accepted duplicate dependency declaration: %v", err)
 	}
 	after, _ = os.Stat(output)
 	if !before.ModTime().Equal(after.ModTime()) {
-		t.Fatal("duplicate dependency declaration changed metadata")
+		t.Fatal("invalid dependency declaration changed metadata")
 	}
+	definitionFile(t, f.root, "demo", "cmake", "depends=['zlib@1.0','lz4@1.0']\n"+testSource)
 	for _, bad := range []string{strings.Replace(want, `"windows"`, `"linux"`, 1), strings.Replace(want, `"demo"`, `"other"`, 1), "invalid header\n", "# AutoLib installation incomplete\n"} {
 		putFile(t, output, bad)
 		if err := consumptionCommand(f, "demo", "reuse"); err == nil {

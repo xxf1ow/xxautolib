@@ -89,7 +89,7 @@ func TestCIStageTwoPlatforms(t *testing.T) {
 		{"Darwin", "darwin-aarch64", "queue,lz4,librealsense", "darwin-aarch64", []string{"darwin-aarch64"}},
 		{"mixed", "darwin-aarch64,linux-x86_64", "queue", "linux-x86_64", []string{"darwin-aarch64", "linux-x86_64"}},
 		{"tools", "all", "", "", []string{"windows-x86_64", "linux-x86_64", "linux-aarch64", "darwin-aarch64"}},
-		{"filtered", "darwin-aarch64", "librealsense", "", []string{"darwin-aarch64"}},
+		{"Darwin camera", "darwin-aarch64", "librealsense", "", []string{"darwin-aarch64"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var selection *string
@@ -104,11 +104,15 @@ func TestCIStageTwoPlatforms(t *testing.T) {
 			for _, p := range plan.Platforms {
 				ids = append(ids, p.ID)
 				if p.ID == "darwin-aarch64" && strings.Contains(tc.modules, "lz4") {
-					if !reflect.DeepEqual(p.Roots, []string{"queue@45db9a8b4431", "lz4@1.10.0"}) || !reflect.DeepEqual(p.FilteredRoots, []string{"librealsense@2.58.1"}) {
+					if !reflect.DeepEqual(p.Roots, []string{"queue@45db9a8b4431", "lz4@1.10.0", "librealsense@2.58.1"}) || len(p.FilteredRoots) != 0 {
 						t.Fatalf("Darwin effective selection: %+v", p)
 					}
 				}
-				if tc.name == "tools" || tc.name == "filtered" {
+
+				if tc.name == "Darwin camera" && !reflect.DeepEqual(p.Roots, []string{"librealsense@2.58.1"}) {
+					t.Fatalf("Darwin camera selection: %+v", p)
+				}
+				if tc.name == "tools" {
 					if len(p.Roots) != 0 || len(p.Layers) != 0 {
 						t.Fatalf("zero-library plan lost semantics: %+v", p)
 					}

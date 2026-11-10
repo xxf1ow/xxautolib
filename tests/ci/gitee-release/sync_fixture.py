@@ -1,138 +1,135 @@
-"""有状态的请求边界替身；保存字节和 ID，禁止真实远端访问。"""
+"""只服务固定 GitHub/Gitee 域名的本地 TLS 代理；未匹配请求直接失败。"""
 
 import hashlib
-import io
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+from pathlib import Path
+import ssl
+import subprocess
 import threading
-from urllib.parse import unquote, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
-import requests
 from requests_toolbelt.multipart.decoder import MultipartDecoder
 
-
-GH = "/repos/xxf1ow/xxautolib"
-GT = "/api/v5/repos/fixture/mirror"
-TAG = "fixed/release"
-TOKEN = "fixture-gitee-private-token"
-
-
-def response(status, data, headers=None):
-    result = requests.Response()
-    result.status_code = status
-    result._content = data if isinstance(data, bytes) else json.dumps(data).encode()
-    result._content_consumed = True
-    result.headers.update(headers or {})
-    return result
+GH = '/repos/xxf1ow/xxautolib/releases'
+GT = '/api/v5/repos/fixture/mirror'
+TOKEN = 'fixture-gitee-private-token'
 
 
 class Remote:
-    def __init__(self):
+    def __init__(self, directory):
         self.lock = threading.RLock()
-        self.release = {"id": 42, "tag_name": TAG, "name": "Keep title", "body": "说明\n"}
         self.sources, self.source_bytes, self.targets, self.target_bytes = [], {}, [], {}
-        self.calls, self.writes, self.asset_downloads = [], [], []
-        self.overrides = {}
-        self.before_request = None
+        self.calls, self.downloads, self.uploads = [], [], []
         self.next_id = 100
-        self.add_source("lz4-linux-x86_64.tar.zst", b"new\x00asset")
+        self.fail_entry = False
+        self.lose_upload = None
+        self.errors = []
+        directory = Path(directory)
+        self.cert = directory / 'fixture.pem'
+        key = directory / 'fixture.key'
+        subprocess.run(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1',
+                        '-keyout', str(key), '-out', str(self.cert), '-subj', '/CN=api.github.com',
+                        '-addext', 'subjectAltName=DNS:api.github.com,DNS:uploads.github.com,DNS:gitee.com'],
+                       check=True, capture_output=True)
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(self.cert, key)
+        remote = self
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *args): pass
+            def do_CONNECT(self):
+                if self.path not in {'api.github.com:443', 'uploads.github.com:443', 'gitee.com:443'}:
+                    self.send_error(403); return
+                self.send_response(200); self.end_headers()
+                self.wfile.flush()
+                connection = context.wrap_socket(self.connection, server_side=True)
+                try: Handler(connection, self.client_address, self.server)
+                finally: connection.close()
+            def serve(self):
+                body = self.rfile.read(int(self.headers.get('Content-Length', 0)))
+                try:
+                    with remote.lock:
+                        status, data = remote.dispatch(self.command, self.headers['Host'], self.path, body, self.headers)
+                except Exception as error:
+                    remote.errors.append(repr(error))
+                    status, data = 500, {'error': 'fixture request rejected'}
+                if status is None:
+                    self.close_connection = True
+                    return
+                data = data if isinstance(data, bytes) else json.dumps(data).encode()
+                self.send_response(status)
+                self.send_header('Content-Length', str(len(data)))
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers(); self.wfile.write(data)
+            do_GET = do_POST = do_DELETE = serve
+        self.server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
 
-    def add_source(self, name, data=b"new", identity=None):
-        identity = identity or len(self.sources) + 1
-        asset = {"id": identity, "name": name, "size": len(data), "state": "uploaded",
-                 "digest": "sha256:" + hashlib.sha256(data).hexdigest(),
-                 "url": f"https://api.github.com{GH}/releases/assets/{identity}"}
-        self.sources.append(asset)
-        self.source_bytes[identity] = data
+    def close(self):
+        self.server.shutdown(); self.server.server_close(); self.thread.join()
+
+    def environment(self):
+        address = 'http://127.0.0.1:' + str(self.server.server_port)
+        return {'HTTPS_PROXY': address, 'https_proxy': address, 'HTTP_PROXY': address, 'http_proxy': address,
+                'ALL_PROXY': address, 'all_proxy': address, 'NO_PROXY': '', 'no_proxy': '',
+                'SSL_CERT_FILE': str(self.cert), 'REQUESTS_CA_BUNDLE': str(self.cert)}
+
+    def add_source(self, name, data):
+        self.sources[:] = [a for a in self.sources if a['name'] != name]
+        self.next_id += 1
+        asset = dict(id=self.next_id, name=name, size=len(data), state='uploaded',
+                     digest='sha256:' + hashlib.sha256(data).hexdigest())
+        self.sources.append(asset); self.source_bytes[asset['id']] = data
         return asset
 
-    def add_target(self, name, data=b"old", identity=None):
-        identity = identity or self.next_id
-        self.next_id = max(self.next_id + 1, identity + 1)
-        target = {"id": identity, "name": name, "size": len(data),
-                  "browser_download_url": f"https://gitee.com/fixture/download/{identity}"}
-        self.targets.append(target)
-        self.target_bytes[identity] = data
-        return target
+    def add_target(self, name, data):
+        self.next_id += 1
+        asset = dict(id=self.next_id, name=name, size=len(data),
+            browser_download_url='https://gitee.com/fixture/mirror/releases/download/fixed/' + name)
+        self.targets.append(asset); self.target_bytes[asset['id']] = data
+        return asset
 
-    def asset(self, name):
-        return next(a for a in self.targets if a["name"] == name)
+    def target(self, name):
+        return next(a for a in self.targets if a['name'] == name)
 
-    def inject(self, method, path, *outcomes):
-        self.overrides[(method.upper(), path)] = list(outcomes)
-
-    def request(self, session, method, url, **kwargs):
-        method = method.upper()
-        parsed = urlsplit(url)
-        call = {"method": method, "path": parsed.path, "host": parsed.hostname,
-                "kwargs": kwargs, "session": session, "thread": threading.get_ident()}
-        with self.lock:
-            self.calls.append(call)
-            if method in ("POST", "DELETE", "PATCH"):
-                self.writes.append(call)
-            scripted = self.overrides.get((method, parsed.path), [])
-            outcome = scripted.pop(0) if scripted else None
-        if self.before_request:
-            self.before_request(call)
-        if isinstance(outcome, Exception):
-            raise outcome
-        if callable(outcome):
-            return outcome(call)
-        if outcome is not None:
-            return response(*outcome)
-        with self.lock:
-            return self.dispatch(call)
-
-    def dispatch(self, call):
-        method, path, kwargs = call["method"], call["path"], call["kwargs"]
-        if call["host"] == "api.github.com":
-            if method == "GET" and path.startswith(GH + "/releases/tags/"):
-                assert unquote(path.split("/tags/", 1)[1]) == TAG
-                return response(200, {"id": 9, "tag_name": TAG, "assets_url": f"https://api.github.com{GH}/releases/9/assets"})
-            if method == "GET" and path == GH + "/releases/9/assets":
-                page = kwargs["params"]["page"]
-                return response(200, self.sources[(page - 1) * 100:page * 100])
-            if method == "GET" and path.startswith(GH + "/releases/assets/"):
-                identity = int(path.rsplit("/", 1)[1])
-                asset = next((a for a in self.sources if a["id"] == identity), None)
-                if asset is None:
-                    return response(404, {"message": "not found"})
-                self.asset_downloads.append(asset["name"])
-                return response(200, self.source_bytes[identity])
-        if call["host"] == "gitee.com":
-            if method == "GET" and path == "/api/v5/user":
-                return response(200, {"id": 5, "login": "publisher"})
-            if method == "GET" and path == GT:
-                return response(200, {"id": 8, "full_name": "fixture/mirror", "default_branch": "gitee-default"})
-            if method == "GET" and path.startswith(GT + "/releases/tags/"):
-                assert unquote(path.split("/tags/", 1)[1]) == TAG
-                return response(200, self.release)
-            if method == "POST" and path == GT + "/releases":
-                data = kwargs["data"]
-                assert data["target_commitish"] == "gitee-default"
-                self.release = {"id": 42, "tag_name": data["tag_name"], "name": data["name"], "body": data["body"]}
-                return response(201, self.release)
-            if method == "GET" and path == GT + "/releases/42/attach_files":
-                page = kwargs["params"]["page"]
-                return response(200, self.targets[(page - 1) * 100:page * 100])
-            if method == "DELETE" and path.startswith(GT + "/releases/42/attach_files/"):
-                identity = int(path.rsplit("/", 1)[1])
-                if identity not in self.target_bytes:
-                    return response(404, {"message": "not found"})
-                self.targets[:] = [a for a in self.targets if a["id"] != identity]
-                del self.target_bytes[identity]
-                return response(204, b"")
-            if method == "POST" and path == GT + "/releases/42/attach_files":
-                encoder = kwargs["data"]
-                parts = MultipartDecoder(encoder.to_string(), encoder.content_type).parts
-                files = [part for part in parts if b"filename=" in part.headers.get(b"Content-Disposition", b"")]
-                assert len(files) == 1
-                part = files[0]
-                name = part.headers[b"Content-Disposition"].decode().split('filename="', 1)[1].split('"', 1)[0]
-                return response(201, self.add_target(name, part.content))
-            if method == "PATCH" and path == GT + "/releases/42":
-                data = kwargs["data"]
-                if not {"tag_name", "name", "body"} <= data.keys():
-                    return response(400, {"message": "missing required release fields"})
-                self.release = dict(self.release, **{key: data[key] for key in ("tag_name", "name", "body")})
-                return response(200, self.release)
-        raise AssertionError(f"Unexpected fixture request: {method} {call['host']} {path}")
+    def dispatch(self, method, host, address, body, headers):
+        parsed = urlsplit(address); path, query = unquote(parsed.path), parse_qs(parsed.query)
+        self.calls.append((method, host, path))
+        if host == 'api.github.com':
+            assert headers['Authorization'] == 'Bearer fixture-github-token'
+            assert TOKEN not in str(headers)
+            if method == 'GET' and path == GH + '/tags/autolib-cache':
+                return 200, dict(id=9, tag_name='autolib-cache', immutable=False, draft=False)
+            if method == 'GET' and path == GH + '/9/assets':
+                page = int(query['page'][0]); return 200, self.sources[(page-1)*100:page*100]
+            if path.startswith(GH + '/assets/'):
+                identity = int(path.rsplit('/', 1)[1])
+                if method == 'DELETE':
+                    self.sources[:] = [a for a in self.sources if a['id'] != identity]
+                    return 204, b''
+                assert method == 'GET'
+                asset = next(a for a in self.sources if a['id'] == identity)
+                self.downloads.append(asset['name']); return 200, self.source_bytes[identity]
+        if host == 'gitee.com':
+            if method == 'GET' and path == '/api/v5/user': return 200, dict(id=5, login='publisher')
+            if method == 'GET' and path == GT:
+                return 200, dict(id=8, full_name='fixture/mirror', private=True, default_branch='server-default', permission={'push': True})
+            if method == 'GET' and path == GT + '/releases/tags/fixed':
+                return 200, dict(id=42, tag_name='fixed', name='keep title', body='keep body')
+            if method == 'GET' and path == GT + '/releases/42/attach_files':
+                page = int(query['page'][0]); return 200, self.targets[(page-1)*100:page*100]
+            if method == 'DELETE' and path.startswith(GT + '/releases/42/attach_files/'):
+                identity = int(path.rsplit('/', 1)[1]); self.targets[:] = [a for a in self.targets if a['id'] != identity]
+                return 204, b''
+            if method == 'POST' and path == GT + '/releases/42/attach_files':
+                parts = MultipartDecoder(body, headers['Content-Type']).parts
+                assert parts[0].content == TOKEN.encode()
+                part = parts[1]; name = part.headers[b'Content-Disposition'].decode().split('filename="')[1][:-1]
+                self.uploads.append(name)
+                if self.fail_entry and name == 'autolib.cmake': return 403, {}
+                asset = self.add_target(name, part.content)
+                if self.lose_upload == name:
+                    self.lose_upload = None; return None, None
+                return 201, asset
+        raise AssertionError((method, host, path))

@@ -46,7 +46,7 @@ func TestCIRunDoesNotRequireUnusedBuilder(t *testing.T) {
 	work := filepath.Join(f.options.SourceRoot, "build", "ci", "123-1", "windows-x86_64")
 	var stdout, stderr bytes.Buffer
 	code := runCIRun([]string{"--repository", ciGitHubRepository, "--source-root", f.options.SourceRoot, "--plan", f.options.PlanFile,
-		"--run-identity", f.options.RunIdentityFile, "--platform", "windows-x86_64",
+		"--cache", "unused-cache.json", "--run-identity", f.options.RunIdentityFile, "--platform", "windows-x86_64",
 		"--layer", "prepare", "--work-root", work,
 		"--importer-file", "unused", "--cmake-command", "unused"}, &stdout, &stderr)
 	if code != 1 || !strings.Contains(stderr.String(), "selected") || strings.Contains(stderr.String(), "builder") {

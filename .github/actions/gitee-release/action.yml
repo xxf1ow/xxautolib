@@ -1,15 +1,27 @@
-name: Gitee artifact publication
-description: Publish declared local assets and metadata to Gitee
+name: Gitee source synchronization
+description: Synchronize validated Release cache products and source deletions to Gitee
 inputs:
   host:
     description: Publication host (gitee only)
     required: true
   mode:
-    description: artifacts or latest
+    description: sync or latest
     required: true
-  input:
-    description: Local publication.json for artifacts mode
+  source:
+    description: Fixed source facts JSON
+    required: true
+  cache:
+    description: Validated cache snapshot JSON (sync only)
     default: ''
+  cache-tool:
+    description: Repository-built autolib-ci executable (sync only)
+    default: ''
+  ref:
+    description: Trusted ordinary branch ref
+    required: true
+  sha:
+    description: Fixed source SHA
+    required: true
   latest:
     description: Explicit JSON latest mapping for latest-only mode
     default: ''
@@ -22,12 +34,16 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Publish local input
+    - name: Synchronize fixed source
       shell: bash
       env:
         PUBLISH_HOST: ${{ inputs.host }}
         PUBLISH_MODE: ${{ inputs.mode }}
-        PUBLISH_INPUT: ${{ inputs.input }}
+        SYNC_SOURCE: ${{ inputs.source }}
+        SYNC_CACHE: ${{ inputs.cache }}
+        SYNC_CACHE_TOOL: ${{ inputs.cache-tool }}
+        SYNC_REF: ${{ inputs.ref }}
+        SYNC_SHA: ${{ inputs.sha }}
         PUBLISH_LATEST: ${{ inputs.latest }}
         GITEE_REPOSITORY: ${{ inputs.repository }}
         GITEE_RELEASE_TAG: ${{ inputs.tag }}

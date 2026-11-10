@@ -79,25 +79,31 @@ Git 主来源复用 `git/<包名>/<版本>/`，资源复用 `git/_resources/<包
 
 ## CI 开发与运行
 
-[手动流水线](../.github/workflows/build-platform.yml)接受当前源码仓库的普通分支、拒绝 tag，检出事件提交；workflow 将 `GITHUB_REPOSITORY` 作为可信仓库传给运行、运输和汇总校验，支持 fork。默认/all 为 Windows x86_64、Linux x86_64/aarch64、darwin-aarch64，也可单选。Darwin 固定 macos-15，核对 15.x/arm64；[准备脚本](../.github/scripts/prepare-darwin.sh)在任务目录校验并准备 CMake 3.31.12 和私有 Go，有效库才编译 Make 4.4.1。生产与消费沿用普通根入口及上述 Apple 参数。
+[手动流水线](../.github/workflows/build-platform.yml)使用当前仓库的普通分支与事件提交，支持fork，拒绝tag。默认四个平台，也可单选；平台、工具与ABI基准见[架构](architecture.md#包与版本)。模块空字符串只准备工具，严格等于`all`才发现全部合资格版本，也可填写逗号分隔的精确引用或裸名；纯空白和变形的`all`拒绝。过滤不算失败；配方错误只阻断相关依赖者，无关项继续。
 
-模块未提供或空字符串只准备 importer 和入口，原始输入严格等于 `all` 才发现全部合资格配方版本，也可选择 `eigen@3.4.0,eigen@5.0.1,queue,lz4,flann`。纯空白、混合或变形的 `all` 及单独 importer 选择均拒绝。缺自身或传递依赖 adapter 的根按资格过滤；计划与汇总分别展示请求根、有效根和过滤根，过滤不算警告或失败。
+共享准备生成缓存快照，各平台`run --cache`显式读取。每项恢复或构建、消费验证后立即入库；失败运行中的成功成品仍可复用，汇总保持整体失败。缓存为当前源码仓库的`autolib-cache`，共享准备和平台使用`contents: write`；令牌仅注入缓存步骤，子进程不继承GitHub/Gitee令牌。容量、精确同名文件自动替换及无关文件保护见[缓存设计](agent-notes/implemented/architecture/2026-11-09-release-cache-and-independent-gitee-sync.md#release-成品缓存)。运行互斥不按分支拆组，队列最多等待100个运行。
 
-零有效库仍保留所选平台，真实验证工具与入口，但不执行库构建或消费；普通根的空 `BUILD_LIST` 仍发现全部配方。非空库逐根验证精确闭包，随后打包运输成品、候选及原样入口，协议见[成品交接](agent-notes/implemented/architecture/2026-11-04-ci-packaged-artifact-handoff.md)。最终汇总不写 Release。环境见[CI 设计](agent-notes/implemented/architecture/2026-10-20-ci-system.md)，证据见[测试指南](testing.md#ci-验证)。
+同版本输入变化沿依赖链失效，latest单独变化不重建库。命中归档恢复到新安装根，不复用旧安装；CI 仅将已恢复并验证的精确依赖传入 `AUTOLIB_RESTORED_PACKAGES`，其构建目标只读校验冻结安装，不要求上游源码。普通本地复用仍执行原来源比对；Artifacts只保存计划、结果和诊断。零有效库仍验证工具与入口。验证命令及边界见[测试指南](testing.md#ci-验证)。
 
 ### 独立 Gitee 发布
 
-[发布流水线](../.github/workflows/publish-artifacts.yml)仅写 Gitee。源码仓库及其分叉须显式配置 `GITEE_REPOSITORY`、`GITEE_RELEASE_TAG` 和密钥 `GITEE_TOKEN`，缺失或非法即失败，无上游默认目标。可信来源取自 `GITHUB_REPOSITORY`，不采用清单自报仓库。自动发布等待同仓库成功构建；手动指定同仓库 `source_run_id/source_attempt`。两者核对原提交、全部验证记录及成品后，原样分发库和工具、生成唯一目标注入入口，不二次筛选、编译 builder 或重打包；入口不写 Git 元数据。可附 `latest` 映射；独立更新指针要求非空映射，不读取或要求构建输入。接口与目标编码见[发布接口](../.github/actions/gitee-release/UPSTREAM.md#gitee-版本化发布适配)。
+[同步流水线](../.github/workflows/publish-artifacts.yml)提供 `sync/latest` 手动入口，同仓库 `Representative releases` 整体成功后自动触发 `sync`。配置 `GITEE_REPOSITORY`、`GITEE_RELEASE_TAG` 和 `GITEE_TOKEN`，缺失或非法即失败。同步任务开始执行后解析普通分支最新 SHA 并只 checkout 一次，不以触发构建的旧 SHA 清理；允许可信 fork，拒绝 tag、PR ref 及跨仓库构建事件。
 
-执行前必须信任控制代码与原构建提交；代码可以外传令牌，脱敏不是沙箱。同名附件核对实际 SHA256，相同跳过，不同先删后传，无回滚；临时故障退避后从查询重试，参数见发布接口。部分失败登记就绪项但任务失败，push 未确认也失败。重跑复用同一成品，不仅凭同名、大小或已登记摘要跳过；旧安装树输入须重新构建，同源码重建不保证相同字节。真实触发须取得目标及删除替换授权，并核对默认分支自动入口，不能假定它使用任务分支代码。新库保持私有，公开后由用户按[验收交接](testing.md#真实交付与手动验收)验证。
+`sync` 从 `autolib-cache` 读取全部当前有效成品，逐项同步和清理；不需要 run/attempt 或成品 Artifacts。缺缓存只报告待构建，保留源码仍存在的 Gitee 成品。`latest` 要求非空 JSON 映射，使用同一源码事实校验版本，但不查询缓存、清理附件或交付入口。合法已有 latest 不自动推进，首次初始化及删除修复可指向尚缺某平台成品的版本，不能据此认为裸名消费已可用。
+
+同步通过仓库 SDK 编译宿主 builder/autolib-ci，只进行源码描述、指纹和缓存操作；不编译库/importer 或重打包。源码描述及依赖安装不接收 Gitee token，缓存 helper 移除该凭据。输入、重试、入口与结果接口见[Action 说明](../.github/actions/gitee-release/UPSTREAM.md#gitee-独立同步适配)。
+
+执行前必须信任同步分支代码，脱敏不是沙箱。实际写入须取得目标及删除替换授权；两个 workflow 共用互斥组，人工维护须等待它们结束。push 未确认会停止本轮后续元数据写入；同版本产物替换不提供整组原子性。新库私有，公开后按[验收交接](testing.md#真实交付与手动验收)验证。
 
 ## 远端构建与源码传输授权
 
-用户永久授权向可信局域网设备 `lxx@192.168.0.109` 的 `/home/lxx/xxautolib` 传输任务源码，同类传输不重复询问；仍须工具审批、逐文件摘要核对并保留已有数据，不覆盖未知差异或清空目标目录，不传项目 `.git/`、凭据、SDK、缓存或宿主产物。第三方库迁移的编译安装、修复及增量续跑按用户确认执行；版本化交付可编译轻量夹具、执行定向测试并写自有日志。本机默认禁止编译，包括 Go。此授权不含其他目标、push、发布或触发 CI；push 由用户执行，CI 另按授权验收。
+允许本机编译和定向验证；产物、编译缓存及临时文件均放在仓库 `build/` 下的新隔离目录，并行度最多4线程。Go仅使用仓库管理并校验的固定SDK，不使用系统Go；隔离方式见[测试指南](testing.md#执行)。
+
+用户永久授权向可信局域网设备 `lxx@192.168.0.109` 的 `/home/lxx/xxautolib` 传输任务源码，同类传输不重复询问；仍须工具审批、逐文件摘要核对并保留已有数据，不覆盖未知差异或清空目标目录，不传项目 `.git/`、凭据、SDK、缓存或宿主产物。第三方库迁移的编译安装、修复及增量续跑按用户确认执行；版本化交付可编译轻量夹具、执行定向测试并写自有日志。此授权不含其他目标、push、发布或触发 CI；push 由用户执行，CI 另按授权验收。
 
 [本任务的原生验证授权](agent-notes/implemented/architecture/2026-11-05-darwin-aarch64-native-build-and-ci.md#工作目录验证环境与授权)允许在新的任务隔离目录准备固定工具，编译必要的宿主工具、轻量原生输入及 queue/lz4，完成对应消费和打包；不覆盖既有安装、来源和缓存。[统一配方第一阶段](agent-notes/implemented/architecture/2026-11-06-module-recipe-contract-and-macos-validation.md)另授权同一隔离根的两版 Eigen 真实安装与直接/搬迁消费；全包调查不属于第一阶段。第二阶段按[已确认的同步范围](agent-notes/implemented/architecture/2026-11-06-module-recipe-contract-and-macos-validation.md#原平台基线与-macos-同步范围)推进，允许必要宿主工具与定向检查；包的正式验收使用 macos-15，原平台配方冻结。
 
-通用定向验证优先使用上述远端环境；最低 CMake 按用户决定不安排任何形式测试，不下载或传输旧工具。
+通用定向验证可使用本机隔离目录或上述远端环境；最低 CMake 按用户决定不安排任何形式测试，不下载或传输旧工具。
 
 109 使用既有 Make 4.4.1：`/home/lxx/xxautolib/build/task3-make-V1Bt5n/install/bin/make`，仅为测试进程前置 PATH；清理 build 须保留该目录。发布归档测试使用已有且支持 xz 的 `/home/lxx/.local/share/uv/python/cpython-3.12.14-linux-x86_64-gnu/bin/python3.12`，不重装工具。
 

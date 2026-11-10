@@ -42,18 +42,6 @@ $cmakeCommand = Join-Path $cmakeDir 'bin/cmake.exe'
 $cmakeVersion = & $cmakeCommand --version | Select-Object -First 1
 if ($cmakeVersion -ne "cmake version $($configDocument.cmake.version)") { throw "CMake version does not match configuration: $cmakeVersion" }
 
-$packages = @()
-if ($null -ne $platformPlan[0].system_dependencies.choco) {
-    $packages = @($platformPlan[0].system_dependencies.choco | Sort-Object -Unique)
-}
-foreach ($package in $packages) {
-    if ($package -notmatch '^[A-Za-z0-9.][A-Za-z0-9.-]*$') { throw "Unsafe Chocolatey package name: $package" }
-}
-if ($packages.Count -gt 0) {
-    choco install @packages --yes --no-progress --limit-output 2>&1 | ForEach-Object { [Console]::Error.WriteLine($_) }
-    if ($LASTEXITCODE -ne 0) { throw "Chocolatey dependency installation failed: $LASTEXITCODE" }
-}
-
 $goSdkScript = Join-Path $repoRoot 'src/autolib-builder/go-sdk.cmake'
 & $cmakeCommand -P $goSdkScript -- build -mod=readonly -trimpath -o (Join-Path $WorkRoot 'autolib-ci.exe') ./src/autolib-ci 2>&1 | ForEach-Object { [Console]::Error.WriteLine($_) }
 if ($LASTEXITCODE -ne 0) { throw "Private Go SDK CI tool preparation failed: $LASTEXITCODE" }

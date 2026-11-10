@@ -98,7 +98,12 @@ func TestCIDiscoveryFiltering(t *testing.T) {
 					t.Skip("host permissions do not make mode 000 directory unreadable")
 				}
 			}
-			if _, err := planCI(context.Background(), ciPlanOptions{SourceRoot: root, BuilderFile: builder, Modules: stringPointer("all")}); err == nil {
+			plan, err := planCI(context.Background(), ciPlanOptions{SourceRoot: root, BuilderFile: builder, Modules: stringPointer("all")})
+			if kind == "unreadable module directory" {
+				if err != nil || len(plan.Platforms[0].FailedRoots) != 1 || plan.Platforms[0].FailedRoots[0].Root != "fresh" {
+					t.Fatalf("bounded directory error not reported: %+v %v", plan, err)
+				}
+			} else if err == nil {
 				t.Fatal("unreadable discovery source accepted as no work")
 			}
 		})
@@ -202,7 +207,12 @@ func TestCIDiscoveryFiltering(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if _, err := planCI(context.Background(), ciPlanOptions{SourceRoot: root, BuilderFile: builder, Modules: &selection}); err == nil {
+			plan, err := planCI(context.Background(), ciPlanOptions{SourceRoot: root, BuilderFile: builder, Modules: &selection})
+			if kind == "unknown" || kind == "broken declaration" || kind == "broken local declaration" {
+				if err != nil || len(plan.Platforms[0].FailedRoots) != 1 || len(plan.Platforms[0].Roots) != 0 || len(plan.Platforms[0].FilteredRoots) != 0 {
+					t.Fatalf("recipe failure not retained: %+v %v", plan, err)
+				}
+			} else if err == nil {
 				t.Fatal("invalid input accepted")
 			}
 		})

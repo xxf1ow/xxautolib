@@ -20,6 +20,12 @@ func cliArguments(context buildContext, names ...string) []string {
 	if context.MultiConfig {
 		config = "ON"
 	}
+	for key, value := range context.CMakeDefaults {
+		args = append(args, "--cmake-default="+key+"="+value)
+	}
+	for _, ref := range context.RestoredPackages {
+		args = append(args, "--restored-package="+ref)
+	}
 	return append(args, "--multi-config="+config)
 }
 

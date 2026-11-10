@@ -84,10 +84,13 @@ func TestPlatformSelection(t *testing.T) {
 			}
 		})
 	}
-	t.Run("real ONNX missing Darwin source", func(t *testing.T) {
-		repository, _ := filepath.Abs(filepath.Join("..", ".."))
-		got, err := describeSelection(repository, "Darwin", "arm64", []string{"onnxruntime", "queue", "lz4"}, false)
-		if err != nil || !slices.Equal(got.Roots, []string{"queue@45db9a8b4431", "lz4@1.10.0"}) {
+	t.Run("unsupported root needs no target source", func(t *testing.T) {
+		root := t.TempDir()
+		describeRootInputs(t, root)
+		definitionFile(t, root, "unsupported", "copy", "package_platforms=['linux-x86_64']\n[platforms.linux-x86_64.source]\nGIT_REPOSITORY='fixture'\nGIT_TAG='0123456789012345678901234567890123456789'\n[[copy]]\nfiles=['input.h']\ndestination='include'\n")
+		definitionFile(t, root, "healthy", "cmake", testSource)
+		got, err := describeSelection(root, "Darwin", "arm64", []string{"unsupported", "healthy"}, false)
+		if err != nil || !slices.Equal(got.Roots, []string{"healthy@1.0"}) || len(got.FilteredRoots) != 1 || got.FilteredRoots[0].Root != "unsupported@1.0" {
 			t.Fatalf("platform must precede source requirements: %+v %v", got, err)
 		}
 	})

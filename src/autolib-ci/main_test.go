@@ -60,10 +60,10 @@ func init() {
 		fmt.Fprint(os.Stdout, `{"system_name":"Windows","architecture":"x86_64","roots":[],"modules":[],"go_module_files":[],"builder_files":[],"requested_roots":[],"filtered_roots":[]}`)
 		os.Exit(0)
 	case "missing-dependency":
-		fmt.Fprint(os.Stdout, `{"system_name":"Linux","architecture":"x86_64","roots":["flann@1.0"],"modules":[{"name":"flann","version":"1.0","target":"fixture-flann","depends":["lz4@1.0"],"package_platform":"linux-x86_64","system_dependencies":{},"input_files":[],"adapter_file":""}],"go_module_files":[],"builder_files":[],"requested_roots":["flann@1.0"],"filtered_roots":[]}`)
+		fmt.Fprint(os.Stdout, `{"system_name":"Linux","architecture":"x86_64","roots":["flann@1.0"],"modules":[{"name":"flann","version":"1.0","target":"fixture-flann","depends":["lz4@1.0"],"package_platform":"linux-x86_64","system_dependencies":{},"input_files":[],"adapter_file":""}],"go_module_files":[],"builder_files":[],"requested_roots":["flann@1.0"],"filtered_roots":[],"failed_roots":[]}`)
 		os.Exit(0)
 	case "extra-module":
-		fmt.Fprint(os.Stdout, `{"system_name":"Linux","architecture":"x86_64","roots":["lz4@1.0"],"modules":[{"name":"lz4","version":"1.0","target":"fixture-lz4","depends":[],"package_platform":"linux-x86_64","system_dependencies":{},"input_files":[],"adapter_file":""},{"name":"queue","version":"1.0","target":"fixture-queue","depends":[],"package_platform":"any-any","system_dependencies":{},"input_files":[],"adapter_file":""}],"go_module_files":[],"builder_files":[],"requested_roots":["lz4@1.0"],"filtered_roots":[]}`)
+		fmt.Fprint(os.Stdout, `{"system_name":"Linux","architecture":"x86_64","roots":["lz4@1.0"],"modules":[{"name":"lz4","version":"1.0","target":"fixture-lz4","depends":[],"package_platform":"linux-x86_64","system_dependencies":{},"input_files":[],"adapter_file":""},{"name":"queue","version":"1.0","target":"fixture-queue","depends":[],"package_platform":"any-any","system_dependencies":{},"input_files":[],"adapter_file":""}],"go_module_files":[],"builder_files":[],"requested_roots":["lz4@1.0"],"filtered_roots":[],"failed_roots":[]}`)
 		os.Exit(0)
 	case "valid":
 		var systemName, architecture string
@@ -110,7 +110,7 @@ func init() {
 				roots = append(roots, root)
 			}
 		}
-		data, _ := json.Marshal(moduleDescription{SystemName: systemName, Architecture: architecture, Roots: roots, RequestedRoots: roots, FilteredRoots: []filteredRoot{}, Modules: modules, GoModuleFiles: []string{"go.mod", "go.sum"}, BuilderFiles: []string{"CMakeLists.txt"}})
+		data, _ := json.Marshal(moduleDescription{SystemName: systemName, Architecture: architecture, Roots: roots, RequestedRoots: roots, FilteredRoots: []filteredRoot{}, FailedRoots: []failedRoot{}, Modules: modules, GoModuleFiles: []string{"go.mod", "go.sum"}, BuilderFiles: []string{"CMakeLists.txt"}})
 		fmt.Fprintln(os.Stdout, string(data))
 		os.Exit(0)
 	default:

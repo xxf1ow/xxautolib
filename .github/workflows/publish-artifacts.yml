@@ -1,9 +1,6 @@
-name: Publish artifacts to Gitee
+name: Synchronize Gitee
 
 on:
-  workflow_run:
-    workflows: [Representative releases]
-    types: [completed]
   workflow_dispatch:
     inputs:
       host:
@@ -12,114 +9,123 @@ on:
         options: [gitee]
         default: gitee
       mode:
-        description: Publish original build artifacts or update latest only
+        description: Synchronize cached products or update latest only
         type: choice
-        options: [artifacts, latest]
-        default: artifacts
-      source_run_id:
-        description: Original successful build run ID (artifacts mode)
-        type: string
-      source_attempt:
-        description: Exact original run attempt (artifacts mode)
-        type: string
+        options: [sync, latest]
+        default: sync
       latest:
         description: Explicit latest JSON object; required in latest mode
         type: string
         default: ''
+  workflow_run:
+    workflows: [Representative releases]
+    types: [completed]
 
 permissions:
-  contents: read
-  actions: read
+  contents: write
 
 concurrency:
-  group: artifact-publication-gitee-${{ vars.GITEE_REPOSITORY }}
+  group: ${{ github.repository }}-autolib-release
   cancel-in-progress: false
+  queue: max
 
 jobs:
   publish:
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.repository.full_name == github.repository) }}
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.full_name == github.repository) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     defaults:
       run:
         shell: bash
     env:
-      PUBLISH_HOST: ${{ github.event_name == 'workflow_run' && 'gitee' || inputs.host }}
-      PUBLISH_MODE: ${{ github.event_name == 'workflow_run' && 'artifacts' || inputs.mode }}
+      PUBLISH_HOST: ${{ inputs.host || 'gitee' }}
+      PUBLISH_MODE: ${{ inputs.mode || 'sync' }}
       GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}
       GITEE_RELEASE_TAG: ${{ vars.GITEE_RELEASE_TAG }}
+      GOMAXPROCS: '4'
     steps:
-      - name: Validate publication request
+      - name: Fix current branch snapshot
+        id: snapshot
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if [[ "$GITHUB_REF" != refs/heads/?* || "$PUBLISH_HOST" != gitee || ( "$PUBLISH_MODE" != artifacts && "$PUBLISH_MODE" != latest ) ]]; then
-            echo "Publication requires a branch ref, host gitee and mode artifacts or latest." >&2
-            exit 1
-          fi
-          if [[ ! "$GITEE_REPOSITORY" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$ || -z "$GITEE_RELEASE_TAG" || "$GITEE_RELEASE_TAG" =~ [[:space:][:cntrl:]] ]]; then
-            echo "Publication requires an explicit valid Gitee repository and nonempty tag without whitespace or controls." >&2
-            exit 1
-          fi
+          python - <<'PY'
+          import json, os, re, subprocess, urllib.parse, urllib.request
+          from pathlib import Path
+          env = os.environ
+          repository = env['GITHUB_REPOSITORY']
+          event = json.loads(Path(env['GITHUB_EVENT_PATH']).read_text())
+          if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*', repository):
+              raise ValueError('Invalid current repository')
+          if env['GITHUB_EVENT_NAME'] == 'workflow_run':
+              run = event['workflow_run']
+              if run['conclusion'] != 'success' or run['head_repository']['full_name'] != repository:
+                  raise ValueError('Build must have succeeded in the current repository')
+              ref = 'refs/heads/' + run['head_branch']
+          elif env['GITHUB_EVENT_NAME'] == 'workflow_dispatch':
+              ref = env['GITHUB_REF']
+          else:
+              raise ValueError('Unsupported event')
+          if not ref.startswith('refs/heads/') or subprocess.run(['git', 'check-ref-format', ref], capture_output=True).returncode:
+              raise ValueError('Sync requires an ordinary branch')
+          if env['PUBLISH_HOST'] != 'gitee' or env['PUBLISH_MODE'] not in {'sync', 'latest'}:
+              raise ValueError('Invalid publication host or mode')
+          if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*', env['GITEE_REPOSITORY']) or not env['GITEE_RELEASE_TAG'] or any(c.isspace() or ord(c) < 32 or ord(c) == 127 for c in env['GITEE_RELEASE_TAG']):
+              raise ValueError('Explicit Gitee repository and tag are required')
+          request = urllib.request.Request('https://api.github.com/repos/' + repository + '/commits/' + urllib.parse.quote(ref, safe=''), headers={'Authorization': 'Bearer ' + env['GITHUB_TOKEN'], 'Accept': 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28'})
+          with urllib.request.urlopen(request, timeout=60) as response:
+              sha = json.load(response)['sha']
+          if not isinstance(sha, str) or not re.fullmatch('[0-9a-f]{40}', sha):
+              raise ValueError('Invalid branch snapshot SHA')
+          with open(env['GITHUB_OUTPUT'], 'a') as output:
+              output.write('ref=' + ref + '\nsha=' + sha + '\n')
+          PY
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ steps.snapshot.outputs.sha }}
           persist-credentials: false
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
-      - name: Select original build
-        id: selection
-        if: ${{ env.PUBLISH_MODE == 'artifacts' }}
+      - name: Build sync tools
+        run: |
+          set -euo pipefail
+          mkdir -p build/sync build/tools
+          cmake -P src/autolib-builder/go-sdk.cmake -- build -mod=readonly -p=4 -trimpath -o build/tools/autolib-builder ./src/autolib-builder
+          cmake -P src/autolib-builder/go-sdk.cmake -- build -mod=readonly -p=4 -trimpath -o build/tools/autolib-ci ./src/autolib-ci
+      - name: Describe fixed source
+        env:
+          SYNC_REF: ${{ steps.snapshot.outputs.ref }}
+        run: |
+          set -euo pipefail
+          build/tools/autolib-ci sync-source --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --builder-file "$GITHUB_WORKSPACE/build/tools/autolib-builder" --ref "$SYNC_REF" --output build/sync/source.json
+      - name: Read cache
+        if: ${{ env.PUBLISH_MODE == 'sync' }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
-          SOURCE_ATTEMPT: ${{ inputs.source_attempt }}
-          LATEST: ${{ inputs.latest }}
         run: |
           set -euo pipefail
-          mkdir -p build/publication-control
-          python .github/scripts/prepare-publication.py select --output build/publication-control/selection.json
-          jq -r '"sha=" + .source_run.sha, "run_id=" + .source_run.run_id, "artifact_ids=" + ([.artifacts[].id|tostring]|join(","))' build/publication-control/selection.json >> "$GITHUB_OUTPUT"
-      - uses: actions/download-artifact@v8
-        if: ${{ env.PUBLISH_MODE == 'artifacts' }}
-        with:
-          artifact-ids: ${{ steps.selection.outputs.artifact_ids }}
-          run-id: ${{ steps.selection.outputs.run_id }}
-          github-token: ${{ github.token }}
-          path: build/publication-input
-          merge-multiple: false
-      - name: Checkout original build source
-        if: ${{ env.PUBLISH_MODE == 'artifacts' }}
-        uses: actions/checkout@v7
-        with:
-          ref: ${{ steps.selection.outputs.sha }}
-          path: build/source
-          persist-credentials: false
-      - name: Prepare publication
-        id: publication
-        if: ${{ env.PUBLISH_MODE == 'artifacts' }}
-        run: |
-          set -euo pipefail
-          manifest=$(python .github/scripts/prepare-publication.py prepare --selection build/publication-control/selection.json --input-root build/publication-input --source-root build/source --output-root build/source/build/publication --repository "$GITEE_REPOSITORY" --tag "$GITEE_RELEASE_TAG" --source-repository "$GITHUB_REPOSITORY")
-          has_writes=$(jq -r '(.assets|length > 0) or (.explicit_latest|length > 0)' "$manifest")
-          echo "input=$manifest" >> "$GITHUB_OUTPUT"
-          echo "has_writes=$has_writes" >> "$GITHUB_OUTPUT"
+          build/tools/autolib-ci sync-cache --repository "$GITHUB_REPOSITORY" --source-input build/sync/source.json --output build/sync/cache.json
       - name: Install publication dependencies
-        if: ${{ env.PUBLISH_MODE == 'latest' || steps.publication.outputs.has_writes == 'true' }}
         run: |
           set -euo pipefail
           python -m venv build/tools/gitee-sync-venv
           build/tools/gitee-sync-venv/bin/python -m pip install -r .github/actions/gitee-release/requirements.txt -c .github/actions/gitee-release/constraints.txt
           echo "$GITHUB_WORKSPACE/build/tools/gitee-sync-venv/bin" >> "$GITHUB_PATH"
-      - name: Publish selected artifacts or latest
-        if: ${{ env.PUBLISH_MODE == 'latest' || steps.publication.outputs.has_writes == 'true' }}
+      - name: Synchronize Gitee
         uses: ./.github/actions/gitee-release
         with:
           host: ${{ env.PUBLISH_HOST }}
           mode: ${{ env.PUBLISH_MODE }}
-          input: ${{ steps.publication.outputs.input }}
-          latest: ${{ env.PUBLISH_MODE == 'latest' && inputs.latest || '' }}
+          source: ${{ github.workspace }}/build/sync/source.json
+          cache: ${{ github.workspace }}/build/sync/cache.json
+          cache-tool: ${{ github.workspace }}/build/tools/autolib-ci
+          ref: ${{ steps.snapshot.outputs.ref }}
+          sha: ${{ steps.snapshot.outputs.sha }}
+          latest: ${{ inputs.latest }}
           repository: ${{ env.GITEE_REPOSITORY }}
           tag: ${{ env.GITEE_RELEASE_TAG }}
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}

@@ -26,9 +26,12 @@ permissions:
 concurrency:
   group: ${{ github.repository }}-autolib-release
   cancel-in-progress: false
+  queue: max
 
 jobs:
   plan:
+    permissions:
+      contents: write
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     outputs:
@@ -64,6 +67,11 @@ jobs:
           jq -n --arg repository "$GITHUB_REPOSITORY" --arg ref "$GITHUB_REF" --arg sha "$GITHUB_SHA" --arg checkout "$(git rev-parse HEAD)" --arg run "$GITHUB_RUN_ID" --arg attempt "$GITHUB_RUN_ATTEMPT" '{repository:$repository,ref:$ref,sha:$sha,checkout_sha:$checkout,run_id:$run,attempt:$attempt}' > build/ci-input/run.json
           jq -cr '"darwin=" + (any(.platforms[]; .id == "darwin-aarch64")|tostring), "windows=" + (any(.platforms[]; .id == "windows-x86_64")|tostring), "linux=" + (any(.platforms[]; .id|startswith("linux-"))|tostring), "linux_matrix=" + ({include:[.platforms[] | select(.id|startswith("linux-")) | {platform:.id,runner:({"linux-x86_64":"ubuntu-24.04","linux-aarch64":"ubuntu-24.04-arm"}[.id])}]}|tojson)' build/ci-input/plan.json >> "$GITHUB_OUTPUT"
           echo "linux_image=$(jq -er '.ubuntu.image' .github/ci-tools.json)" >> "$GITHUB_OUTPUT"
+      - name: Prepare persistent cache
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          build/tools/autolib-ci cache-prepare --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --output build/ci-input/cache.json
       - uses: actions/upload-artifact@v7
         with:
           name: ci-plan-${{ github.run_id }}-${{ github.run_attempt }}
@@ -71,6 +79,8 @@ jobs:
           if-no-files-found: error
 
   linux:
+    permissions:
+      contents: write
     needs: plan
     if: ${{ needs.plan.outputs.linux == 'true' }}
     runs-on: ${{ matrix.runner }}
@@ -109,13 +119,15 @@ jobs:
           jq -r 'to_entries[] | "\(.key)=\(.value)"' build/ci-input/environment.json >> "$GITHUB_OUTPUT"
       - name: Prepare platform
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
           MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
           BUDGET: ${{ steps.environment.outputs.budget }}
         run: >-
-          "$WORK_ROOT/autolib-ci" run --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer prepare --work-root "$WORK_ROOT" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
+          "$WORK_ROOT/autolib-ci" run --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --cache build/ci-input/cache.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer prepare --work-root "$WORK_ROOT" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
       - name: Produce dependency layers
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
           MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
           BUDGET: ${{ steps.environment.outputs.budget }}
@@ -123,31 +135,17 @@ jobs:
           set -euo pipefail
           layers=$(jq -er --arg platform "$PLATFORM" '.platforms[] | select(.id == $platform) | .layers | length' build/ci-input/plan.json)
           for ((index=0; index<layers; index++)); do
-            "$WORK_ROOT/autolib-ci" run --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer "layer$index" --work-root "$WORK_ROOT" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
+            "$WORK_ROOT/autolib-ci" run --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --cache build/ci-input/cache.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer "layer$index" --work-root "$WORK_ROOT" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
           done
       - name: Verify selected work
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
           MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
           BUDGET: ${{ steps.environment.outputs.budget }}
         run: |
           set -euo pipefail
-          # 绑定消费需要 Python 开发头文件；构建结束后安装，避免改变库的自动探测结果。
-          if jq -e --arg platform "$PLATFORM" '.platforms[] | select(.id == $platform) | any(.description.modules[]; .name == "pybind11")' build/ci-input/plan.json >/dev/null; then
-            apt-get install -y --no-install-recommends python3-dev
-          fi
-          "$WORK_ROOT/autolib-ci" run --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer verify --work-root "$WORK_ROOT" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
-      - name: Package and transport verified artifacts
-        env:
-          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
-        run: >-
-          "$WORK_ROOT/autolib-ci" transport --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --work-root "$WORK_ROOT" --cmake-command "$CMAKE_COMMAND" --output "$WORK_ROOT/transport.tar"
-      - name: Retain packaged artifacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: ci-package-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.platform }}
-          path: build/ci/${{ github.run_id }}-${{ github.run_attempt }}/${{ matrix.platform }}/transport.tar
-          if-no-files-found: error
+          "$WORK_ROOT/autolib-ci" run --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --cache build/ci-input/cache.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer verify --work-root "$WORK_ROOT" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
       - name: Retain platform result
         if: ${{ always() && !cancelled() }}
         uses: actions/upload-artifact@v7
@@ -169,6 +167,8 @@ jobs:
           if-no-files-found: warn
 
   darwin:
+    permissions:
+      contents: write
     needs: plan
     if: ${{ needs.plan.outputs.darwin == 'true' }}
     runs-on: macos-15
@@ -202,13 +202,15 @@ jobs:
           jq -r 'to_entries[] | "\(.key)=\(.value)"' build/ci-input/environment.json >> "$GITHUB_OUTPUT"
       - name: Prepare platform
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
           MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
           BUDGET: ${{ steps.environment.outputs.budget }}
         run: >-
-          "$WORK_ROOT/autolib-ci" run --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer prepare --work-root "$WORK_ROOT" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
+          "$WORK_ROOT/autolib-ci" run --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --cache build/ci-input/cache.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer prepare --work-root "$WORK_ROOT" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
       - name: Produce dependency layers
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
           MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
           BUDGET: ${{ steps.environment.outputs.budget }}
@@ -216,26 +218,16 @@ jobs:
           set -euo pipefail
           layers=$(jq -er --arg platform "$PLATFORM" '.platforms[] | select(.id == $platform) | .layers | length' build/ci-input/plan.json)
           for ((index=0; index<layers; index++)); do
-            "$WORK_ROOT/autolib-ci" run --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer "layer$index" --work-root "$WORK_ROOT" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
+            "$WORK_ROOT/autolib-ci" run --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --cache build/ci-input/cache.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer "layer$index" --work-root "$WORK_ROOT" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
           done
       - name: Verify selected work
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
           MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
           BUDGET: ${{ steps.environment.outputs.budget }}
         run: >-
-          "$WORK_ROOT/autolib-ci" run --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer verify --work-root "$WORK_ROOT" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
-      - name: Package and transport verified artifacts
-        env:
-          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
-        run: >-
-          "$WORK_ROOT/autolib-ci" transport --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --work-root "$WORK_ROOT" --cmake-command "$CMAKE_COMMAND" --output "$WORK_ROOT/transport.tar"
-      - name: Retain packaged artifacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: ci-package-${{ github.run_id }}-${{ github.run_attempt }}-darwin-aarch64
-          path: build/ci/${{ github.run_id }}-${{ github.run_attempt }}/darwin-aarch64/transport.tar
-          if-no-files-found: error
+          "$WORK_ROOT/autolib-ci" run --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --cache build/ci-input/cache.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer verify --work-root "$WORK_ROOT" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
       - name: Retain platform result
         if: ${{ always() && !cancelled() }}
         uses: actions/upload-artifact@v7
@@ -259,6 +251,8 @@ jobs:
           if-no-files-found: warn
 
   windows:
+    permissions:
+      contents: write
     needs: plan
     if: ${{ needs.plan.outputs.windows == 'true' }}
     runs-on: windows-2022
@@ -284,35 +278,27 @@ jobs:
           "cmake_command=$($settings.cmake_command)" >> $env:GITHUB_OUTPUT
       - name: Prepare platform
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
         run: >-
-          & "$env:WORK_ROOT/autolib-ci.exe" run --repository $env:GITHUB_REPOSITORY --source-root $env:GITHUB_WORKSPACE --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform windows-x86_64 --layer prepare --work-root $env:WORK_ROOT --importer-file "$env:WORK_ROOT/install/autolib-importer-windows-x86_64.exe" --cmake-command $env:CMAKE_COMMAND
+          & "$env:WORK_ROOT/autolib-ci.exe" run --repository $env:GITHUB_REPOSITORY --source-root $env:GITHUB_WORKSPACE --plan build/ci-input/plan.json --cache build/ci-input/cache.json --run-identity build/ci-input/run.json --platform windows-x86_64 --layer prepare --work-root $env:WORK_ROOT --importer-file "$env:WORK_ROOT/install/autolib-importer-windows-x86_64.exe" --cmake-command $env:CMAKE_COMMAND
       - name: Produce dependency layers
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
         run: |
           $plan = Get-Content build/ci-input/plan.json -Raw | ConvertFrom-Json
           $platform = @($plan.platforms | Where-Object id -eq 'windows-x86_64')[0]
           for ($index = 0; $index -lt $platform.layers.Count; $index++) {
-            & "$env:WORK_ROOT/autolib-ci.exe" run --repository $env:GITHUB_REPOSITORY --source-root $env:GITHUB_WORKSPACE --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform windows-x86_64 --layer "layer$index" --work-root $env:WORK_ROOT --importer-file "$env:WORK_ROOT/install/autolib-importer-windows-x86_64.exe" --cmake-command $env:CMAKE_COMMAND
+            & "$env:WORK_ROOT/autolib-ci.exe" run --repository $env:GITHUB_REPOSITORY --source-root $env:GITHUB_WORKSPACE --plan build/ci-input/plan.json --cache build/ci-input/cache.json --run-identity build/ci-input/run.json --platform windows-x86_64 --layer "layer$index" --work-root $env:WORK_ROOT --importer-file "$env:WORK_ROOT/install/autolib-importer-windows-x86_64.exe" --cmake-command $env:CMAKE_COMMAND
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
       - name: Verify selected work
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
         run: >-
-          & "$env:WORK_ROOT/autolib-ci.exe" run --repository $env:GITHUB_REPOSITORY --source-root $env:GITHUB_WORKSPACE --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform windows-x86_64 --layer verify --work-root $env:WORK_ROOT --importer-file "$env:WORK_ROOT/install/autolib-importer-windows-x86_64.exe" --cmake-command $env:CMAKE_COMMAND
-      - name: Package and transport verified artifacts
-        env:
-          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
-        run: >-
-          & "$env:WORK_ROOT/autolib-ci.exe" transport --repository $env:GITHUB_REPOSITORY --source-root $env:GITHUB_WORKSPACE --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --platform windows-x86_64 --work-root $env:WORK_ROOT --cmake-command $env:CMAKE_COMMAND --output "$env:WORK_ROOT/transport.tar"
-      - name: Retain packaged artifacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: ci-package-${{ github.run_id }}-${{ github.run_attempt }}-windows-x86_64
-          path: ${{ env.WORK_ROOT }}/transport.tar
-          if-no-files-found: error
+          & "$env:WORK_ROOT/autolib-ci.exe" run --repository $env:GITHUB_REPOSITORY --source-root $env:GITHUB_WORKSPACE --plan build/ci-input/plan.json --cache build/ci-input/cache.json --run-identity build/ci-input/run.json --platform windows-x86_64 --layer verify --work-root $env:WORK_ROOT --importer-file "$env:WORK_ROOT/install/autolib-importer-windows-x86_64.exe" --cmake-command $env:CMAKE_COMMAND
       - name: Retain platform result
         if: ${{ always() && !cancelled() }}
         uses: actions/upload-artifact@v7
@@ -354,6 +340,8 @@ jobs:
           path: build/ci-results
           merge-multiple: true
       - name: Build CI tool
+        if: ${{ always() && !cancelled() }}
         run: cmake -P src/autolib-builder/go-sdk.cmake -- build -mod=readonly -trimpath -o build/tools/autolib-ci ./src/autolib-ci
       - name: Summarize selected work
+        if: ${{ always() && !cancelled() }}
         run: build/tools/autolib-ci finalize --repository "$GITHUB_REPOSITORY" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --results build/ci-results

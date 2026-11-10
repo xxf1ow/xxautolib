@@ -15,6 +15,9 @@ func (p *packageFlags) Set(value string) error { *p = append(*p, value); return 
 
 func run(args []string, stdout, stderr io.Writer) int {
 	fail := func(err error) int { fmt.Fprintln(stderr, err); return 1 }
+	if len(args) > 0 && args[0] == "restore" {
+		return runRestore(args[1:], stdout, stderr)
+	}
 	if len(args) == 0 || args[0] != "prepare" {
 		return fail(fmt.Errorf("usage: autolib-importer prepare [--remote-root=<URL>] [--metadata-root=<directory>] --cache-root=<directory> --os=<target OS> --arch=<target arch> --result=<file> --package=<name[@version]> ..."))
 	}

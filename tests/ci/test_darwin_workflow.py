@@ -69,7 +69,7 @@ class DarwinWorkflowTests(unittest.TestCase):
                          'WORK_ROOT: ${{ github.workspace }}/build/ci/${{ github.run_id }}-${{ github.run_attempt }}/darwin-aarch64',
                          'environment.log', 'jobserver.json', '/evidence/**/*.json', '/logs/'):
             self.assertIn(fragment, darwin)
-        for kind in ('package', 'result', 'evidence'):
+        for kind in ('result', 'evidence'):
             self.assertIn('name: ci-' + kind + '-${{ github.run_id }}-${{ github.run_attempt }}-darwin-aarch64', darwin)
 
     def test_native_guard(self):
@@ -116,9 +116,9 @@ class DarwinWorkflowTests(unittest.TestCase):
 
     def test_executor_calls_empty_library_and_failure(self):
         darwin = job(self.source, 'darwin')
-        scripts = [step_script(darwin, name) for name in ('Prepare platform', 'Produce dependency layers', 'Verify selected work', 'Package and transport verified artifacts')]
-        for layers, failure, expected in (([], '', ['prepare', 'verify', 'transport']),
-                                           ([['lz4@1.10.0']], '', ['prepare', 'layer0', 'verify', 'transport']),
+        scripts = [step_script(darwin, name) for name in ('Prepare platform', 'Produce dependency layers', 'Verify selected work')]
+        for layers, failure, expected in (([], '', ['prepare', 'verify']),
+                                           ([['lz4@1.10.0']], '', ['prepare', 'layer0', 'verify']),
                                            ([['lz4@1.10.0']], 'layer0', ['prepare', 'layer0'])):
             with self.subTest(layers=layers, failure=failure), tempfile.TemporaryDirectory(prefix='darwin workflow ') as temporary:
                 root = Path(temporary)
@@ -144,11 +144,8 @@ class DarwinWorkflowTests(unittest.TestCase):
                 calls = [json.loads(line) for line in (root / 'calls').read_text().splitlines()]
                 self.assertEqual([phase for phase, _ in calls], expected)
                 for phase, options in calls:
-                    required = {'--repository': 'fixture/trusted', '--source-root': str(root), '--plan': 'build/ci-input/plan.json', '--run-identity': 'build/ci-input/run.json', '--platform': 'darwin-aarch64', '--work-root': str(work), '--cmake-command': str(work / 'cmake')}
-                    if phase == 'transport':
-                        required['--output'] = str(work / 'transport.tar')
-                    else:
-                        required.update({'--layer': phase, '--importer-file': str(work / 'install/autolib-importer-darwin-aarch64'), '--make-program': environment['MAKE_PROGRAM'], '--budget': environment['BUDGET']})
+                    required = {'--repository': 'fixture/trusted', '--source-root': str(root), '--plan': 'build/ci-input/plan.json', '--cache': 'build/ci-input/cache.json', '--run-identity': 'build/ci-input/run.json', '--platform': 'darwin-aarch64', '--work-root': str(work), '--cmake-command': str(work / 'cmake')}
+                    required.update({'--layer': phase, '--importer-file': str(work / 'install/autolib-importer-darwin-aarch64'), '--make-program': environment['MAKE_PROGRAM'], '--budget': environment['BUDGET']})
                     self.assertEqual(options, required)
 
 

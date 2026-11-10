@@ -95,16 +95,11 @@ if [[ "$has_libraries" == true ]]; then
   if [[ -n "${GITHUB_ENV:-}" ]]; then printf 'CC=gcc-%s\nCXX=g++-%s\n' "$gcc_major" "$gcc_major" >>"$GITHUB_ENV"; fi
   printf 'GCC=%s\nG++=%s\nMake=%s\n' "$actual_gcc_version" "$actual_gxx_version" "$("$make_program" --version | head -n1)" >&2
 fi
-mapfile -t apt_packages < <(jq -r --arg platform "$platform" '[.platforms[] | select(.id == $platform) | .system_dependencies.apt[]?] | unique | .[]' "$plan")
-if ((${#apt_packages[@]})); then
-  for package in "${apt_packages[@]}"; do [[ "$package" =~ ^[a-z0-9][a-z0-9+.-]*$ ]] || { echo "Unsafe APT package name: $package" >&2; exit 1; }; done
-  apt-get install -y --no-install-recommends "${apt_packages[@]}"
-fi
 
 export PATH="$tools/bin:$PATH"
 git config --global --add safe.directory "$repo_root"
 "$cmake_command" -P "$repo_root/src/autolib-builder/go-sdk.cmake" -- build -mod=readonly -trimpath -o "$work_root/autolib-ci" ./src/autolib-ci
 if [[ -n "${GITHUB_PATH:-}" ]]; then printf '%s\n' "$tools/bin" >>"$GITHUB_PATH"; fi
-dpkg-query -W -f='${binary:Package}=${Version}\n' ca-certificates curl git jq xz-utils tar unzip libgcc-s1 libstdc++6 "${build_packages[@]}" "${apt_packages[@]}" 2>/dev/null | sort -u >&2
+dpkg-query -W -f='${binary:Package}=${Version}\n' ca-certificates curl git jq xz-utils tar unzip libgcc-s1 libstdc++6 "${build_packages[@]}" 2>/dev/null | sort -u >&2
 printf 'architecture=%s\nCMake=%s\n' "$arch" "$("$cmake_command" --version | head -n1)" >&2
 jq -cn --arg cmake "$cmake_command" --arg make "$make_program" --argjson budget "$budget" '{cmake_command:$cmake,make_program:$make,budget:$budget}' >&3

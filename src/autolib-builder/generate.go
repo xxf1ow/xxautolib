@@ -35,6 +35,13 @@ func generate(context buildContext, names []string) error {
 	for _, m := range definitions {
 		byRef[(moduleRef{m.Name, m.Version}).String()] = m
 	}
+	seenRestored := map[string]bool{}
+	for _, ref := range context.RestoredPackages {
+		if byRef[ref] == nil || seenRestored[ref] {
+			return fmt.Errorf("restored package %q must identify a unique selected exact package", ref)
+		}
+		seenRestored[ref] = true
+	}
 	type output struct{ path, content string }
 	outputs := []output{}
 	inputs := []string{slashJoin(context.SourceRoot, "go.mod"), slashJoin(context.SourceRoot, "go.sum")}

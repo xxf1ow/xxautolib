@@ -10,7 +10,7 @@ import (
 
 func TestCIWorkflowTrustedRepository(t *testing.T) {
 	document := strings.ReplaceAll(mustReadText(t, "../../.github/workflows/build-platform.yml"), "\r\n", "\n")
-	for _, job := range []string{"linux", "windows", "finalize"} {
+	for _, job := range []string{"plan", "linux", "windows", "darwin", "finalize"} {
 		block := workflowSection(t, document, "  "+job+":")
 		calls := 0
 		for _, line := range strings.Split(block, "\n") {
@@ -45,12 +45,26 @@ func TestCIWorkflowTrustedRepository(t *testing.T) {
 				t.Fatalf("%s invocation omitted trusted repository: %v\n%s", job, err, output)
 			}
 		}
-		want := 4
-		if job == "finalize" {
+		want := 3
+		if job == "finalize" || job == "plan" {
 			want = 1
 		}
 		if calls != want {
 			t.Fatalf("%s checked %d CI calls, want %d", job, calls, want)
+		}
+	}
+}
+
+func TestCISyncWorkflowBranch(t *testing.T) {
+	document := mustReadText(t, "../../.github/workflows/publish-artifacts.yml")
+	for _, text := range []string{"sync-source", "--repository \"$GITHUB_REPOSITORY\"", "--ref \"$SYNC_REF\"", "ref: ${{ steps.snapshot.outputs.sha }}", "persist-credentials: false"} {
+		if !strings.Contains(document, text) {
+			t.Fatal("missing fixed source binding", text)
+		}
+	}
+	for _, text := range []string{"source_run_id", "source_attempt", "actions/download-artifact", " transport "} {
+		if strings.Contains(document, text) {
+			t.Fatal("retired sync input", text)
 		}
 	}
 }

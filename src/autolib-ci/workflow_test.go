@@ -42,7 +42,7 @@ func workflowField(t *testing.T, block, key string) string {
 	return ""
 }
 
-func TestCITransportWorkflow(t *testing.T) {
+func TestCIBuildWorkflow(t *testing.T) {
 	root := filepath.Join("..", "..")
 	data, err := os.ReadFile(filepath.Join(root, ".github/workflows/build-platform.yml"))
 	if err != nil {
@@ -64,13 +64,13 @@ func TestCITransportWorkflow(t *testing.T) {
 		}
 	}
 	jobs := workflowSection(t, document, "jobs:")
-	if strings.Count(jobs, "\n  ")-strings.Count(jobs, "\n   ") != 3 {
-		t.Fatal("expected only plan, linux, windows, finalize jobs")
+	if strings.Count(jobs, "\n  ")-strings.Count(jobs, "\n   ") != 4 {
+		t.Fatal("expected only plan, linux, windows, darwin, finalize jobs")
 	}
-	for _, id := range []string{"plan", "linux", "windows", "finalize"} {
+	for _, id := range []string{"plan", "linux", "windows", "darwin", "finalize"} {
 		job := workflowSection(t, document, "  "+id+":")
 		minutes := "15"
-		if id == "linux" || id == "windows" {
+		if id == "linux" || id == "windows" || id == "darwin" {
 			minutes = "120"
 		}
 		if workflowField(t, job, "timeout-minutes") != minutes {
@@ -79,7 +79,7 @@ func TestCITransportWorkflow(t *testing.T) {
 		if !strings.Contains(job, "ref: ${{ github.sha }}") || !strings.Contains(job, "persist-credentials: false") {
 			t.Fatalf("%s checkout is not event-bound", id)
 		}
-		if strings.Contains(job, "contents: write") || strings.Contains(job, "GITHUB_TOKEN:") {
+		if id == "finalize" && (strings.Contains(job, "contents: write") || strings.Contains(job, "GITHUB_TOKEN:")) {
 			t.Fatalf("unexpected write permissions on %s", id)
 		}
 	}
@@ -185,7 +185,7 @@ func TestCITransportWorkflow(t *testing.T) {
 	}
 	finalize := workflowSection(t, document, "  finalize:")
 	condition := workflowField(t, finalize, "if")
-	if workflowField(t, finalize, "needs") != "[plan, linux, windows]" {
+	if workflowField(t, finalize, "needs") != "[plan, linux, windows, darwin]" {
 		t.Fatal("finalize does not wait for all jobs")
 	}
 	// The shipped condition uses only conjunction and the plan result comparison.
@@ -216,44 +216,6 @@ func TestCITransportWorkflow(t *testing.T) {
 	}
 	if strings.Contains(finalize, "GITHUB_TOKEN:") {
 		t.Fatal("read-only summary received a publication token")
-	}
-	for _, id := range []string{"linux", "windows"} {
-		job := workflowSection(t, document, "  "+id+":")
-		transport := workflowSection(t, job, "      - name: Package and transport verified artifacts")
-		if !strings.Contains(transport, " transport --repository ") || !strings.Contains(transport, "transport.tar") || !strings.Contains(transport, "--cmake-command") || !strings.Contains(transport, "CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}") {
-			t.Fatalf("%s does not package its verified installation", id)
-		}
-		if strings.Index(job, "name: Verify selected work") > strings.Index(job, "name: Package and transport verified artifacts") {
-			t.Fatal("packaging precedes verification")
-		}
-		upload := workflowSection(t, job, "      - name: Retain packaged artifacts")
-		if !strings.Contains(upload, "ci-package-${{ github.run_id }}-${{ github.run_attempt }}-") || !strings.Contains(upload, "if-no-files-found: error") || strings.Contains(upload, "if:") {
-			t.Fatalf("%s transport is not retained under exact run/attempt", id)
-		}
-		t.Run(id+" packaging arguments and failure", func(t *testing.T) {
-			script := strings.TrimSpace(workflowSection(t, transport, "        run: >-"))
-			for _, fail := range []string{"0", "17"} {
-				var command *exec.Cmd
-				if id == "linux" {
-					script = strings.ReplaceAll(script, `"$WORK_ROOT/autolib-ci"`, "invoke_ci")
-					stub := `invoke_ci() { while (($#)); do if [[ $1 == --cmake-command ]]; then [[ $2 == 'CMake with spaces/cmake' ]] || return 91; return "$FAIL_CODE"; fi; shift; done; return 92; }; `
-					command = exec.Command(bash, "-e", "-c", stub+script)
-				} else {
-					pwsh, err := exec.LookPath("pwsh")
-					if err != nil {
-						t.Skip("PowerShell unavailable; Windows invocation requires native runner")
-					}
-					script = strings.ReplaceAll(script, `& "$env:WORK_ROOT/autolib-ci.exe"`, "Invoke-CI")
-					stub := `function Invoke-CI { $i=[Array]::IndexOf($args,'--cmake-command'); if ($i -lt 0 -or $args[$i+1] -ne 'CMake with spaces/cmake') { exit 91 }; $global:LASTEXITCODE=[int]$env:FAIL_CODE }; `
-					command = exec.Command(pwsh, "-NoProfile", "-NonInteractive", "-Command", stub+script+"; exit $LASTEXITCODE")
-				}
-				command.Env = append(os.Environ(), "CMAKE_COMMAND=CMake with spaces/cmake", "FAIL_CODE="+fail, "WORK_ROOT=work with spaces", "PLATFORM=linux-x86_64")
-				out, err := command.CombinedOutput()
-				if (err != nil) != (fail != "0") {
-					t.Fatalf("packaging exit %s: %v %s", fail, err, out)
-				}
-			}
-		})
 	}
 	for _, platform := range []string{"linux", "windows"} {
 		file := filepath.Join(root, ".github/scripts/prepare-"+platform+map[string]string{"linux": ".sh", "windows": ".ps1"}[platform])

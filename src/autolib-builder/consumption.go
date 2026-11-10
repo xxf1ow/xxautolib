@@ -84,8 +84,8 @@ func readConsumptionMetadata(path string) (metadata consumptionMetadata, err err
 }
 
 func prepareConsumption(o consumptionOptions) error {
-	if o.SourceRoot == "" || o.InstallRoot == "" || !slices.Contains([]string{"begin", "installed", "reuse"}, o.Phase) {
-		return fmt.Errorf("prepare-consumption requires source-root, install-root and phase begin, installed or reuse")
+	if o.SourceRoot == "" || o.InstallRoot == "" || !slices.Contains([]string{"begin", "installed", "reuse", "restored"}, o.Phase) {
+		return fmt.Errorf("prepare-consumption requires source-root, install-root and phase begin, installed, reuse or restored")
 	}
 	if err := validatePackageName(o.Name); err != nil {
 		return err
@@ -116,6 +116,9 @@ func prepareConsumption(o consumptionOptions) error {
 	adapterPath := filepath.Join(filepath.Dir(module.Path), "autolib-import.cmake")
 	adapter, err := os.ReadFile(adapterPath)
 	if errors.Is(err, os.ErrNotExist) {
+		if o.Phase == "restored" {
+			return fmt.Errorf("restored package requires a readable adapter: %w", err)
+		}
 		if o.Phase == "begin" {
 			return nil
 		}
@@ -159,10 +162,13 @@ func prepareConsumption(o consumptionOptions) error {
 	}
 	output := filepath.Join(o.InstallRoot, o.Name, o.Version, "autolib-import.cmake")
 	old, err := os.ReadFile(output)
+	if o.Phase == "restored" && err != nil {
+		return fmt.Errorf("restored package requires installed metadata: %w", err)
+	}
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("%s: %w", output, err)
 	}
-	if err == nil && !(o.Phase != "reuse" && bytes.Equal(old, []byte(incompleteConsumption))) {
+	if err == nil && !((o.Phase == "begin" || o.Phase == "installed") && bytes.Equal(old, []byte(incompleteConsumption))) {
 		metadata, err := readConsumptionMetadata(output)
 		if err != nil {
 			return err
@@ -170,7 +176,7 @@ func prepareConsumption(o consumptionOptions) error {
 		if metadata.Name != o.Name || metadata.Version != o.Version || metadata.OS != packageOS || metadata.Arch != packageArch {
 			return fmt.Errorf("%s: existing package identity %s@%s/%s/%s does not match %s@%s/%s/%s", output, metadata.Name, metadata.Version, metadata.OS, metadata.Arch, o.Name, o.Version, packageOS, packageArch)
 		}
-		if o.Phase == "reuse" {
+		if o.Phase == "reuse" || o.Phase == "restored" {
 			sameDependencies := len(metadata.Dependencies) == len(dependencies)
 			for _, dependency := range dependencies {
 				sameDependencies = sameDependencies && slices.Contains(metadata.Dependencies, dependency)
@@ -204,6 +210,14 @@ func prepareConsumption(o consumptionOptions) error {
 		if metadata.Name != ref.Name || metadata.Version != ref.Version || !((metadata.OS == o.OS && metadata.Arch == o.Arch) || (metadata.OS == "any" && metadata.Arch == "any")) {
 			return fmt.Errorf("package %s: dependency %s identity does not match %s/%s", o.Name, dependency, o.OS, o.Arch)
 		}
+	}
+	// The caller must verify the archive digest and production inputs before selecting restored mode.
+	// It validates the frozen installation without requiring upstream source or rewriting metadata.
+	if o.Phase == "restored" {
+		if packageOS == "any" {
+			return validateUniversalPayload(filepath.Dir(output))
+		}
+		return nil
 	}
 	if slices.Contains(module.PackagePlatforms, "any-any") {
 		if err := validateSourceVersionPaths(module, o.SourceRoot); err != nil {

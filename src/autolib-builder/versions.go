@@ -141,44 +141,35 @@ func validateSourceVersionPaths(module *moduleDefinition, sourceRoot string) err
 }
 
 func discoverModuleRefs(sourceRoot string) ([]moduleRef, error) {
+	refs, _, err := discoverModuleCatalog(sourceRoot, false)
+	return refs, err
+}
+
+func discoverModuleCatalog(sourceRoot string, report bool) ([]moduleRef, []failedRoot, error) {
 	dependencies := filepath.Join(sourceRoot, "src", "dependencies")
 	packages, err := os.ReadDir(dependencies)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := validateCatalogCase(packages, dependencies); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	refs := []moduleRef{}
+	failures := []failedRoot{}
 	for _, entry := range packages {
 		if !entry.IsDir() {
 			continue
 		}
 		directory := filepath.Join(dependencies, entry.Name())
-		versions, err := versionDirectories(directory)
+		local, err := discoverPackageRefs(directory, entry.Name())
 		if err != nil {
-			return nil, err
-		}
-		for _, version := range versions {
-			recipeDirectory := filepath.Join(directory, version.Name())
-			files, err := os.ReadDir(recipeDirectory)
-			if err != nil {
-				return nil, err
+			if !report {
+				return nil, nil, err
 			}
-			for _, file := range files {
-				if file.Name() != "module.toml" {
-					continue
-				}
-				ref, err := parseModuleRef(entry.Name() + "@" + version.Name())
-				if err != nil {
-					return nil, fmt.Errorf("%s: %w", recipeDirectory, err)
-				}
-				if err := exactEntry(recipeDirectory, "module.toml", false); err != nil {
-					return nil, err
-				}
-				refs = append(refs, ref)
-			}
+			failures = append(failures, failedRoot{entry.Name(), "recipe_error", err.Error(), []string{entry.Name()}})
+			continue
 		}
+		refs = append(refs, local...)
 	}
 	slices.SortFunc(refs, func(a, b moduleRef) int {
 		if order := strings.Compare(a.Name, b.Name); order != 0 {
@@ -186,6 +177,35 @@ func discoverModuleRefs(sourceRoot string) ([]moduleRef, error) {
 		}
 		return strings.Compare(a.Version, b.Version)
 	})
+	return refs, failures, nil
+}
+
+func discoverPackageRefs(directory, packageName string) ([]moduleRef, error) {
+	refs := []moduleRef{}
+	versions, err := versionDirectories(directory)
+	if err != nil {
+		return nil, err
+	}
+	for _, version := range versions {
+		recipeDirectory := filepath.Join(directory, version.Name())
+		files, err := os.ReadDir(recipeDirectory)
+		if err != nil {
+			return nil, err
+		}
+		for _, file := range files {
+			if file.Name() != "module.toml" {
+				continue
+			}
+			ref, err := parseModuleRef(packageName + "@" + version.Name())
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", recipeDirectory, err)
+			}
+			if err := exactEntry(recipeDirectory, "module.toml", false); err != nil {
+				return nil, err
+			}
+			refs = append(refs, ref)
+		}
+	}
 	return refs, nil
 }
 
