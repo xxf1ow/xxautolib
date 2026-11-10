@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -245,4 +247,228 @@ func TestCICacheGitCredentials(t *testing.T) {
 	if err == nil || strings.Contains(err.Error(), "secret") {
 		t.Fatal("authentication failure leaked credentials")
 	}
+}
+
+func cacheGitSibling(t *testing.T, s *ciCacheGitStore) *ciCacheGitStore {
+	t.Helper()
+	other, err := newCICacheGitStore(s.SourceRepository, s.Repository, s.Token, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	other.URL = s.URL
+	other.APIBase = s.APIBase
+	return other
+}
+
+func cacheGitShim() {
+	args := os.Args[1:]
+	isPush := false
+	for _, arg := range args {
+		if arg == "push" {
+			isPush = true
+			break
+		}
+	}
+	mode := os.Getenv("AUTOLIB_CI_GIT_FAULT")
+	if isPush {
+		counter := os.Getenv("AUTOLIB_CI_GIT_COUNT")
+		f, _ := os.OpenFile(counter, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+		if f != nil {
+			f.WriteString("push\n")
+			f.Close()
+		}
+		if mode == "reject" {
+			os.Exit(1)
+		}
+		if mode == "auth" {
+			fmt.Fprintln(os.Stderr, "Authentication failed")
+			os.Exit(1)
+		}
+		if mode == "advance" {
+			path := os.Getenv("AUTOLIB_CI_GIT_HEADS")
+			data, _ := os.ReadFile(path)
+			heads := strings.Fields(string(data))
+			if len(heads) > 0 {
+				cmd := exec.Command(os.Getenv("AUTOLIB_CI_REAL_GIT"), "--git-dir", os.Getenv("AUTOLIB_CI_GIT_REMOTE"), "update-ref", "refs/heads/autolib-cache", heads[0])
+				if err := cmd.Run(); err != nil {
+					os.Exit(2)
+				}
+				os.WriteFile(path, []byte(strings.Join(heads[1:], "\n")), 0600)
+			}
+		}
+	}
+	cmd := exec.Command(os.Getenv("AUTOLIB_CI_REAL_GIT"), args...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		var status *exec.ExitError
+		if errors.As(err, &status) {
+			os.Exit(status.ExitCode())
+		}
+		os.Exit(2)
+	}
+	if isPush && mode == "lost" {
+		os.Exit(1)
+	}
+	os.Exit(0)
+}
+
+func cacheGitFault(t *testing.T, mode, remote string, heads []string) string {
+	t.Helper()
+	real, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	directory := t.TempDir()
+	name := "git"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	data, err := os.ReadFile(self)
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(directory, name), data, 0755)
+	count := filepath.Join(directory, "count")
+	headfile := filepath.Join(directory, "heads")
+	os.WriteFile(headfile, []byte(strings.Join(heads, "\n")), 0600)
+	t.Setenv("PATH", directory+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("AUTOLIB_CI_CACHE_GIT_SHIM", "1")
+	t.Setenv("AUTOLIB_CI_REAL_GIT", real)
+	t.Setenv("AUTOLIB_CI_GIT_FAULT", mode)
+	t.Setenv("AUTOLIB_CI_GIT_COUNT", count)
+	t.Setenv("AUTOLIB_CI_GIT_HEADS", headfile)
+	t.Setenv("AUTOLIB_CI_GIT_REMOTE", remote)
+	return count
+}
+
+func TestCICacheGitUpdate(t *testing.T) {
+	ctx := context.Background()
+	name := "probe-1-linux-x86_64.tar.zst.publication.json"
+	record := localCacheFixture(t).Record
+	raw, _ := json.Marshal(record)
+	changed := record
+	changed.Fingerprint = strings.Repeat("b", 64)
+	different, _ := json.Marshal(changed)
+	t.Run("independent work copies", func(t *testing.T) {
+		f := cacheGitTestFixture(t)
+		base, err := f.store.Snapshot(ctx, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		other := cacheGitSibling(t, f.store)
+		nameB := "probe-2-linux-x86_64.tar.zst.publication.json"
+		nameC := "probe-3-linux-x86_64.tar.zst.publication.json"
+		if _, err = f.store.Update(ctx, base.Head, nameC, raw); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = f.store.Update(ctx, base.Head, name, raw); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = other.Update(ctx, base.Head, nameB, different); err != nil {
+			t.Fatal(err)
+		}
+		third := cacheGitSibling(t, f.store)
+		result, err := third.Snapshot(ctx, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for key, want := range map[string][]byte{name: raw, nameB: different, nameC: raw} {
+			if !bytes.Equal(result.Records[key], want) {
+				t.Fatalf("concurrent record lost: %s", key)
+			}
+		}
+		// Formatting differences must not create another commit.
+		pretty, _ := json.MarshalIndent(record, "", "  ")
+		same, err := other.Update(ctx, base.Head, name, pretty)
+		if err != nil || same.Head != result.Head {
+			t.Fatal("same semantic record changed history", err)
+		}
+		if _, err = other.Update(ctx, base.Head, name, different); err == nil {
+			t.Fatal("conflicting selected record overwritten")
+		}
+		current, err := third.Snapshot(ctx, false)
+		if err != nil || !bytes.Equal(current.Records[name], raw) {
+			t.Fatal("conflict changed remote", err)
+		}
+		deleted, err := other.Update(ctx, current.Head, name, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		again, err := other.Update(ctx, current.Head, name, nil)
+		if err != nil || again.Head != deleted.Head {
+			t.Fatal("confirmed deletion not idempotent", err)
+		}
+	})
+	for _, mode := range []string{"lost", "reject", "auth", "advance", "advance-once"} {
+		t.Run(mode, func(t *testing.T) {
+			f := cacheGitTestFixture(t)
+			base, err := f.store.Snapshot(ctx, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			heads := []string{}
+			parent := base.Head
+			if strings.HasPrefix(mode, "advance") {
+				for i := 0; i < 3; i++ {
+					head, err := f.store.commitFile(ctx, parent, "other-1-linux-x86_64.tar.zst.publication.json", []byte(fmt.Sprint(i)))
+					if err != nil {
+						t.Fatal(err)
+					}
+					cacheGitCommand(t, f.remote, "fetch", f.store.directory, head)
+					heads = append(heads, head)
+					parent = head
+				}
+				if mode == "advance-once" {
+					heads = heads[:1]
+				}
+			}
+			fault := mode
+			if mode == "advance-once" {
+				fault = "advance"
+			}
+			count := cacheGitFault(t, fault, f.remote, heads)
+			got, err := f.store.Update(ctx, base.Head, name, raw)
+			if mode == "lost" || mode == "advance-once" {
+				if err != nil || !bytes.Equal(got.Records[name], raw) {
+					t.Fatal("confirmed record rejected", err)
+				}
+			} else {
+				if err == nil {
+					t.Fatal("unconfirmed record accepted")
+				}
+				remote, e := f.store.readBranch(ctx)
+				if e != nil || remote.Records[name] != nil {
+					t.Fatal("failed operation changed selected record", e)
+				}
+			}
+			data, _ := os.ReadFile(count)
+			pushes := strings.Count(string(data), "push\n")
+			if pushes > 3 || (mode == "auth" && pushes != 1) || (mode == "advance" && pushes != 3) {
+				t.Fatalf("unexpected push budget: %d", pushes)
+			}
+			if mode == "advance-once" {
+				if got.Records["other-1-linux-x86_64.tar.zst.publication.json"] == nil {
+					t.Fatal("replay lost other writer")
+				}
+			}
+		})
+	}
+	t.Run("cancel", func(t *testing.T) {
+		f := cacheGitTestFixture(t)
+		base, err := f.store.Snapshot(ctx, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		c, cancel := context.WithCancel(ctx)
+		cancel()
+		if _, err = f.store.Update(c, base.Head, name, raw); !errors.Is(err, context.Canceled) {
+			t.Fatal("cancellation lost", err)
+		}
+	})
 }

@@ -11,6 +11,9 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	if os.Getenv("AUTOLIB_CI_CACHE_GIT_SHIM") == "1" {
+		cacheGitShim()
+	}
 	if os.Getenv("AUTOLIB_CI_JOBSERVER_FAKE_MAKE") == "1" {
 		for _, arg := range os.Args[1:] {
 			if strings.HasPrefix(arg, "LOG=") {

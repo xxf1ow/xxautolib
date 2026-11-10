@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
 	"time"
@@ -83,6 +84,9 @@ func (s *ciCacheGitStore) api(ctx context.Context, path string, out any) error {
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	response, err := client.Do(req)
 	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		return errors.New("Gitee cache request failed")
 	}
 	defer response.Body.Close()
@@ -131,7 +135,7 @@ func (s *ciCacheGitStore) git(ctx context.Context, input []byte, extra []string,
 			code = exit.ExitCode()
 		}
 		message := strings.ToLower(stderr.String())
-		return nil, &ciCacheGitError{Operation: args[0], Code: code, Authentication: strings.Contains(message, "authentication failed") || strings.Contains(message, "403") || strings.Contains(message, "401")}
+		return nil, &ciCacheGitError{Operation: args[0], Code: code, Authentication: strings.Contains(message, "authentication failed") || strings.Contains(message, "returned error: 403") || strings.Contains(message, "returned error: 401")}
 	}
 	return out, nil
 }
@@ -322,7 +326,7 @@ func (s *ciCacheGitStore) commitFile(ctx context.Context, parent, name string, d
 		return "", err
 	}
 	if data == nil {
-		if _, err := s.git(ctx, nil, env, "update-index", "--force-remove", "--", name); err != nil {
+		if _, err := s.git(ctx, []byte("0 "+strings.Repeat("0", 40)+"\t"+name+"\x00"), env, "update-index", "-z", "--index-info"); err != nil {
 			return "", err
 		}
 	} else {
@@ -344,4 +348,68 @@ func (s *ciCacheGitStore) commitFile(ctx context.Context, parent, name string, d
 	}
 	head, err := s.git(ctx, nil, nil, args...)
 	return strings.TrimSpace(string(head)), err
+}
+
+func sameCICacheGitRecord(left, right []byte) bool {
+	if bytes.Equal(left, right) {
+		return true
+	}
+	if left == nil || right == nil {
+		return false
+	}
+	var a, b ciCacheRecord
+	return decodeCICacheJSON(bytes.NewReader(left), &a, true) == nil && decodeCICacheJSON(bytes.NewReader(right), &b, true) == nil && reflect.DeepEqual(a, b)
+}
+
+func (s *ciCacheGitStore) Update(ctx context.Context, baselineHead, name string, desired []byte) (ciCacheGitSnapshot, error) {
+	if !commitPattern.MatchString(baselineHead) || !ciCacheRecordFilename(name) {
+		return ciCacheGitSnapshot{}, errors.New("cache update requires a fixed baseline and record filename")
+	}
+	if _, err := s.prepare(ctx); err != nil {
+		return ciCacheGitSnapshot{}, err
+	}
+	var baseline ciCacheGitSnapshot
+	for round := 0; round < 3; round++ {
+		current, err := s.readBranch(ctx)
+		if err != nil {
+			return current, err
+		}
+		if current.Head == "" {
+			return current, errors.New("cache branch disappeared")
+		}
+		if _, err = s.git(ctx, nil, nil, "merge-base", "--is-ancestor", baselineHead, current.Head); err != nil {
+			return current, errors.New("cache baseline is outside current branch history")
+		}
+		if baseline.Head == "" {
+			baseline, err = s.readTree(ctx, baselineHead)
+			if err != nil {
+				return current, err
+			}
+		}
+		if sameCICacheGitRecord(current.Records[name], desired) {
+			return current, nil
+		}
+		if !sameCICacheGitRecord(current.Records[name], baseline.Records[name]) {
+			return current, errors.New("selected cache record changed since baseline")
+		}
+		head, err := s.commitFile(ctx, current.Head, name, desired)
+		if err != nil {
+			return current, err
+		}
+		_, pushErr := s.git(ctx, nil, nil, "push", s.URL, head+":refs/heads/"+ciCacheTag)
+		if pushErr != nil {
+			var remote *ciCacheGitError
+			if !errors.As(pushErr, &remote) || remote.Authentication {
+				return current, pushErr
+			}
+		}
+		confirmed, err := s.readBranch(ctx)
+		if err != nil {
+			return confirmed, err
+		}
+		if confirmed.Head != "" && sameCICacheGitRecord(confirmed.Records[name], desired) {
+			return confirmed, nil
+		}
+	}
+	return ciCacheGitSnapshot{}, errors.New("cache record push was not confirmed after three rounds")
 }
