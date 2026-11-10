@@ -113,6 +113,12 @@ class PublishTests(unittest.TestCase):
         clock = patch('time.sleep')
         self.clock = clock.start()
         self.addCleanup(clock.stop)
+        # HTTP 替身留在本进程；真实进程与总预算由 test_attachment_upload.py 验证。
+        from attachment_upload import _update_attachment
+        worker = patch('publish.upload_attachment', side_effect=lambda api, release_id, asset, snapshot, matches:
+                       _update_attachment(api, release_id, asset, snapshot, matches))
+        worker.start()
+        self.addCleanup(worker.stop)
 
     def asset(self, name='queue', version='1', body=b'archive\0bytes'):
         filename = f'{name}-{version}-any-any.tar.zst'
@@ -260,7 +266,7 @@ class PublishTests(unittest.TestCase):
         self.assertEqual((result['uploaded'],result['failed']),(1,0))
         self.assertEqual([m for m,u in self.server.events if m in {'DELETE','POST'}],['POST','DELETE','POST'])
         self.assertEqual(sum(m=='GET' and u.endswith('/attach_files') for m,u in self.server.events),2)
-        self.assertEqual([c.args[0] for c in self.clock.call_args_list],[2])
+        self.assertEqual([c.args[0] for c in self.clock.call_args_list],[10])
 
     def test_wrong_local_bytes_never_delete_remote(self):
         asset=self.asset()
@@ -311,7 +317,7 @@ class PublishTests(unittest.TestCase):
             result=self.module.publish_one(self.api,3,asset,[],fetch_asset=lambda a:a['path'],confirm_item=lambda a:self.fail('failed upload confirmed'))
         self.assertEqual(result['status'],'failed')
         self.assertEqual(sum(m=='POST' for m,u in self.server.events),11)
-        self.assertEqual([c.args[0] for c in self.clock.call_args_list],[2,4,8,16,32,32,32,32,32,32])
+        self.assertEqual([c.args[0] for c in self.clock.call_args_list],[10]*10)
         self.assertNotIn('fake-secret',errors.getvalue())
 
     def test_fast_item_is_committed_while_slow_upload_is_in_flight(self):

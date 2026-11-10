@@ -24,7 +24,7 @@
 
 `publish.py` 的 stdout 汇总 uploaded、metadata_only、skipped、failed、blocked、覆盖缺口、独立操作错误和已确认 HEAD；metadata_only 原因为 gitee_size_limit 或 delivery_metadata_changed。stderr 即时输出脱敏事件；缺缓存是待构建缺口，实际上传、清理、入口或 Git 失败返回非零。
 
-`publish_one` 拥有附件更新的唯一重试循环：首次使用本轮完整附件列表，重试重新查询并删除重传，不读取 Gitee 归档内容。临时网络错误、HTTP 408、429 和 5xx 触发最多十次额外重试，退避为 2、4、8、16、32、32、32、32、32、32 秒。认证、权限、输入或响应结构错误及未分类 409/422 直接失败；未确认删除不继续上传。
+`publish_one` 校验字节后调用 `attachment_upload`，在可终止子进程中执行附件更新的唯一重试循环：首次使用本轮完整附件列表，重试重新查询并删除重传，不读取 Gitee 归档内容。临时网络错误、HTTP 408、429 和 5xx 触发最多十次额外重试，间隔固定为 10 秒，全部请求与等待合计最多 600 秒；耗尽预算即杀死并回收子进程，不确认该项 JSON。认证、权限、输入或响应结构错误及未分类 409/422 直接失败；未确认删除不继续上传。Git 确认留在原协调器；超时的下轮恢复规则见[同步设计](../../../docs/agent-notes/implemented/architecture/2026-11-09-release-cache-and-independent-gitee-sync.md#gitee-摘要比较与逐项登记)。
 
 `gitee_api.py` 拥有 Header 认证、JSON 普通请求及每线程连接。附件查询、删除、上传不在 HTTP 层重试；其他读取保留有界重试，创建仓库或 Release 的未知写入不自动重放。附件上传借用 `gitee_release.py` 无装饰器的 `upload_asset_details`，保留其 multipart 字段、boundary 和文件句柄管理；参考本体不变。
 

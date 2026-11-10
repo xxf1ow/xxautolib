@@ -80,7 +80,7 @@ build/tools/gitee-sync-venv/Scripts/python.exe -m pip install -r .github/actions
 build/tools/gitee-sync-venv/Scripts/python.exe -m unittest discover -s tests/ci/gitee-release -p test_publish.py -v
 ```
 
-按修改所有者替换 `-p` 文件名，不重复无关测试。HTTP 夹具不访问真实平台；Git 测试只用本地临时裸库。`test_cache_sync_lifecycle.py` 使用 OpenSSL、本地 TLS 代理、仓库 SDK 编译的真实 CLI 和 builder 归档，覆盖多 run 累积、零变化零归档传输、同版本链式失效、依赖顺序、版本/平台/整包清理及响应丢失和入口失败后的恢复。代理只接受固定测试域名，不转发真实请求；测试证书、源码、原生轻量产物和编译缓存均位于 `build/`。在上述隔离源码根选择该文件运行，Linux/Darwin 需要 C++ 编译器及 `ar`。
+按修改所有者替换 `-p` 文件名，不重复无关测试。HTTP 夹具不访问真实平台；Git 测试只用本地临时裸库。`test_attachment_upload.py` 通过真实 TLS 阻塞上传验证总预算、请求进程回收、超时不确认及下轮替换。`test_cache_sync_lifecycle.py` 使用 OpenSSL、本地 TLS 代理、仓库 SDK 编译的真实 CLI 和 builder 归档，覆盖多 run 累积、零变化零归档传输、同版本链式失效、依赖顺序、版本/平台/整包清理及响应丢失和入口失败后的恢复。代理只接受固定测试域名，不转发真实请求；测试证书、源码、原生轻量产物和编译缓存均位于 `build/`。在上述隔离源码根选择该文件运行，Linux/Darwin 需要 C++ 编译器及 `ar`。
 
 最后阶段跨模块验证在 `build/` 隔离源码根使用仓库 SDK：`cmake -P src/autolib-builder/go-sdk.cmake -- test -mod=readonly -p=1 -parallel=1 ./src/autolib-builder ./src/autolib-ci ./src/autolib-importer -skip '^TestVersionedRemoteLoop$' -count=1 -v`；同步目录执行 Python `-p 'test_*.py'`，由 `test_entry_delivery.py` 唯一桥接 RemoteLoop，避免漏测或重复。该闭环验证生产 JSON、Gitee 故障后 GitHub 下载、GitHub-only 小归档、原生链接运行及搬迁离线消费。上游参考由 test_upstream_baseline.py 检查；Windows PowerShell 和 Linux 行为只由对应宿主结果证明。
 

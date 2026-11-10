@@ -25,6 +25,7 @@ class Remote:
         self.fail_entry = False
         self.fail_deletes, self.fail_uploads = set(), set()
         self.lose_upload = None
+        self.pause_uploads = {}
         self.errors = []
         directory = Path(directory)
         self.cert = directory / 'fixture.pem'
@@ -57,11 +58,20 @@ class Remote:
                 if status is None:
                     self.close_connection = True
                     return
+                if self.command == 'POST' and isinstance(data, dict):
+                    pause = remote.pause_uploads.get(data.get('name'))
+                    if pause is not None:
+                        entered, release = pause
+                        entered.set()
+                        release.wait(10)
                 data = data if isinstance(data, bytes) else json.dumps(data).encode()
                 self.send_response(status)
                 self.send_header('Content-Length', str(len(data)))
                 self.send_header('Content-Type', 'application/json')
-                self.end_headers(); self.wfile.write(data)
+                try:
+                    self.end_headers(); self.wfile.write(data)
+                except (BrokenPipeError, ConnectionResetError, ssl.SSLEOFError):
+                    pass
             do_GET = do_POST = do_DELETE = serve
         self.server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)

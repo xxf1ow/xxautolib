@@ -14,11 +14,10 @@ import time
 from typing import Mapping
 import unicodedata
 
+from attachment_upload import ATTACHMENT_RETRY_DELAYS, _log, upload_attachment
 from gitee_api import GiteeAPI, GiteeAPIError
 from metadata_repository import open_repository
 from publication_rules import _object, metadata_path
-
-ATTACHMENT_RETRY_DELAYS = (2, 4, 8, 16, 32, 32, 32, 32, 32, 32)
 
 
 def _read_json(value):
@@ -122,10 +121,6 @@ def cache_candidates(source, cache):
     return assets
 
 
-def _log(event, name=None, **fields):
-    print(json.dumps({'event': event, **({'asset': name} if name else {}), **fields}, sort_keys=True), file=sys.stderr, flush=True)
-
-
 def publish_one(api: GiteeAPI, release_id: int, asset: dict, initial_matches: list[dict], *,
                 fetch_asset, confirm_item) -> dict:
     """按需固定并校验本地字节，删除重传；确认回调成功后才报告 uploaded。
@@ -149,24 +144,7 @@ def publish_one(api: GiteeAPI, release_id: int, asset: dict, initial_matches: li
                 digest = hashlib.file_digest(stream, 'sha256').hexdigest()
             if snapshot.stat().st_size != asset['size'] or digest != asset['sha256']:
                 raise ValueError('downloaded asset size or digest mismatch')
-            for attempt in range(len(ATTACHMENT_RETRY_DELAYS) + 1):
-                try:
-                    matches = initial_matches if attempt == 0 else [a for a in api.target_assets(release_id) if a['name'] == name]
-                    if (len(matches) > 1 or matches and
-                            (type(matches[0].get('id')) is not int or matches[0]['id'] <= 0)):
-                        raise GiteeAPIError('select_asset', reason='invalid_or_ambiguous_asset')
-                    if matches:
-                        api.delete_asset(release_id, matches[0]['id'])
-                    _log('gitee_upload_start', name, attempt=attempt + 1)
-                    api.upload_asset(release_id, asset, snapshot)
-                    _log('gitee_upload_complete', name, attempt=attempt + 1)
-                    break
-                except GiteeAPIError as error:
-                    if not error.retryable or attempt == len(ATTACHMENT_RETRY_DELAYS):
-                        raise
-                    delay = ATTACHMENT_RETRY_DELAYS[attempt]
-                    _log('retry', name, retry=attempt + 1, delay_seconds=delay, **error.diagnostic())
-                    time.sleep(delay)
+            upload_attachment(api, release_id, asset, snapshot, initial_matches)
             operation = 'metadata_commit'
             confirmed = confirm_item(asset)
             if confirmed is False:
