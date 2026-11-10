@@ -205,7 +205,6 @@ func (c *ciCacheClient) snapshot(ctx context.Context, allowCreate bool, target s
 	}
 	s.ReleaseID = release.ID
 	ids := map[int64]bool{}
-	counts := map[string]int{}
 	for page := 1; ; page++ {
 		var assets []ciCacheAsset
 		if err := c.jsonRequest(ctx, "GET", c.endpoint(c.APIBase, fmt.Sprintf("/%d/assets?per_page=100&page=%d", s.ReleaseID, page)), nil, &assets); err != nil {
@@ -219,12 +218,19 @@ func (c *ciCacheClient) snapshot(ctx context.Context, allowCreate bool, target s
 				return s, errors.New("invalid or repeated cache asset")
 			}
 			ids[a.ID] = true
-			counts[a.Name]++
 		}
 		s.Assets = append(s.Assets, assets...)
 		if len(assets) < 100 {
 			break
 		}
+	}
+	return c.recordSnapshot(ctx, s, allowCreate, target)
+}
+
+func (c *ciCacheClient) recordSnapshot(ctx context.Context, s ciCacheSnapshot, allowCreate bool, target string) (ciCacheSnapshot, error) {
+	counts := map[string]int{}
+	for _, a := range s.Assets {
+		counts[a.Name]++
 	}
 	if c.Records == nil {
 		return s, errors.New("Gitee cache record store is required")

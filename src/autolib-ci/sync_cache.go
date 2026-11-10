@@ -1,13 +1,13 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -51,41 +51,12 @@ func prepareCISyncCache(ctx context.Context, c *ciCacheClient, source ciSyncSour
 	snapshot, err := c.Snapshot(ctx, false)
 	var remote *ciCacheHTTPError
 	if errors.As(err, &remote) && remote.Status == 404 && snapshot.ReleaseID == 0 {
-		err = nil
+		snapshot, err = c.recordSnapshot(ctx, snapshot, false, "")
 	}
 	if err != nil {
 		return ciCacheSnapshot{}, err
 	}
 
-	// 缺少归档的合法 sidecar 只保留清理归属，不成为候选。
-	counts := map[string]int{}
-	for _, a := range snapshot.Assets {
-		counts[a.Name]++
-	}
-	for _, a := range snapshot.Assets {
-		name, sidecar := strings.CutSuffix(a.Name, ".publication.json")
-		if !sidecar || counts[a.Name] != 1 || counts[name] != 0 || a.State != "uploaded" || a.Size <= 0 || a.Size >= ciCacheSizeLimit {
-			continue
-		}
-		response, err := c.request(ctx, "GET", c.endpoint(c.APIBase, "/assets/"+strconv.FormatInt(a.ID, 10)), "application/octet-stream", "", nil)
-		if err != nil {
-			return ciCacheSnapshot{}, err
-		}
-		data, readErr := io.ReadAll(io.LimitReader(response.Body, a.Size+1))
-		closeErr := response.Body.Close()
-		if readErr != nil || closeErr != nil {
-			return ciCacheSnapshot{}, errors.New("read orphan cache record failed")
-		}
-		var r ciCacheRecord
-		if int64(len(data)) != a.Size || (a.Digest != "" && a.Digest != "sha256:"+ciSHA256(data)) || decodeCICacheJSON(bytes.NewReader(data), &r, true) != nil || r.Key.archiveName() != name {
-			continue
-		}
-		binding := []ciCacheAsset{{ID: r.Archive.ID, Name: name, State: "uploaded", Size: r.Archive.Size, Digest: "sha256:" + r.Archive.SHA256}}
-		if validateCICacheRecord(r, c.Repository, r.Key, r.Fingerprint, r.DependencyFingerprints, binding) == nil {
-			snapshot.Records[name] = r
-			snapshot.RecordErrors[name] = "archive missing; record retained for cleanup identity only"
-		}
-	}
 	snapshot.Inputs = source.Inputs
 	deps := ciSyncDependencies(source)
 	for _, a := range snapshot.Assets {
@@ -139,7 +110,7 @@ func deleteCISyncCache(ctx context.Context, c *ciCacheClient, source ciSyncSourc
 	if err := key.validate(); err != nil {
 		return err
 	}
-	if previous.Repository != c.Repository || key.Kind != "library" {
+	if previous.Repository != c.Repository || key.Kind != "library" || !commitPattern.MatchString(previous.RecordHead) || c.Records == nil {
 		return errors.New("cache deletion requires matching repository and library identity")
 	}
 	p, present := source.Catalog.Packages[key.Name]
@@ -160,7 +131,7 @@ func deleteCISyncCache(ctx context.Context, c *ciCacheClient, source ciSyncSourc
 	})
 	var remote *ciCacheHTTPError
 	if errors.As(err, &remote) && remote.Status == 404 && current.ReleaseID == 0 {
-		return nil
+		current, err = c.recordSnapshot(ctx, current, false, key.archiveName())
 	}
 	if err != nil {
 		return err
@@ -168,8 +139,23 @@ func deleteCISyncCache(ctx context.Context, c *ciCacheClient, source ciSyncSourc
 	if current.ReleaseID != previous.ReleaseID {
 		return errors.New("cache release changed before deletion")
 	}
+	baseline, err := c.Records.readTree(ctx, previous.RecordHead)
+	if err != nil {
+		return err
+	}
+	selectedRecords, err := c.Records.readTree(ctx, current.RecordHead)
+	if err != nil {
+		return err
+	}
+	if _, err = c.Records.git(ctx, nil, nil, "merge-base", "--is-ancestor", previous.RecordHead, current.RecordHead); err != nil {
+		return errors.New("cache deletion baseline is outside current branch history")
+	}
+	recordName := key.archiveName() + ".publication.json"
+	if now := selectedRecords.Records[recordName]; now != nil && !sameCICacheGitRecord(now, baseline.Records[recordName]) {
+		return errors.New("cache record changed before deletion")
+	}
 	selected := []ciCacheAsset{}
-	for _, name := range []string{key.archiveName(), key.archiveName() + ".publication.json"} {
+	for _, name := range []string{key.archiveName()} {
 		old := []ciCacheAsset{}
 		now := []ciCacheAsset{}
 		for _, a := range previous.Assets {
@@ -209,7 +195,8 @@ func deleteCISyncCache(ctx context.Context, c *ciCacheClient, source ciSyncSourc
 			return err
 		}
 	}
-	return nil
+	_, err = c.Records.Update(ctx, previous.RecordHead, recordName, nil)
+	return err
 }
 
 func runCISyncCache(command string, args []string, stdout, stderr io.Writer) int {
@@ -232,6 +219,16 @@ func runCISyncCache(command string, args []string, stdout, stderr io.Writer) int
 	client, err := newCICacheClient(*repo, os.Getenv("GITHUB_TOKEN"))
 	if err != nil {
 		return fail(err)
+	}
+	if command != "cache-download" {
+		workRoot := filepath.Dir(*output)
+		if command == "cache-delete" {
+			workRoot = filepath.Dir(*snapshotFile)
+		}
+		client.Records, err = newCICacheGitStore(*repo, os.Getenv("GITEE_REPOSITORY"), os.Getenv("GITEE_TOKEN"), workRoot)
+		if err != nil {
+			return fail(err)
+		}
 	}
 	var source ciSyncSource
 	var snapshot ciCacheSnapshot

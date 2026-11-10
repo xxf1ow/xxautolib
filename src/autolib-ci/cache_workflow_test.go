@@ -15,7 +15,7 @@ func TestCICacheWorkflow(t *testing.T) {
 	}
 	plan := workflowSection(t, document, "  plan:")
 	prepare := workflowSection(t, plan, "      - name: Prepare persistent cache")
-	for _, text := range []string{"GITHUB_TOKEN: ${{ github.token }}", " cache-prepare ", "--repository \"$GITHUB_REPOSITORY\"", "--plan build/ci-input/plan.json", "--run-identity build/ci-input/run.json", "--output build/ci-input/cache.json"} {
+	for _, text := range []string{"GITHUB_TOKEN: ${{ github.token }}", "GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}", "GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}", " cache-prepare ", "--repository \"$GITHUB_REPOSITORY\"", "--plan build/ci-input/plan.json", "--run-identity build/ci-input/run.json", "--output build/ci-input/cache.json"} {
 		if !strings.Contains(prepare, text) {
 			t.Fatalf("missing shared cache preparation: %s", text)
 		}
@@ -34,16 +34,16 @@ func TestCICacheWorkflow(t *testing.T) {
 		}
 		for _, name := range []string{"Prepare platform", "Produce dependency layers", "Verify selected work"} {
 			step := workflowSection(t, block, "      - name: "+name)
-			if !strings.Contains(step, "--cache build/ci-input/cache.json") || !strings.Contains(step, "GITHUB_TOKEN: ${{ github.token }}") {
+			if !strings.Contains(step, "--cache build/ci-input/cache.json") || !strings.Contains(step, "GITHUB_TOKEN: ${{ github.token }}") || !strings.Contains(step, "GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}") || !strings.Contains(step, "GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}") {
 				t.Fatalf("%s %s lacks explicit cache or scoped token", id, name)
 			}
 		}
 		environment := workflowSection(t, block, "      - name: Prepare native environment and tools")
-		if strings.Contains(environment, "GITHUB_TOKEN:") {
+		if strings.Contains(environment, "GITHUB_TOKEN:") || strings.Contains(environment, "GITEE_TOKEN:") {
 			t.Fatal("tool bootstrap received cache credential")
 		}
 	}
-	for _, forbidden := range []string{"ci-package-", "transport.tar", "GITEE_TOKEN", "continue-on-error:"} {
+	for _, forbidden := range []string{"ci-package-", "transport.tar", "continue-on-error:"} {
 		if strings.Contains(document, forbidden) {
 			t.Fatal("cache build contains", forbidden)
 		}

@@ -104,6 +104,8 @@ jobs:
         if: ${{ env.PUBLISH_MODE == 'sync' }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
         run: |
           set -euo pipefail
           build/tools/autolib-ci sync-cache --repository "$GITHUB_REPOSITORY" --source-input build/sync/source.json --output build/sync/cache.json

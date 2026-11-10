@@ -383,5 +383,21 @@ class PublishTests(unittest.TestCase):
         with self.assertRaises(ValueError):self.module.resolve_config(environment)
 
 
+class CacheCredentialTests(unittest.TestCase):
+    def test_cache_delete_receives_gitee_credentials_only_for_record_operation(self):
+        import publish
+        from types import SimpleNamespace
+        config={'cache_tool':'ci','source':{'repository':'owner/repo'},'repository':'fixture/mirror','gitee_token':'scoped-secret'}
+        for command in ['cache-download','cache-delete']:
+            with self.subTest(command=command), patch.dict('os.environ',{'GITEE_TOKEN':'ambient-secret','GITHUB_TOKEN':'github-secret'}), patch('publish.subprocess.run',return_value=SimpleNamespace(returncode=0,stdout=b'ok')) as run:
+                self.assertEqual(publish._cache_command(config,[command]),'ok')
+                env=run.call_args.kwargs['env']
+                self.assertEqual(env['GITHUB_TOKEN'],'github-secret')
+                if command=='cache-delete':
+                    self.assertEqual(env['GITEE_TOKEN'],'scoped-secret')
+                    self.assertEqual(env['GITEE_REPOSITORY'],'fixture/mirror')
+                else:
+                    self.assertNotIn('GITEE_TOKEN',env)
+
 if __name__ == '__main__':
     unittest.main()
