@@ -20,6 +20,8 @@
 
 ## 后续维护方向
 
+[构建缓存记录迁入 Gitee](agent-notes/proposed/architecture/2026-11-10-gitee-build-cache-records.md#本地验证与切换状态)已完成本地实现与受控验证，真实迁移及源码部署尚待完成；旧 GitHub JSON 在切换条件满足前保留。本次范围仅调整记录存储，不包含 OpenCV/ONNX 上传优化。
+
 待实施：增加轻量回归CI，复用现有Go测试、vet及独立发布单元测试；不持有发布凭据、不修改Release、不重编全部第三方库。完成标志是代码检查自动运行、失败可见且不触发发布；触发条件与平台范围在实施前确认。
 
 当前 33 个配方版本均有 adapter。编写步骤见[模块技能参考](../.agents/skills/add-third-party-module/references/adapter-baselines.md)，平台与消费范围见[配方与 macOS 验收](agent-notes/implemented/architecture/2026-11-06-module-recipe-contract-and-macos-validation.md#验证结果)及[导入适配记录](agent-notes/implemented/architecture/2026-11-04-package-adapter-standardization.md#验证结果)。

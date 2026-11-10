@@ -16,7 +16,7 @@
 
 ## Gitee 独立同步适配
 
-`action.yml` 接收固定源码事实、有效缓存快照、仓库构建的 `autolib-ci` 路径，以及可信分支和 SHA，调用 `publish.py`。sync 模式从跨 run 累积的 Release 缓存按需下载；latest 模式仅更新显式指针，不查询缓存或清理附件。workflow 隔离安装依赖，仅交付步骤注入 `GITEE_TOKEN`；缓存子进程移除该凭据，只使用 GitHub 凭据。目标及运行前提见[开发指南](../../../docs/development.md#独立-gitee-发布)。
+`action.yml` 接收固定源码事实、有效缓存快照、仓库构建的 `autolib-ci` 路径，以及可信分支和 SHA，调用 `publish.py`。sync 模式从跨 run 累积的 GitHub Release 按需下载归档，完整记录从 Gitee 独立 `autolib-cache` 分支读取；latest 模式仅更新显式指针，不查询缓存或清理附件。workflow 隔离安装依赖，记录读取和交付步骤注入 `GITEE_TOKEN`；Python 仅向 `cache-delete` helper 交付已校验的 Gitee 凭据，`cache-download` 只使用 GitHub 凭据。目标及运行前提见[开发指南](../../../docs/development.md#独立-gitee-发布)。
 
 `sync_scheduler.py` 拥有依赖顺序、并发上传和单份 Git 工作副本的锁。唯一跳过依据是 Gitee Git 消费 JSON，三个字段语义相同才跳过；不下载或检查 Gitee 归档。普通变化项删除同名附件后上传，即时 commit/push 并确认；仅备用地址变化且 Gitee 字节已确认时只更新 JSON。超过 100000000 字节只登记 GitHub 地址，JSON 确认后删除精确受管 Gitee 旧副本，失败报告独立错误，重跑相同 JSON 仍清理。push 未确认后停写，不 rebase 或回滚；源码决定身份删除，未知内容保留。
 

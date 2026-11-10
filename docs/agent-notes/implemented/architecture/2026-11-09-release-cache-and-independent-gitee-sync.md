@@ -20,7 +20,7 @@ Status: implemented
 
 本记录拥有下列范围，既有记录保留其余约束和历史验证证据。
 
-[构建缓存记录迁入 Gitee 独立分支](../../proposed/architecture/2026-11-10-gitee-build-cache-records.md)是记录存储及相应读写、清理交接的变更提案；本记录的逐项入库、输入失效、失败隔离和源码清理依据仍适用。
+[构建缓存记录迁入 Gitee 独立分支](../../proposed/architecture/2026-11-10-gitee-build-cache-records.md)拥有记录存储及相应读写、清理交接；本记录的逐项入库、输入失效、失败隔离和源码清理依据仍适用。该存储改动已在本地实现，真实切换状态由新记录维护。
 
 [JSON 交付元数据与有序双来源下载](../../implemented/architecture/2026-11-09-dual-source-artifact-downloads.md)拥有消费者 JSON、完整记录相等判断及超限交付；本文继续拥有 Release publication、缓存失效及独立同步调度。
 
@@ -41,7 +41,8 @@ Status: implemented
 | 源码配方 | 包、版本、平台、直接依赖、构建输入和 latest；决定两端哪些产物已失去源码身份 |
 | builder | 配方解析、通用只读输入描述、原生生成、安装及原样成品打包；不持有发布凭据 |
 | autolib-ci | 按精确依赖调度、输入指纹、缓存复用、逐项验证与打包、成品来源及运行汇总；通过 CLI 使用 builder 和 importer |
-| GitHub Release | 保存最终归档和与该归档对应的交付信息；不记录 Gitee 是否完成同步 |
+| GitHub Release | 保存最终归档；不记录 Gitee 是否完成同步 |
+| Gitee 缓存分支 | 保存绑定 GitHub 归档的完整构建记录；与默认分支消费元数据分离 |
 | 独立同步流程 | 固定源码快照、校验缓存、清理两端、按精确依赖调度上传或跳过、实时登记 Gitee 元数据 |
 | Gitee Git 元数据 | 记录最后确认发布的库及工具摘要、包级 latest；是上传跳过的唯一依据 |
 | workflow | 可信仓库与分支上下文、runner、权限、运行级互斥、自动及手动触发 |
@@ -62,11 +63,11 @@ Status: implemented
 
 缓存使用当前可信源码仓库的固定可修改 Release，tag 为 `autolib-cache`。该 tag 是成品集合入口，不代表全部成品来自其指向的提交；既有 tag 不自动移动。构建 workflow 的共享准备步骤负责查询及必要初始化，完成后才启动各平台写入；不存在时只由该步骤创建，普通查询失败不作为缺失。专用缓存中，源码明确对应的精确归档名及同名加 `.publication.json` 的名称属于受管缓存；手工放入这些名称的文件也会被替换，其他未知名称保留。初始化与实际写入按远端授权执行。
 
-库与 importer 保留当前完整归档名，直接保存最终 `.tar.zst` 和 `.tar.xz` 字节，不把全部库包进一个跨运行大归档，也不把生产身份塞进消费者包格式或 asset label。每个归档旁保存同名加 `.publication.json` 的交付记录。记录至少包含明确类型和精确身份、最终文件名、归档 asset ID、大小及 SHA256、原 run/attempt/分支/源码提交、该项验证归属、输入指纹及精确依赖指纹。库保留原构建的包级 latest 候选；importer 额外携带与原构建源码逐字节一致的原始入口内容及其摘要。
+库与 importer 保留当前完整归档名，直接保存最终 `.tar.zst` 和 `.tar.xz` 字节，不把全部库包进一个跨运行大归档，也不把生产身份塞进消费者包格式或 asset label。Gitee 缓存分支保存同名加 `.publication.json` 的交付记录。记录至少包含明确类型和精确身份、最终文件名、归档 asset ID、大小及 SHA256、原 run/attempt/分支/源码提交、该项验证归属、输入指纹及精确依赖指纹。库保留原构建的包级 latest 候选；importer 额外携带与原构建源码逐字节一致的原始入口内容及其摘要。
 
 交付记录不包含 Gitee 上传完成标记、同步时间或待重试步骤。缓存项只有在归档和对应记录齐全、身份唯一、来源合法且字节信息一致时才可用；只有库文件名或只有记录不算就绪。先完成验证与打包、上传归档，再保存与该归档绑定的记录，才报告入库成功。中断产生的缺项或不匹配项不可用于同步，后续构建重新准备该项；其他完整项不受影响。
 
-需要替换或修复缓存项时，先完成本地验证与打包，再使旧交付记录失效并删除，删除该精确身份的旧归档及上述受管名称的同名残留，然后上传新归档，最后上传绑定新 asset ID、大小和摘要的记录。删除失败时停止该项，不直接上传同名文件；未落入上述精确受管名称的内容不自动删除，歧义同名项报告错误，不扩大删除范围。当前有效完整项直接复用，不执行该替换链。
+需要替换或修复缓存项时，先完成本地验证与打包，再删除该精确身份的旧归档及归档同名残留，上传新归档，最后提交绑定新 asset ID、大小和摘要的记录。旧记录保留期间不能绑定新归档，不作为有效缓存。删除失败时停止该项，不直接上传同名文件；未知内容不自动删除，歧义同名项报告错误，不扩大删除范围。当前有效完整项直接复用，不执行该替换链。
 
 GitHub 上传接口不覆盖同名附件，同名上传返回 422；502 可能留下 `starter` 状态的空附件。后续尝试重新枚举该身份，确认归档与记录是否完整有效；若仍需重建，按上述顺序删除已确认的残留后重传，不反复向同名附件执行盲上传。[Release 附件上传规则](https://docs.github.com/en/rest/releases/assets#upload-a-release-asset)是该处理的接口依据。临时网络错误、429 和 5xx 采用有界退避，首次尝试外最多重试十次，退避为 `2、4、8、16、32、32、32、32、32、32` 秒；认证、权限及不能明确归因于同名残留的 422 直接报告失败，不无限重试。
 
@@ -164,7 +165,7 @@ Git 锁持有到 push 确认或失败，后续项不能在前一次 push 尚未�
 
 ### 两端精确清理
 
-两端对照同一源码快照删除明确不存在的精确身份。Release 删除归档及 publication；Gitee 删除同名附件、消费 JSON 并修复 latest，无附件的 GitHub-only JSON 也必须删除。源码仍存在的 GitHub-only 记录保留，超限后旧 Gitee 副本的清理由 JSON 记录拥有。
+两端对照同一源码快照删除明确不存在的精确身份。GitHub Release 删除归档，随后删除 Gitee 缓存分支的 publication；Gitee Release 删除同名附件，默认分支删除消费 JSON 并修复 latest，无附件的 GitHub-only JSON 也必须删除。源码仍存在的 GitHub-only 记录保留，超限后旧 Gitee 副本的清理由 JSON 记录拥有。
 
 先确认 Gitee 附件删除，再清理该身份的缓存。无摘要的残留可能仅由缓存记录证明归属；Gitee 删除失败或中断时保留该记录，使下次运行仍能识别并重试，不将受管残留变成未知内容。
 
@@ -176,7 +177,7 @@ Gitee 清理不能只遍历现有 Git 摘要，还须检查附件列表中符合
 
 构建入库需要当前源码仓库的 Release 写权限，独立同步清理 GitHub 缓存时也需要相应权限；只读计划、测试和诊断不因此获取 Gitee 凭据。GitHub 凭据用于 GitHub 侧，`GITEE_TOKEN` 只注入独立 Gitee 写入步骤，不进入第三方编译、依赖安装、缓存或日志。checkout 继续不持久保存凭据，输入不拼接成 shell 源码。
 
-缓存 Release 采用允许更新和删除附件的配置；若启用 immutable release 则明确失败，不尝试绕过保护。[GitHub 不可变 Release 规则](https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository)说明其附件限制。单文件必须小于 2 GiB，单 Release 最多 1000 个附件，归档与交付记录都计入数量。[Release 容量规则](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases#storage-and-bandwidth-quotas)是当前限制的核对来源。
+缓存 Release 采用允许更新和删除附件的配置；若启用 immutable release 则明确失败，不尝试绕过保护。[GitHub 不可变 Release 规则](https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository)说明其附件限制。单文件必须小于 2 GiB，单 Release 最多 1000 个附件；新写入只包含归档，已有未知文件及旧记录附件仍计数。[Release 容量规则](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases#storage-and-bandwidth-quotas)是当前限制的核对来源。
 
 每轮构建在平台并发写入前，由共享准备步骤完整读取现存附件，固定本轮计划可能新增的完整文件名集合，按“现存全部附件数加本轮净新增数”预检容量。未知附件、残留及记录均计数；不能把尚未完成的源码删除清理算成已释放空间。超限时在任何缓存替换前明确报出当前数量、预计新增量和上限，停止本轮缓存写入准备，不等上传过程中才发现容量不足。每个成品最终大小在删除旧缓存前检查；超过单文件限制只失败该项及其依赖者。
 
