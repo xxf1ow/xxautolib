@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 )
 
 type packageFlags []string
@@ -14,6 +16,10 @@ func (p *packageFlags) String() string         { return fmt.Sprint([]string(*p))
 func (p *packageFlags) Set(value string) error { *p = append(*p, value); return nil }
 
 func run(args []string, stdout, stderr io.Writer) int {
+	return runContext(context.Background(), args, stdout, stderr)
+}
+
+func runContext(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	fail := func(err error) int { fmt.Fprintln(stderr, err); return 1 }
 	if len(args) > 0 && args[0] == "restore" {
 		return runRestore(args[1:], stdout, stderr)
@@ -21,7 +27,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 || args[0] != "prepare" {
 		return fail(fmt.Errorf("usage: autolib-importer prepare [--remote-root=<URL>] [--metadata-root=<directory>] --cache-root=<directory> --os=<target OS> --arch=<target arch> --result=<file> --package=<name[@version]> ..."))
 	}
-	o := prepareOptions{Output: stdout}
+	o := prepareOptions{Output: stdout, Context: ctx}
 	flags := flag.NewFlagSet("prepare", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	for _, field := range []struct {
@@ -58,4 +64,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
+func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	code := runContext(ctx, os.Args[1:], os.Stdout, os.Stderr)
+	stop()
+	os.Exit(code)
+}

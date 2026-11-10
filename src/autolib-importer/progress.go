@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -67,4 +68,19 @@ func (p *downloadProgress) finish() {
 	if p.terminal {
 		fmt.Fprintln(p.output)
 	}
+}
+
+func (p *downloadProgress) startSource(index, count int, address string, size int64) {
+	p.total, p.downloaded, p.reported = size, 0, 0
+	host, _ := url.Parse(address)
+	fmt.Fprintf(p.output, "-- [AutoLib] Downloading %s from source %d/%d (%s)\n", p.ref, index, count, host.Host)
+	p.report()
+}
+
+func (p *downloadProgress) sourceFailed(index int, address string, err error) {
+	if p.terminal {
+		fmt.Fprintln(p.output)
+	}
+	host, _ := url.Parse(address)
+	fmt.Fprintf(p.output, "-- [AutoLib] Download source %d (%s) failed: %v\n", index, host.Host, safeDownloadError(err))
 }

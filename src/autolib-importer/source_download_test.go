@@ -280,3 +280,177 @@ func TestTrustedArchiveFailureDoesNotFallback(t *testing.T) {
 		})
 	}
 }
+
+func TestDownloadTimeouts(t *testing.T) {
+	for _, kind := range []string{"headers", "idle", "total", "redirect budget", "active body"} {
+		t.Run(kind, func(t *testing.T) {
+			var second atomic.Int32
+			stopped := make(chan struct{}, 1)
+			client := githubTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/second" {
+					second.Add(1)
+					fmt.Fprint(w, "payload")
+					return
+				}
+				if kind == "redirect budget" && r.URL.Path == "/first" {
+					select {
+					case <-time.After(80 * time.Millisecond):
+					case <-r.Context().Done():
+						return
+					}
+					http.Redirect(w, r, "https://first.example/redirect", 302)
+					return
+				}
+				if kind == "headers" || kind == "redirect budget" {
+					<-r.Context().Done()
+					stopped <- struct{}{}
+					return
+				}
+				w.(http.Flusher).Flush()
+				if kind == "idle" {
+					<-r.Context().Done()
+					stopped <- struct{}{}
+					return
+				}
+				for _, c := range "payload" {
+					select {
+					case <-r.Context().Done():
+						stopped <- struct{}{}
+						return
+					case <-time.After(25 * time.Millisecond):
+					}
+					fmt.Fprintf(w, "%c", c)
+					w.(http.Flusher).Flush()
+				}
+			}))
+			limits := downloadTimeouts{Connect: time.Second, TLS: time.Second, Header: time.Second, Idle: 60 * time.Millisecond, Total: time.Second}
+			switch kind {
+			case "headers":
+				limits.Header = 60 * time.Millisecond
+			case "total", "redirect budget":
+				limits.Total = 120 * time.Millisecond
+			}
+			destination := filepath.Join(t.TempDir(), "download")
+			err := downloadAssetWithTimeouts(context.Background(), client, downloadFixture(t, "payload", "https://first.example/first", "https://second.example/second"), destination, newDownloadProgress(io.Discard, "fixture"), defaultDownloadFiles(), limits)
+			if err != nil || readTestFile(t, destination) != "payload" {
+				t.Fatalf("download: %v", err)
+			}
+			want := int32(1)
+			if kind == "active body" {
+				want = 0
+			}
+			if second.Load() != want {
+				t.Fatalf("fallback calls=%d, want %d", second.Load(), want)
+			}
+			if kind != "active body" {
+				select {
+				case <-stopped:
+				case <-time.After(time.Second):
+					t.Fatal("request was not canceled")
+				}
+			}
+		})
+	}
+}
+
+func TestPrepareCancellationStopsFallback(t *testing.T) {
+	for _, already := range []bool{false, true} {
+		t.Run(fmt.Sprint(already), func(t *testing.T) {
+			var calls, second atomic.Int32
+			started := make(chan struct{})
+			client := githubTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				if r.URL.Path == "/second" {
+					second.Add(1)
+					fmt.Fprint(w, "payload")
+					return
+				}
+				close(started)
+				w.(http.Flusher).Flush()
+				<-r.Context().Done()
+			}))
+			f := versionedRemote(t)
+			http.DefaultTransport = client.Transport
+			name := f.add(t, "probe", "1", "")
+			if err := os.WriteFile(filepath.Join(f.root, "probe", "1", name+".json"), []byte(deliveryFixture(t, f.assets[name], "https://first.example/first", "https://second.example/second")), 0644); err != nil {
+				t.Fatal(err)
+			}
+			o, _ := versionedFixture(t, "probe@1")
+			o.RemoteRoot, o.MetadataRoot = versionedDownloadRoot, f.root
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			if already {
+				if err := os.WriteFile(o.ResultPath, []byte("stale result"), 0644); err != nil {
+					t.Fatal(err)
+				}
+				cancel()
+			}
+			done := make(chan int, 1)
+			var stderr strings.Builder
+			go func() { done <- runContext(ctx, prepareArguments(o), io.Discard, &stderr) }()
+			if !already {
+				select {
+				case <-started:
+					cancel()
+				case <-time.After(time.Second):
+					t.Fatal("request not started")
+				}
+			}
+			select {
+			case code := <-done:
+				if code != 1 || !strings.Contains(stderr.String(), "context canceled") {
+					t.Fatalf("code %d: %s", code, &stderr)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("cancel did not stop prepare")
+			}
+			if second.Load() != 0 || (already && calls.Load() != 0) {
+				t.Fatal("canceled prepare sent a request")
+			}
+			if _, err := os.Stat(o.ResultPath); !os.IsNotExist(err) {
+				t.Fatal("canceled result exists")
+			}
+		})
+	}
+}
+
+func TestDownloadProgressResetsOnFallback(t *testing.T) {
+	client := githubTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/first" {
+			fmt.Fprint(w, "pay")
+			return
+		}
+		fmt.Fprint(w, "payload")
+	}))
+	var output strings.Builder
+	err := downloadReleaseAsset(context.Background(), client, downloadFixture(t, "payload", "https://first.example/first?token=SECRET", "https://second.example/second"), filepath.Join(t.TempDir(), "download"), newDownloadProgress(&output, "fixture"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"source 1/2", "source 2/2", "source 1", "42%", "100%"} {
+		if !strings.Contains(output.String(), want) {
+			t.Errorf("missing %q: %s", want, &output)
+		}
+	}
+	if strings.Count(output.String(), "0%") < 2 || strings.Contains(output.String(), "SECRET") {
+		t.Fatalf("progress did not reset safely: %s", &output)
+	}
+}
+
+func TestDownloadErrorRedaction(t *testing.T) {
+	client := githubTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, "payload") }))
+	base := client.Transport
+	client.Transport = downloadTestTransport(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path == "/first" {
+			return nil, fmt.Errorf("redirect failed: https://user:SECRET@cdn.example/archive?signature=SIGNED")
+		}
+		return base.RoundTrip(r)
+	})
+	var output strings.Builder
+	if err := downloadReleaseAsset(context.Background(), client, downloadFixture(t, "payload", "https://first.example/first", "https://second.example/second"), filepath.Join(t.TempDir(), "download"), newDownloadProgress(&output, "fixture")); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(output.String(), "SECRET") || strings.Contains(output.String(), "SIGNED") {
+		t.Fatalf("secret in log: %s", &output)
+	}
+}

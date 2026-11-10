@@ -2,9 +2,11 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -108,6 +110,19 @@ func TestPackageDownloadProgress(t *testing.T) {
 			asset := f.add(t, "probe", "0123456789ab", "")
 			// A deliberately wrong digest exercises streaming without accepting the response as a package.
 			payload := f.assets[asset] + strings.Repeat("\x00", 512*1024)
+			recordPath := filepath.Join(f.root, "probe", "0123456789ab", asset+".json")
+			record := map[string]any{}
+			if err := json.Unmarshal([]byte(readTestFile(t, recordPath)), &record); err != nil {
+				t.Fatal(err)
+			}
+			record["size"] = len(payload)
+			data, err := json.Marshal(record)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(recordPath, data, 0644); err != nil {
+				t.Fatal(err)
+			}
 			started, release := make(chan struct{}), make(chan struct{})
 			var once sync.Once
 			unblock := func() { once.Do(func() { close(release) }) }
@@ -147,7 +162,7 @@ func TestPackageDownloadProgress(t *testing.T) {
 				t.Fatalf("corrupt response accepted: %d %s", code, &stderr)
 			}
 			out := output.output.String()
-			if strings.Contains(out, "%") != known {
+			if !strings.Contains(out, "%") {
 				t.Errorf("wrong total-length display:\n%s", out)
 			}
 			if strings.Contains(out, "Download complete") || strings.Contains(out, "Extracting") {
