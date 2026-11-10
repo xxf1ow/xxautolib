@@ -36,15 +36,11 @@ func (p *downloadProgress) report() {
 		prefix, suffix = "\r-- ", ""
 	}
 	const mib = 1024 * 1024
-	if p.total > 0 {
-		percent := min(100, p.downloaded*100/p.total)
-		filled := int(percent / 10)
-		fmt.Fprintf(p.output, "%s[AutoLib] Downloading %s: [%s%s] %d%%  %.1f/%.1f MiB%s", prefix, p.ref,
-			strings.Repeat("=", filled), strings.Repeat("-", 10-filled), percent,
-			float64(p.downloaded)/mib, float64(p.total)/mib, suffix)
-	} else {
-		fmt.Fprintf(p.output, "%s[AutoLib] Downloading %s: %.1f MiB%s", prefix, p.ref, float64(p.downloaded)/mib, suffix)
-	}
+	percent := min(100, p.downloaded*100/p.total)
+	filled := int(percent / 10)
+	fmt.Fprintf(p.output, "%s[AutoLib] Downloading %s: [%s%s] %d%%  %.1f/%.1f MiB%s", prefix, p.ref,
+		strings.Repeat("=", filled), strings.Repeat("-", 10-filled), percent,
+		float64(p.downloaded)/mib, float64(p.total)/mib, suffix)
 	p.reported, p.updated = p.downloaded, time.Now()
 }
 

@@ -4,36 +4,31 @@
       "name": "github",
       "input": "https://github.com/owner/repo/releases/download/v1",
       "valid": true,
-      "repository_url": "https://github.com/owner/repo.git",
-      "download_root": "https://github.com/owner/repo/releases/download/v1"
+      "repository_url": "https://github.com/owner/repo.git"
     },
     {
       "name": "gitee",
       "input": "https://gitee.com/owner/repo/releases/download/v1",
       "valid": true,
-      "repository_url": "https://gitee.com/owner/repo.git",
-      "download_root": "https://gitee.com/owner/repo/releases/download/v1"
+      "repository_url": "https://gitee.com/owner/repo.git"
     },
     {
       "name": "escaped-tag-github",
       "input": "https://github.com/owner/repo/releases/download/release%2fstable",
       "valid": true,
-      "repository_url": "https://github.com/owner/repo.git",
-      "download_root": "https://github.com/owner/repo/releases/download/release%2Fstable"
+      "repository_url": "https://github.com/owner/repo.git"
     },
     {
       "name": "escaped-tag-gitee",
       "input": "https://gitee.com/owner/repo/releases/download/release%2Fstable",
       "valid": true,
-      "repository_url": "https://gitee.com/owner/repo.git",
-      "download_root": "https://gitee.com/owner/repo/releases/download/release%2Fstable"
+      "repository_url": "https://gitee.com/owner/repo.git"
     },
     {
       "name": "escaped-percent",
       "input": "https://gitee.com/owner/repo/releases/download/release%252Fstable",
       "valid": true,
-      "repository_url": "https://gitee.com/owner/repo.git",
-      "download_root": "https://gitee.com/owner/repo/releases/download/release%252Fstable"
+      "repository_url": "https://gitee.com/owner/repo.git"
     },
     {
       "name": "github-tag-url",

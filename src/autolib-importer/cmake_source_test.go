@@ -15,7 +15,6 @@ func TestVersionedMetadataSourceParity(t *testing.T) {
 			Name, Input   string
 			Valid         bool
 			RepositoryURL string `json:"repository_url"`
-			DownloadRoot  string `json:"download_root"`
 		} `json:"metadata_sources"`
 	}
 	if err := json.Unmarshal([]byte(readTestFile(t, "../../tests/autolib/release-source-cases.json")), &cases); err != nil {
@@ -34,10 +33,10 @@ func TestVersionedMetadataSourceParity(t *testing.T) {
 	}
 	for _, tc := range cases.Sources {
 		t.Run(tc.Name, func(t *testing.T) {
-			got, goErr := parseMetadataSource(tc.Input)
+			goErr := validateMetadataSource(tc.Input)
 			root := t.TempDir()
 			script, result := filepath.Join(root, "source.cmake"), filepath.Join(root, "source.result")
-			putTestFile(t, script, fmt.Sprintf("cmake_minimum_required(VERSION 3.20)\ninclude([==[%s]==])\n_autolib_metadata_source([==[%s]==] repository download)\nfile(WRITE [==[%s]==] \"${repository}\\n${download}\")\n", filepath.ToSlash(entry), tc.Input, filepath.ToSlash(result)))
+			putTestFile(t, script, fmt.Sprintf("cmake_minimum_required(VERSION 3.20)\ninclude([==[%s]==])\n_autolib_metadata_source([==[%s]==] repository)\nfile(WRITE [==[%s]==] \"${repository}\")\n", filepath.ToSlash(entry), tc.Input, filepath.ToSlash(result)))
 			out, cmakeErr := exec.Command(cmake, "-P", script).CombinedOutput()
 			goValid, cmakeValid := goErr == nil, cmakeErr == nil
 			if goValid != cmakeValid || goValid != tc.Valid {
@@ -46,8 +45,8 @@ func TestVersionedMetadataSourceParity(t *testing.T) {
 			if !tc.Valid && (!strings.Contains(string(out), "AutoLib") || strings.Contains(string(out), "Unknown CMake command")) {
 				t.Fatalf("invalid source did not reach AutoLib validation: %s: %v\n%s", tc.Name, cmakeErr, out)
 			}
-			if tc.Valid && (got.RepositoryURL != tc.RepositoryURL || got.DownloadRoot != tc.DownloadRoot || readTestFile(t, result) != tc.RepositoryURL+"\n"+tc.DownloadRoot) {
-				t.Fatalf("source output differs: Go=%+v CMake=%s", got, readTestFile(t, result))
+			if tc.Valid && readTestFile(t, result) != tc.RepositoryURL {
+				t.Fatalf("repository differs: expected=%s CMake=%s", tc.RepositoryURL, readTestFile(t, result))
 			}
 		})
 	}

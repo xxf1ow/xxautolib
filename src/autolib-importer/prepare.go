@@ -85,8 +85,7 @@ func prepare(o prepareOptions) (packages []preparedPackage, err error) {
 		if !info.IsDir() {
 			return fmt.Errorf("metadata snapshot is not a directory: %s", o.MetadataRoot)
 		}
-		_, err = parseMetadataSource(o.RemoteRoot)
-		return err
+		return validateMetadataSource(o.RemoteRoot)
 	}
 	var visit func(packageRef, []string, bool) error
 	visit = func(ref packageRef, chain []string, root bool) (visitErr error) {

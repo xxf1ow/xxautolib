@@ -65,6 +65,9 @@ func runContext(ctx context.Context, args []string, stdout, stderr io.Writer) in
 }
 
 func main() {
+	if len(os.Args) < 2 || os.Args[1] != "prepare" {
+		os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	code := runContext(ctx, os.Args[1:], os.Stdout, os.Stderr)
 	stop()
