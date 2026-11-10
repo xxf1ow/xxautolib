@@ -56,7 +56,7 @@ cmake -P src/autolib-builder/go-sdk.cmake -- test -mod=readonly ./src/autolib-im
 cmake -P src/autolib-builder/go-sdk.cmake -- test -mod=readonly -p=1 -parallel=1 ./src/autolib-ci -run 'TestCICacheLifecycle$' -count=1 -v
 ```
 
-[跨 run 闭环](../src/autolib-ci/cache_lifecycle_test.go)使用受控 Release、原生静态库及独立消费，验证旧工作目录删除后的恢复、局部失败续跑、链式失效和 latest/入口单独变化。测试不写真实 Release，不证明新流程的四平台 Actions 通过；独立同步的受控端到端证据见下节，不等于真实托管通过。
+[跨运行闭环](../src/autolib-ci/cache_lifecycle_test.go)通过受控缓存、原生静态库及独立消费，验证旧工作目录删除后的恢复、局部失败续跑、链式失效和 latest/入口单独变化。该测试不写真实远端；独立同步的受控端到端证据见下节，四平台实机验收单独记录。
 
 Darwin 实机 queue/lz4 的生产、直接及搬迁消费、Mach-O 与 FIFO 证据和未测项见[Darwin 验证](agent-notes/implemented/architecture/2026-11-05-darwin-aarch64-native-build-and-ci.md#第一阶段验证证据)。工具专用及代表库的 macos-15 运行已通过，见[CI 实机验收](agent-notes/implemented/architecture/2026-11-05-darwin-aarch64-native-build-and-ci.md#macos-15-实机验收)；独立同步的自动触发接线按下节受控检查，真实 Actions 调度仍待验收。Go 定向检查的 PATH 前置固定 CMake/Make。
 
@@ -86,9 +86,11 @@ build/tools/gitee-sync-venv/Scripts/python.exe -m unittest discover -s tests/ci/
 
 ## 真实交付与手动验收
 
-历史 Gitee 交付和成品 Artifacts 交接已通过用户验收，记录见[交付证据](agent-notes/implemented/architecture/2026-11-02-gitee-delivery-reimplementation.md#真实构建与用户验收)及[成品交接验收](agent-notes/implemented/architecture/2026-11-04-ci-packaged-artifact-handoff.md#真实托管验收)。这些运行不证明 Release 缓存与独立同步的真实四平台行为；历史 run/attempt 交接入口已退役。
+历史交付与成品交接已通过用户验收，见[交付证据](agent-notes/implemented/architecture/2026-11-02-gitee-delivery-reimplementation.md#真实构建与用户验收)及[成品交接验收](agent-notes/implemented/architecture/2026-11-04-ci-packaged-artifact-handoff.md#真实托管验收)；这些证据不证明新同步的四平台行为，历史交接入口已退役。
 
-新同步的真实验收需单独授权仓库、目标和阶段。准备有效缓存后，手动选择普通分支的 `Synchronize Gitee`、`mode=sync`，核对本轮固定 SHA、实际同步目标、逐项摘要及依赖顺序。就绪后再同步应 `uploaded=0`、`skipped=selected`、无归档传输且无新元数据提交。另须按授权验证两个 workflow 的共用互斥及 `queue: max`、成功构建自动触发、两端删除与故障恢复；静态 YAML、本地 TLS 和线程锁均不替代真实调度。匿名下游消费需用户公开 Gitee 库后另行验证，push 及新库公开由用户负责。
+缓存与独立同步阶段已通过用户验收，实机范围及本次跳过的 PCL 见[Windows 记录](agent-notes/implemented/architecture/2026-11-09-release-cache-and-independent-gitee-sync.md#windows-真实构建与独立同步验收)。当前无超限自动跳过或双来源下载；其他平台恢复、自动触发、真实清理及匿名消费仍须另行验收。
+
+后续实机验收需明确仓库、目标和阶段授权。准备有效缓存后，在普通分支手动运行 `Synchronize Gitee` 的同步模式，核对固定提交、实际目标、逐项摘要及依赖顺序；再次同步应全部跳过、零归档传输且无新元数据提交。另须验证工作流共用互斥、最大排队容量、成功构建自动触发、两端删除及故障恢复；静态接线、本地代理和线程锁不替代真实调度。推送及新库公开由用户负责，公开后另验匿名消费。
 
 ## 安装产物集成验证
 

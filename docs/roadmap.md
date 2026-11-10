@@ -10,7 +10,7 @@
 
 ## 状态与依据
 
-[importer 压缩分发](agent-notes/proposed/architecture/2026-10-27-importer-distribution-and-branch-release.md)提供工具去符号、单程序 tar.xz 和 CMake 原生引导依据；[Gitee 同步参考](agent-notes/proposed/architecture/2026-10-27-gitee-release-sync-workflow.md)保留附件接入理由。当前交付只使用独立 Gitee 发布，不经 GitHub Release 中转；验证范围由[交付记录](agent-notes/implemented/architecture/2026-11-02-gitee-delivery-reimplementation.md#验证证据)拥有。最低 CMake 按用户决定不安排测试。
+[工具压缩分发](agent-notes/proposed/architecture/2026-10-27-importer-distribution-and-branch-release.md)拥有去符号、压缩及原生引导依据；[同步参考](agent-notes/proposed/architecture/2026-10-27-gitee-release-sync-workflow.md)保留附件接入理由。当前构建逐项入库，再由独立流程同步至消费端；缓存与同步阶段已验收，本次跳过的大包及其余缺口见[真实验收记录](agent-notes/implemented/architecture/2026-11-09-release-cache-and-independent-gitee-sync.md#windows-真实构建与独立同步验收)。最低 CMake 按用户决定不测试。
 
 [CI 自动发现与双平台消费](agent-notes/implemented/architecture/2026-10-27-ci-discovery-and-release-sources.md#验证)提供资格静默过滤、实际依赖层及正文摘要校验。真实 Gitee 消费已通过用户手动验收；平台、最低 CMake 及新 CI 策略的证据分别记录，不从该结果推定全部专项通过。
 
@@ -35,7 +35,7 @@
 | 模块依赖 | 已实现 | 叶子请求得到稳定闭包，显式依赖来自本仓库；FLANN、HarfBuzz、OpenCV 已有双端验证。Boost、PCL 的依赖在 109 完成构建与来源核对；PCL 在原三平台及 Darwin 完成 Config 组合消费与搬迁验收。 |
 | 复杂模块与专用文件 | 已实现 | OpenCV 的资源补丁、平台布局与链接运行已有双端证据；oneTBB 的 HWLOC 绑定及 ImGui 专用构建在 109 完成安装核对；Windows HWLOC 未验。 |
 | 下游导入与可搬迁包 | 已实现 | queue、lz4、flann 的显式包内 adapter 已完成双端搬迁链接运行；当前全部配方版本有 adapter，追加真实消费范围见上文，本地构建资格与发布资格分离。 |
-| 固定槽交付 | 已实现 | 本地消费和 GitHub 发布已验证；CI 每轮重建，不维护跨运行生产包缓存，各槽独立更新、无全局发行清单，汇总只报告结果。Gitee 消费已通过用户手动验收；同步专项证据独立记录，后续远端写操作仍须授权。 |
+| 版本化成品缓存与交付 | 已实现 | CI 逐项验证、打包及跨 run 复用，GitHub Release 保存缓存，独立流程同步 Gitee 并即时登记摘要；源码决定失效与删除。Windows 阶段已验收，PCL 超限及其他平台缺口见真实验收记录；后续远端写操作仍须授权。 |
 | 四平台原生 CI | 已实现 | 生产入口支持四平台，Darwin 固定 macos-15/arm64/15.0；逐包及 example 结果见配方与 macOS 验收记录。 |
 | 平台无关头文件槽位 | 已实现 | queue-any-any 的打包、导入、唯一 publisher 和三平台消费已验证，只有一个通用资产；机器码包与 importer 仍限定平台。 |
 
