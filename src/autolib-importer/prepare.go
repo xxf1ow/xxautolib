@@ -30,6 +30,12 @@ func prepare(o prepareOptions) (packages []preparedPackage, err error) {
 		}
 	}
 	defer func() {
+		if err == nil {
+			err = o.Context.Err()
+		}
+		if err != nil {
+			packages = nil
+		}
 		if err != nil && o.ResultPath != "" {
 			_ = os.Remove(o.ResultPath)
 		}
@@ -84,6 +90,9 @@ func prepare(o prepareOptions) (packages []preparedPackage, err error) {
 	}
 	var visit func(packageRef, []string, bool) error
 	visit = func(ref packageRef, chain []string, root bool) (visitErr error) {
+		if err := o.Context.Err(); err != nil {
+			return err
+		}
 		bare := ref.Version == ""
 		if bare {
 			version, err := readPackageLatest(cache, ref.Name)
@@ -172,6 +181,9 @@ func prepare(o prepareOptions) (packages []preparedPackage, err error) {
 			}
 		}
 		// A missing root stays staged until its dependencies succeed, so a stale latest cannot revive on failure.
+		if err := o.Context.Err(); err != nil {
+			return err
+		}
 		if !found {
 			if err := commitPreparedPackage(candidate, directory); err != nil {
 				return err
@@ -187,11 +199,17 @@ func prepare(o prepareOptions) (packages []preparedPackage, err error) {
 		}
 	}
 	for _, p := range packages {
+		if err := o.Context.Err(); err != nil {
+			return nil, err
+		}
 		if version, ok := latest[p.Name]; ok {
 			if err := writePackageLatest(cache, p.Name, version); err != nil {
 				return nil, err
 			}
 		}
+	}
+	if err := o.Context.Err(); err != nil {
+		return nil, err
 	}
 	if err := writePreparedResult(o.ResultPath, packages); err != nil {
 		return nil, err
@@ -212,6 +230,9 @@ func stageRemotePackage(ctx context.Context, cache string, asset releaseAsset, i
 	}
 	fmt.Fprintf(progress.output, "-- [AutoLib] Download complete: %s\n", progress.ref)
 	fmt.Fprintf(progress.output, "-- [AutoLib] Extracting %s: ...\n", progress.ref)
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	candidate, err = extractPackage(archive, cache, id)
 	if err == nil {
 		fmt.Fprintf(progress.output, "-- [AutoLib] Extraction complete: %s\n", progress.ref)

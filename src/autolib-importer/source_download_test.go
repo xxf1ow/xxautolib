@@ -454,3 +454,81 @@ func TestDownloadErrorRedaction(t *testing.T) {
 		t.Fatalf("secret in log: %s", &output)
 	}
 }
+
+type cancelOnCloseFile struct {
+	*os.File
+	cancel context.CancelFunc
+}
+
+func (f cancelOnCloseFile) Close() error {
+	err := f.File.Close()
+	f.cancel()
+	return err
+}
+
+func TestDownloadCancellationBeforeCommit(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var requests atomic.Int32
+	client := githubTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		fmt.Fprint(w, "payload")
+	}))
+	files := defaultDownloadFiles()
+	files.create = func(dir string) (downloadFile, error) {
+		f, err := os.CreateTemp(dir, ".download-")
+		if err != nil {
+			return nil, err
+		}
+		return cancelOnCloseFile{f, cancel}, nil
+	}
+	dir := t.TempDir()
+	err := downloadAsset(ctx, client, downloadFixture(t, "payload", "https://first.example/a", "https://second.example/a"), filepath.Join(dir, "archive"), newDownloadProgress(io.Discard, "probe@1"), files)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("download accepted cancellation before commit: %v", err)
+	}
+	if entries, err := os.ReadDir(dir); err != nil || len(entries) != 0 {
+		t.Fatalf("canceled download left files: %v %v", entries, err)
+	}
+	if requests.Load() != 1 {
+		t.Fatalf("canceled download retried: %d requests", requests.Load())
+	}
+}
+
+type downloadOutputFunc func([]byte) (int, error)
+
+func (f downloadOutputFunc) Write(data []byte) (int, error) { return f(data) }
+
+func TestPrepareCancellationBeforePublish(t *testing.T) {
+	for _, phase := range []string{"Download complete:", "Extracting ", "Extraction complete:"} {
+		t.Run(phase, func(t *testing.T) {
+			f := versionedRemote(t)
+			name := f.add(t, "probe", "1", "")
+			o, cache := versionedFixture(t, "probe")
+			o.RemoteRoot, o.MetadataRoot = versionedDownloadRoot, f.root
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			output := downloadOutputFunc(func(data []byte) (int, error) {
+				if strings.Contains(string(data), phase) {
+					cancel()
+				}
+				return len(data), nil
+			})
+			var stderr strings.Builder
+			if code := runContext(ctx, prepareArguments(o), output, &stderr); code != 1 || !strings.Contains(stderr.String(), "context canceled") {
+				t.Fatalf("canceled prepare returned %d: %s", code, &stderr)
+			}
+			if ctx.Err() == nil {
+				t.Fatal("cancel point was not reached")
+			}
+			requireNoResult(t, o)
+			requireNoPackageStaging(t, cache)
+			for _, path := range []string{"probe/1", "probe/package.toml"} {
+				if _, err := os.Stat(filepath.Join(cache, path)); !os.IsNotExist(err) {
+					t.Fatalf("canceled prepare published %s: %v", path, err)
+				}
+			}
+			f.requireRequests(t, map[string]int{name: 1})
+		})
+	}
+}

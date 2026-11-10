@@ -163,6 +163,9 @@ func downloadAssetWithTimeouts(ctx context.Context, configured *http.Client, ass
 			failures = append(failures, fmt.Errorf("source %d (%s): %w", index+1, host.Host, sourceErr))
 			continue
 		}
+		if err := ctx.Err(); err != nil {
+			return errors.Join(err, files.remove(file.Name()))
+		}
 		if _, err := os.Lstat(destination); err == nil {
 			return errors.Join(fmt.Errorf("download destination already exists: %s", destination), files.remove(file.Name()))
 		} else if !os.IsNotExist(err) {
