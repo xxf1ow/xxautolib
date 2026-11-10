@@ -58,7 +58,6 @@ func prepare(o prepareOptions) (packages []preparedPackage, err error) {
 	chains := map[string]string{}
 	state := map[string]uint8{}
 	latest := map[string]string{}
-	var remote metadataSource
 	requireMetadata := func() error {
 		if o.RemoteRoot == "" {
 			return fmt.Errorf("missing package input: remote source is disabled")
@@ -73,7 +72,7 @@ func prepare(o prepareOptions) (packages []preparedPackage, err error) {
 		if !info.IsDir() {
 			return fmt.Errorf("metadata snapshot is not a directory: %s", o.MetadataRoot)
 		}
-		remote, err = parseMetadataSource(o.RemoteRoot)
+		_, err = parseMetadataSource(o.RemoteRoot)
 		return err
 	}
 	var visit func(packageRef, []string, bool) error
@@ -137,7 +136,7 @@ func prepare(o prepareOptions) (packages []preparedPackage, err error) {
 			if err := requireMetadata(); err != nil {
 				return err
 			}
-			asset, identity, err := metadataPackageAsset(o.MetadataRoot, remote, id)
+			asset, identity, err := metadataPackageAsset(o.MetadataRoot, id)
 			if err != nil {
 				return err
 			}

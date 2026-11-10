@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
@@ -30,7 +32,46 @@ func parseMetadataSource(raw string) (metadataSource, error) {
 	return metadataSource{RepositoryURL: base + ".git", DownloadRoot: base + "/releases/download/" + url.PathEscape(tag)}, nil
 }
 
-func metadataPackageAsset(root string, source metadataSource, id packageIdentity) (releaseAsset, packageIdentity, error) {
+func parseDeliveryRecord(path string, content []byte) (releaseAsset, error) {
+	var fields map[string]json.RawMessage
+	var asset releaseAsset
+	if err := json.Unmarshal(content, &fields); err != nil || len(fields) != 3 {
+		return asset, fmt.Errorf("%s: expected delivery JSON with sha256, size and urls", path)
+	}
+	if json.Unmarshal(fields["sha256"], &asset.SHA256) != nil || json.Unmarshal(fields["size"], &asset.Size) != nil || json.Unmarshal(fields["urls"], &asset.URLs) != nil {
+		return releaseAsset{}, fmt.Errorf("%s: invalid delivery fields", path)
+	}
+	asset.Name = strings.TrimSuffix(filepath.Base(path), ".json")
+	if err := validateDeliveryAsset(asset); err != nil {
+		return releaseAsset{}, fmt.Errorf("%s: %w", path, err)
+	}
+	return asset, nil
+}
+
+func validateDeliveryAsset(asset releaseAsset) error {
+	if len(asset.SHA256) != 64 || strings.ToLower(asset.SHA256) != asset.SHA256 {
+		return fmt.Errorf("asset %s: expected lowercase SHA256", asset.Name)
+	}
+	if _, err := hex.DecodeString(asset.SHA256); err != nil {
+		return fmt.Errorf("asset %s: invalid SHA256", asset.Name)
+	}
+	if asset.Size <= 0 || asset.Size >= 2147483648 || len(asset.URLs) == 0 {
+		return fmt.Errorf("asset %s: invalid delivery size or sources", asset.Name)
+	}
+	seen := map[string]bool{}
+	for _, address := range asset.URLs {
+		if err := validateReleaseHTTPS(address); err != nil {
+			return err
+		}
+		if seen[address] {
+			return fmt.Errorf("asset %s: duplicate delivery source", asset.Name)
+		}
+		seen[address] = true
+	}
+	return nil
+}
+
+func metadataPackageAsset(root string, id packageIdentity) (releaseAsset, packageIdentity, error) {
 	if err := validateIdentity(id); err != nil {
 		return releaseAsset{}, packageIdentity{}, err
 	}
@@ -53,25 +94,25 @@ func metadataPackageAsset(root string, source metadataSource, id packageIdentity
 	var actual packageIdentity
 	for _, candidate := range identities {
 		name := candidate.Name + "-" + candidate.Version + "-" + candidate.OS + "-" + candidate.Arch + ".tar.zst"
-		if err := exactPackageEntry(directory, name+".sha256", false); err != nil {
+		if err := exactPackageEntry(directory, name+".json", false); err != nil {
 			if os.IsNotExist(err) {
 				continue
 			}
 			return releaseAsset{}, packageIdentity{}, err
 		}
-		path := filepath.Join(directory, name+".sha256")
+		path := filepath.Join(directory, name+".json")
 		content, err := os.ReadFile(path)
 		if err != nil {
 			return releaseAsset{}, packageIdentity{}, err
 		}
-		digest, err := parsePackageDigest(path, content)
+		asset, err := parseDeliveryRecord(path, content)
 		if err != nil {
 			return releaseAsset{}, packageIdentity{}, err
 		}
 		if selected.Name != "" {
 			return releaseAsset{}, packageIdentity{}, fmt.Errorf("%s: ambiguous package digests for %s and %s", directory, selected.Name, name)
 		}
-		selected = releaseAsset{Name: name, URL: source.DownloadRoot + "/" + url.PathEscape(name), SHA256: digest}
+		selected = asset
 		actual = candidate
 	}
 	if selected.Name == "" {

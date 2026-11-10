@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"crypto/sha256"
 	"errors"
 	"fmt"
 	"net/http"
@@ -66,7 +65,7 @@ func (f *versionedRemoteFixture) add(t *testing.T, name, version, dependencies s
 	archive := versionedArchive(t, t.TempDir(), name, version, dependencies)
 	asset := filepath.Base(archive)
 	f.assets[asset] = readTestFile(t, archive)
-	putTestFile(t, filepath.Join(f.root, name, version, asset+".sha256"), fmt.Sprintf("%x\n", sha256.Sum256([]byte(f.assets[asset]))))
+	putTestFile(t, filepath.Join(f.root, name, version, asset+".json"), deliveryFixture(t, f.assets[asset], "https://"+f.host+"/owner/repo/releases/download/v1/"+asset))
 	versionedLatest(t, f.root, name, version)
 	return asset
 }
@@ -221,7 +220,7 @@ func TestVersionedRemoteFailure(t *testing.T) {
 			o.RemoteRoot = versionedDownloadRoot
 			asset := f.add(t, "probe", "2", "")
 			metadata := f.root
-			digest := filepath.Join(f.root, "probe/2", asset+".sha256")
+			digest := filepath.Join(f.root, "probe/2", asset+".json")
 			switch kind {
 			case "missing snapshot":
 				metadata = filepath.Join(f.root, "missing")
@@ -245,11 +244,11 @@ func TestVersionedRemoteFailure(t *testing.T) {
 				f.status[asset] = 404
 			case "bad archive":
 				f.assets[asset] = "bad archive"
-				putTestFile(t, digest, fmt.Sprintf("%x\n", sha256.Sum256([]byte(f.assets[asset]))))
+				putTestFile(t, digest, deliveryFixture(t, f.assets[asset], "https://"+f.host+"/owner/repo/releases/download/v1/"+asset))
 			case "wrong identity":
 				archive := testArchive(t, []archiveMember{{Name: "probe/2/autolib-import.cmake", Body: identityHeader(packageIdentity{"probe", "2", "windows", "x86_64"})}})
 				f.assets[asset] = readTestFile(t, archive)
-				putTestFile(t, digest, fmt.Sprintf("%x\n", sha256.Sum256([]byte(f.assets[asset]))))
+				putTestFile(t, digest, deliveryFixture(t, f.assets[asset], "https://"+f.host+"/owner/repo/releases/download/v1/"+asset))
 			case "missing dependency":
 				f.add(t, "probe", "2", "absent@1")
 			}
