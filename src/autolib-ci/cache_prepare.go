@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -50,7 +51,7 @@ func plannedCICacheNames(plan ciPlan) ([]string, error) {
 			return fmt.Errorf("cache identity %s has duplicate writers %s and %s", name, previous, writer)
 		}
 		writers[name] = writer
-		names = append(names, name, name+".publication.json")
+		names = append(names, name)
 		return nil
 	}
 	for _, platform := range plan.Platforms {
@@ -79,6 +80,10 @@ func plannedCICacheNames(plan ciPlan) ([]string, error) {
 
 func prepareCICache(ctx context.Context, o ciCachePrepareOptions) error {
 	c, err := newCICacheClient(o.Repository, os.Getenv("GITHUB_TOKEN"))
+	if err != nil {
+		return err
+	}
+	c.Records, err = newCICacheGitStore(o.Repository, os.Getenv("GITEE_REPOSITORY"), os.Getenv("GITEE_TOKEN"), filepath.Dir(o.Output))
 	if err != nil {
 		return err
 	}

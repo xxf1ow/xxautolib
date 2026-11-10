@@ -15,6 +15,7 @@ import (
 	"reflect"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -26,6 +27,7 @@ type ciCacheGitSnapshot struct {
 }
 
 type ciCacheGitStore struct {
+	mu                                                       sync.Mutex
 	SourceRepository, Repository, Token, URL, APIBase, Login string
 	WorkRoot, directory                                      string
 	HTTP                                                     *http.Client
@@ -271,6 +273,8 @@ func (s *ciCacheGitStore) readTree(ctx context.Context, head string) (ciCacheGit
 }
 
 func (s *ciCacheGitStore) Snapshot(ctx context.Context, allowCreate bool) (ciCacheGitSnapshot, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	branch, err := s.prepare(ctx)
 	if err != nil {
 		return ciCacheGitSnapshot{}, err
@@ -362,6 +366,8 @@ func sameCICacheGitRecord(left, right []byte) bool {
 }
 
 func (s *ciCacheGitStore) Update(ctx context.Context, baselineHead, name string, desired []byte) (ciCacheGitSnapshot, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if !commitPattern.MatchString(baselineHead) || !ciCacheRecordFilename(name) {
 		return ciCacheGitSnapshot{}, errors.New("cache update requires a fixed baseline and record filename")
 	}

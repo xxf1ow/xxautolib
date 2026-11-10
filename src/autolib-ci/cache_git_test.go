@@ -33,7 +33,11 @@ func cacheGitCommand(t *testing.T, directory string, args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
-func cacheGitTestFixture(t *testing.T) *cacheGitFixture {
+func cacheGitTestFixture(t *testing.T, repositories ...string) *cacheGitFixture {
+	source := "fixture/source"
+	if len(repositories) > 0 {
+		source = repositories[0]
+	}
 	t.Helper()
 	directory := t.TempDir()
 	f := &cacheGitFixture{remote: filepath.Join(directory, "remote.git"), seed: filepath.Join(directory, "seed")}
@@ -42,7 +46,7 @@ func cacheGitTestFixture(t *testing.T) *cacheGitFixture {
 	}
 	cacheGitCommand(t, directory, "init", "--bare", f.remote)
 	cacheGitCommand(t, f.seed, "init", "-b", "main")
-	os.WriteFile(filepath.Join(f.seed, ".autolib-repository.json"), []byte(`{"type":"xxautolib-artifacts","schema":2,"upstream":"https://github.com/fixture/source"}`), 0644)
+	os.WriteFile(filepath.Join(f.seed, ".autolib-repository.json"), []byte(`{"type":"xxautolib-artifacts","schema":2,"upstream":"https://github.com/`+source+`"}`), 0644)
 	cacheGitCommand(t, f.seed, "add", ".")
 	cacheGitCommand(t, f.seed, "commit", "-m", "identity")
 	cacheGitCommand(t, f.seed, "remote", "add", "origin", f.remote)
@@ -68,7 +72,7 @@ func cacheGitTestFixture(t *testing.T) *cacheGitFixture {
 		}
 	}))
 	t.Cleanup(server.Close)
-	s, err := newCICacheGitStore("fixture/source", "fixture/mirror", "secret&%$!", filepath.Join(directory, "work"))
+	s, err := newCICacheGitStore(source, "fixture/mirror", "secret&%$!", filepath.Join(directory, "work"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -276,6 +280,18 @@ func cacheGitShim() {
 		if f != nil {
 			f.WriteString("push\n")
 			f.Close()
+		}
+		if mode == "selective" {
+			head, _, _ := strings.Cut(args[len(args)-1], ":")
+			changed, err := exec.Command(os.Getenv("AUTOLIB_CI_REAL_GIT"), "diff-tree", "--no-commit-id", "--name-only", "-r", head).Output()
+			if err != nil {
+				os.Exit(2)
+			}
+			for _, name := range strings.Fields(string(changed)) {
+				if name == os.Getenv("AUTOLIB_CI_GIT_REJECT_NAME") {
+					os.Exit(1)
+				}
+			}
 		}
 		if mode == "reject" {
 			os.Exit(1)

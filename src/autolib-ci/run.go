@@ -57,6 +57,12 @@ func runCILayerWithCache(ctx context.Context, o ciRunOptions, cache *ciCacheClie
 		if err != nil {
 			return err
 		}
+		if err == nil {
+			cache.Records, err = newCICacheGitStore(o.Repository, os.Getenv("GITEE_REPOSITORY"), os.Getenv("GITEE_TOKEN"), work)
+			if err != nil {
+				return err
+			}
+		}
 	}
 	if cache.Repository != o.Repository {
 		return errors.New("cache client repository differs from current source")
