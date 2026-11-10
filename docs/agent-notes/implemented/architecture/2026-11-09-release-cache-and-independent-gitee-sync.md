@@ -175,7 +175,7 @@ Gitee 清理不能只遍历现有 Git 摘要，还须检查附件列表中符合
 
 ### 权限、初始化与退役
 
-构建入库需要当前源码仓库的 Release 写权限，独立同步清理 GitHub 缓存时也需要相应权限；只读计划、测试和诊断不因此获取 Gitee 凭据。GitHub 凭据用于 GitHub 侧，`GITEE_TOKEN` 只注入独立 Gitee 写入步骤，不进入第三方编译、依赖安装、缓存或日志。checkout 继续不持久保存凭据，输入不拼接成 shell 源码。
+构建入库需要当前源码仓库的 Release 写权限，独立同步清理 GitHub 缓存时也需要相应权限；只读计划、测试和诊断不因此获取 Gitee 凭据。GitHub 凭据用于 GitHub 侧，`GITEE_TOKEN` 交付缓存记录读写及独立 Gitee 交付步骤，不进入第三方编译、普通验证、依赖安装或日志。checkout 继续不持久保存凭据，输入不拼接成 shell 源码。
 
 缓存 Release 采用允许更新和删除附件的配置；若启用 immutable release 则明确失败，不尝试绕过保护。[GitHub 不可变 Release 规则](https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository)说明其附件限制。单文件必须小于 2 GiB，单 Release 最多 1000 个附件；新写入只包含归档，已有未知文件及旧记录附件仍计数。[Release 容量规则](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases#storage-and-bandwidth-quotas)是当前限制的核对来源。
 
