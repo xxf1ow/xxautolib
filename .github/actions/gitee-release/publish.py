@@ -190,7 +190,7 @@ def list_assets(api, release_id):
 
 def publish_release(config: dict) -> dict:
     """单个进程拥有 Git 副本；并发上传，每项立即提交，push 未确认即停止写入。"""
-    result = {'selected': 0, 'uploaded': 0, 'skipped': 0, 'failed': 0, 'items': [], 'coverage': {}, 'errors': {},
+    result = {'selected': 0, 'uploaded': 0, 'metadata_only': 0, 'skipped': 0, 'failed': 0, 'items': [], 'coverage': {}, 'errors': {},
               'metadata_committed': False, 'metadata_commit': None}
     api, repository = GiteeAPI(config['gitee_token'], config['repository']), None
     operation = 'repository'

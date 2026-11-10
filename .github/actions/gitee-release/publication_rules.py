@@ -1,11 +1,12 @@
 """校验明确发布输入和元数据身份；不发现资产、不查询远端。"""
 
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 import unicodedata
 import re
 
 
 PLATFORMS = {'windows-x86_64', 'linux-x86_64', 'linux-aarch64', 'darwin-aarch64'}
+GITEE_ASSET_LIMIT = 100000000
 IMPORTERS = {platform: 'autolib-importer-' + platform + ('.exe' if platform.startswith('windows-') else '') + '.tar.xz'
              for platform in PLATFORMS}
 
@@ -55,7 +56,7 @@ def metadata_path(asset: dict) -> str | None:
         expected = IMPORTERS.get(asset.get('platform'))
         if not expected or asset.get('name') != expected:
             raise ValueError('invalid importer asset identity')
-        return 'autolib-importer/' + expected + '.sha256'
+        return 'autolib-importer/' + expected + '.json'
     package = asset.get('package')
     if asset.get('kind') != 'library' or not isinstance(package, dict) or set(package) != {'name', 'version', 'os', 'arch'}:
         raise ValueError('invalid library asset identity')
@@ -65,7 +66,45 @@ def metadata_path(asset: dict) -> str | None:
     expected = name + '-' + version + '-' + platform + '.tar.zst'
     if platform not in PLATFORMS | {'any-any'} or asset.get('name') != expected:
         raise ValueError('library asset name does not match identity')
-    return name + '/' + version + '/' + expected + '.sha256'
+    return name + '/' + version + '/' + expected + '.json'
+
+
+def validate_delivery_record(value: object) -> dict:
+    """校验消费者字节身份及完整有序来源，不探测远端。"""
+    if (not isinstance(value, dict) or set(value) != {'sha256', 'size', 'urls'}
+            or not isinstance(value['sha256'], str) or not re.fullmatch(r'[0-9a-f]{64}', value['sha256'])
+            or type(value['size']) is not int or not 0 < value['size'] < 2147483648
+            or not isinstance(value['urls'], list) or not value['urls']):
+        raise ValueError('invalid delivery record')
+    seen = set()
+    for address in value['urls']:
+        if not isinstance(address, str) or any(c.isspace() or unicodedata.category(c) == 'Cc' for c in address):
+            raise ValueError('invalid delivery URL')
+        try:
+            url = urlsplit(address)
+            if url.scheme != 'https' or not url.hostname or url.username is not None or url.password is not None or address in seen:
+                raise ValueError('invalid delivery URL')
+            url.port
+        except ValueError:
+            raise ValueError('invalid delivery URL') from None
+        seen.add(address)
+    return value
+
+
+def delivery_record(asset: dict, *, repository: str, tag: str, github_repository: str) -> dict:
+    """由可信交付目标生成完整地址；超限归档只提供 GitHub 来源。"""
+    if metadata_path(asset) is None:
+        raise ValueError('entry has no delivery record')
+    for target in (repository, github_repository):
+        if not isinstance(target, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*', target):
+            raise ValueError('invalid delivery repository')
+    if not isinstance(tag, str) or not tag or any(c.isspace() or unicodedata.category(c) == 'Cc' for c in tag):
+        raise ValueError('invalid delivery tag')
+    archive = quote(asset['name'], safe='')
+    urls = ['https://github.com/' + github_repository + '/releases/download/autolib-cache/' + archive]
+    if type(asset['size']) is int and asset['size'] <= GITEE_ASSET_LIMIT:
+        urls.insert(0, 'https://gitee.com/' + repository + '/releases/download/' + quote(tag, safe='') + '/' + archive)
+    return validate_delivery_record({'sha256': asset['sha256'], 'size': asset['size'], 'urls': urls})
 
 
 def choose_source_latest(existing: dict, candidates: dict, source: dict, succeeded: set[str],
