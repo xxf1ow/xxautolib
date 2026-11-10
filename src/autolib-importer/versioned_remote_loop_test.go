@@ -107,8 +107,8 @@ func TestVersionedRemoteLoop(t *testing.T) {
 			}
 			for path, body := range currentAssets {
 				e.asset(t, path, body)
-				if got := readTestFile(t, filepath.Join(e.repo, filepath.FromSlash(path)+".sha256")); got != currentDigests[path] {
-					t.Fatalf("metadata does not preserve builder digest for %s: %q", path, got)
+				if got, err := parseDeliveryRecord(path+".json", []byte(readTestFile(t, filepath.Join(e.repo, filepath.FromSlash(path)+".json")))); err != nil || got.SHA256 != strings.TrimSpace(currentDigests[path]) {
+					t.Fatalf("metadata does not preserve builder digest for %s: %+v", path, got)
 				}
 			}
 			versionedLatest(t, e.repo, "probe", "1")

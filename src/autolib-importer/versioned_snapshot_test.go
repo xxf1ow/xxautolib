@@ -155,7 +155,7 @@ func TestVersionedMetadataRepository(t *testing.T) {
 }
 
 func TestVersionedMetadataDeliveryRestrictions(t *testing.T) {
-	identity := `{"type":"xxautolib-artifacts","schema":1,"upstream":"https://github.com/xxf1ow/xxautolib"}`
+	identity := `{"type":"xxautolib-artifacts","schema":2,"upstream":"https://github.com/xxf1ow/xxautolib"}`
 	for _, path := range []string{"tools/autolib-importer-linux-x86_64.tar.xz.sha256", "autolib-importer/package.toml", "autolib-importer/1/autolib-importer-1-linux-x86_64.tar.zst.sha256"} {
 		t.Run(path, func(t *testing.T) {
 			root := t.TempDir()
@@ -181,7 +181,7 @@ func snapshotTraceCount(t *testing.T, trace, command string) int {
 }
 
 func TestVersionedSnapshotLifecycle(t *testing.T) {
-	const identity = `{"type":"xxautolib-artifacts","schema":1,"upstream":"https://github.com/xxf1ow/xxautolib"}`
+	const identity = `{"type":"xxautolib-artifacts","schema":2,"upstream":"https://github.com/xxf1ow/xxautolib"}`
 	root := t.TempDir()
 	repo := snapshotRepository(t, metadataRepositoryCase{Files: map[string]string{".autolib-repository.json": identity}})
 	trace := filepath.Join(root, "git.trace")
