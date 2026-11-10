@@ -20,6 +20,8 @@ Status: implemented
 
 本记录拥有下列范围，既有记录保留其余约束和历史验证证据。
 
+[JSON 交付元数据与有序双来源下载](../../proposed/architecture/2026-11-09-dual-source-artifact-downloads.md)提议调整消费者记录、跳过条件及超限交付；该提案尚未实现，本文的缓存与独立同步决定仍作为当前基线。
+
 | 既有记录 | 本记录拥有的范围 | 继续保留的约束 |
 | --- | --- | --- |
 | [CI 系统](../../implemented/architecture/2026-10-20-ci-system.md) | 逐项失败隔离、缓存入库和运行汇总 | 独立 CI 工具、原生平台、工具准备及并行预算 |

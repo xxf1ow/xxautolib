@@ -16,6 +16,8 @@ Status: implemented
 
 独立同步、摘要信任及源码驱动清理由以下记录拥有：[Release 成品缓存与独立 Gitee 精确同步](../../implemented/architecture/2026-11-09-release-cache-and-independent-gitee-sync.md)。
 
+[JSON 交付元数据与有序双来源下载](../../proposed/architecture/2026-11-09-dual-source-artifact-downloads.md)提议替代裸摘要格式及消费端地址拼接；尚未实施，不改变本文当前格式、权限及仓库保护规则。
+
 [CI 成品归档交接与重复发布](2026-11-04-ci-packaged-artifact-handoff.md)保留 CI 最终归档及原样分发的决定；本文保留专用仓库生命周期、元数据消费协议、初始化理由、权限和历史验证决定。
 
 本文拥有第四阶段的交接结构、Gitee 发布、首次 latest 初始化及重构边界，在这些范围内替代[统一交付设计](../../proposed/architecture/2026-10-29-versioned-artifact-delivery.md)的第四阶段方案。前三阶段的公共消费入口、精确依赖、缓存选择、Git 快照与已验收记录继续作为基线约束；本文不重新定义这些能力，也不把被替代实现的分项证据当作新实现验收结果。

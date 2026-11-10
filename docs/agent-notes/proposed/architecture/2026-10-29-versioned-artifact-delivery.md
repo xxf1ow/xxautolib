@@ -10,6 +10,8 @@ Status: proposed
 
 ## 方案
 
+[JSON 交付元数据与有序双来源下载](2026-11-09-dual-source-artifact-downloads.md)拥有后续消费记录和多地址下载提案；版本、依赖、安装布局及 latest 继续由本文约束，当前裸摘要实现不因提案存在而改变。
+
 采用精确版本包、独立 latest 指针、统一安装结果和专用 Git 元数据仓库。实际归档放在同仓库的固定 Release 中，按完整文件名定位；消费端只克隆元数据并下载归档，不编译源码。[架构](../../../architecture.md)是开发入口，本文保留版本、缓存、Git 元数据及前三阶段已验收的契约和证据。第四阶段由已验收的[Gitee 交付重做](../../implemented/architecture/2026-11-02-gitee-delivery-reimplementation.md)独立拥有；本文的第四阶段方案仅供参考，不要求兼容或并存两套实现。
 
 [自定位消费入口与工具专用 CI](../../implemented/architecture/2026-11-03-entry-delivery-and-tool-only-ci.md)拥有已实现的入口安装、来源不可配置及缓存自定位，部分替代本文独立本地来源及四步选择；本文的版本、依赖、Git 快照、完整性校验和历史验证依据继续适用，历史复制或本地归档用例不表示这些路径仍可调用。

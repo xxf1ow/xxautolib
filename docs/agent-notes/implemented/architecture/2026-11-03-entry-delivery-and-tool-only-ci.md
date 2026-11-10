@@ -12,6 +12,8 @@ Status: implemented
 
 ## 决定
 
+[JSON 交付元数据与有序双来源下载](../../proposed/architecture/2026-11-09-dual-source-artifact-downloads.md)提议改变工具引导的记录格式及归档来源；尚未实现，本文的自定位、入口注入及现有消费规则继续作为基线。
+
 保留 `autolib.cmake` 作为唯一 CMake 接入入口，将它与 importer 和版本化包安装到同一个 `3rdparty` 根。入口自身目录同时是本地查找根和远程下载缓存根。远程地址是入口内部的发布信息，不是用户配置：源码和本地安装版为空，CI 仅在上传副本中注入实际 Gitee Release 下载根。
 
 ### 设计归属与范围
