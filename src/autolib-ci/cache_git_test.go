@@ -100,6 +100,36 @@ func (f *cacheGitFixture) setTree(t *testing.T, files map[string]string) {
 
 const cacheGitMarker = `{"type":"xxautolib-build-cache","schema":1,"upstream":"https://github.com/fixture/source"}`
 
+func TestCICacheGitRelativeWorkRoot(t *testing.T) {
+	f := cacheGitTestFixture(t)
+	t.Chdir(t.TempDir())
+	store, err := newCICacheGitStore(f.store.SourceRepository, f.store.Repository, f.store.Token, filepath.Join("build with spaces", "ci-input"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.APIBase, store.URL = f.store.APIBase, f.store.URL
+	ctx := context.Background()
+	snapshot, err := store.Snapshot(ctx, true)
+	if err != nil {
+		t.Fatalf("initialize with relative work root: %v", err)
+	}
+	name := "probe-1-linux-x86_64.tar.zst.publication.json"
+	body := []byte("{ \"schema\": 1 }\n")
+	updated, err := store.Update(ctx, snapshot.Head, name, body)
+	if err != nil {
+		t.Fatalf("update with relative work root: %v", err)
+	}
+	if !bytes.Equal(updated.Records[name], body) {
+		t.Fatal("updated record bytes changed")
+	}
+	if got := cacheGitCommand(t, f.remote, "show", "autolib-cache:"+name); got != strings.TrimSpace(string(body)) {
+		t.Fatal("record was not published to the cache branch")
+	}
+	if got := cacheGitCommand(t, f.remote, "rev-parse", "main"); got != f.defaultHead {
+		t.Fatal("default branch changed")
+	}
+}
+
 func TestCICacheGitIdentity(t *testing.T) {
 	ctx := context.Background()
 	t.Run("initialize independent root", func(t *testing.T) {

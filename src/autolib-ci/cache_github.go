@@ -331,31 +331,27 @@ func (c *ciCacheClient) Put(ctx context.Context, asset ciLocalAsset) (ciCacheRec
 				return nil
 			}
 		}
-		for _, managed := range []string{name} {
-			count := 0
-			for _, a := range s.Assets {
-				if a.Name == managed {
-					count++
-				}
+		count := 0
+		for _, a := range s.Assets {
+			if a.Name == name {
+				count++
 			}
-			if count > 1 {
-				return fmt.Errorf("ambiguous managed cache name %s", managed)
-			}
+		}
+		if count > 1 {
+			return fmt.Errorf("ambiguous managed cache name %s", name)
 		}
 		if err := preflightCICacheCapacity(s.Assets, []string{name}); err != nil {
 			return err
 		}
-		for _, managed := range []string{name} {
-			for _, a := range s.Assets {
-				if a.Name != managed {
-					continue
-				}
-				response, err := c.request(ctx, "DELETE", c.endpoint(c.APIBase, "/assets/"+strconv.FormatInt(a.ID, 10)), "application/vnd.github+json", "", nil)
-				if err != nil {
-					return err
-				}
-				response.Body.Close()
+		for _, a := range s.Assets {
+			if a.Name != name {
+				continue
 			}
+			response, err := c.request(ctx, "DELETE", c.endpoint(c.APIBase, "/assets/"+strconv.FormatInt(a.ID, 10)), "application/vnd.github+json", "", nil)
+			if err != nil {
+				return err
+			}
+			response.Body.Close()
 		}
 		file, err := os.Open(asset.Path)
 		if err != nil {

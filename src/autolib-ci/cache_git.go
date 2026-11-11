@@ -43,6 +43,10 @@ func newCICacheGitStore(sourceRepository, giteeRepository, token, workRoot strin
 			return nil, errors.New("invalid Gitee cache repository")
 		}
 	}
+	workRoot, err := filepath.Abs(workRoot)
+	if err != nil {
+		return nil, err
+	}
 	return &ciCacheGitStore{SourceRepository: sourceRepository, Repository: giteeRepository, Token: token, URL: "https://gitee.com/" + giteeRepository + ".git", APIBase: "https://gitee.com/api/v5", WorkRoot: workRoot, HTTP: &http.Client{Timeout: 30 * time.Second}}, nil
 }
 

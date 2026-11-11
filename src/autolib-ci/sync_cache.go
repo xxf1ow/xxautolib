@@ -150,38 +150,32 @@ func deleteCISyncCache(ctx context.Context, c *ciCacheClient, source ciSyncSourc
 	if _, err = c.Records.git(ctx, nil, nil, "merge-base", "--is-ancestor", previous.RecordHead, current.RecordHead); err != nil {
 		return errors.New("cache deletion baseline is outside current branch history")
 	}
-	recordName := key.archiveName() + ".publication.json"
+	name := key.archiveName()
+	recordName := name + ".publication.json"
 	if now := selectedRecords.Records[recordName]; now != nil && !sameCICacheGitRecord(now, baseline.Records[recordName]) {
 		return errors.New("cache record changed before deletion")
 	}
-	selected := []ciCacheAsset{}
-	for _, name := range []string{key.archiveName()} {
-		old := []ciCacheAsset{}
-		now := []ciCacheAsset{}
-		for _, a := range previous.Assets {
-			if a.Name == name {
-				old = append(old, a)
-			}
+	old := []ciCacheAsset{}
+	now := []ciCacheAsset{}
+	for _, a := range previous.Assets {
+		if a.Name == name {
+			old = append(old, a)
 		}
-		for _, a := range current.Assets {
-			if a.Name == name {
-				now = append(now, a)
-			}
+	}
+	for _, a := range current.Assets {
+		if a.Name == name {
+			now = append(now, a)
 		}
-		if len(old) > 1 || len(now) > 1 {
-			return errors.New("ambiguous cache deletion identity")
-		}
-		if len(now) == 0 {
-			continue
-		}
+	}
+	if len(old) > 1 || len(now) > 1 {
+		return errors.New("ambiguous cache deletion identity")
+	}
+	if len(now) > 0 {
 		if len(old) != 1 || old[0] != now[0] {
 			return errors.New("cache asset changed before deletion")
 		}
-		selected = append(selected, now[0])
-	}
-	for _, a := range selected {
 		err := c.retry(ctx, func() error {
-			response, err := c.request(ctx, "DELETE", c.endpoint(c.APIBase, "/assets/"+strconv.FormatInt(a.ID, 10)), "application/vnd.github+json", "", nil)
+			response, err := c.request(ctx, "DELETE", c.endpoint(c.APIBase, "/assets/"+strconv.FormatInt(now[0].ID, 10)), "application/vnd.github+json", "", nil)
 			var remote *ciCacheHTTPError
 			if errors.As(err, &remote) && remote.Status == 404 {
 				return nil
