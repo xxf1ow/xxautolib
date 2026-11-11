@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -27,21 +28,12 @@ func normalizeArchitecture(value string) string {
 	}
 }
 
-func sortedKeys[V any](m map[string]V) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	slices.Sort(keys)
-	return keys
-}
-
 func table(value any, where string, allowed ...string) (map[string]any, error) {
 	m, ok := value.(map[string]any)
 	if !ok {
 		return nil, fmt.Errorf("%s: expected a table", where)
 	}
-	for _, key := range sortedKeys(m) {
+	for _, key := range slices.Sorted(maps.Keys(m)) {
 		if !slices.Contains(allowed, key) {
 			return nil, fmt.Errorf("%s: unknown field %s", where, key)
 		}
@@ -161,7 +153,7 @@ func sources(m map[string]any, where string) (*sourceDefinition, map[string]sour
 		if !ok {
 			return nil, nil, fmt.Errorf("%s.resources: expected a table", where)
 		}
-		for _, key := range sortedKeys(resources) {
+		for _, key := range slices.Sorted(maps.Keys(resources)) {
 			if _, err = name(key, where+".resources"); err != nil {
 				return nil, nil, err
 			}
@@ -193,7 +185,7 @@ func parseCache(value any, where string) (map[string]any, string, error) {
 		if !ok {
 			return nil, "", fmt.Errorf("%s.cache: expected a table", where)
 		}
-		for _, key := range sortedKeys(cache) {
+		for _, key := range slices.Sorted(maps.Keys(cache)) {
 			at := where + ".cache." + key
 			if !cacheKey.MatchString(key) {
 				return nil, "", fmt.Errorf("%s: invalid cache key", at)
@@ -463,7 +455,7 @@ func readDefinition(path, systemName, architecture string, requireTarget bool) (
 		return nil, err
 	}
 	platforms := optional(m, "platforms", map[string]any{}).(map[string]any)
-	for _, platform := range sortedKeys(platforms) {
+	for _, platform := range slices.Sorted(maps.Keys(platforms)) {
 		at := "platforms." + platform
 		if !slices.Contains(d.PackagePlatforms, "any-any") && !slices.Contains(d.PackagePlatforms, platform) {
 			return nil, fmt.Errorf("%s: override must belong to package_platforms", at)
@@ -526,7 +518,7 @@ func readDefinition(path, systemName, architecture string, requireTarget bool) (
 	if requireTarget && d.Kind == "cmake" && d.Source == nil {
 		return nil, fmt.Errorf("source: no primary source for %s/%s", systemName, architecture)
 	}
-	for _, key := range sortedKeys(d.Cache) {
+	for _, key := range slices.Sorted(maps.Keys(d.Cache)) {
 		var texts []string
 		switch value := d.Cache[key].(type) {
 		case string:

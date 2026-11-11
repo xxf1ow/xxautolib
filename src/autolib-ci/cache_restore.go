@@ -7,8 +7,10 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -27,7 +29,7 @@ func restoreCICacheItem(ctx context.Context, o ciRunOptions, asset ciLocalAsset)
 			return fmt.Errorf("cache restore platform mismatch")
 		}
 		args := []string{"restore", "--archive", asset.Path, "--cache-root", install, "--name", r.Key.Name, "--version", r.Key.Version, "--os", r.Key.OS, "--arch", r.Key.Arch, "--sha256", r.Archive.SHA256, "--size", strconv.FormatInt(r.Archive.Size, 10), "--result", filepath.Join(o.WorkRoot, "restored", r.Archive.Name+".cmake")}
-		for _, dependency := range sortedKeysStringMap(r.DependencyFingerprints) {
+		for _, dependency := range slices.Sorted(maps.Keys(r.DependencyFingerprints)) {
 			args = append(args, "--dependency="+dependency)
 		}
 		return ciCommand(ctx, o.ImporterFile, args, o.SourceRoot, nil, filepath.Join(o.WorkRoot, "logs", "restore", r.Archive.Name+".log"))

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"maps"
 	"regexp"
 	"slices"
 )
@@ -116,7 +117,7 @@ func validateDefinitionFields(raw map[string]any, where string, override bool) e
 		if err != nil {
 			return err
 		}
-		for _, key := range sortedKeys(cache) {
+		for _, key := range slices.Sorted(maps.Keys(cache)) {
 			for _, value := range cacheStrings(cache[key]) {
 				if err := validatePlaceholders(value, where+".cmake.cache."+key, nil); err != nil {
 					return err
@@ -162,7 +163,7 @@ func validateDefinitionFields(raw map[string]any, where string, override bool) e
 			if err != nil {
 				return err
 			}
-			for _, id := range sortedKeys(platforms) {
+			for _, id := range slices.Sorted(maps.Keys(platforms)) {
 				fields, ok := platforms[id].(map[string]any)
 				if !ok {
 					return fmt.Errorf("%s.platforms.%s: expected table", where, id)
@@ -186,7 +187,7 @@ func validateSystemDependencies(value any) (map[string][]string, error) {
 		return nil, err
 	}
 	result := map[string][]string{}
-	for _, manager := range sortedKeys(fields) {
+	for _, manager := range slices.Sorted(maps.Keys(fields)) {
 		items, err := stringArray(fields[manager], "system_dependencies."+manager)
 		if err != nil {
 			return nil, err

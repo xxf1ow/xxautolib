@@ -93,11 +93,11 @@ func (s *ciCacheGitStore) api(ctx context.Context, path string, out any) error {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		return errors.New("Gitee cache request failed")
+		return fmt.Errorf("Gitee cache request failed: %w", err)
 	}
 	defer response.Body.Close()
 	if response.StatusCode != 200 {
-		return fmt.Errorf("Gitee cache HTTP %d", response.StatusCode)
+		return &ciCacheHTTPError{Service: "Gitee", Status: response.StatusCode, Temporary: response.StatusCode == 408 || response.StatusCode == 429 || response.StatusCode >= 500}
 	}
 	if err = json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(out); err != nil {
 		return errors.New("invalid Gitee cache API response")
@@ -109,9 +109,14 @@ type ciCacheGitError struct {
 	Operation      string
 	Code           int
 	Authentication bool
+	Err            error
 }
 
-func (e *ciCacheGitError) Error() string { return "cache git " + e.Operation + " failed" }
+func (e *ciCacheGitError) Error() string {
+	return fmt.Sprintf("cache git %s failed: %v", e.Operation, e.Err)
+}
+
+func (e *ciCacheGitError) Unwrap() error { return e.Err }
 
 func (s *ciCacheGitStore) git(ctx context.Context, input []byte, extra []string, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, "git", append([]string{"-c", "credential.helper=", "-c", "core.autocrlf=false", "-c", "core.hooksPath="}, args...)...)
@@ -141,7 +146,10 @@ func (s *ciCacheGitStore) git(ctx context.Context, input []byte, extra []string,
 			code = exit.ExitCode()
 		}
 		message := strings.ToLower(stderr.String())
-		return nil, &ciCacheGitError{Operation: args[0], Code: code, Authentication: strings.Contains(message, "authentication failed") || strings.Contains(message, "returned error: 403") || strings.Contains(message, "returned error: 401")}
+		if stderr.Len() != 0 {
+			err = fmt.Errorf("%w\n%s", err, strings.TrimSpace(stderr.String()))
+		}
+		return nil, &ciCacheGitError{Operation: args[0], Code: code, Authentication: strings.Contains(message, "authentication failed") || strings.Contains(message, "returned error: 403") || strings.Contains(message, "returned error: 401"), Err: err}
 	}
 	return out, nil
 }
@@ -182,9 +190,9 @@ func (s *ciCacheGitStore) prepare(ctx context.Context) (string, error) {
 			return "", err
 		}
 		s.directory = directory
-		if _, err = s.git(ctx, nil, nil, "init", "--bare", "."); err != nil {
-			return "", err
-		}
+	}
+	if _, err := s.git(ctx, nil, nil, "init", "--bare", "."); err != nil {
+		return "", err
 	}
 	if _, err := s.git(ctx, nil, nil, "check-ref-format", "refs/heads/"+repo.DefaultBranch); err != nil {
 		return "", errors.New("invalid Gitee default branch")
@@ -409,7 +417,7 @@ func (s *ciCacheGitStore) Update(ctx context.Context, baselineHead, name string,
 		_, pushErr := s.git(ctx, nil, nil, "push", s.URL, head+":refs/heads/"+ciCacheTag)
 		if pushErr != nil {
 			var remote *ciCacheGitError
-			if !errors.As(pushErr, &remote) || remote.Authentication {
+			if !errors.As(pushErr, &remote) || remote.Authentication || remote.Code != 1 {
 				return current, pushErr
 			}
 		}

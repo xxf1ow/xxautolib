@@ -32,14 +32,25 @@ func TestCICacheWorkflow(t *testing.T) {
 		if workflowField(t, block, "needs") != "plan" {
 			t.Fatal("platform started without cache preparation", id)
 		}
+		toolKeys := []string{"CMAKE_COMMAND"}
+		if id != "windows" {
+			toolKeys = append(toolKeys, "MAKE_PROGRAM", "BUDGET")
+		}
 		for _, name := range []string{"Prepare platform", "Produce dependency layers", "Verify selected work"} {
 			step := workflowSection(t, block, "      - name: "+name)
-			if !strings.Contains(step, "--cache build/ci-input/cache.json") || !strings.Contains(step, "GITHUB_TOKEN: ${{ github.token }}") || !strings.Contains(step, "GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}") || !strings.Contains(step, "GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}") {
+			anchor := strings.TrimLeft(workflowField(t, step, "env"), "&*")
+			environment := workflowSection(t, block, "        env: &"+anchor)
+			if !strings.Contains(step, "--cache build/ci-input/cache.json") || !strings.Contains(environment, "GITHUB_TOKEN: ${{ github.token }}") || !strings.Contains(environment, "GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}") || !strings.Contains(environment, "GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}") {
 				t.Fatalf("%s %s lacks explicit cache or scoped token", id, name)
+			}
+			for _, key := range toolKeys {
+				if !strings.Contains(environment, key+": ${{ steps.environment.outputs."+strings.ToLower(key)+" }}") {
+					t.Fatalf("%s %s lacks prepared %s", id, name, key)
+				}
 			}
 		}
 		environment := workflowSection(t, block, "      - name: Prepare native environment and tools")
-		if strings.Contains(environment, "GITHUB_TOKEN:") || strings.Contains(environment, "GITEE_TOKEN:") {
+		if strings.Contains(environment, "        env:") || strings.Contains(environment, "GITHUB_TOKEN:") || strings.Contains(environment, "GITEE_TOKEN:") {
 			t.Fatal("tool bootstrap received cache credential")
 		}
 	}

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"regexp"
-	"slices"
 	"strings"
 )
 
@@ -111,14 +110,6 @@ func validateCIEnvironment(config ciEnvironmentConfig) error {
 			return fmt.Errorf("cmake.assets.%s: expected official URL and SHA256", asset.Platform)
 		}
 		delete(want, asset.Platform)
-	}
-	if len(want) != 0 {
-		missing := make([]string, 0, len(want))
-		for platform := range want {
-			missing = append(missing, platform)
-		}
-		slices.Sort(missing)
-		return fmt.Errorf("cmake.assets: missing platform(s) %v", missing)
 	}
 	return validateProductionEnvironment(config)
 }

@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -23,7 +25,7 @@ func TestCICacheLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	args := []string{"-S", producer, "-B", filepath.Join(producer, "build"), "-DCMAKE_BUILD_TYPE=Release"}
-	for _, key := range sortedKeysStringMap(production.CMakeDefaults) {
+	for _, key := range slices.Sorted(maps.Keys(production.CMakeDefaults)) {
 		args = append(args, "-D"+key+"="+production.CMakeDefaults[key])
 	}
 	for i, command := range [][]string{args, {"--build", filepath.Join(producer, "build"), "--parallel", "2"}} {

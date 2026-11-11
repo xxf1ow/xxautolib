@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"maps"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -218,7 +219,7 @@ func renderModule(module *moduleDefinition, context buildContext, dependencies [
 		source := module.Resources[name]
 		return sourceDirectory(&source, filepath.Join(persistent, "_resources", module.Name, module.Version, name), filepath.Join(prefix, "res", name))
 	}
-	for _, name := range sortedKeys(module.Resources) {
+	for _, name := range slices.Sorted(maps.Keys(module.Resources)) {
 		source := module.Resources[name]
 		resourcePrefix := filepath.Join(prefix, "res", name)
 		local := filepath.Join(persistent, "_resources", module.Name, module.Version, name)
@@ -234,7 +235,7 @@ func renderModule(module *moduleDefinition, context buildContext, dependencies [
 	options = append(options, option("LIST_SEPARATOR", separator), option("UPDATE_COMMAND", ""))
 	options = append(options, sourceOptions(module.Source, local)...)
 	targets := []string{}
-	for _, name := range sortedKeys(module.Resources) {
+	for _, name := range slices.Sorted(maps.Keys(module.Resources)) {
 		targets = append(targets, resourceTarget(target, name))
 	}
 	for _, dep := range dependencies {
@@ -278,7 +279,7 @@ func renderModule(module *moduleDefinition, context buildContext, dependencies [
 			}
 			return resourceReference.ReplaceAllStringFunc(value, func(match string) string { return resourceDirectory(resourceReference.FindStringSubmatch(match)[1]) }), nil
 		}
-		for _, key := range sortedKeys(cache) {
+		for _, key := range slices.Sorted(maps.Keys(cache)) {
 			switch value := cache[key].(type) {
 			case string:
 				resolved, err := resolve(value)
@@ -321,7 +322,7 @@ func renderModule(module *moduleDefinition, context buildContext, dependencies [
 			cache["CMAKE_PROJECT_INCLUDE"] = setupPath
 		}
 		args := []string{}
-		for _, key := range sortedKeys(cache) {
+		for _, key := range slices.Sorted(maps.Keys(cache)) {
 			args = append(args, cacheArgument(key, cache[key]))
 		}
 		args = append(args, "-DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>")

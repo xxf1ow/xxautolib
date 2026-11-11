@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -79,7 +80,7 @@ func validateCacheOwnership(module *moduleDefinition, platform string, dependenc
 }
 
 func validateEffectiveExecution(module *moduleDefinition) error {
-	for _, key := range sortedKeys(module.Cache) {
+	for _, key := range slices.Sorted(maps.Keys(module.Cache)) {
 		for _, value := range cacheStrings(module.Cache[key]) {
 			if err := validatePlaceholders(value, "cmake.cache."+key, module.Resources); err != nil {
 				return err

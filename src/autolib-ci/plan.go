@@ -181,9 +181,6 @@ func ciList(value *string, fallback, allowed []string, label string) ([]string, 
 			result = append(result, item)
 		}
 	}
-	if len(result) == 0 {
-		return nil, fmt.Errorf("%s cannot be empty", label)
-	}
 	return result, nil
 }
 

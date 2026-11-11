@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -52,15 +53,20 @@ func newCICacheClient(repository, token string) (*ciCacheClient, error) {
 }
 
 type ciCacheHTTPError struct {
+	Service   string
 	Status    int
 	Temporary bool
 }
 
 func (e *ciCacheHTTPError) Error() string {
-	if e.Status == 0 {
-		return "GitHub cache transport failed"
+	service := e.Service
+	if service == "" {
+		service = "GitHub"
 	}
-	return fmt.Sprintf("GitHub cache HTTP %d", e.Status)
+	if e.Status == 0 {
+		return service + " cache transport failed"
+	}
+	return fmt.Sprintf("%s cache HTTP %d", service, e.Status)
 }
 
 func (c *ciCacheClient) retry(ctx context.Context, operation func() error) error {
@@ -74,7 +80,10 @@ func (c *ciCacheClient) retry(ctx context.Context, operation func() error) error
 			return nil
 		}
 		var remote *ciCacheHTTPError
-		if !errors.As(err, &remote) || !remote.Temporary || attempt >= len(delays) {
+		var git *ciCacheGitError
+		var network net.Error
+		temporary := errors.As(err, &remote) && remote.Temporary || errors.As(err, &git) && !git.Authentication || errors.As(err, &network)
+		if !temporary || attempt >= len(delays) {
 			return err
 		}
 		if err := c.Wait(ctx, delays[attempt]*time.Second); err != nil {

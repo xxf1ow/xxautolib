@@ -331,7 +331,7 @@ func runCILayerWithCache(ctx context.Context, o ciRunOptions, cache *ciCacheClie
 					return err
 				}
 				item.Verified = true
-				item.EvidenceDirectory = evidence.EvidenceDirectory
+				item.EvidenceDirectory = evidence
 				if hit {
 					item.Status = "reused"
 					item.Record = &record
@@ -341,7 +341,7 @@ func runCILayerWithCache(ctx context.Context, o ciRunOptions, cache *ciCacheClie
 					item.Status = "local_ready"
 					return nil
 				}
-				record = ciCacheRecord{Schema: 1, Kind: "library", Key: key, Origin: run, Fingerprint: fingerprint, DependencyFingerprints: deps, Verification: ciCacheVerification{Platform: o.Platform, Context: production, Evidence: []string{evidence.EvidenceDirectory}, Passed: true}}
+				record = ciCacheRecord{Schema: 1, Kind: "library", Key: key, Origin: run, Fingerprint: fingerprint, DependencyFingerprints: deps, Verification: ciCacheVerification{Platform: o.Platform, Context: production, Evidence: []string{evidence}, Passed: true}}
 				asset, err := packageCIItem(ctx, o, run, platform, plan.Publishers, record)
 				if err != nil {
 					return err
@@ -491,7 +491,7 @@ func configureCIProduction(ctx context.Context, o ciRunOptions, c ciProductionCo
 		}
 		args = append(args, "-DCMAKE_MAKE_PROGRAM="+o.MakeProgram)
 	}
-	for _, key := range sortedKeysStringMap(c.CMakeDefaults) {
+	for _, key := range slices.Sorted(maps.Keys(c.CMakeDefaults)) {
 		args = append(args, "-D"+key+"="+c.CMakeDefaults[key])
 	}
 	environment := withoutEnvironment(ciItemEnvironment(o.Environment), "AUTOLIB_INSTALL_ROOT", "MAKEFLAGS", "CMAKE_BUILD_PARALLEL_LEVEL")
@@ -517,15 +517,6 @@ func buildCIModule(ctx context.Context, o ciRunOptions, c ciProductionContext, m
 		args = append(args, "--", fmt.Sprintf("-j%d", o.Budget), "--jobserver-style=fifo")
 	}
 	return ciCommand(ctx, o.CMakeCommand, args, o.SourceRoot, environment, filepath.Join(logs, "build.log"))
-}
-
-func sortedKeysStringMap(values map[string]string) []string {
-	keys := make([]string, 0, len(values))
-	for key := range values {
-		keys = append(keys, key)
-	}
-	slices.Sort(keys)
-	return keys
 }
 
 func runCIRun(args []string, stdout, stderr io.Writer) int {

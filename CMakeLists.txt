@@ -51,7 +51,6 @@ if(DEFINED ENV{AUTOLIB_INSTALL_ROOT} AND NOT "$ENV{AUTOLIB_INSTALL_ROOT}" STREQU
 else()
     set(CMAKE_INSTALL_PREFIX "${PROJECT_SOURCE_DIR}/3rdparty")
 endif()
-set(CMAKE_GIT_REPOSITORY ${PROJECT_SOURCE_DIR}/git)
 # print information
 string(TIMESTAMP CODE_COMPILE_DATE "%Y-%m-%d")
 message(STATUS "========================== Building Summary ==========================")

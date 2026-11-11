@@ -5,9 +5,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -85,7 +87,7 @@ func TestCICacheRestoreNativeConsumer(t *testing.T) {
 		t.Fatal(err)
 	}
 	args := []string{"-S", producer, "-B", filepath.Join(producer, "build"), "-DCMAKE_BUILD_TYPE=Release"}
-	for _, key := range sortedKeysStringMap(c.CMakeDefaults) {
+	for _, key := range slices.Sorted(maps.Keys(c.CMakeDefaults)) {
 		args = append(args, "-D"+key+"="+c.CMakeDefaults[key])
 	}
 	for _, args := range [][]string{args, {"--build", filepath.Join(producer, "build"), "--parallel", "2"}} {
@@ -123,11 +125,11 @@ func TestCICacheRestoreNativeConsumer(t *testing.T) {
 	consumer := mustReadText(t, filepath.Join(f.options.SourceRoot, "tests/autolib/CMakeLists.txt"))
 	consumer = strings.Replace(consumer, `file(WRITE "${CMAKE_BINARY_DIR}/link-inputs-Release.txt" "")`, `file(GENERATE OUTPUT "${CMAKE_BINARY_DIR}/link-inputs-$<CONFIG>.txt" CONTENT "$<TARGET_FILE:autolib::queue>\n")`, 1)
 	writeCIFixture(t, f.options.SourceRoot, "tests/autolib/CMakeLists.txt", consumer)
-	result, err := validateCIRelease(ctx, ciValidationOptions{SourceRoot: f.options.SourceRoot, InstallRoot: filepath.Join(newWork, "install"), BuildRoot: newWork, CMakeCommand: f.options.CMakeCommand, MakeProgram: f.options.MakeProgram, EvidenceDirectory: filepath.Join(newWork, "evidence"), Modules: []string{"queue@1"}, RootPackages: []string{"queue@1"}, Context: c})
+	evidence, err := validateCIRelease(ctx, ciValidationOptions{SourceRoot: f.options.SourceRoot, InstallRoot: filepath.Join(newWork, "install"), BuildRoot: newWork, CMakeCommand: f.options.CMakeCommand, MakeProgram: f.options.MakeProgram, EvidenceDirectory: filepath.Join(newWork, "evidence"), Modules: []string{"queue@1"}, RootPackages: []string{"queue@1"}, Context: c})
 	if err != nil {
 		t.Fatal(err)
 	}
-	inputs := mustReadText(t, filepath.Join(result.EvidenceDirectory, "build/link-inputs-Release.txt"))
+	inputs := mustReadText(t, filepath.Join(evidence, "build/link-inputs-Release.txt"))
 	if !strings.Contains(inputs, filepath.ToSlash(filepath.Join(newWork, "install/queue/1/lib/libcache_fixture.a"))) {
 		t.Fatalf("consumer did not load restored exact package: %s", inputs)
 	}
