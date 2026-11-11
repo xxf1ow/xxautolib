@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -251,7 +253,7 @@ configure_file("${REAL_BUILDER}" "${output}" COPYONLY)
 					if err != nil {
 						t.Fatal(err)
 					}
-					for _, key := range sortedKeysStringMap(production.CMakeDefaults) {
+					for _, key := range slices.Sorted(maps.Keys(production.CMakeDefaults)) {
 						args = append(args, "-D"+key+"="+production.CMakeDefaults[key])
 					}
 				}

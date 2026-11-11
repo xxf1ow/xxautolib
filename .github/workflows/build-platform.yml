@@ -120,7 +120,7 @@ jobs:
           bash .github/scripts/prepare-linux.sh --config .github/ci-tools.json --plan build/ci-input/plan.json --platform "$PLATFORM" --work-root "$WORK_ROOT" > build/ci-input/environment.json
           jq -r 'to_entries[] | "\(.key)=\(.value)"' build/ci-input/environment.json >> "$GITHUB_OUTPUT"
       - name: Prepare platform
-        env:
+        env: &linux_ci
           GITHUB_TOKEN: ${{ github.token }}
           GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
@@ -130,13 +130,7 @@ jobs:
         run: >-
           "$WORK_ROOT/autolib-ci" run --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --cache build/ci-input/cache.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer prepare --work-root "$WORK_ROOT" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
       - name: Produce dependency layers
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}
-          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
-          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
-          MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
-          BUDGET: ${{ steps.environment.outputs.budget }}
+        env: *linux_ci
         run: |
           set -euo pipefail
           layers=$(jq -er --arg platform "$PLATFORM" '.platforms[] | select(.id == $platform) | .layers | length' build/ci-input/plan.json)
@@ -144,13 +138,7 @@ jobs:
             "$WORK_ROOT/autolib-ci" run --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --cache build/ci-input/cache.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer "layer$index" --work-root "$WORK_ROOT" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
           done
       - name: Verify selected work
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}
-          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
-          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
-          MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
-          BUDGET: ${{ steps.environment.outputs.budget }}
+        env: *linux_ci
         run: |
           set -euo pipefail
           "$WORK_ROOT/autolib-ci" run --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --cache build/ci-input/cache.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer verify --work-root "$WORK_ROOT" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
@@ -209,7 +197,7 @@ jobs:
           bash .github/scripts/prepare-darwin.sh --config .github/ci-tools.json --plan build/ci-input/plan.json --platform "$PLATFORM" --work-root "$WORK_ROOT" > build/ci-input/environment.json 2> >(tee "$WORK_ROOT/environment.log" >&2)
           jq -r 'to_entries[] | "\(.key)=\(.value)"' build/ci-input/environment.json >> "$GITHUB_OUTPUT"
       - name: Prepare platform
-        env:
+        env: &darwin_ci
           GITHUB_TOKEN: ${{ github.token }}
           GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
@@ -219,13 +207,7 @@ jobs:
         run: >-
           "$WORK_ROOT/autolib-ci" run --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --cache build/ci-input/cache.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer prepare --work-root "$WORK_ROOT" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
       - name: Produce dependency layers
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}
-          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
-          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
-          MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
-          BUDGET: ${{ steps.environment.outputs.budget }}
+        env: *darwin_ci
         run: |
           set -euo pipefail
           layers=$(jq -er --arg platform "$PLATFORM" '.platforms[] | select(.id == $platform) | .layers | length' build/ci-input/plan.json)
@@ -233,13 +215,7 @@ jobs:
             "$WORK_ROOT/autolib-ci" run --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --cache build/ci-input/cache.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer "layer$index" --work-root "$WORK_ROOT" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
           done
       - name: Verify selected work
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}
-          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
-          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
-          MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
-          BUDGET: ${{ steps.environment.outputs.budget }}
+        env: *darwin_ci
         run: >-
           "$WORK_ROOT/autolib-ci" run --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --cache build/ci-input/cache.json --run-identity build/ci-input/run.json --platform "$PLATFORM" --layer verify --work-root "$WORK_ROOT" --importer-file "$WORK_ROOT/install/autolib-importer-$PLATFORM" --cmake-command "$CMAKE_COMMAND" --make-program "$MAKE_PROGRAM" --budget "$BUDGET"
       - name: Retain platform result
@@ -291,7 +267,7 @@ jobs:
           $settings = ./.github/scripts/prepare-windows.ps1 -Config .github/ci-tools.json -Plan build/ci-input/plan.json -Platform windows-x86_64 -WorkRoot $env:WORK_ROOT | ConvertFrom-Json
           "cmake_command=$($settings.cmake_command)" >> $env:GITHUB_OUTPUT
       - name: Prepare platform
-        env:
+        env: &windows_ci
           GITHUB_TOKEN: ${{ github.token }}
           GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
@@ -299,11 +275,7 @@ jobs:
         run: >-
           & "$env:WORK_ROOT/autolib-ci.exe" run --repository $env:GITHUB_REPOSITORY --source-root $env:GITHUB_WORKSPACE --plan build/ci-input/plan.json --cache build/ci-input/cache.json --run-identity build/ci-input/run.json --platform windows-x86_64 --layer prepare --work-root $env:WORK_ROOT --importer-file "$env:WORK_ROOT/install/autolib-importer-windows-x86_64.exe" --cmake-command $env:CMAKE_COMMAND
       - name: Produce dependency layers
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}
-          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
-          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+        env: *windows_ci
         run: |
           $plan = Get-Content build/ci-input/plan.json -Raw | ConvertFrom-Json
           $platform = @($plan.platforms | Where-Object id -eq 'windows-x86_64')[0]
@@ -312,11 +284,7 @@ jobs:
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
       - name: Verify selected work
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}
-          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
-          CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
+        env: *windows_ci
         run: >-
           & "$env:WORK_ROOT/autolib-ci.exe" run --repository $env:GITHUB_REPOSITORY --source-root $env:GITHUB_WORKSPACE --plan build/ci-input/plan.json --cache build/ci-input/cache.json --run-identity build/ci-input/run.json --platform windows-x86_64 --layer verify --work-root $env:WORK_ROOT --importer-file "$env:WORK_ROOT/install/autolib-importer-windows-x86_64.exe" --cmake-command $env:CMAKE_COMMAND
       - name: Retain platform result

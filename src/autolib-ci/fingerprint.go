@@ -242,16 +242,11 @@ func computeCIFingerprints(sourceRoot string, plan ciPlan) (ciFingerprintReport,
 		for _, module := range platform.Description.Modules {
 			modules[moduleIdentity(module)] = module
 		}
-		if _, err := ciLayers(platform.Description.Modules); err != nil {
+		layers, err := ciLayers(platform.Description.Modules)
+		if err != nil {
 			return report, err
 		}
-		computed := map[string]bool{}
-		var visit func(string) error
-		visit = func(ref string) error {
-			if computed[ref] {
-				return nil
-			}
-			computed[ref] = true
+		computeModule := func(ref string) error {
 			module := modules[ref]
 			key := ciModuleCacheKey(module)
 			name := key.archiveName()
@@ -260,9 +255,6 @@ func computeCIFingerprints(sourceRoot string, plan ciPlan) (ciFingerprintReport,
 			}
 			deps := map[string]string{}
 			for _, dep := range module.Depends {
-				if err := visit(dep); err != nil {
-					return err
-				}
 				depName := ciModuleCacheKey(modules[dep]).archiveName()
 				if failed, ok := report.Failures[depName]; ok {
 					report.Failures[name] = ciFingerprintFailure{failed.Error, append([]string{ref}, failed.DependencyChain...)}
@@ -304,9 +296,11 @@ func computeCIFingerprints(sourceRoot string, plan ciPlan) (ciFingerprintReport,
 			report.Fingerprints[name] = fingerprint
 			return nil
 		}
-		for _, module := range platform.Description.Modules {
-			if err := visit(moduleIdentity(module)); err != nil {
-				return report, err
+		for _, layer := range layers {
+			for _, ref := range layer {
+				if err := computeModule(ref); err != nil {
+					return report, err
+				}
 			}
 		}
 	}

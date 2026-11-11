@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -77,7 +78,7 @@ func prepareCIItemDependencies(ctx context.Context, o ciRunOptions, closure []st
 			prefixes[key] = append(prefixes[key], value)
 		}
 	}
-	for _, key := range sortedKeysSliceMap(prefixes) {
+	for _, key := range slices.Sorted(maps.Keys(prefixes)) {
 		values := prefixes[key]
 		if existing := os.Getenv(key); existing != "" {
 			values = append(values, existing)
@@ -85,15 +86,6 @@ func prepareCIItemDependencies(ctx context.Context, o ciRunOptions, closure []st
 		environment = append(environment, key+"="+strings.Join(values, ":"))
 	}
 	return environment, nil
-}
-
-func sortedKeysSliceMap(values map[string][]string) []string {
-	keys := make([]string, 0, len(values))
-	for key := range values {
-		keys = append(keys, key)
-	}
-	slices.Sort(keys)
-	return keys
 }
 
 func installCIItemDependency(ctx context.Context, o ciRunOptions, manager, name string) ([]string, error) {

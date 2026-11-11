@@ -124,6 +124,41 @@ func TestCIABIGate(t *testing.T) {
 	}
 }
 
+func TestCILinuxABIRecordsRequiredSymbols(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("objdump fixture requires a shell")
+	}
+	root := t.TempDir()
+	tool := filepath.Join(root, "objdump")
+	writeCIFixture(t, root, "objdump", `#!/bin/sh
+case "$2" in
+    *.so)
+        printf '%s\n' '0000 g DF .text 0001 GLIBC_2.99 exported' '0000 DF *UND* 0000 (GLIBC_2.25) getentropy'
+        ;;
+    *)
+        printf '%s\n' '0000 DF *UND* 0000 (GLIBC_2.2.5) puts' '0000 DF *UND* 0000 (GLIBC_2.25) getentropy'
+        ;;
+esac
+`)
+	if err := os.Chmod(tool, 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", root)
+	writeCIFixture(t, root, "package/lib/libfixture.so", "")
+	if err := verifyLinuxABIEvidence(root, []string{filepath.Join(root, "package")}, "2.31"); err != nil {
+		t.Fatal(err)
+	}
+	if report := mustReadText(t, filepath.Join(root, "abi-requirements.txt")); report != "GLIBC_2.2.5\nGLIBC_2.25\n" {
+		t.Fatalf("ABI report must deduplicate and sort requirements without exported versions: %q", report)
+	}
+	if err := os.Remove(tool); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyLinuxABIEvidence(root, nil, "2.31"); err == nil || !strings.Contains(err.Error(), "inspect consumer ABI symbols") {
+		t.Fatalf("missing objdump must fail validation: %v", err)
+	}
+}
+
 func TestCILinuxABIRecordsRealSymbolRequirements(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("requires native Linux compiler and objdump")
@@ -149,7 +184,7 @@ func TestCILinuxABIRecordsRealSymbolRequirements(t *testing.T) {
 		}
 	}
 	// This version is required by getentropy inside the library, not by the executable.
-	_, consumerRequirements, err := linuxObjdumpVersions(filepath.Join(build, "autolib_smoke"))
+	consumerRequirements, err := linuxObjdumpRequirements(filepath.Join(build, "autolib_smoke"))
 	if err != nil || consumerRequirements["GLIBC_2.25"] {
 		t.Fatalf("consumer cannot isolate library-only GLIBC_2.25 requirement: %v %v", consumerRequirements, err)
 	}

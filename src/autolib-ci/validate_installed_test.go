@@ -73,19 +73,19 @@ set_target_properties(autolib::fresh PROPERTIES IMPORTED_LOCATION_RELEASE "${CMA
 	}
 	o := ciValidationOptions{SourceRoot: root, InstallRoot: install, BuildRoot: filepath.Join(root, "build", "validation"), CMakeCommand: cmake, EvidenceDirectory: filepath.Join(root, "build", "evidence"), Modules: []string{"fresh@1"}, RootPackages: []string{"fresh@1"}, Context: production}
 	before := ciInstalledBinarySnapshot(t, install)
-	result, err := validateCIRelease(context.Background(), o)
-	if err != nil || !result.Passed {
-		t.Fatalf("direct installed binary validation failed: %+v %v", result, err)
+	evidence, err := validateCIRelease(context.Background(), o)
+	if err != nil {
+		t.Fatalf("direct installed binary validation failed: %v", err)
 	}
-	report := mustReadText(t, filepath.Join(result.EvidenceDirectory, "abi-requirements.txt"))
+	report := mustReadText(t, filepath.Join(evidence, "abi-requirements.txt"))
 	if !slices.Contains(strings.Fields(report), "GLIBC_2.25") {
 		t.Errorf("validateCIRelease omitted library-only GLIBC_2.25: %q", report)
 	}
-	_, consumerRequirements, err := linuxObjdumpVersions(filepath.Join(result.EvidenceDirectory, "build", "autolib_smoke"))
+	consumerRequirements, err := linuxObjdumpRequirements(filepath.Join(evidence, "build", "autolib_smoke"))
 	if err != nil || consumerRequirements["GLIBC_2.25"] {
 		t.Fatalf("consumer cannot isolate library-only GLIBC requirement: %v %v", consumerRequirements, err)
 	}
-	inputs := mustReadText(t, filepath.Join(result.EvidenceDirectory, "build", "link-inputs-Release.txt"))
+	inputs := mustReadText(t, filepath.Join(evidence, "build", "link-inputs-Release.txt"))
 	if !strings.Contains(inputs, library) || strings.Contains(inputs, "consumer/3rdparty") {
 		t.Fatalf("consumer did not link the direct installed library: %q", inputs)
 	}

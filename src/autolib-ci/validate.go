@@ -8,6 +8,7 @@ import (
 	"debug/pe"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -24,11 +25,6 @@ type ciValidationOptions struct {
 	Modules                            []string
 	RootPackages                       []string
 	Context                            ciProductionContext
-}
-
-type ciValidationResult struct {
-	Passed            bool   `json:"passed"`
-	EvidenceDirectory string `json:"evidence_directory"`
 }
 
 func verifyCIEntry(source, install string) (ciEntryResult, error) {
@@ -56,23 +52,23 @@ func verifyCIEntry(source, install string) (ciEntryResult, error) {
 	return ciEntryResult{File: "autolib.cmake", SHA256: fmt.Sprintf("%x", sha256.Sum256(installed)), Verified: true}, nil
 }
 
-func validateCIRelease(ctx context.Context, o ciValidationOptions) (ciValidationResult, error) {
+func validateCIRelease(ctx context.Context, o ciValidationOptions) (string, error) {
 	if err := validateCIConsumerModules(o.Modules); err != nil {
-		return ciValidationResult{}, err
+		return "", err
 	}
 	environment, err := loadCIEnvironment(filepath.Join(o.SourceRoot, ".github", "ci-tools.json"))
 	if err != nil {
-		return ciValidationResult{}, fmt.Errorf("load CI production configuration: %w", err)
+		return "", fmt.Errorf("load CI production configuration: %w", err)
 	}
 	if err := validateCIProductionIdentity(o.Context, environment); err != nil {
-		return ciValidationResult{}, err
+		return "", err
 	}
 	roots, err := validateCIValidationPaths(o)
 	if err != nil {
-		return ciValidationResult{}, err
+		return "", err
 	}
 	if err := os.MkdirAll(roots.evidence, 0755); err != nil {
-		return ciValidationResult{}, fmt.Errorf("create evidence directory: %w", err)
+		return "", fmt.Errorf("create evidence directory: %w", err)
 	}
 	args := []string{
 		"-DSOURCE_ROOT=" + roots.source,
@@ -89,12 +85,7 @@ func validateCIRelease(ctx context.Context, o ciValidationOptions) (ciValidation
 	if o.MakeProgram != "" {
 		args = append(args, "-DCMAKE_MAKE_PROGRAM="+o.MakeProgram)
 	}
-	defaultNames := make([]string, 0, len(o.Context.CMakeDefaults))
-	for name := range o.Context.CMakeDefaults {
-		defaultNames = append(defaultNames, name)
-	}
-	slices.Sort(defaultNames)
-	for _, name := range defaultNames {
+	for _, name := range slices.Sorted(maps.Keys(o.Context.CMakeDefaults)) {
 		args = append(args, "-D"+name+"="+o.Context.CMakeDefaults[name])
 	}
 	args = append(args, "-P", filepath.Join(roots.source, "tests", "autolib", "run-installed.cmake"))
@@ -102,11 +93,11 @@ func validateCIRelease(ctx context.Context, o ciValidationOptions) (ciValidation
 	command.Env = ciItemEnvironment(o.Environment)
 	output, err := command.CombinedOutput()
 	if err != nil {
-		return ciValidationResult{EvidenceDirectory: roots.evidence}, fmt.Errorf("real consumer validation failed: %w\n%s", err, strings.TrimSpace(string(output)))
+		return roots.evidence, fmt.Errorf("real consumer validation failed: %w\n%s", err, strings.TrimSpace(string(output)))
 	}
 	runRoot, err := validationRunFromOutput(output)
 	if err != nil {
-		return ciValidationResult{EvidenceDirectory: roots.evidence}, err
+		return roots.evidence, err
 	}
 	packageRoots := make([]string, 0, len(o.Modules))
 	for _, module := range o.Modules {
@@ -115,18 +106,18 @@ func validateCIRelease(ctx context.Context, o ciValidationOptions) (ciValidation
 	}
 	if o.Context.OS == "windows" {
 		if err := verifyWindowsPackageInputs(runRoot, packageRoots); err != nil {
-			return ciValidationResult{EvidenceDirectory: roots.evidence}, err
+			return roots.evidence, err
 		}
 	} else if o.Context.OS == "darwin" {
 		if err := verifyDarwinPackageInputs(runRoot, packageRoots, environment.Production.Darwin.DeploymentTarget); err != nil {
-			return ciValidationResult{EvidenceDirectory: roots.evidence}, err
+			return roots.evidence, err
 		}
 	} else {
 		if err := verifyLinuxABIEvidence(runRoot, packageRoots, environment.Production.Linux.GlibcMax); err != nil {
-			return ciValidationResult{EvidenceDirectory: roots.evidence}, err
+			return roots.evidence, err
 		}
 	}
-	return ciValidationResult{Passed: true, EvidenceDirectory: runRoot}, nil
+	return runRoot, nil
 }
 
 func validateCIConsumerModules(modules []string) error {
@@ -413,43 +404,29 @@ func collectLinuxABIVersions(root string, packageRoots []string) ([]string, erro
 	}
 	required := map[string]bool{}
 	for _, file := range consumerFiles {
-		versions, undefined, err := linuxObjdumpVersions(file)
+		undefined, err := linuxObjdumpRequirements(file)
 		if err != nil {
 			return nil, fmt.Errorf("inspect consumer ABI symbols in %s: %w", file, err)
 		}
-		for version := range versions {
-			if undefined[version] {
-				required[version] = true
-			}
-		}
+		maps.Copy(required, undefined)
 	}
-	return sortedKeys(required), nil
+	return slices.Sorted(maps.Keys(required)), nil
 }
 
-func linuxObjdumpVersions(path string) (map[string]bool, map[string]bool, error) {
+func linuxObjdumpRequirements(path string) (map[string]bool, error) {
 	output, err := ciExternalCommand(context.Background(), "objdump", "-T", path).CombinedOutput()
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	versions, undefined := map[string]bool{}, map[string]bool{}
+	undefined := map[string]bool{}
 	for _, line := range strings.Split(string(output), "\n") {
 		for _, match := range abiVersionPattern.FindAllStringSubmatch(line, -1) {
-			versions[match[1]] = true
 			if strings.Contains(line, "*UND*") {
 				undefined[match[1]] = true
 			}
 		}
 	}
-	return versions, undefined, nil
-}
-
-func sortedKeys(values map[string]bool) []string {
-	result := make([]string, 0, len(values))
-	for value := range values {
-		result = append(result, value)
-	}
-	slices.Sort(result)
-	return result
+	return undefined, nil
 }
 
 func verifyLinuxABIVersions(required []string, glibcMax string) error {

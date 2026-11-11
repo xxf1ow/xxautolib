@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -63,6 +64,31 @@ func TestCIFingerprintPackagingInput(t *testing.T) {
 }
 
 func TestCIFingerprintClosure(t *testing.T) {
+	t.Run("unordered transitive dependencies", func(t *testing.T) {
+		root, plan := fingerprintFixture(t)
+		plan.Platforms[0].Description.Modules[3].Depends = []string{"a@1", "c@1"}
+		before, err := computeCIFingerprints(root, plan)
+		if err != nil {
+			t.Fatal(err)
+		}
+		slices.Reverse(plan.Platforms[0].Description.Modules)
+		after, err := computeCIFingerprints(root, plan)
+		if err != nil || !reflect.DeepEqual(before, after) {
+			t.Fatalf("module order changed fingerprints: %v", err)
+		}
+		if err := os.Remove(filepath.Join(root, "src/dependencies/b/1/patch.diff")); err != nil {
+			t.Fatal(err)
+		}
+		report, err := computeCIFingerprints(root, plan)
+		if err != nil {
+			t.Fatal(err)
+		}
+		key := "d-1-linux-x86_64.tar.zst"
+		failure := report.Failures[key]
+		if failure.Error == "" || !slices.Equal(failure.DependencyChain, []string{"d@1", "a@1", "b@1"}) || report.Fingerprints[key] != "" {
+			t.Fatalf("lost transitive dependency failure: %+v", report)
+		}
+	})
 	for _, path := range []string{"module.toml", "patch.diff", "autolib-import.cmake", "local/input.cmake", "local/added.cmake"} {
 		t.Run(path, func(t *testing.T) {
 			root, plan := fingerprintFixture(t)
