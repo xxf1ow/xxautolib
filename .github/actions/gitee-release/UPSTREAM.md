@@ -16,7 +16,7 @@
 
 ## Gitee 独立同步适配
 
-`action.yml` 接收固定源码事实、有效缓存快照、仓库构建的 `autolib-ci` 路径，以及可信分支和 SHA，调用 `publish.py`。sync 模式从跨 run 累积的 Release 缓存按需下载；latest 模式仅更新显式指针，不查询缓存或清理附件。workflow 隔离安装依赖，仅交付步骤注入 `GITEE_TOKEN`；缓存子进程移除该凭据，只使用 GitHub 凭据。目标及运行前提见[开发指南](../../../docs/development.md#独立-gitee-发布)。
+`action.yml` 接收固定源码事实、有效缓存快照、仓库构建的 `autolib-ci` 路径，以及可信分支和 SHA，调用 `publish.py`。sync 模式从跨 run 累积的 GitHub Release 按需下载归档，完整记录从 Gitee 独立 `autolib-cache` 分支读取；latest 模式仅更新显式指针，不查询缓存或清理附件。workflow 隔离安装依赖，记录读取和交付步骤注入 `GITEE_TOKEN`；Python 仅向 `cache-delete` helper 交付已校验的 Gitee 凭据，`cache-download` 只使用 GitHub 凭据。目标及运行前提见[开发指南](../../../docs/development.md#独立-gitee-发布)。
 
 `sync_scheduler.py` 拥有依赖顺序、并发上传和单份 Git 工作副本的锁。唯一跳过依据是 Gitee Git 消费 JSON，三个字段语义相同才跳过；不下载或检查 Gitee 归档。普通变化项删除同名附件后上传，即时 commit/push 并确认；仅备用地址变化且 Gitee 字节已确认时只更新 JSON。超过 100000000 字节只登记 GitHub 地址，JSON 确认后删除精确受管 Gitee 旧副本，失败报告独立错误，重跑相同 JSON 仍清理。push 未确认后停写，不 rebase 或回滚；源码决定身份删除，未知内容保留。
 
@@ -24,7 +24,7 @@
 
 `publish.py` 的 stdout 汇总 uploaded、metadata_only、skipped、failed、blocked、覆盖缺口、独立操作错误和已确认 HEAD；metadata_only 原因为 gitee_size_limit 或 delivery_metadata_changed。stderr 即时输出脱敏事件；缺缓存是待构建缺口，实际上传、清理、入口或 Git 失败返回非零。
 
-`publish_one` 校验字节后调用 `attachment_upload`，在可终止子进程中执行附件更新的唯一重试循环：首次使用本轮完整附件列表，重试重新查询并删除重传，不读取 Gitee 归档内容。临时网络错误、HTTP 408、429 和 5xx 触发最多十次额外重试，间隔固定为 10 秒，全部请求与等待合计最多 600 秒；耗尽预算即杀死并回收子进程，不确认该项 JSON。认证、权限、输入或响应结构错误及未分类 409/422 直接失败；未确认删除不继续上传。Git 确认留在原协调器；超时的下轮恢复规则见[同步设计](../../../docs/agent-notes/implemented/architecture/2026-11-09-release-cache-and-independent-gitee-sync.md#gitee-摘要比较与逐项登记)。
+`publish_one` 校验字节后调用 `attachment_upload`，由父进程维护附件更新的唯一重试循环，每次删除上传在可终止子进程中执行：首次使用本轮完整附件列表，重试重新查询并删除重传，不读取 Gitee 归档内容。临时网络错误、HTTP 408、429 和 5xx 不另设重试次数上限，每次最多等待 10 秒且不越过剩余预算，全部请求与等待合计最多 7200 秒；耗尽预算即杀死并回收子进程，不确认该项 JSON。认证、权限、输入或响应结构错误及未分类 409/422 直接失败；未确认删除不继续上传。Git 确认留在原协调器；字节进度监督及超时恢复规则见[同步设计](../../../docs/agent-notes/implemented/architecture/2026-11-09-release-cache-and-independent-gitee-sync.md#gitee-摘要比较与逐项登记)。
 
 `gitee_api.py` 拥有 Header 认证、JSON 普通请求及每线程连接。附件查询、删除、上传不在 HTTP 层重试；其他读取保留有界重试，创建仓库或 Release 的未知写入不自动重放。附件上传借用 `gitee_release.py` 无装饰器的 `upload_asset_details`，保留其 multipart 字段、boundary 和文件句柄管理；参考本体不变。
 

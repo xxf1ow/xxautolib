@@ -86,16 +86,17 @@ def plan_cleanup(source: dict, cache: dict, repository: dict, assets: list[dict]
         asset = _asset(key)
         name, path = asset['name'], metadata_path(asset)
         matches = gitee[name]
-        cached = github[name + '.publication.json'] + github[name]
-        if not matches and not cached and path not in repository['existing_records']:
+        cached = github[name]
+        cache_record = name in cache['records']
+        if not matches and not cached and not cache_record and path not in repository['existing_records']:
             continue
         if (len(by_name[name]) != 1 or len(matches) > 1
-                or len(github[name]) > 1 or len(github[name + '.publication.json']) > 1
+                or len(github[name]) > 1
                 or any(type(a.get('id')) is not int or a['id'] <= 0 for a in matches)):
             errors[name] = 'ambiguous managed deletion identity'
             continue
         group = groups.setdefault(key['name'], {'items': [], 'latest': {}, 'remove_latest': False})
-        group['items'].append({'key': key, 'name': name, 'github': cached, 'gitee': matches,
+        group['items'].append({'key': key, 'name': name, 'github': cached, 'cache_record': cache_record, 'gitee': matches,
                                'metadata_paths': [path] if path in repository['existing_records'] else []})
     updates, removed, latest_errors = choose_source_latest(repository['existing_latest'], {}, source, set(), {})
     errors.update({name + '/package.toml': error for name, error in latest_errors.items()})
@@ -123,7 +124,7 @@ def execute_cleanup(plan: dict, *, delete_cache, api, release_id: int | None,
                 gitee_ok = False
                 result['errors'][item['name'] + ':gitee'] = 'Gitee deletion unconfirmed'
             # 无摘要的残留可能仅由缓存记录证明归属，Gitee 确认前须保留该证据。
-            if gitee_ok and item['github']:
+            if gitee_ok and (item['github'] or item['cache_record']):
                 try:
                     delete_cache(item['key'])
                 except (OSError, RuntimeError, ValueError):

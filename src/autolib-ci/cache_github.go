@@ -19,6 +19,7 @@ import (
 )
 
 type ciCacheSnapshot struct {
+	RecordHead   string                   `json:"record_head"`
 	Repository   string                   `json:"repository"`
 	ReleaseID    int64                    `json:"release_id"`
 	Assets       []ciCacheAsset           `json:"assets"`
@@ -28,6 +29,7 @@ type ciCacheSnapshot struct {
 }
 
 type ciCacheClient struct {
+	Records                                           *ciCacheGitStore
 	Repository, Token, APIBase, UploadBase, TargetSHA string
 	HTTP                                              *http.Client
 	Wait                                              func(context.Context, time.Duration) error
@@ -203,7 +205,6 @@ func (c *ciCacheClient) snapshot(ctx context.Context, allowCreate bool, target s
 	}
 	s.ReleaseID = release.ID
 	ids := map[int64]bool{}
-	counts := map[string]int{}
 	for page := 1; ; page++ {
 		var assets []ciCacheAsset
 		if err := c.jsonRequest(ctx, "GET", c.endpoint(c.APIBase, fmt.Sprintf("/%d/assets?per_page=100&page=%d", s.ReleaseID, page)), nil, &assets); err != nil {
@@ -217,44 +218,34 @@ func (c *ciCacheClient) snapshot(ctx context.Context, allowCreate bool, target s
 				return s, errors.New("invalid or repeated cache asset")
 			}
 			ids[a.ID] = true
-			counts[a.Name]++
 		}
 		s.Assets = append(s.Assets, assets...)
 		if len(assets) < 100 {
 			break
 		}
 	}
+	return c.recordSnapshot(ctx, s, allowCreate, target)
+}
+
+func (c *ciCacheClient) recordSnapshot(ctx context.Context, s ciCacheSnapshot, allowCreate bool, target string) (ciCacheSnapshot, error) {
+	counts := map[string]int{}
 	for _, a := range s.Assets {
-		name, record := strings.CutSuffix(a.Name, ".publication.json")
-		if !record {
-			continue
-		}
+		counts[a.Name]++
+	}
+	if c.Records == nil {
+		return s, errors.New("Gitee cache record store is required")
+	}
+	records, err := c.Records.Snapshot(ctx, allowCreate)
+	if err != nil {
+		return s, err
+	}
+	s.RecordHead = records.Head
+	for filename, data := range records.Records {
+		name := strings.TrimSuffix(filename, ".publication.json")
 		if target != "" && name != target {
 			continue
 		}
-		if counts[a.Name] != 1 || counts[name] != 1 || a.State != "uploaded" || a.Size <= 0 || a.Size >= ciCacheSizeLimit {
-			s.RecordErrors[name] = "incomplete or ambiguous cache pair"
-			continue
-		}
-		r, err := c.request(ctx, "GET", c.endpoint(c.APIBase, "/assets/"+strconv.FormatInt(a.ID, 10)), "application/octet-stream", "", nil)
-		if err != nil {
-			var e *ciCacheHTTPError
-			if errors.As(err, &e) && e.Status == 404 {
-				s.RecordErrors[name] = "cache record disappeared"
-				continue
-			}
-			return s, err
-		}
-		data, readErr := io.ReadAll(io.LimitReader(r.Body, a.Size+1))
-		closeErr := r.Body.Close()
-		if readErr != nil || closeErr != nil {
-			return s, &ciCacheHTTPError{Temporary: true}
-		}
 		var value ciCacheRecord
-		if int64(len(data)) != a.Size || (a.Digest != "" && a.Digest != "sha256:"+ciSHA256(data)) {
-			s.RecordErrors[name] = "cache record size or digest mismatch"
-			continue
-		}
 		if err := decodeCICacheJSON(bytes.NewReader(data), &value, true); err != nil {
 			s.RecordErrors[name] = err.Error()
 			continue
@@ -263,12 +254,20 @@ func (c *ciCacheClient) snapshot(ctx context.Context, allowCreate bool, target s
 			s.RecordErrors[name] = "cache record name mismatch"
 			continue
 		}
-		if err := validateCICacheRecord(value, c.Repository, value.Key, value.Fingerprint, value.DependencyFingerprints, s.Assets); err != nil {
+		assets := s.Assets
+		if counts[name] == 0 {
+			assets = []ciCacheAsset{{ID: value.Archive.ID, Name: name, State: "uploaded", Size: value.Archive.Size, Digest: "sha256:" + value.Archive.SHA256}}
+		}
+		if err := validateCICacheRecord(value, c.Repository, value.Key, value.Fingerprint, value.DependencyFingerprints, assets); err != nil {
 			s.RecordErrors[name] = err.Error()
 			continue
 		}
 		s.Records[name] = value
+		if counts[name] == 0 {
+			s.RecordErrors[name] = "archive missing; record retained for cleanup identity only"
+		}
 	}
+
 	return s, nil
 }
 
@@ -332,31 +331,27 @@ func (c *ciCacheClient) Put(ctx context.Context, asset ciLocalAsset) (ciCacheRec
 				return nil
 			}
 		}
-		for _, managed := range []string{name + ".publication.json", name} {
-			count := 0
-			for _, a := range s.Assets {
-				if a.Name == managed {
-					count++
-				}
-			}
-			if count > 1 {
-				return fmt.Errorf("ambiguous managed cache name %s", managed)
+		count := 0
+		for _, a := range s.Assets {
+			if a.Name == name {
+				count++
 			}
 		}
-		if err := preflightCICacheCapacity(s.Assets, []string{name, name + ".publication.json"}); err != nil {
+		if count > 1 {
+			return fmt.Errorf("ambiguous managed cache name %s", name)
+		}
+		if err := preflightCICacheCapacity(s.Assets, []string{name}); err != nil {
 			return err
 		}
-		for _, managed := range []string{name + ".publication.json", name} {
-			for _, a := range s.Assets {
-				if a.Name != managed {
-					continue
-				}
-				response, err := c.request(ctx, "DELETE", c.endpoint(c.APIBase, "/assets/"+strconv.FormatInt(a.ID, 10)), "application/vnd.github+json", "", nil)
-				if err != nil {
-					return err
-				}
-				response.Body.Close()
+		for _, a := range s.Assets {
+			if a.Name != name {
+				continue
 			}
+			response, err := c.request(ctx, "DELETE", c.endpoint(c.APIBase, "/assets/"+strconv.FormatInt(a.ID, 10)), "application/vnd.github+json", "", nil)
+			if err != nil {
+				return err
+			}
+			response.Body.Close()
 		}
 		file, err := os.Open(asset.Path)
 		if err != nil {
@@ -375,13 +370,19 @@ func (c *ciCacheClient) Put(ctx context.Context, asset ciLocalAsset) (ciCacheRec
 		if err != nil {
 			return err
 		}
-		record, err := c.upload(ctx, s.ReleaseID, name+".publication.json", "application/octet-stream", bytes.NewReader(body))
+		confirmed, err := c.Records.Update(ctx, s.RecordHead, name+".publication.json", body)
 		if err != nil {
 			return err
 		}
-		if record.Size != int64(len(body)) || (record.Digest != "" && record.Digest != "sha256:"+ciSHA256(body)) {
-			return errors.New("cache publication upload size or digest mismatch")
+		var stored ciCacheRecord
+		if decodeCICacheJSON(bytes.NewReader(confirmed.Records[name+".publication.json"]), &stored, true) != nil {
+			return errors.New("cache record readback failed")
 		}
+		if err := validateCICacheRecord(stored, c.Repository, r.Key, r.Fingerprint, r.DependencyFingerprints, []ciCacheAsset{uploaded}); err != nil {
+			return err
+		}
+		r = stored
+
 		result = r
 		return nil
 	})

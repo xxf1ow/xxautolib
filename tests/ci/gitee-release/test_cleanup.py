@@ -72,8 +72,7 @@ class CleanupTests(unittest.TestCase):
                   {'id': 4, 'name': 'autolib.cmake'}]
         key = {'kind': 'library', 'name': 'gone', 'version': '1', 'os': 'any', 'arch': 'any'}
         cache = cache_facts({'gone-1-any-any.tar.zst': {'key': key}},
-                            [{'id': 21, 'name': 'gone-1-any-any.tar.zst'},
-                             {'id': 22, 'name': 'gone-1-any-any.tar.zst.publication.json'}])
+                            [{'id': 21, 'name': 'gone-1-any-any.tar.zst'}])
         source = source_facts({'queue': package({'1': ['any-any']}), 'b': package({'1': ['any-any']})})
         plan = self.cleanup.plan_cleanup(source, cache, repo, assets)
         api, deleted = CleanupAPI(assets), []
@@ -135,7 +134,7 @@ class CleanupTests(unittest.TestCase):
         name = 'gone-1-any-any.tar.zst'
         key = dict(kind='library', name='gone', version='1', os='any', arch='any')
         cache = cache_facts({name: {'key': key}},
-                            [{'id': 21, 'name': name}, {'id': 22, 'name': name + '.publication.json'}])
+                            [])
         source = source_facts({'queue': package({'1': ['any-any']})})
         api = CleanupAPI([{'id': 1, 'name': name}, {'id': 2, 'name': 'unknown.bin'}], fail=1)
         def delete_cache(identity):

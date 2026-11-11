@@ -58,6 +58,8 @@ cmake -P src/autolib-builder/go-sdk.cmake -- test -mod=readonly -p=1 -parallel=1
 
 [跨运行闭环](../src/autolib-ci/cache_lifecycle_test.go)通过受控缓存、原生静态库及独立消费，验证旧工作目录删除后的恢复、局部失败续跑、链式失效和 latest/入口单独变化。该测试不写真实远端；独立同步的受控端到端证据见下节，四平台实机验收单独记录。
 
+[Git 记录测试](../src/autolib-ci/cache_git_test.go)选择 `TestCICacheGit(Identity|Credentials|Update)$`，覆盖独立分支、原始字节、凭据交付、交错提交及响应丢失。各测试项分别记录 Unix 和 Windows 宿主的执行证据，不能相互替代；当前执行范围及切换结果由[记录存储设计](agent-notes/implemented/architecture/2026-11-10-gitee-build-cache-records.md#本地验证与切换状态)拥有。
+
 Darwin 实机 queue/lz4 的生产、直接及搬迁消费、Mach-O 与 FIFO 证据和未测项见[Darwin 验证](agent-notes/implemented/architecture/2026-11-05-darwin-aarch64-native-build-and-ci.md#第一阶段验证证据)。工具专用及代表库的 macos-15 运行已通过，见[CI 实机验收](agent-notes/implemented/architecture/2026-11-05-darwin-aarch64-native-build-and-ci.md#macos-15-实机验收)；独立同步的自动触发接线按下节受控检查，真实 Actions 调度仍待验收。Go 定向检查的 PATH 前置固定 CMake/Make。
 
 Darwin准备脚本和workflow受控检查使用下节Python测试命令，将目录改为`-s tests/ci`，分别选择`test_darwin_preparation.py`、`test_darwin_workflow.py`。四平台选择、精确成品与元数据的增量证据见[第二阶段本地验证](agent-notes/implemented/architecture/2026-11-05-darwin-aarch64-native-build-and-ci.md#第二阶段本地验证)。这些既有证据不要求补跑 Linux 实机；原样 example 依赖当时未支持 Darwin 的 FLANN，未纳入该轮验收。统一配方的[阶段证据与缺口](agent-notes/implemented/architecture/2026-11-06-module-recipe-contract-and-macos-validation.md#验证结果)分别记录本机闭环和后续 macos-15、同 Linux Eigen 归档跨平台、PCL/example 验收。

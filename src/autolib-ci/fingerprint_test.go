@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -289,5 +290,20 @@ func TestCIFingerprintLocalGoInputs(t *testing.T) {
 				t.Fatal("test source invalidated production")
 			}
 		})
+	}
+}
+
+func TestCIFingerprintCacheCoordination(t *testing.T) {
+	root, plan := fingerprintFixture(t)
+	before, err := computeCIFingerprints(root, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"src/autolib-ci/cache_git.go", "src/autolib-ci/cache_github.go", ".github/workflows/build-platform.yml"} {
+		writeCIFixture(t, root, name, "cache coordinator changes")
+	}
+	after, err := computeCIFingerprints(root, plan)
+	if err != nil || !reflect.DeepEqual(before, after) {
+		t.Fatal("cache coordination changed production fingerprints", err)
 	}
 }

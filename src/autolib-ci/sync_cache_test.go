@@ -26,10 +26,12 @@ func TestCISyncCache(t *testing.T) {
 			case "orphan record":
 				delete(f.assets, r.Archive.ID)
 			case "orphan":
-				for id, a := range f.assets {
-					if strings.HasSuffix(a.Name, ".publication.json") {
-						delete(f.assets, id)
-					}
+				current, err := f.client.Records.Snapshot(ctx, false)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err = f.client.Records.Update(ctx, current.Head, r.Archive.Name+".publication.json", nil); err != nil {
+					t.Fatal(err)
 				}
 			case "stale":
 				source.Inputs.Fingerprints[r.Archive.Name] = strings.Repeat("b", 64)
@@ -39,15 +41,8 @@ func TestCISyncCache(t *testing.T) {
 				} else {
 					r.Archive.ID++
 				}
-				for id, a := range f.assets {
-					if strings.HasSuffix(a.Name, ".publication.json") {
-						data, _ := json.Marshal(r)
-						f.data[id] = data
-						a.Size = int64(len(data))
-						a.Digest = "sha256:" + testDigest(data)
-						f.assets[id] = a
-					}
-				}
+				data, _ := json.Marshal(r)
+				f.setRecord(t, r.Archive.Name, data)
 			case "missing release":
 				f.exists = false
 			case "pagination":
@@ -65,6 +60,9 @@ func TestCISyncCache(t *testing.T) {
 			}
 			if err != nil {
 				t.Fatal(err)
+			}
+			if snapshot.RecordHead == "" {
+				t.Fatal("sync did not retain fixed Git record head")
 			}
 			if f.creates != 0 {
 				t.Fatal("sync created a cache release")
@@ -184,7 +182,7 @@ func TestCISyncCacheDependencyReferences(t *testing.T) {
 }
 
 func TestCISyncCacheDelete(t *testing.T) {
-	for _, fault := range []string{"deleted", "present", "unknown platforms", "unknown versions", "replacement", "partial retry"} {
+	for _, fault := range []string{"deleted", "present", "unknown platforms", "unknown versions", "replacement", "partial retry", "record replaced"} {
 		t.Run(fault, func(t *testing.T) {
 			f := releaseCacheFixture(t)
 			r := f.seed(t, localCacheFixture(t))
@@ -195,7 +193,7 @@ func TestCISyncCacheDelete(t *testing.T) {
 				t.Fatal(err)
 			}
 			switch fault {
-			case "deleted", "replacement", "partial retry":
+			case "deleted", "replacement", "partial retry", "record replaced":
 				delete(source.Catalog.Packages, r.Key.Name)
 			case "unknown platforms":
 				p := source.Catalog.Packages[r.Key.Name]
@@ -209,11 +207,13 @@ func TestCISyncCacheDelete(t *testing.T) {
 				f.add(r.Archive.Name, []byte("new"), "uploaded")
 			}
 			if fault == "partial retry" {
-				for id, a := range f.assets {
-					if strings.HasSuffix(a.Name, ".publication.json") {
-						delete(f.assets, id)
-					}
-				}
+				delete(f.assets, r.Archive.ID)
+			}
+			if fault == "record replaced" {
+				changed := r
+				changed.Origin.RunID = "11"
+				body, _ := json.Marshal(changed)
+				f.setRecord(t, r.Archive.Name, body)
 			}
 			err = deleteCISyncCache(context.Background(), f.client, source, snapshot, r.Key)
 			if fault == "deleted" || fault == "partial retry" {
@@ -225,6 +225,20 @@ func TestCISyncCacheDelete(t *testing.T) {
 				}
 			} else if err == nil {
 				t.Fatal("unsafe delete accepted")
+			}
+			remote, e := f.client.Records.Snapshot(context.Background(), false)
+			if e != nil {
+				t.Fatal(e)
+			}
+			if fault == "deleted" || fault == "partial retry" {
+				if remote.Records[r.Archive.Name+".publication.json"] != nil {
+					t.Fatal("cache record survived successful deletion")
+				}
+			}
+			if fault == "record replaced" {
+				if _, exists := f.assets[r.Archive.ID]; !exists {
+					t.Fatal("new selected record lost its archive")
+				}
 			}
 			if _, ok := f.assets[unknown.ID]; !ok {
 				t.Fatal("unknown asset deleted")
@@ -246,12 +260,8 @@ func TestCISyncCacheDeleteReadsOnlySelectedRecord(t *testing.T) {
 		t.Fatal(err)
 	}
 	delete(source.Catalog.Packages, r.Key.Name)
-	wantRead := ""
-	for _, asset := range snapshot.Assets {
-		if asset.Name == r.Archive.Name+".publication.json" {
-			wantRead = fmt.Sprintf("/repos/owner/repo/releases/assets/%d", asset.ID)
-		}
-	}
+	// An unrelated malformed record must not prevent deletion of the selected identity.
+	f.setRecord(t, other.Record.Archive.Name, []byte("invalid"))
 	original := f.client.HTTP.Transport
 	reads := []string{}
 	f.client.HTTP.Transport = cacheTestRoundTripper(func(req *http.Request) (*http.Response, error) {
@@ -263,15 +273,58 @@ func TestCISyncCacheDeleteReadsOnlySelectedRecord(t *testing.T) {
 	if err := deleteCISyncCache(context.Background(), f.client, source, snapshot, r.Key); err != nil {
 		t.Fatal(err)
 	}
-	if len(reads) != 1 || reads[0] != wantRead {
-		t.Fatalf("deletion read %v, want only %s", reads, wantRead)
+	remote, e := f.client.Records.Snapshot(context.Background(), false)
+	if e != nil || remote.Records[r.Archive.Name+".publication.json"] != nil {
+		t.Fatal("selected record was not removed", e)
 	}
-	if len(f.assets) != 2 {
-		t.Fatalf("unrelated cache pair was changed: %v", f.assets)
+	if len(reads) != 0 {
+		t.Fatalf("deletion downloaded GitHub sidecars: %v", reads)
+	}
+	if len(f.assets) != 1 {
+		t.Fatalf("unrelated archive changed: %v", f.assets)
 	}
 	for _, asset := range f.assets {
-		if asset.Name != other.Record.Archive.Name && asset.Name != other.Record.Archive.Name+".publication.json" {
-			t.Fatalf("unexpected remaining asset: %v", asset)
+		if asset.Name != other.Record.Archive.Name {
+			t.Fatal("unexpected remaining archive", asset)
 		}
+	}
+}
+
+func TestCISyncCacheDeleteFailureOrder(t *testing.T) {
+	for _, endpoint := range []string{"github", "git"} {
+		t.Run(endpoint, func(t *testing.T) {
+			f := releaseCacheFixture(t)
+			r := f.seed(t, localCacheFixture(t))
+			source := syncCacheSource(r)
+			snapshot, err := prepareCISyncCache(context.Background(), f.client, source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			delete(source.Catalog.Packages, r.Key.Name)
+			if endpoint == "github" {
+				f.fault = "delete:" + r.Archive.Name
+				f.status = 400
+			} else {
+				cacheGitFault(t, "reject", f.client.Records.URL, nil)
+			}
+			if err = deleteCISyncCache(context.Background(), f.client, source, snapshot, r.Key); err == nil {
+				t.Fatal("unconfirmed deletion accepted")
+			}
+			remote, err := f.client.Records.Snapshot(context.Background(), false)
+			if err != nil || remote.Records[r.Archive.Name+".publication.json"] == nil {
+				t.Fatal("deletion failure lost ownership", err)
+			}
+			_, archivePresent := f.assets[r.Archive.ID]
+			if archivePresent != (endpoint == "github") {
+				t.Fatal("incorrect archive/record deletion order")
+			}
+			f.fault = ""
+			if endpoint == "git" {
+				t.Setenv("AUTOLIB_CI_GIT_FAULT", "")
+			}
+			if err = deleteCISyncCache(context.Background(), f.client, source, snapshot, r.Key); err != nil {
+				t.Fatal("retry did not finish deletion", err)
+			}
+		})
 	}
 }

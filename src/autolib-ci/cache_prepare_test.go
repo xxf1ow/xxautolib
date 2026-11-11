@@ -14,15 +14,27 @@ func TestCICachePrepareCapacity(t *testing.T) {
 	for i := 0; i < 999; i++ {
 		assets = append(assets, ciCacheAsset{ID: int64(i + 1), Name: fmt.Sprintf("unknown-%d", i)})
 	}
-	names := []string{"new.tar.zst", "new.tar.zst.publication.json"}
+	names := []string{"new.tar.zst"}
+	if err := preflightCICacheCapacity(assets, names); err != nil {
+		t.Fatal(err)
+	}
+	assets = append(assets, ciCacheAsset{ID: 1000, Name: "unknown-999"})
 	if err := preflightCICacheCapacity(assets, names); err == nil {
 		t.Fatal("overflow accepted")
 	}
-	if err := preflightCICacheCapacity(assets[:998], names); err != nil {
+	if err := preflightCICacheCapacity(assets, []string{"unknown-0"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := preflightCICacheCapacity(assets, []string{"unknown-0", "unknown-0.publication.json"}); err != nil {
+	_, plan := fingerprintFixture(t)
+	plan.Publishers = ciPublishers(plan.Platforms)
+	planned, err := plannedCICacheNames(plan)
+	if err != nil {
 		t.Fatal(err)
+	}
+	for _, name := range planned {
+		if strings.HasSuffix(name, ".publication.json") {
+			t.Fatal("capacity reserves publication attachments")
+		}
 	}
 	if err := preflightCICacheCapacity(assets, []string{"same", "same"}); err == nil {
 		t.Fatal("duplicate planned writer accepted")

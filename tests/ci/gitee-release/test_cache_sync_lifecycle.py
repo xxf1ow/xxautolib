@@ -65,6 +65,15 @@ class CacheSyncLifecycleTests(unittest.TestCase):
         git(seed,'init','--initial-branch=server-default'); git(seed,'config','user.name','fixture'); git(seed,'config','user.email','fixture@example.invalid')
         (seed/'.autolib-repository.json').write_text(json.dumps(IDENTITY))
         git(seed,'add','.'); git(seed,'commit','-m','seed'); git(seed,'clone','--bare',str(seed),str(self.bare))
+        self.cache_seed = self.directory / 'cache-seed'; self.cache_seed.mkdir()
+        self.raw_records = {}
+        git(self.cache_seed,'init','--initial-branch=autolib-cache')
+        git(self.cache_seed,'config','user.name','fixture'); git(self.cache_seed,'config','user.email','fixture@example.invalid')
+        git(self.cache_seed,'config','core.autocrlf','false')
+        (self.cache_seed/'.autolib-cache.json').write_text(json.dumps(dict(type='xxautolib-build-cache',schema=1,upstream='https://github.com/xxf1ow/xxautolib')))
+        git(self.cache_seed,'add','.'); git(self.cache_seed,'commit','-m','cache identity')
+        git(self.cache_seed,'remote','add','origin',str(self.bare)); git(self.cache_seed,'push','origin','autolib-cache')
+
         git(self.source,'init','--initial-branch=topic/slash'); git(self.source,'config','user.name','fixture'); git(self.source,'config','user.email','fixture@example.invalid')
         self.env = dict(self.env, **self.remote.environment(), GITHUB_TOKEN='fixture-github-token', GITEE_TOKEN=TOKEN,
             GITHUB_REPOSITORY='xxf1ow/xxautolib', PUBLISH_HOST='gitee', PUBLISH_MODE='sync',
@@ -122,8 +131,20 @@ class CacheSyncLifecycleTests(unittest.TestCase):
             fingerprint=self.facts['inputs']['fingerprints'][archive],dependency_fingerprints=deps,latest_candidate='1' if key['kind']=='library' else '',
             verification=dict(platform=self.native,context=dict(os=os_name,arch=arch,configuration='Release'),evidence=['local native package fixture'],passed=True))
         if entry:record['entry']=entry
-        self.remote.add_source(archive+'.publication.json',json.dumps(record).encode())
+        self.write_record(archive,record)
         return record,body
+
+    def write_record(self, archive, record):
+        default_head = git(self.bare,'rev-parse','HEAD')
+        git(self.cache_seed,'fetch','origin','autolib-cache')
+        git(self.cache_seed,'reset','--hard','FETCH_HEAD')
+        raw = json.dumps(record,indent=1).encode() + b'\n'
+        filename = archive + '.publication.json'
+        (self.cache_seed/filename).write_bytes(raw)
+        git(self.cache_seed,'add',filename); git(self.cache_seed,'commit','-m','store record')
+        git(self.cache_seed,'push','origin','autolib-cache')
+        self.raw_records[filename] = raw
+        self.assertEqual(git(self.bare,'rev-parse','HEAD'),default_head)
 
     def sync(self, expected=0, mode='sync', explicit=None):
         cache = self.directory / ('cache-'+str(len(self.remote.calls))+'.json')
@@ -135,6 +156,14 @@ class CacheSyncLifecycleTests(unittest.TestCase):
         self.assertEqual(result.returncode,expected,result.stderr+'\n'+result.stdout)
         self.assertFalse(self.remote.errors)
         data = json.loads(result.stdout)
+        self.assertFalse([name for name in self.remote.downloads if name.endswith('.publication.json')])
+        cache_files = git(self.bare,'ls-tree','-r','--name-only','autolib-cache').decode().splitlines()
+        for filename in cache_files:
+            if filename != '.autolib-cache.json':
+                self.assertEqual(git(self.bare,'show','autolib-cache:'+filename),self.raw_records[filename])
+        if mode == 'sync':
+            self.assertTrue(json.loads(cache.read_bytes())['record_head'])
+
         self.assertEqual(data['metadata_commit'],git(self.bare,'rev-parse','HEAD').decode().strip())
         return data
 
@@ -150,7 +179,7 @@ class CacheSyncLifecycleTests(unittest.TestCase):
         unchanged=self.sync()
         self.assertEqual(unchanged['metadata_commit'],second['metadata_commit'])
         self.assertEqual(unchanged['uploaded'],0)
-        self.assertFalse([n for n in self.remote.downloads if not n.endswith('.publication.json')])
+        self.assertFalse(self.remote.downloads)
         self.assertFalse(self.remote.uploads)
         self.recipe('b',platform=self.native,revision=2);self.snapshot()
         invalid=self.sync();self.assertEqual(invalid['skipped'],1)
@@ -175,6 +204,7 @@ class CacheSyncLifecycleTests(unittest.TestCase):
         names={a['name'] for a in self.remote.sources};targets={a['name'] for a in self.remote.targets}
         for old in ['a-1-any-any.tar.zst','d-1-any-any.tar.zst',b['archive']['name']]:
             self.assertNotIn(old,names);self.assertNotIn(old+'.publication.json',names);self.assertNotIn(old,targets)
+            self.assertNotIn(old+'.publication.json',git(self.bare,'ls-tree','-r','--name-only','autolib-cache').decode().splitlines())
         self.assertEqual(git(self.bare,'show','HEAD:a/package.toml'),b'latest = "2"\n')
         self.assertNotIn('d/package.toml',git(self.bare,'ls-tree','-r','--name-only','HEAD').decode())
         self.assertEqual(self.remote.target_bytes[unknown['id']],b'keep')
@@ -186,7 +216,7 @@ class CacheSyncLifecycleTests(unittest.TestCase):
         # Only the declared size is synthetic: this branch must never fetch archive bytes.
         b['archive']['size'] = 100000001
         next(a for a in self.remote.sources if a['name'] == name)['size'] = b['archive']['size']
-        self.remote.add_source(name + '.publication.json', json.dumps(b).encode())
+        self.write_record(name,b)
         self.remote.add_target(name, b'previous small package')
         self.remote.fail_deletes = {name}
         self.remote.fail_uploads = {'d-1-any-any.tar.zst'}
@@ -211,7 +241,7 @@ class CacheSyncLifecycleTests(unittest.TestCase):
         unchanged = self.sync()
         self.assertEqual(unchanged['metadata_commit'], retry['metadata_commit'])
         self.assertEqual((unchanged['metadata_only'], unchanged['uploaded']), (0, 0))
-        self.assertFalse([n for n in self.remote.downloads if not n.endswith('.publication.json')])
+        self.assertFalse(self.remote.downloads)
         self.assertFalse(self.remote.uploads)
         shutil.rmtree(self.source / 'src/dependencies/b')
         shutil.rmtree(self.source / 'src/dependencies/a')

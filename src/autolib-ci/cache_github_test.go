@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -46,23 +45,10 @@ func TestCICacheGitHubDownloadAndRecords(t *testing.T) {
 	t.Run("response lost", func(t *testing.T) {
 		f := releaseCacheFixture(t)
 		a := localCacheFixture(t)
-		original := f.client.HTTP.Transport
-		lost := false
-		f.client.HTTP = &http.Client{Transport: cacheTestRoundTripper(func(r *http.Request) (*http.Response, error) {
-			response, err := original.RoundTrip(r)
-			if err == nil && !lost && r.Method == "POST" && strings.HasSuffix(r.URL.Query().Get("name"), ".publication.json") {
-				lost = true
-				response.Body.Close()
-				return nil, errors.New("connection lost")
-			}
-			return response, err
-		})}
+		cacheGitFault(t, "lost", f.client.Records.URL, nil)
 		r, err := f.client.Put(ctx, a)
-		if err != nil || !lost {
-			t.Fatalf("uncertain publication not recovered: %v", err)
-		}
-		if r.Origin != a.Record.Origin || len(f.ops) != 2 {
-			t.Fatalf("confirmed pair rewritten: %v", f.ops)
+		if err != nil || r.Origin != a.Record.Origin || len(f.ops) != 1 {
+			t.Fatalf("uncertain record commit not recovered: %v %v", err, f.ops)
 		}
 	})
 	t.Run("record mismatch and malformed", func(t *testing.T) {
@@ -71,25 +57,17 @@ func TestCICacheGitHubDownloadAndRecords(t *testing.T) {
 				f := releaseCacheFixture(t)
 				a := localCacheFixture(t)
 				r := f.seed(t, a)
-				for id, item := range f.assets {
-					if !strings.HasSuffix(item.Name, ".publication.json") {
-						continue
-					}
-					if kind == "ID" {
-						r.Archive.ID++
-					}
-					if kind == "origin" {
-						r.Origin.Repository = "other/repo"
-					}
-					body, _ := json.Marshal(r)
-					if kind == "JSON" {
-						body = []byte("invalid")
-					}
-					f.data[id] = body
-					item.Size = int64(len(body))
-					item.Digest = "sha256:" + testDigest(body)
-					f.assets[id] = item
+				if kind == "ID" {
+					r.Archive.ID++
 				}
+				if kind == "origin" {
+					r.Origin.Repository = "other/repo"
+				}
+				body, _ := json.Marshal(r)
+				if kind == "JSON" {
+					body = []byte("invalid")
+				}
+				f.setRecord(t, r.Archive.Name, body)
 				s, err := f.client.Snapshot(ctx, false)
 				if err != nil || len(s.Records) != 0 || s.RecordErrors[r.Archive.Name] == "" {
 					t.Fatalf("bad pair accepted: %+v %v", s, err)
@@ -152,7 +130,11 @@ func releaseCacheFixture(t *testing.T) *releaseCacheTestFixture {
 	f := &releaseCacheTestFixture{assets: map[int64]ciCacheAsset{}, data: map[int64][]byte{}, next: 100, exists: true}
 	f.server = httptest.NewServer(http.HandlerFunc(f.serve))
 	t.Cleanup(f.server.Close)
-	f.client = &ciCacheClient{Repository: "owner/repo", Token: "test-secret", HTTP: f.server.Client(), APIBase: f.server.URL, UploadBase: f.server.URL, Wait: func(context.Context, time.Duration) error { return nil }}
+	git := cacheGitTestFixture(t, "owner/repo")
+	if _, err := git.store.Snapshot(context.Background(), true); err != nil {
+		t.Fatal(err)
+	}
+	f.client = &ciCacheClient{Records: git.store, Repository: "owner/repo", Token: "test-secret", HTTP: f.server.Client(), APIBase: f.server.URL, UploadBase: f.server.URL, Wait: func(context.Context, time.Duration) error { return nil }}
 	return f
 }
 
@@ -310,13 +292,24 @@ func (f *releaseCacheTestFixture) seed(t *testing.T, asset ciLocalAsset) ciCache
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.add(r.Archive.Name+".publication.json", body, "uploaded")
+	f.setRecord(t, r.Archive.Name, body)
 	return r
+}
+
+func (f *releaseCacheTestFixture) setRecord(t *testing.T, name string, body []byte) {
+	t.Helper()
+	snapshot, err := f.client.Records.Snapshot(context.Background(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.client.Records.Update(context.Background(), snapshot.Head, name+".publication.json", body); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestCICacheGitHubReplacement(t *testing.T) {
 	ctx := context.Background()
-	for _, point := range []string{"normal", "delete record", "delete archive", "upload archive", "starter", "upload record", "lost record response", "duplicate"} {
+	for _, point := range []string{"normal", "delete archive", "upload archive", "starter", "upload record", "lost record response", "duplicate"} {
 		t.Run(point, func(t *testing.T) {
 			f := releaseCacheFixture(t)
 			asset := localCacheFixture(t)
@@ -325,11 +318,7 @@ func TestCICacheGitHubReplacement(t *testing.T) {
 			prior := f.seed(t, old)
 			f.add("unrelated-manual.txt", []byte("keep"), "uploaded")
 			name := asset.Record.Archive.Name
-			recordName := name + ".publication.json"
 			switch point {
-			case "delete record":
-				f.fault = "delete:" + recordName
-				f.status = 503
 			case "delete archive":
 				f.fault = "delete:" + name
 				f.status = 503
@@ -340,23 +329,27 @@ func TestCICacheGitHubReplacement(t *testing.T) {
 				f.fault = "upload:" + name
 				f.status = 502
 				f.after = true
-			case "upload record":
-				f.fault = "upload:" + recordName
-				f.status = 503
-			case "lost record response":
-				f.fault = "upload:" + recordName
-				f.status = 503
-				f.after = true
 			case "duplicate":
 				f.fault = "upload:" + name
 				f.status = 422
+			case "upload record":
+				cacheGitFault(t, "reject", f.client.Records.URL, nil)
+			case "lost record response":
+				cacheGitFault(t, "lost", f.client.Records.URL, nil)
 			}
-			if point != "normal" {
+			if point != "normal" && point != "lost record response" {
 				f.client.Wait = func(context.Context, time.Duration) error { return context.Canceled }
 				if _, err := f.client.Put(ctx, asset); err == nil {
-					t.Fatal("interrupted write reported success")
+					t.Fatal("interrupted publication reported success")
 				}
 				f.client.Wait = func(context.Context, time.Duration) error { return nil }
+				if point == "upload record" {
+					t.Setenv("AUTOLIB_CI_GIT_FAULT", "")
+					broken, err := f.client.Snapshot(ctx, false)
+					if err != nil || broken.RecordErrors[name] == "" {
+						t.Fatal("old record bound to replacement archive", err)
+					}
+				}
 			}
 			got, err := f.client.Put(ctx, asset)
 			if err != nil {
@@ -365,41 +358,70 @@ func TestCICacheGitHubReplacement(t *testing.T) {
 			if got.Archive.ID == prior.Archive.ID {
 				t.Fatal("record still refers to old archive")
 			}
-			ss, err := f.client.Snapshot(ctx, false)
-			if err != nil {
-				t.Fatal(err)
+			snapshot, err := f.client.Snapshot(ctx, false)
+			if err != nil || !reflect.DeepEqual(snapshot.Records[name], got) || len(snapshot.Assets) != 2 {
+				t.Fatalf("replacement lost final binding or unrelated attachment: %v %+v", err, snapshot)
 			}
-			if !reflect.DeepEqual(ss.Records[name], got) {
-				t.Fatal("record not bound to final archive")
+			if len(f.ops) < 2 || f.ops[0] != "delete:"+name {
+				t.Fatalf("unsafe archive replacement order: %v", f.ops)
 			}
-			if len(ss.Assets) != 3 {
-				t.Fatalf("residue or unrelated asset removed: %+v", ss.Assets)
-			}
-			index := func(op string) int {
-				for i, v := range f.ops {
-					if v == op {
-						return i
-					}
+			for _, op := range f.ops {
+				if strings.Contains(op, ".publication.json") {
+					t.Fatal("GitHub sidecar mutation", op)
 				}
-				return -1
-			}
-			if index("delete:"+recordName) < 0 || index("delete:"+recordName) > index("delete:"+name) || index("delete:"+name) > index("upload:"+name) || index("upload:"+name) > index("upload:"+recordName) {
-				t.Fatalf("unsafe replacement order: %v", f.ops)
 			}
 			before := len(f.ops)
 			reused, err := f.client.Put(ctx, asset)
 			if err != nil || reused.Origin != got.Origin || len(f.ops) != before {
-				t.Fatalf("valid cache was rewritten: %v %v", err, f.ops)
+				t.Fatal("valid cache was rewritten", err)
 			}
 			local, err := f.client.Download(ctx, got, t.TempDir())
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !reflect.DeepEqual(local.Record, got) || mustReadText(t, local.Path) != "verified archive bytes" {
-				t.Fatal("download changed bytes or origin")
+			if err != nil || !reflect.DeepEqual(local.Record, got) || mustReadText(t, local.Path) != "verified archive bytes" {
+				t.Fatal("download changed bytes or producer", err)
 			}
 		})
 	}
+}
+
+func TestCICacheGitHubRecords(t *testing.T) {
+	ctx := context.Background()
+	t.Run("no GitHub sidecar reads", func(t *testing.T) {
+		f := releaseCacheFixture(t)
+		a := localCacheFixture(t)
+		record := f.seed(t, a)
+		f.add(record.Archive.Name+".publication.json", []byte("untrusted legacy"), "uploaded")
+		f.client.HTTP = &http.Client{Transport: cacheTestRoundTripper(func(req *http.Request) (*http.Response, error) {
+			if strings.Contains(req.URL.Path, "/assets/") {
+				t.Fatal("normal record read used GitHub asset download")
+			}
+			return f.server.Client().Transport.RoundTrip(req)
+		})}
+		s, err := f.client.Snapshot(ctx, false)
+		if err != nil || s.RecordHead == "" || s.Records[record.Archive.Name].Origin != record.Origin {
+			t.Fatal("Git record snapshot lost provenance", err)
+		}
+	})
+	t.Run("orphan ownership", func(t *testing.T) {
+		f := releaseCacheFixture(t)
+		a := localCacheFixture(t)
+		record := f.seed(t, a)
+		delete(f.assets, record.Archive.ID)
+		s, err := f.client.Snapshot(ctx, false)
+		if err != nil || s.RecordErrors[record.Archive.Name] == "" || s.Records[record.Archive.Name].Archive.ID != record.Archive.ID {
+			t.Fatal("orphan was reused or ownership lost", err)
+		}
+	})
+	t.Run("unconfirmed record", func(t *testing.T) {
+		f := releaseCacheFixture(t)
+		a := localCacheFixture(t)
+		cacheGitFault(t, "reject", f.client.Records.URL, nil)
+		if _, err := f.client.Put(ctx, a); err == nil {
+			t.Fatal("unconfirmed record reported stored")
+		}
+		if len(f.assets) != 1 {
+			t.Fatal("archive upload was not retained")
+		}
+	})
 }
 
 func TestCICacheGitHubBoundaries(t *testing.T) {
@@ -513,7 +535,7 @@ func TestCICacheGitHubBoundaries(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		if len(f.assets) != 4 {
+		if len(f.assets) != 2 {
 			t.Fatal("independent writes conflicted")
 		}
 	})

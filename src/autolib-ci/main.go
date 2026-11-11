@@ -12,6 +12,9 @@ import (
 )
 
 func run(args []string, stdout, stderr io.Writer) int {
+	if os.Getenv("AUTOLIB_CACHE_ASKPASS") == "1" {
+		return runCICacheGitAskpass(args, stdout)
+	}
 	if len(args) > 0 && (args[0] == "sync-cache" || args[0] == "cache-download" || args[0] == "cache-delete") {
 		return runCISyncCache(args[0], args[1:], stdout, stderr)
 	}

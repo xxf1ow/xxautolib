@@ -82,10 +82,12 @@ class WorkflowTests(unittest.TestCase):
             self.assertNotIn(forbidden, self.document)
         self.assertEqual(self.document.count('uses: actions/checkout@'), 1)
         self.assertIn('ref: ${{ steps.snapshot.outputs.sha }}', self.document)
-        for title in ['Fix current branch snapshot', 'Build sync tools', 'Describe fixed source', 'Read cache', 'Install publication dependencies']:
+        for title in ['Fix current branch snapshot', 'Build sync tools', 'Describe fixed source', 'Install publication dependencies']:
             self.assertNotIn('GITEE_TOKEN', step(self.document, 'name: ' + title))
         self.assertIn('go-sdk.cmake', script(self.document, 'Build sync tools'))
         self.assertIn("env.PUBLISH_MODE == 'sync'", step(self.document, 'name: Read cache'))
+        self.assertIn('GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}', step(self.document, 'name: Read cache'))
+        self.assertIn('GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}', step(self.document, 'name: Read cache'))
         publish = step(self.document, 'name: Synchronize Gitee')
         self.assertIn('GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}', publish)
         self.assertIn('GITHUB_TOKEN: ${{ github.token }}', publish)

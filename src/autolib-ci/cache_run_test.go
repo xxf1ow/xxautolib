@@ -68,8 +68,8 @@ func TestCICacheRunIsolation(t *testing.T) {
 				file := filepath.Join(f.options.SourceRoot, "src/autolib-importer/fixup-metadata.cmake")
 				writeCIFixture(t, filepath.Dir(file), filepath.Base(file), mustReadText(t, file)+"\nif(PACKAGE_DIR MATCHES \"/dep/1$\")\nmessage(FATAL_ERROR \"controlled dep packaging failure\")\nendif()\n")
 			case "store":
-				f.release.fault = "upload:dep-1-any-any.tar.zst.publication.json"
-				f.release.status = 400
+				cacheGitFault(t, "selective", f.release.client.Records.URL, nil)
+				t.Setenv("AUTOLIB_CI_GIT_REJECT_NAME", "dep-1-any-any.tar.zst.publication.json")
 			case "dependent":
 				file := filepath.Join(f.options.SourceRoot, "src/dependencies/eigen/3/autolib-import.cmake")
 				writeCIFixture(t, filepath.Dir(file), filepath.Base(file), strings.Replace(mustReadText(t, file), "FIXTURE_EIGEN=3", "FIXTURE_EIGEN=999", 1))
@@ -197,10 +197,10 @@ func TestCICacheRunPlanningErrors(t *testing.T) {
 
 func TestCICacheRunCredentials(t *testing.T) {
 	f := cacheRunFixture(t)
-	for _, key := range []string{"GITHUB_TOKEN", "GH_TOKEN", "GITEE_TOKEN"} {
+	for _, key := range []string{"GITHUB_TOKEN", "GH_TOKEN", "GITEE_TOKEN", "AUTOLIB_CACHE_ASKPASS", "AUTOLIB_CACHE_GIT_LOGIN", "AUTOLIB_CACHE_GIT_TOKEN", "GIT_ASKPASS"} {
 		t.Setenv(key, "controlled-secret")
 	}
-	check := `foreach(key GITHUB_TOKEN GH_TOKEN GITEE_TOKEN)
+	check := `foreach(key GITHUB_TOKEN GH_TOKEN GITEE_TOKEN AUTOLIB_CACHE_ASKPASS AUTOLIB_CACHE_GIT_LOGIN AUTOLIB_CACHE_GIT_TOKEN GIT_ASKPASS)
  if(DEFINED ENV{${key}})
   message(FATAL_ERROR "credential reached child process")
  endif()

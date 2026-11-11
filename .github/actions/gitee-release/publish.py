@@ -14,7 +14,7 @@ import time
 from typing import Mapping
 import unicodedata
 
-from attachment_upload import ATTACHMENT_RETRY_DELAYS, _log, upload_attachment
+from attachment_upload import _log, upload_attachment
 from gitee_api import GiteeAPI, GiteeAPIError
 from metadata_repository import open_repository
 from publication_rules import _object, metadata_path
@@ -82,15 +82,17 @@ def resolve_config(environment: Mapping[str, str]) -> dict:
 
 def _cache_command(config, arguments):
     environment = {k: v for k, v in os.environ.items() if k.upper() != 'GITEE_TOKEN'}
+    if arguments[0] == 'cache-delete':
+        environment.update(GITEE_TOKEN=config['gitee_token'], GITEE_REPOSITORY=config['repository'])
     command = [str(config['cache_tool']), *arguments, '--repository', config['source']['repository']]
     result = subprocess.run(command, env=environment, capture_output=True)
     if result.returncode:
-        raise RuntimeError('GitHub cache operation failed')
+        raise RuntimeError('cache operation failed')
     return result.stdout.decode().strip()
 
 
 def cache_callbacks(config):
-    """只将 GitHub 凭据交给缓存 helper；下载和清理均使用本轮固定输入。"""
+    """下载只交付 GitHub 凭据，清理另交付 Gitee 凭据；均使用本轮固定输入。"""
     def fetch(asset):
         return _cache_command(config, ['cache-download', '--snapshot', config['cache_file'], '--name', asset['name'],
                                        '--output-root', str(config['work_root'] / 'downloads')])
@@ -161,13 +163,14 @@ def publish_one(api: GiteeAPI, release_id: int, asset: dict, initial_matches: li
 
 
 def list_assets(api, release_id):
-    for attempt in range(len(ATTACHMENT_RETRY_DELAYS) + 1):
+    delays = (10,) * 10
+    for attempt in range(len(delays) + 1):
         try:
             return api.target_assets(release_id)
         except GiteeAPIError as error:
-            if not error.retryable or attempt == len(ATTACHMENT_RETRY_DELAYS):
+            if not error.retryable or attempt == len(delays):
                 raise
-            time.sleep(ATTACHMENT_RETRY_DELAYS[attempt])
+            time.sleep(delays[attempt])
 
 
 def publish_release(config: dict) -> dict:

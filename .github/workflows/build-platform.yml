@@ -70,6 +70,8 @@ jobs:
       - name: Prepare persistent cache
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
         run: >-
           build/tools/autolib-ci cache-prepare --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --output build/ci-input/cache.json
       - uses: actions/upload-artifact@v7
@@ -120,6 +122,8 @@ jobs:
       - name: Prepare platform
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
           CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
           MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
           BUDGET: ${{ steps.environment.outputs.budget }}
@@ -128,6 +132,8 @@ jobs:
       - name: Produce dependency layers
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
           CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
           MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
           BUDGET: ${{ steps.environment.outputs.budget }}
@@ -140,6 +146,8 @@ jobs:
       - name: Verify selected work
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
           CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
           MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
           BUDGET: ${{ steps.environment.outputs.budget }}
@@ -203,6 +211,8 @@ jobs:
       - name: Prepare platform
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
           CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
           MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
           BUDGET: ${{ steps.environment.outputs.budget }}
@@ -211,6 +221,8 @@ jobs:
       - name: Produce dependency layers
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
           CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
           MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
           BUDGET: ${{ steps.environment.outputs.budget }}
@@ -223,6 +235,8 @@ jobs:
       - name: Verify selected work
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
           CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
           MAKE_PROGRAM: ${{ steps.environment.outputs.make_program }}
           BUDGET: ${{ steps.environment.outputs.budget }}
@@ -279,12 +293,16 @@ jobs:
       - name: Prepare platform
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
           CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
         run: >-
           & "$env:WORK_ROOT/autolib-ci.exe" run --repository $env:GITHUB_REPOSITORY --source-root $env:GITHUB_WORKSPACE --plan build/ci-input/plan.json --cache build/ci-input/cache.json --run-identity build/ci-input/run.json --platform windows-x86_64 --layer prepare --work-root $env:WORK_ROOT --importer-file "$env:WORK_ROOT/install/autolib-importer-windows-x86_64.exe" --cmake-command $env:CMAKE_COMMAND
       - name: Produce dependency layers
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
           CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
         run: |
           $plan = Get-Content build/ci-input/plan.json -Raw | ConvertFrom-Json
@@ -296,6 +314,8 @@ jobs:
       - name: Verify selected work
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
           CMAKE_COMMAND: ${{ steps.environment.outputs.cmake_command }}
         run: >-
           & "$env:WORK_ROOT/autolib-ci.exe" run --repository $env:GITHUB_REPOSITORY --source-root $env:GITHUB_WORKSPACE --plan build/ci-input/plan.json --cache build/ci-input/cache.json --run-identity build/ci-input/run.json --platform windows-x86_64 --layer verify --work-root $env:WORK_ROOT --importer-file "$env:WORK_ROOT/install/autolib-importer-windows-x86_64.exe" --cmake-command $env:CMAKE_COMMAND

@@ -57,6 +57,10 @@ func runCILayerWithCache(ctx context.Context, o ciRunOptions, cache *ciCacheClie
 		if err != nil {
 			return err
 		}
+		cache.Records, err = newCICacheGitStore(o.Repository, os.Getenv("GITEE_REPOSITORY"), os.Getenv("GITEE_TOKEN"), work)
+		if err != nil {
+			return err
+		}
 	}
 	if cache.Repository != o.Repository {
 		return errors.New("cache client repository differs from current source")
@@ -553,7 +557,7 @@ func ciSafeEnvironment(environment []string) []string {
 	if environment == nil {
 		environment = os.Environ()
 	}
-	return withoutEnvironment(environment, "GITHUB_TOKEN", "GH_TOKEN", "GITEE_TOKEN")
+	return withoutEnvironment(environment, "GITHUB_TOKEN", "GH_TOKEN", "GITEE_TOKEN", "AUTOLIB_CACHE_ASKPASS", "AUTOLIB_CACHE_GIT_LOGIN", "AUTOLIB_CACHE_GIT_TOKEN", "GIT_ASKPASS", "SSH_ASKPASS")
 }
 func ciItemEnvironment(overrides []string) []string {
 	environment := os.Environ()
