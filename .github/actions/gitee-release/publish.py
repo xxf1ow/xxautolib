@@ -14,7 +14,7 @@ import time
 from typing import Mapping
 import unicodedata
 
-from attachment_upload import ATTACHMENT_RETRY_DELAYS, _log, upload_attachment
+from attachment_upload import _log, upload_attachment
 from gitee_api import GiteeAPI, GiteeAPIError
 from metadata_repository import open_repository
 from publication_rules import _object, metadata_path
@@ -163,13 +163,14 @@ def publish_one(api: GiteeAPI, release_id: int, asset: dict, initial_matches: li
 
 
 def list_assets(api, release_id):
-    for attempt in range(len(ATTACHMENT_RETRY_DELAYS) + 1):
+    delays = (10,) * 10
+    for attempt in range(len(delays) + 1):
         try:
             return api.target_assets(release_id)
         except GiteeAPIError as error:
-            if not error.retryable or attempt == len(ATTACHMENT_RETRY_DELAYS):
+            if not error.retryable or attempt == len(delays):
                 raise
-            time.sleep(ATTACHMENT_RETRY_DELAYS[attempt])
+            time.sleep(delays[attempt])
 
 
 def publish_release(config: dict) -> dict:

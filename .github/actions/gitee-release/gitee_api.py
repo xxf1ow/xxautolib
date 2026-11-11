@@ -10,6 +10,7 @@ import time
 from urllib.parse import quote, urlsplit
 
 import requests
+from requests_toolbelt import MultipartEncoderMonitor
 
 from gitee_release import Gitee
 
@@ -37,7 +38,7 @@ class GiteeAPIError(RuntimeError):
     @property
     def retryable(self) -> bool:
         """临时网络或服务故障可重试；输入、认证、权限及校验错误不可重试。"""
-        return (self.reason in {'connection_error', 'timeout', 'incomplete_response'}
+        return (self.reason in {'connection_error', 'timeout', 'incomplete_response', 'upload_stalled', 'response_timeout'}
                 or self.status in {408, 429} or self.status is not None and 500 <= self.status < 600)
 
 
@@ -59,7 +60,8 @@ def _branch(value):
 class GiteeAPI:
     """每线程使用独立 Session；协调器在所有 worker 结束后关闭连接。"""
 
-    def __init__(self, token: str, repository: str):
+    def __init__(self, token: str, repository: str, *, upload_progress=None):
+        """upload_progress 在请求线程同步接收请求体读取计数，不表示服务端确认。"""
         if (not isinstance(token, str) or not token or '\r' in token or '\n' in token
                 or not isinstance(repository, str) or not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repository)
                 or any(p in {'.', '..'} for p in repository.split('/'))):
@@ -68,6 +70,7 @@ class GiteeAPI:
         self.owner, self.repo = repository.split('/')
         self._local, self._lock, self._sessions = threading.local(), threading.Lock(), []
         self._login = None
+        self._upload_progress = upload_progress
         self.client = Gitee(self.owner, token, request=self._multipart_request)
 
     def _session(self):
@@ -90,6 +93,8 @@ class GiteeAPI:
                                        timeout=(10, 30), allow_redirects=False, verify=True, **kwargs)
 
     def _multipart_request(self, method, url, **kwargs):
+        if self._upload_progress is not None:
+            kwargs['data'] = MultipartEncoderMonitor(kwargs['data'], self._upload_progress)
         return self._session().request(method, url, timeout=(10, 300),
                                        allow_redirects=False, verify=True, **kwargs)
 

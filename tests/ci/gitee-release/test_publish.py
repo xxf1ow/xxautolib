@@ -10,6 +10,7 @@ from pathlib import Path
 import sys
 import tempfile
 import threading
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -113,12 +114,23 @@ class PublishTests(unittest.TestCase):
         clock = patch('time.sleep')
         self.clock = clock.start()
         self.addCleanup(clock.stop)
-        # HTTP 替身留在本进程；真实进程与总预算由 test_attachment_upload.py 验证。
+        elapsed = threading.local()
+        def advance(seconds):
+            elapsed.value = getattr(elapsed, 'value', 0) + seconds
+        self.clock.side_effect = advance
+        timer = patch('attachment_upload.time', SimpleNamespace(
+            monotonic=lambda: getattr(elapsed, 'value', 0), sleep=self.clock))
+        timer.start()
+        self.addCleanup(timer.stop)
+        # HTTP 替身留在本进程；真实进程与进度监督由 test_attachment_upload.py 验证。
         from attachment_upload import _update_attachment
-        worker = patch('publish.upload_attachment', side_effect=lambda api, release_id, asset, snapshot, matches:
-                       _update_attachment(api, release_id, asset, snapshot, matches))
+        worker = patch('attachment_upload._upload_attempt', side_effect=lambda api, release_id, asset, snapshot, matches, deadline, attempt:
+                       _update_attachment(api, release_id, asset, snapshot, matches, attempt))
         worker.start()
         self.addCleanup(worker.stop)
+        events = patch('attachment_upload._emit')
+        events.start()
+        self.addCleanup(events.stop)
 
     def asset(self, name='queue', version='1', body=b'archive\0bytes'):
         filename = f'{name}-{version}-any-any.tar.zst'
@@ -313,11 +325,14 @@ class PublishTests(unittest.TestCase):
         asset=self.asset()
         self.server.fail.add(asset['name'])
         errors=io.StringIO()
-        with contextlib.redirect_stderr(errors):
+        upload = self.module.upload_attachment
+        with contextlib.redirect_stderr(errors), patch('publish.upload_attachment',
+                side_effect=lambda *args: upload(*args, budget_seconds=125)):
             result=self.module.publish_one(self.api,3,asset,[],fetch_asset=lambda a:a['path'],confirm_item=lambda a:self.fail('failed upload confirmed'))
         self.assertEqual(result['status'],'failed')
-        self.assertEqual(sum(m=='POST' for m,u in self.server.events),11)
-        self.assertEqual([c.args[0] for c in self.clock.call_args_list],[10]*10)
+        self.assertEqual(result['reason'],'total_timeout')
+        self.assertEqual(sum(m=='POST' for m,u in self.server.events),13)
+        self.assertEqual([c.args[0] for c in self.clock.call_args_list],[10]*12+[5])
         self.assertNotIn('fake-secret',errors.getvalue())
 
     def test_fast_item_is_committed_while_slow_upload_is_in_flight(self):
