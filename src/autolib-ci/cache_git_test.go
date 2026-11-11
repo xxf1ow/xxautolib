@@ -322,6 +322,24 @@ func cacheGitShim() {
 		}
 	}
 	mode := os.Getenv("AUTOLIB_CI_GIT_FAULT")
+	if strings.HasPrefix(mode, "once:") {
+		operation := strings.TrimPrefix(mode, "once:")
+		marker := os.Getenv("AUTOLIB_CI_GIT_COUNT")
+		if operation == "confirm" {
+			if _, err := os.Stat(marker + ".pushed"); err == nil {
+				operation = "ls-remote"
+			}
+		}
+		for _, arg := range args {
+			if arg == operation {
+				if _, err := os.Stat(marker + ".failed"); os.IsNotExist(err) {
+					os.WriteFile(marker+".failed", []byte(operation), 0600)
+					fmt.Fprintln(os.Stderr, "fatal: Could not resolve host: gitee.com")
+					os.Exit(128)
+				}
+			}
+		}
+	}
 	if isPush {
 		counter := os.Getenv("AUTOLIB_CI_GIT_COUNT")
 		f, _ := os.OpenFile(counter, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
@@ -374,6 +392,9 @@ func cacheGitShim() {
 	}
 	if isPush && mode == "lost" {
 		os.Exit(1)
+	}
+	if isPush && mode == "once:confirm" {
+		os.WriteFile(os.Getenv("AUTOLIB_CI_GIT_COUNT")+".pushed", []byte("pushed"), 0600)
 	}
 	os.Exit(0)
 }

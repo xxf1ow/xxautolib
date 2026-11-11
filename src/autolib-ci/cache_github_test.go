@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -34,6 +35,7 @@ type releaseCacheTestFixture struct {
 	deny              int
 	pageFailure       bool
 	creates           int
+	snapshots         int
 }
 
 type cacheTestRoundTripper func(*http.Request) (*http.Response, error)
@@ -125,6 +127,63 @@ func TestCICacheGitHubDownloadAndRecords(t *testing.T) {
 	})
 }
 
+func TestCICacheGitHubGiteeRetry(t *testing.T) {
+	for _, stage := range []string{"api-transport", "api-503", "init", "ls-remote", "fetch", "hash-object", "push", "confirm"} {
+		t.Run(stage, func(t *testing.T) {
+			f := releaseCacheFixture(t)
+			completed := localCacheFixture(t)
+			completed.Record.Key.Name = "completed"
+			completed.Record.Archive.Name = completed.Record.Key.archiveName()
+			previous := f.seed(t, completed)
+			f.ops, f.snapshots = nil, 0
+			if stage == "init" {
+				f.client.Records.directory = ""
+			}
+			if strings.HasPrefix(stage, "api-") {
+				failed := false
+				f.client.Records.HTTP.Transport = cacheTestRoundTripper(func(r *http.Request) (*http.Response, error) {
+					if !failed {
+						failed = true
+						if stage == "api-transport" {
+							return nil, &net.DNSError{Err: "temporary failure", Name: "gitee.com", IsTemporary: true}
+						}
+						return &http.Response{StatusCode: 503, Body: io.NopCloser(strings.NewReader("unavailable")), Header: http.Header{}, Request: r}, nil
+					}
+					return http.DefaultTransport.RoundTrip(r)
+				})
+			} else {
+				cacheGitFault(t, "once:"+stage, f.client.Records.URL, nil)
+			}
+			waits := 0
+			f.client.Wait = func(context.Context, time.Duration) error { waits++; return nil }
+			asset := localCacheFixture(t)
+			stored, err := f.client.Put(context.Background(), asset)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if waits != 1 || f.snapshots != 2 {
+				t.Fatalf("failure did not restart from remote snapshot: waits=%d snapshots=%d", waits, f.snapshots)
+			}
+			name := asset.Record.Archive.Name
+			want := []string{"upload:" + name}
+			if stage == "hash-object" || stage == "push" {
+				want = append(want, "delete:"+name, "upload:"+name)
+			}
+			if !reflect.DeepEqual(f.ops, want) || len(f.assets) != 2 {
+				t.Fatalf("retry changed completed assets or left duplicates: %v", f.ops)
+			}
+			if stored.Archive.ID <= 0 || stored.Fingerprint != asset.Record.Fingerprint {
+				t.Fatal("retry returned an unconfirmed record")
+			}
+			f.ops = nil
+			again, err := f.client.Put(context.Background(), completed)
+			if err != nil || again.Origin != previous.Origin || again.Archive != previous.Archive || len(f.ops) != 0 {
+				t.Fatalf("completed item rewritten: %v %v", err, f.ops)
+			}
+		})
+	}
+}
+
 func releaseCacheFixture(t *testing.T) *releaseCacheTestFixture {
 	t.Helper()
 	f := &releaseCacheTestFixture{assets: map[int64]ciCacheAsset{}, data: map[int64][]byte{}, next: 100, exists: true}
@@ -160,6 +219,9 @@ func (f *releaseCacheTestFixture) serve(w http.ResponseWriter, r *http.Request) 
 	base := "/repos/" + f.client.Repository + "/releases"
 	jsonOut := func(v any) { w.Header().Set("Content-Type", "application/json"); json.NewEncoder(w).Encode(v) }
 	if r.URL.Path == base+"/tags/autolib-cache" || (r.URL.Path == base && r.Method == "POST") {
+		if r.Method == "GET" {
+			f.snapshots++
+		}
 		if r.Method == "POST" {
 			f.creates++
 			f.exists = true
