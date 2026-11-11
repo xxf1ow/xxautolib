@@ -109,9 +109,14 @@ type ciCacheGitError struct {
 	Operation      string
 	Code           int
 	Authentication bool
+	Err            error
 }
 
-func (e *ciCacheGitError) Error() string { return "cache git " + e.Operation + " failed" }
+func (e *ciCacheGitError) Error() string {
+	return fmt.Sprintf("cache git %s failed: %v", e.Operation, e.Err)
+}
+
+func (e *ciCacheGitError) Unwrap() error { return e.Err }
 
 func (s *ciCacheGitStore) git(ctx context.Context, input []byte, extra []string, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, "git", append([]string{"-c", "credential.helper=", "-c", "core.autocrlf=false", "-c", "core.hooksPath="}, args...)...)
@@ -141,7 +146,10 @@ func (s *ciCacheGitStore) git(ctx context.Context, input []byte, extra []string,
 			code = exit.ExitCode()
 		}
 		message := strings.ToLower(stderr.String())
-		return nil, &ciCacheGitError{Operation: args[0], Code: code, Authentication: strings.Contains(message, "authentication failed") || strings.Contains(message, "returned error: 403") || strings.Contains(message, "returned error: 401")}
+		if stderr.Len() != 0 {
+			err = fmt.Errorf("%w\n%s", err, strings.TrimSpace(stderr.String()))
+		}
+		return nil, &ciCacheGitError{Operation: args[0], Code: code, Authentication: strings.Contains(message, "authentication failed") || strings.Contains(message, "returned error: 403") || strings.Contains(message, "returned error: 401"), Err: err}
 	}
 	return out, nil
 }

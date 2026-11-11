@@ -100,6 +100,24 @@ func (f *cacheGitFixture) setTree(t *testing.T, files map[string]string) {
 
 const cacheGitMarker = `{"type":"xxautolib-build-cache","schema":1,"upstream":"https://github.com/fixture/source"}`
 
+func TestCICacheGitErrorDetails(t *testing.T) {
+	s := &ciCacheGitStore{}
+	missing := filepath.Join(t.TempDir(), "missing.git")
+	_, err := s.git(context.Background(), nil, nil, "ls-remote", "--exit-code", missing, "refs/heads/autolib-cache")
+	if err == nil {
+		t.Fatal("missing repository accepted")
+	}
+	for _, detail := range []string{"ls-remote", missing, "does not appear to be a git repository", "exit status 128"} {
+		if !strings.Contains(err.Error(), detail) {
+			t.Errorf("Git diagnostic lost %q: %v", detail, err)
+		}
+	}
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) || exit.ExitCode() != 128 {
+		t.Errorf("underlying Git failure lost: %v", err)
+	}
+}
+
 func TestCICacheGitRelativeWorkRoot(t *testing.T) {
 	f := cacheGitTestFixture(t)
 	t.Chdir(t.TempDir())
@@ -487,6 +505,9 @@ func TestCICacheGitUpdate(t *testing.T) {
 			} else {
 				if err == nil {
 					t.Fatal("unconfirmed record accepted")
+				}
+				if mode == "auth" && !strings.Contains(err.Error(), "Authentication failed") {
+					t.Fatalf("cache update lost Git stderr: %v", err)
 				}
 				remote, e := f.store.readBranch(ctx)
 				if e != nil || remote.Records[name] != nil {
