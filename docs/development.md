@@ -81,7 +81,7 @@ Git 主来源复用 `git/<包名>/<版本>/`，资源复用 `git/_resources/<包
 
 [手动流水线](../.github/workflows/build-platform.yml)使用当前仓库的普通分支与事件提交，支持fork，拒绝tag。默认四个平台，也可单选；平台、工具与ABI基准见[架构](architecture.md#包与版本)。模块空字符串只准备工具，严格等于`all`才发现全部合资格版本，也可填写逗号分隔的精确引用或裸名；纯空白和变形的`all`拒绝。过滤不算失败；配方错误只阻断相关依赖者，无关项继续。
 
-共享准备生成缓存快照，各平台`run --cache`显式读取。每项恢复或构建、消费验证后立即入库；失败运行中的成功成品仍可复用，汇总保持整体失败。GitHub 归档位于当前源码仓库的`autolib-cache` Release，共享准备和平台使用`contents: write`；完整记录位于现有 Gitee 仓库的独立同名分支。构建缓存步骤还需 `GITEE_REPOSITORY` 和 `GITEE_TOKEN`，目标仓库及默认分支须已有合法消费身份；仅共享准备允许初始化缺失的缓存分支。令牌仅交付对应缓存操作，普通构建和验证子进程不继承。容量、精确替换和无关文件保护见[缓存设计](agent-notes/implemented/architecture/2026-11-09-release-cache-and-independent-gitee-sync.md#release-成品缓存)，存储依赖见[Gitee 记录设计](agent-notes/proposed/architecture/2026-11-10-gitee-build-cache-records.md)。运行互斥不按分支拆组，队列最多等待100个运行。
+共享准备生成缓存快照，各平台`run --cache`显式读取。每项恢复或构建、消费验证后立即入库；失败运行中的成功成品仍可复用，汇总保持整体失败。GitHub 归档位于当前源码仓库的`autolib-cache` Release，共享准备和平台使用`contents: write`；完整记录位于现有 Gitee 仓库的独立同名分支。构建缓存步骤还需 `GITEE_REPOSITORY` 和 `GITEE_TOKEN`，目标仓库及默认分支须已有合法消费身份；仅共享准备允许初始化缺失的缓存分支。令牌仅交付对应缓存操作，普通构建和验证子进程不继承。容量、精确替换和无关文件保护见[缓存设计](agent-notes/implemented/architecture/2026-11-09-release-cache-and-independent-gitee-sync.md#release-成品缓存)，存储依赖见[Gitee 记录设计](agent-notes/implemented/architecture/2026-11-10-gitee-build-cache-records.md)。运行互斥不按分支拆组，队列最多等待100个运行。
 
 同版本输入变化沿依赖链失效，latest单独变化不重建库。命中归档恢复到新安装根，不复用旧安装；CI 仅将已恢复并验证的精确依赖传入 `AUTOLIB_RESTORED_PACKAGES`，其构建目标只读校验冻结安装，不要求上游源码。普通本地复用仍执行原来源比对；Artifacts只保存计划、结果和诊断。零有效库仍验证工具与入口。验证命令及边界见[测试指南](testing.md#ci-验证)。
 

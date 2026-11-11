@@ -22,7 +22,7 @@
 
 `autolib-ci` 通过 builder 取得精确根及闭包，分别保留有效、资格过滤和配方失败的根。每项按依赖顺序恢复或构建，经本平台独立消费验证后立即打包入库；两个 Eigen 版本使用独立消费者。某项失败只阻断其依赖者，无关项继续。结果区分入库、复用、非 publisher 本地就绪和失败；全部处理完毕与全部成功分别记录，最终汇总保留整体失败。
 
-跨运行成品归档保存在当前源码仓库的固定 Release `autolib-cache`，完整记录保存在现有 Gitee 仓库的独立同名分支，绑定身份、来源、输入及依赖指纹、验证和最终字节。Gitee 是缓存读写的必要依赖，分支身份与并发规则见[存储设计](agent-notes/proposed/architecture/2026-11-10-gitee-build-cache-records.md)。源码决定身份与有效性；相关输入变化使缓存沿依赖链失效，单独修改 latest 不重建库。命中项恢复到新安装根并消费，不重新打包或改写来源；通用包由唯一 publisher 写入。Artifacts 保存诊断。运行级互斥保护缓存，平台并发写不同身份，共享准备负责初始化和容量预检。缓存约束由[Release 成品缓存设计](agent-notes/implemented/architecture/2026-11-09-release-cache-and-independent-gitee-sync.md)拥有。
+跨运行成品归档保存在当前源码仓库的固定 Release `autolib-cache`，完整记录保存在现有 Gitee 仓库的独立同名分支，绑定身份、来源、输入及依赖指纹、验证和最终字节。Gitee 是缓存读写的必要依赖，分支身份与并发规则见[存储设计](agent-notes/implemented/architecture/2026-11-10-gitee-build-cache-records.md)。源码决定身份与有效性；相关输入变化使缓存沿依赖链失效，单独修改 latest 不重建库。命中项恢复到新安装根并消费，不重新打包或改写来源；通用包由唯一 publisher 写入。Artifacts 保存诊断。运行级互斥保护缓存，平台并发写不同身份，共享准备负责初始化和容量预检。缓存约束由[Release 成品缓存设计](agent-notes/implemented/architecture/2026-11-09-release-cache-and-independent-gitee-sync.md)拥有。
 
 ## 构建与交付
 

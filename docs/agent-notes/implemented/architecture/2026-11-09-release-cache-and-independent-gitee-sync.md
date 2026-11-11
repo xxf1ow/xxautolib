@@ -20,7 +20,7 @@ Status: implemented
 
 本记录拥有下列范围，既有记录保留其余约束和历史验证证据。
 
-[构建缓存记录迁入 Gitee 独立分支](../../proposed/architecture/2026-11-10-gitee-build-cache-records.md)拥有记录存储及相应读写、清理交接；本记录的逐项入库、输入失效、失败隔离和源码清理依据仍适用。该存储改动已在本地实现，真实切换状态由新记录维护。
+[构建缓存记录迁入 Gitee 独立分支](../../implemented/architecture/2026-11-10-gitee-build-cache-records.md)拥有记录存储及相应读写、清理交接；本记录的逐项入库、输入失效、失败隔离和源码清理依据仍适用。记录存储已完成真实切换，验证范围由新记录维护。
 
 [JSON 交付元数据与有序双来源下载](../../implemented/architecture/2026-11-09-dual-source-artifact-downloads.md)拥有消费者 JSON、完整记录相等判断及超限交付；本文继续拥有 Release publication、缓存失效及独立同步调度。
 

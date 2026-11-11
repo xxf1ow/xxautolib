@@ -29,7 +29,7 @@ Status: implemented
 
 ### 两种 JSON 的职责
 
-[构建缓存记录迁入 Gitee 独立分支](../../proposed/architecture/2026-11-10-gitee-build-cache-records.md)拥有 publication 记录的位置及真实切换状态；本文继续拥有消费 JSON、来源顺序、阈值及下载规则。
+[构建缓存记录迁入 Gitee 独立分支](../../implemented/architecture/2026-11-10-gitee-build-cache-records.md)拥有 publication 记录的位置及真实切换状态；本文继续拥有消费 JSON、来源顺序、阈值及下载规则。
 
 Gitee 独立缓存分支中的 `<归档名>.publication.json` 描述生产身份、原始来源、输入和依赖指纹、验证证据及绑定的 GitHub 归档字节。它属于 CI，不直接交给消费者，也不写入 Gitee 完成状态。
 

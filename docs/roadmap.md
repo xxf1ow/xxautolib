@@ -20,7 +20,7 @@
 
 ## 后续维护方向
 
-[构建缓存记录迁入 Gitee](agent-notes/proposed/architecture/2026-11-10-gitee-build-cache-records.md#本地验证与切换状态)已完成任务分支发布、34 份记录迁移及旧 JSON 清理，GitHub 仅保留归档；删除后新读取路径确认 34 个有效候选。Windows 认证入口待用户实测，后续 workflow 使用任务分支。本次不包含 OpenCV/ONNX 上传优化。
+[构建缓存记录迁入 Gitee](agent-notes/implemented/architecture/2026-11-10-gitee-build-cache-records.md#本地验证与切换状态)已完成任务分支发布、34 份记录迁移及旧 JSON 清理，GitHub 仅保留归档；删除后新读取路径确认 34 个有效候选。Windows 与 Unix 的认证入口均已通过宿主定向测试，后续 workflow 使用任务分支。本次不包含 OpenCV/ONNX 上传优化。
 
 待实施：增加轻量回归CI，复用现有Go测试、vet及独立发布单元测试；不持有发布凭据、不修改Release、不重编全部第三方库。完成标志是代码检查自动运行、失败可见且不触发发布；触发条件与平台范围在实施前确认。
 
