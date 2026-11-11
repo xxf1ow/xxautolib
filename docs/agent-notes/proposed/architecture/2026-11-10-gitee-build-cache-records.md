@@ -133,7 +133,11 @@ Darwin ARM64 上已通过受控 Git/API 验证分支身份、原始记录字节�
 
 34 份完整记录已写入 `xxf1ow/autolib-release` 的 `autolib-cache` 分支，并独立回读确认原始字节全部一致，提交为 `1c640f26b7adb98c2c45696c21db890897607fb7`。该分支共 35 个提交，独立根仅包含身份文件；默认分支保持 `90d7a2e6b5d1af4798cddaffc1ef98ac2d3aa372`。真实新 CLI 的 `sync-cache` 从 Gitee 取得 34 个有效候选，与迁移前按当前源码核对的集合完全相同，原生产身份、验证字段及 importer 入口不变，记录错误为空。GitHub 附件 ID、状态、大小及摘要均与原清单一致；本次没有下载归档或执行实际构建、Gitee 附件同步及下游消费。
 
-任务源码分支尚未发布，源码 push 仍待明确授权；旧 GitHub JSON 全部保留，旧 JSON 删除及整体切换尚未完成。GitHub 仓库已配置 `GITEE_REPOSITORY=xxf1ow/autolib-release` 及名为 `GITEE_TOKEN` 的 Secret。本记录在整体切换验收前保持 proposed。
+任务源码分支 `task/gitee-build-cache-records` 已按用户授权推送，数据切换使用的源码提交为 `6641ce3d31479fa6a148c78a7849f29ff602fe7b`。新实现可供后续 workflow 显式选择该分支；未合并 master，未创建 PR 或触发 CI，旧源码分支不用于后续缓存写入。GitHub 仓库已配置 `GITEE_REPOSITORY=xxf1ow/autolib-release` 及名为 `GITEE_TOKEN` 的 Secret。
+
+34 份旧 JSON 在逐项重查无旧写者、Gitee 原字节、默认分支及源附件身份后删除。最终独立复核确认 Release 附件从 68 个减至 34 个，差集恰为选中的 34 个 JSON；全部归档 ID、状态、大小和摘要不变，Gitee 缓存提交及默认分支均不变。删除后的真实 `sync-cache` 仍得到相同 34 个有效候选，记录错误为空，原始记录字节及生产身份不变；最终检查没有运行或排队的写者。本地原始备份、迁移清单和复核结果保留在忽略目录。
+
+数据存储切换已完成；Windows 认证入口由用户选择在 Windows 宿主手动运行 `TestCICacheGitCredentials`，实际结果尚待返回。本记录在该项验收完成前保持 proposed，不将 macOS 或受控结果记为 Windows 实测。
 
 ## 风险
 
