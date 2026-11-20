@@ -64,15 +64,20 @@ int main(int argc, char **argv)
         return 5;
     }
     for (int i = 0; i < 3; ++i) {
-        if (i != 0 && (!capture.read(frame) || frame.size() != expected_size))
+        if (i != 0 && (!capture.read(frame) || frame.size() != expected_size)) {
+            std::cerr << "Could not read RTSP frame " << i + 1 << " at " << expected_size << '\n';
             return 6;
+        }
         writer.write(frame);
     }
     writer.release();
     cv::VideoCapture saved(output, cv::CAP_FFMPEG);
     for (int i = 0; i < 3; ++i) {
-        if (!saved.read(frame) || frame.size() != expected_size)
+        if (!saved.read(frame) || frame.size() != expected_size) {
+            std::cerr << "Could not read MP4 frame " << i + 1 << " at " << expected_size
+                      << " from " << output << '\n';
             return 7;
+        }
     }
     std::cout << "rtsp_frames=3 mp4_frames=3\n";
 }
