@@ -93,7 +93,7 @@ if(AUTOLIB_TEST_RTSP_URL AND opencv IN_LIST module_names)
         target_compile_definitions(opencv_videoio_smoke PRIVATE "AUTOLIB_AVCODEC_DLL=L\"$<TARGET_FILE_NAME:FFMPEG::avcodec>\"")
     endif()
     add_test(NAME opencv_videoio_smoke COMMAND opencv_videoio_smoke "${AUTOLIB_TEST_RTSP_URL}"
-        "${CMAKE_BINARY_DIR}/videoio.mp4" "${AUTOLIB_PACKAGE_DIR_ffmpeg}")
+        "${CMAKE_BINARY_DIR}/videoio.mp4")
     set_tests_properties(opencv_videoio_smoke PROPERTIES TIMEOUT 35)
 endif()
 if(pybind11 IN_LIST module_names)

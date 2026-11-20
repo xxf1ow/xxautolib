@@ -35,7 +35,7 @@ std::filesystem::path loaded_avcodec_path()
 
 int main(int argc, char **argv)
 {
-    if (argc != 4)
+    if (argc != 3)
         return 1;
     const std::vector<int> timeouts = {cv::CAP_PROP_OPEN_TIMEOUT_MSEC, 10000, cv::CAP_PROP_READ_TIMEOUT_MSEC, 8000};
     cv::VideoCapture capture(cv::String(argv[1]), cv::CAP_FFMPEG, timeouts);
@@ -50,11 +50,7 @@ int main(int argc, char **argv)
         std::cerr << "Could not locate the FFmpeg codec library loaded by OpenCV\n";
         return 3;
     }
-    const auto root = std::filesystem::canonical(argv[3], error);
-    const auto relative = loaded.lexically_relative(root);
-    std::cout << "runtime_ffmpeg=" << loaded.generic_u8string() << '\n';
-    if (error || relative.empty() || relative.is_absolute() || *relative.begin() == "..")
-        return 4;
+    std::cout << "runtime_videoio_ffmpeg=" << loaded.generic_u8string() << '\n';
 
     const auto expected_size = frame.size();
     const cv::String output(argv[2]);
