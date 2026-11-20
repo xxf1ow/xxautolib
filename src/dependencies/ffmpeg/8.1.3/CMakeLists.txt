@@ -33,6 +33,8 @@ else()
         list(APPEND ffmpeg_options "--x86asmexe=${FFMPEG_NASM_SOURCE}/nasm")
     endif()
     if(APPLE)
+        # FFmpeg 的宿主工具检查也需要同一原生 SDK。
+        set(ffmpeg_environment "${CMAKE_COMMAND}" -E env "SDKROOT=${CMAKE_OSX_SYSROOT}")
         set(ffmpeg_apple_flags "-isysroot ${CMAKE_OSX_SYSROOT} -mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
         list(APPEND ffmpeg_options "--extra-cflags=${ffmpeg_apple_flags}" "--extra-ldflags=${ffmpeg_apple_flags}"
             "--install-name-dir=@rpath" "--extra-ldsoflags=-Wl,-rpath,@loader_path")

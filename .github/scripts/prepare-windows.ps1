@@ -48,7 +48,7 @@ if (@($platformPlan[0].description.modules | Where-Object name -eq 'ffmpeg').Cou
     $make = Join-Path $msysRoot 'usr/bin/make.exe'
     if (-not (Test-Path -LiteralPath $bash)) { throw 'FFmpeg requires the MSYS2 Bash from the Windows CI image.' }
     if (-not (Test-Path -LiteralPath $make)) {
-        & $bash -lc 'pacman -Sy --needed --noconfirm make'
+        & $bash -lc 'pacman -Sy --needed --noconfirm make' 2>&1 | ForEach-Object { [Console]::Error.WriteLine($_) }
         if ($LASTEXITCODE -ne 0) { throw 'MSYS2 GNU Make installation failed.' }
     }
     if (-not (Test-Path -LiteralPath $make)) { throw 'MSYS2 did not provide GNU Make.' }
@@ -57,8 +57,20 @@ if (@($platformPlan[0].description.modules | Where-Object name -eq 'ffmpeg').Cou
     $vsRoot = & $vswhere -latest -version '[17.0,18.0)' -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
     if ($LASTEXITCODE -ne 0 -or -not $vsRoot) { throw 'FFmpeg requires Visual Studio 2022 C++ tools.' }
     $vsDevCmd = Join-Path $vsRoot 'Common7/Tools/VsDevCmd.bat'
-    $compilerEnvironment = & cmd.exe /d /s /c ('""{0}" -no_logo -arch=x64 -host_arch=x64 && set"' -f $vsDevCmd)
-    if ($LASTEXITCODE -ne 0) { throw 'Could not initialize MSVC x64 for FFmpeg.' }
+    $bootstrap = Join-Path $tools 'ffmpeg-msvc.cmd'
+    Set-Content -LiteralPath $bootstrap -Encoding Ascii -Value @(
+        '@echo off'
+        ('call "{0}" -no_logo -arch=x64 -host_arch=x64' -f $vsDevCmd)
+        'if errorlevel 1 exit /b %errorlevel%'
+        'set'
+    )
+    Push-Location -LiteralPath $tools
+    try {
+        $compilerEnvironment = & cmd.exe /d /c ffmpeg-msvc.cmd
+        if ($LASTEXITCODE -ne 0) { throw 'Could not initialize MSVC x64 for FFmpeg.' }
+    } finally {
+        Pop-Location
+    }
     $values = @{}
     foreach ($line in $compilerEnvironment) {
         if ($line -match '^(INCLUDE|LIB|LIBPATH|PATH)=(.+)$') { $values[$Matches[1]] = $Matches[2] }
