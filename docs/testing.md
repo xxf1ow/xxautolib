@@ -38,7 +38,7 @@ cmake -P src/autolib-builder/go-sdk.cmake -- test -mod=readonly ./src/autolib-im
 
 真实库[smoke](../tests/autolib/smoke.cpp)使用 `ROOT_PACKAGES=opencv@4.14.0;librealsense@2.58.1;onnxruntime@1.24.4`、`MODULES=freetype;harfbuzz;libusb;nlohmann;lz4;opencv;librealsense;onnxruntime`。两个消费driver在Windows上将已准备精确闭包内的DLL目录加入CTest进程PATH；直接运行smoke时自行设置PATH。含双版本 Eigen 的结果与未测范围见[导入适配记录](agent-notes/implemented/architecture/2026-11-04-package-adapter-standardization.md#验证结果)。
 
-OpenCV 入库前对安装及搬迁副本执行[媒体检查](../tests/autolib/opencv-videoio.cpp)，验证 RTSP 读帧、MP4 写入读回与库来源。
+OpenCV 入库前验证原安装和搬迁副本的 RTSP 读帧、MP4 写入读回及库来源。见[四平台实机结果](agent-notes/implemented/architecture/2026-11-20-ffmpeg-opencv-videoio.md#验证)。
 
 ## Release 下载验证
 

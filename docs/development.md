@@ -1,6 +1,6 @@
 # 开发
 
-先准备 Git、CMake（3.20+）和 C/C++ 编译器，通过根入口构建安装。Go SDK 和固定模块自动准备。FLANN、HarfBuzz 消费和 OpenCV 构建需要 pkg-config，FLANN 使用 OpenMP。OpenCV 构建自动选择仓库的 `ffmpeg@8.1.3`。FFmpeg 使用 GNU Make，Windows 还需从 MSVC x64 开发环境启动，并将 `FFMPEG_MSYS2_ROOT` 指向 MSYS2 安装根。builder 和普通 Go 测试不需要 Python 或 uv。发布及其整链夹具需要 Python 3.12，技能校验器自行准备环境。
+构建需要 Git、CMake（3.20+）和 C/C++ 编译器。FLANN 使用 OpenMP，FLANN/HarfBuzz 消费和 OpenCV 构建需要 pkg-config。OpenCV 自动依赖 `ffmpeg@8.1.3`。FFmpeg 在 Unix 使用 `Unix Makefiles` 和 GNU Make。Windows 从 MSVC x64 开发环境启动，`FFMPEG_MSYS2_ROOT` 指向含 Bash/Make 的 MSYS2。builder、Go 测试无需 Python/uv。发布及整链夹具需要 Python 3.12，技能校验器自备环境。
 
 ## 准备与配置
 
