@@ -214,6 +214,31 @@ endfunction()
             self.assertIn('AUTOLIB_OPENCV_DLL=L"opencv-selected.dll"', definitions)
             self.assertIn('AUTOLIB_LIBREALSENSE_DLL=L"realsense-selected.dll"', definitions)
 
+    def test_download_driver_builds_ffmpeg_indirect_smoke(self):
+        with tempfile.TemporaryDirectory(prefix="download FFmpeg consumer ") as temporary:
+            root = Path(temporary)
+            source = root / "tests/autolib"
+            source.mkdir(parents=True)
+            shutil.copyfile(ROOT / "tests/autolib/CMakeLists.txt", source / "CMakeLists.txt")
+            (source / "smoke.cpp").write_text("int main() { return 0; }\n")
+            (source / "ffmpeg-indirect.cpp").write_text("int main() { return 0; }\n")
+            entry = root / "entry.cmake"
+            entry.write_text('''set(CMAKE_SYSTEM_NAME Linux)
+set(WIN32 FALSE)
+add_library(autolib::ffmpeg INTERFACE IMPORTED)
+add_library(FFMPEG::avcodec INTERFACE IMPORTED)
+function(autolib_import)
+  set(AUTOLIB_PREPARED_PACKAGES ffmpeg PARENT_SCOPE)
+  set(AUTOLIB_PACKAGE_VERSION_ffmpeg 8.1.3 PARENT_SCOPE)
+endfunction()
+''')
+            validation = root / "build/validation"
+            self.cmake(f"-DSOURCE_ROOT={root}", f"-DVALIDATION_ROOT={validation}",
+                       f"-DENTRY_URL={entry.as_uri()}", "-DMODULES=ffmpeg@8.1.3",
+                       "-P", ROOT / "tests/autolib/run-github.cmake")
+            run, = validation.glob("run-*")
+            self.assertRegex((run / "test.log").read_text(), r"ffmpeg_indirect_smoke\s+\.+\s+Passed")
+
     def test_both_drivers_pass_dll_directories_to_ctest(self):
         for driver in ("run-installed.cmake", "run-github.cmake"):
             with self.subTest(driver=driver), tempfile.TemporaryDirectory(prefix="driver runtime ") as temporary:
