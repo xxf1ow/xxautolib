@@ -51,7 +51,7 @@ endfunction()
 
 set(consumer "${run}/consumer")
 file(MAKE_DIRECTORY "${consumer}")
-foreach(file IN ITEMS CMakeLists.txt smoke.cpp opencv-videoio.cpp)
+foreach(file IN ITEMS CMakeLists.txt smoke.cpp ffmpeg-indirect.cpp opencv-videoio.cpp)
     if(EXISTS "${SOURCE_ROOT}/tests/autolib/${file}")
         configure_file("${SOURCE_ROOT}/tests/autolib/${file}" "${consumer}/${file}" COPYONLY)
     endif()

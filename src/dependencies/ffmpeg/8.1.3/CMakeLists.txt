@@ -36,9 +36,6 @@ else()
         set(ffmpeg_apple_flags "-isysroot ${CMAKE_OSX_SYSROOT} -mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
         list(APPEND ffmpeg_options "--extra-cflags=${ffmpeg_apple_flags}" "--extra-ldflags=${ffmpeg_apple_flags}"
             "--install-name-dir=@rpath" "--extra-ldsoflags=-Wl,-rpath,@loader_path")
-    elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-        # Make 和 shell 展开后，链接器仍收到动态加载器的 $ORIGIN。
-        list(APPEND ffmpeg_options [=[--extra-ldsoflags=-Wl,-rpath,\$$ORIGIN]=])
     endif()
     if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.28)
         set(ffmpeg_jobserver JOB_SERVER_AWARE TRUE)
@@ -49,6 +46,13 @@ message(STATUS "Configuring FFmpeg")
 execute_process(COMMAND "${CMAKE_COMMAND}" -E time ${ffmpeg_environment}
     "${ffmpeg_shell}" "${CMAKE_CURRENT_SOURCE_DIR}/configure" ${ffmpeg_options}
     WORKING_DIRECTORY "${ffmpeg_build}" COMMAND_ERROR_IS_FATAL ANY)
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    # configure 会求值链接参数。直接写入 Make 配置以保留动态加载器的 $ORIGIN。
+    file(APPEND "${ffmpeg_build}/ffbuild/config.mak" [=[
+LDSOFLAGS += -Wl,-rpath,'$$ORIGIN'
+]=])
+endif()
 
 add_custom_target(ffmpeg-libraries ALL
     COMMAND "${CMAKE_COMMAND}" -E time ${ffmpeg_environment} "${ffmpeg_make}" ${ffmpeg_make_args}
