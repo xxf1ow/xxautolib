@@ -23,10 +23,11 @@ else()
     list(APPEND ffmpeg_options "--cc=${CMAKE_C_COMPILER}")
     if(FFMPEG_NASM_SOURCE)
         if(NOT EXISTS "${FFMPEG_NASM_SOURCE}/nasm")
+            # 发布归档自带 configure，解包后的时间顺序可能使递归 Make 误触发 Autotools。
+            file(TOUCH_NOCREATE "${FFMPEG_NASM_SOURCE}/configure")
             execute_process(COMMAND "${CMAKE_COMMAND}" -E env "CC=${CMAKE_C_COMPILER}"
                 "${ffmpeg_shell}" ./configure WORKING_DIRECTORY "${FFMPEG_NASM_SOURCE}" COMMAND_ERROR_IS_FATAL ANY)
-            # 使用固定发布归档自带的 configure，避免解包时间触发 Autotools 重新生成。
-            execute_process(COMMAND "${ffmpeg_make}" -o configure -j4 nasm
+            execute_process(COMMAND "${ffmpeg_make}" -j4 nasm
                 WORKING_DIRECTORY "${FFMPEG_NASM_SOURCE}" COMMAND_ERROR_IS_FATAL ANY)
         endif()
         list(APPEND ffmpeg_options "--x86asmexe=${FFMPEG_NASM_SOURCE}/nasm")
