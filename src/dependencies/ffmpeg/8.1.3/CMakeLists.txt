@@ -13,8 +13,8 @@ if(WIN32)
     find_program(ffmpeg_make NAMES make PATHS "$ENV{FFMPEG_MSYS2_ROOT}/usr/bin" REQUIRED NO_DEFAULT_PATH)
     find_program(ffmpeg_nasm NAMES nasm PATHS "${FFMPEG_NASM_SOURCE}" REQUIRED NO_DEFAULT_PATH)
     get_filename_component(msvc_tools "${CMAKE_C_COMPILER}" DIRECTORY)
-    string(REPLACE ";" "\\;" ffmpeg_path "${msvc_tools};$ENV{FFMPEG_MSYS2_ROOT}/usr/bin;$ENV{PATH}")
-    set(ffmpeg_environment "${CMAKE_COMMAND}" -E env "PATH=${ffmpeg_path}")
+    set(ffmpeg_path "${msvc_tools};$ENV{FFMPEG_MSYS2_ROOT}/usr/bin;$ENV{PATH}")
+    set(ENV{PATH} "${ffmpeg_path}")
     list(APPEND ffmpeg_options --toolchain=msvc "--x86asmexe=${ffmpeg_nasm}")
     set(ffmpeg_make_args -j4)
 else()
@@ -56,11 +56,16 @@ LDSOFLAGS += -Wl,-rpath,'$$$$ORIGIN'
 ]=])
 endif()
 
-add_custom_target(ffmpeg-libraries ALL
-    COMMAND "${CMAKE_COMMAND}" -E time ${ffmpeg_environment} "${ffmpeg_make}" ${ffmpeg_make_args}
-    WORKING_DIRECTORY "${ffmpeg_build}" ${ffmpeg_jobserver} VERBATIM)
-
 configure_file(install-ffmpeg.cmake.in install-ffmpeg.cmake @ONLY)
+if(WIN32)
+    # 在脚本进程内设置 PATH，避免 MSBuild 解析含分号的环境参数。
+    add_custom_target(ffmpeg-libraries ALL
+        COMMAND "${CMAKE_COMMAND}" -DFFMPEG_BUILD_ONLY=ON -P "${CMAKE_CURRENT_BINARY_DIR}/install-ffmpeg.cmake" VERBATIM)
+else()
+    add_custom_target(ffmpeg-libraries ALL
+        COMMAND "${CMAKE_COMMAND}" -E time ${ffmpeg_environment} "${ffmpeg_make}"
+        WORKING_DIRECTORY "${ffmpeg_build}" ${ffmpeg_jobserver} VERBATIM)
+endif()
 install(SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/install-ffmpeg.cmake")
 install(FILES FFMPEGConfig.cmake DESTINATION lib/cmake/FFMPEG)
 install(FILES COPYING.LGPLv2.1 LICENSE.md DESTINATION share/licenses/ffmpeg)

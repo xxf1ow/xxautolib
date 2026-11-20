@@ -1,4 +1,12 @@
 set(ffmpeg_environment [==[@ffmpeg_environment@]==])
+if(WIN32)
+    set(ENV{PATH} [==[@ffmpeg_path@]==])
+endif()
+if(FFMPEG_BUILD_ONLY)
+    execute_process(COMMAND "${CMAKE_COMMAND}" -E time "@ffmpeg_make@" @ffmpeg_make_args@
+        WORKING_DIRECTORY "@ffmpeg_build@" COMMAND_ERROR_IS_FATAL ANY)
+    return()
+endif()
 message(STATUS "Installing FFmpeg")
 execute_process(COMMAND "${CMAKE_COMMAND}" -E time ${ffmpeg_environment}
     "@ffmpeg_make@" install WORKING_DIRECTORY "@ffmpeg_build@" COMMAND_ERROR_IS_FATAL ANY)
