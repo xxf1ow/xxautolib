@@ -1,0 +1,23 @@
+set(ffmpeg_environment [==[@ffmpeg_environment@]==])
+message(STATUS "Installing FFmpeg")
+execute_process(COMMAND "${CMAKE_COMMAND}" -E time ${ffmpeg_environment}
+    "@ffmpeg_make@" install WORKING_DIRECTORY "@ffmpeg_build@" COMMAND_ERROR_IS_FATAL ANY)
+
+if(WIN32)
+    foreach(component IN ITEMS avcodec avformat avutil swscale swresample)
+        file(RENAME "${CMAKE_INSTALL_PREFIX}/bin/${component}.lib" "${CMAKE_INSTALL_PREFIX}/lib/${component}.lib")
+    endforeach()
+endif()
+
+# 这些文件随包搬迁，查找路径从 .pc 所在目录计算。
+foreach(component IN ITEMS avcodec avformat avutil swscale swresample)
+    set(pc_file "${CMAKE_INSTALL_PREFIX}/lib/pkgconfig/lib${component}.pc")
+    file(READ "${pc_file}" contents)
+    string(REGEX REPLACE "(^|\n)prefix=[^\n]*" "\\1prefix=\${pcfiledir}/../.." contents "${contents}")
+    string(REGEX REPLACE "(^|\n)libdir=[^\n]*" "\\1libdir=\${prefix}/lib" contents "${contents}")
+    string(REGEX REPLACE "(^|\n)includedir=[^\n]*" "\\1includedir=\${prefix}/include" contents "${contents}")
+    file(WRITE "${pc_file}" "${contents}")
+endforeach()
+file(MAKE_DIRECTORY "${CMAKE_INSTALL_PREFIX}/share/licenses/ffmpeg")
+file(WRITE "${CMAKE_INSTALL_PREFIX}/share/licenses/ffmpeg/source.txt"
+    "https://ffmpeg.org/releases/ffmpeg-8.1.3.tar.xz\nSHA256=7138d28c96d9d3e3af4ee3d8cad72741f8ffb40da90c1112235dea3ecd3178a3\n")

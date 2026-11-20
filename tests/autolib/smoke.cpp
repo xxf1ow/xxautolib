@@ -52,6 +52,15 @@ PYBIND11_MODULE(autolib_binding, module)
 #include <opencv2/core.hpp>
 #include <opencv2/freetype.hpp>
 #endif
+#ifdef AUTOLIB_TEST_FFMPEG
+extern "C" {
+#include <libavcodec/avcodec.h>
+#include <libavformat/avformat.h>
+#include <libavutil/version.h>
+#include <libswresample/swresample.h>
+#include <libswscale/swscale.h>
+}
+#endif
 #ifdef AUTOLIB_TEST_LIBREALSENSE
 #include <librealsense2/rs.hpp>
 #endif
@@ -134,7 +143,7 @@ TEST(AutolibPackage, AssertionRuns) { EXPECT_EQ(6 * 7, 42); }
 #include <dlfcn.h>
 #endif
 
-#if defined(AUTOLIB_TEST_FLANN) || defined(AUTOLIB_TEST_OPENCV) || defined(AUTOLIB_TEST_LIBREALSENSE)
+#if defined(AUTOLIB_TEST_FFMPEG) || defined(AUTOLIB_TEST_FLANN) || defined(AUTOLIB_TEST_OPENCV) || defined(AUTOLIB_TEST_LIBREALSENSE)
 namespace
 {
 #ifdef _WIN32
@@ -181,6 +190,24 @@ bool check_runtime(const char *name, const void *address, const char *expected_r
 
 int main()
 {
+#ifdef AUTOLIB_TEST_FFMPEG
+    if ((avcodec_version() >> 16) != LIBAVCODEC_VERSION_MAJOR
+        || (avformat_version() >> 16) != LIBAVFORMAT_VERSION_MAJOR
+        || (avutil_version() >> 16) != LIBAVUTIL_VERSION_MAJOR
+        || (swresample_version() >> 16) != LIBSWRESAMPLE_VERSION_MAJOR
+        || (swscale_version() >> 16) != LIBSWSCALE_VERSION_MAJOR
+        || !av_find_input_format("rtsp")
+        || !avcodec_find_decoder(AV_CODEC_ID_H264) || !avcodec_find_decoder(AV_CODEC_ID_HEVC)
+        || !avcodec_find_encoder(AV_CODEC_ID_MPEG4) || !avcodec_find_encoder(AV_CODEC_ID_MJPEG))
+        return 66;
+#ifdef _WIN32
+    const auto ffmpeg_address = loaded_export(AUTOLIB_AVCODEC_DLL, "avcodec_version");
+#else
+    const auto ffmpeg_address = &avcodec_version;
+#endif
+    if (!ffmpeg_address || !check_runtime("ffmpeg", reinterpret_cast<const void *>(ffmpeg_address), AUTOLIB_EXPECT_FFMPEG_ROOT))
+        return 67;
+#endif
 #ifdef AUTOLIB_TEST_BOOST
     if (!boost::regex_match(std::string("answer42"), boost::regex("answer[0-9]+"))
         || boost::filesystem::path("/one/../two").lexically_normal().generic_string() != "/two")

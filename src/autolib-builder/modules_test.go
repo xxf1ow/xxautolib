@@ -83,8 +83,8 @@ func TestRealModuleDeclarations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(refs) != 33 {
-		t.Fatalf("want 33 recipe versions, got %d", len(refs))
+	if len(refs) != 34 {
+		t.Fatalf("want 34 recipe versions, got %d", len(refs))
 	}
 	for _, slot := range [][2]string{{"Windows", "x86_64"}, {"Linux", "x86_64"}, {"Linux", "aarch64"}, {"Darwin", "aarch64"}} {
 		t.Run("all-versions/"+slot[0]+"/"+slot[1], func(t *testing.T) {
@@ -92,10 +92,10 @@ func TestRealModuleDeclarations(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(description.RequestedRoots) != 33 {
+			if len(description.RequestedRoots) != 34 {
 				t.Fatal(description.RequestedRoots)
 			}
-			if len(description.Roots) != 33 || len(description.FilteredRoots) != 0 {
+			if len(description.Roots) != 34 || len(description.FilteredRoots) != 0 {
 				t.Fatalf("roots=%v filtered=%v", description.Roots, description.FilteredRoots)
 			}
 			byRef := map[string]*moduleDefinition{}
@@ -267,7 +267,7 @@ func TestVersionedRealDeclarations(t *testing.T) {
 	}
 	versions := map[string]string{
 		"asio": "8806a6803cde", "boost": "1.87.0", "clipper2": "1.5.4",
-		"cpp-httplib": "88956ccad838", "eigen": "3.4.0", "expected": "1.3.1",
+		"cpp-httplib": "88956ccad838", "eigen": "3.4.0", "expected": "1.3.1", "ffmpeg": "8.1.3",
 		"flann": "f9caaf609d8b", "freetype": "2.13.2", "gtest": "1.17.0", "harfbuzz": "8.5.0",
 		"imgui": "065f9e02695c", "librealsense": "2.58.1", "libusb": "1.0.27", "libzmq": "4.3.5", "lz4": "1.10.0",
 		"nativefiledialog-extended": "3cd252a8f7ca", "nlohmann": "3.12.0", "oneTBB": "628c90df6867", "onnxruntime": "1.24.4", "opencv": "4.14.0",
@@ -280,8 +280,8 @@ func TestVersionedRealDeclarations(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(modules) != 33 {
-				t.Fatalf("want 33 versions, got %d", len(modules))
+			if len(modules) != 34 {
+				t.Fatalf("want 34 versions, got %d", len(modules))
 			}
 			byRef := map[string]*moduleDefinition{}
 			for _, m := range modules {
