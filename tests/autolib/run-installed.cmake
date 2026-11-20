@@ -34,8 +34,8 @@ if(RELOCATE_IMPORTER)
         endif()
         set(name "${CMAKE_MATCH_1}")
         set(version "${CMAKE_MATCH_2}")
-        file(COPY "${INSTALL_ROOT}/${name}/package.toml" "${INSTALL_ROOT}/${name}/${version}"
-            DESTINATION "${relocated}/${name}")
+        # 缓存恢复只提供精确版本。测试消费在搬迁后也按精确版本导入。
+        file(COPY "${INSTALL_ROOT}/${name}/${version}" DESTINATION "${relocated}/${name}")
     endforeach()
     set(INSTALL_ROOT "${relocated}")
 endif()
