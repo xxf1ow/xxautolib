@@ -38,7 +38,7 @@ int main(int argc, char **argv)
     if (argc != 4)
         return 1;
     const std::vector<int> timeouts = {cv::CAP_PROP_OPEN_TIMEOUT_MSEC, 10000, cv::CAP_PROP_READ_TIMEOUT_MSEC, 8000};
-    cv::VideoCapture capture(argv[1], cv::CAP_FFMPEG, timeouts);
+    cv::VideoCapture capture(cv::String(argv[1]), cv::CAP_FFMPEG, timeouts);
     cv::Mat frame;
     if (!capture.read(frame) || frame.empty()) {
         std::cerr << "FFmpeg could not read an RTSP frame\n";
@@ -57,7 +57,8 @@ int main(int argc, char **argv)
         return 4;
 
     const auto expected_size = frame.size();
-    cv::VideoWriter writer(argv[2], cv::CAP_FFMPEG, cv::VideoWriter::fourcc('m','p','4','v'), 10, expected_size);
+    const cv::String output(argv[2]);
+    cv::VideoWriter writer(output, cv::CAP_FFMPEG, cv::VideoWriter::fourcc('m','p','4','v'), 10, expected_size);
     if (!writer.isOpened()) {
         std::cerr << "FFmpeg could not open the mp4v writer\n";
         return 5;
@@ -68,7 +69,7 @@ int main(int argc, char **argv)
         writer.write(frame);
     }
     writer.release();
-    cv::VideoCapture saved(argv[2], cv::CAP_FFMPEG);
+    cv::VideoCapture saved(output, cv::CAP_FFMPEG);
     for (int i = 0; i < 3; ++i) {
         if (!saved.read(frame) || frame.size() != expected_size)
             return 7;
