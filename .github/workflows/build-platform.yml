@@ -19,6 +19,10 @@ on:
         type: string
         default: ''
         required: false
+      require_cached_dependencies:
+        description: Select one exact library and require cached dependencies
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -58,8 +62,13 @@ jobs:
         env:
           SELECTED_PLATFORMS: ${{ inputs.platforms }}
           SELECTED_MODULES: ${{ inputs.modules }}
+          REQUIRE_CACHED_DEPENDENCIES: ${{ inputs.require_cached_dependencies }}
         run: |
           set -euo pipefail
+          if [[ "$REQUIRE_CACHED_DEPENDENCIES" == true && ! "$SELECTED_MODULES" =~ ^[A-Za-z0-9][A-Za-z0-9_.+-]*@[A-Za-z0-9][A-Za-z0-9_.+-]*$ ]]; then
+            echo 'Cached dependencies require one module in name@version form.' >&2
+            exit 1
+          fi
           mkdir -p build/ci-input build/tools
           cmake -P src/autolib-builder/go-sdk.cmake -- build -mod=readonly -trimpath -o build/tools/autolib-builder ./src/autolib-builder
           cmake -P src/autolib-builder/go-sdk.cmake -- build -mod=readonly -trimpath -o build/tools/autolib-ci ./src/autolib-ci
@@ -69,11 +78,12 @@ jobs:
           echo "linux_image=$(jq -er '.ubuntu.image' .github/ci-tools.json)" >> "$GITHUB_OUTPUT"
       - name: Prepare persistent cache
         env:
+          REQUIRE_CACHED_DEPENDENCIES: ${{ inputs.require_cached_dependencies }}
           GITHUB_TOKEN: ${{ github.token }}
           GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
         run: >-
-          build/tools/autolib-ci cache-prepare --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --output build/ci-input/cache.json
+          build/tools/autolib-ci cache-prepare --repository "$GITHUB_REPOSITORY" --source-root "$GITHUB_WORKSPACE" --plan build/ci-input/plan.json --run-identity build/ci-input/run.json --output build/ci-input/cache.json --require-cached-dependencies="$REQUIRE_CACHED_DEPENDENCIES"
       - uses: actions/upload-artifact@v7
         with:
           name: ci-plan-${{ github.run_id }}-${{ github.run_attempt }}
