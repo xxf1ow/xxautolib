@@ -48,9 +48,9 @@ execute_process(COMMAND "${CMAKE_COMMAND}" -E time ${ffmpeg_environment}
     WORKING_DIRECTORY "${ffmpeg_build}" COMMAND_ERROR_IS_FATAL ANY)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    # configure 会求值链接参数。直接写入 Make 配置以保留动态加载器的 $ORIGIN。
+    # FFmpeg 在生成链接规则时用 eval 展开一次，执行规则时再展开一次。
     file(APPEND "${ffmpeg_build}/ffbuild/config.mak" [=[
-LDSOFLAGS += -Wl,-rpath,'$$ORIGIN'
+LDSOFLAGS += -Wl,-rpath,'$$$$ORIGIN'
 ]=])
 endif()
 
