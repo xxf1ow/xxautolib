@@ -25,7 +25,8 @@ else()
         if(NOT EXISTS "${FFMPEG_NASM_SOURCE}/nasm")
             execute_process(COMMAND "${CMAKE_COMMAND}" -E env "CC=${CMAKE_C_COMPILER}"
                 "${ffmpeg_shell}" ./configure WORKING_DIRECTORY "${FFMPEG_NASM_SOURCE}" COMMAND_ERROR_IS_FATAL ANY)
-            execute_process(COMMAND "${ffmpeg_make}" -j4 nasm
+            # 使用固定发布归档自带的 configure，避免解包时间触发 Autotools 重新生成。
+            execute_process(COMMAND "${ffmpeg_make}" -o configure -j4 nasm
                 WORKING_DIRECTORY "${FFMPEG_NASM_SOURCE}" COMMAND_ERROR_IS_FATAL ANY)
         endif()
         list(APPEND ffmpeg_options "--x86asmexe=${FFMPEG_NASM_SOURCE}/nasm")
