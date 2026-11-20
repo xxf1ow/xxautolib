@@ -88,36 +88,56 @@ func validateCIRelease(ctx context.Context, o ciValidationOptions) (string, erro
 	for _, name := range slices.Sorted(maps.Keys(o.Context.CMakeDefaults)) {
 		args = append(args, "-D"+name+"="+o.Context.CMakeDefaults[name])
 	}
-	args = append(args, "-P", filepath.Join(roots.source, "tests", "autolib", "run-installed.cmake"))
-	command := ciExternalCommand(ctx, o.CMakeCommand, args...)
-	command.Env = ciItemEnvironment(o.Environment)
-	output, err := command.CombinedOutput()
-	if err != nil {
-		return roots.evidence, fmt.Errorf("real consumer validation failed: %w\n%s", err, strings.TrimSpace(string(output)))
-	}
-	runRoot, err := validationRunFromOutput(output)
-	if err != nil {
-		return roots.evidence, err
-	}
-	packageRoots := make([]string, 0, len(o.Modules))
-	for _, module := range o.Modules {
-		parts := strings.SplitN(module, "@", 2)
-		packageRoots = append(packageRoots, filepath.Join(roots.install, parts[0], parts[1]))
-	}
-	if o.Context.OS == "windows" {
-		if err := verifyWindowsPackageInputs(runRoot, packageRoots); err != nil {
+	videoio := slices.Contains(o.RootPackages, "opencv@4.14.0") && slices.Contains(o.Modules, "ffmpeg@8.1.3")
+	if videoio {
+		url, stop, err := startVideoIOFixture(ctx, o, roots.evidence)
+		if err != nil {
 			return roots.evidence, err
 		}
-	} else if o.Context.OS == "darwin" {
-		if err := verifyDarwinPackageInputs(runRoot, packageRoots, environment.Production.Darwin.DeploymentTarget); err != nil {
-			return roots.evidence, err
-		}
-	} else {
-		if err := verifyLinuxABIEvidence(runRoot, packageRoots, environment.Production.Linux.GlibcMax); err != nil {
-			return roots.evidence, err
-		}
+		defer stop()
+		args = append(args, "-DAUTOLIB_TEST_RTSP_URL="+url)
 	}
-	return runRoot, nil
+	driver := filepath.Join(roots.source, "tests", "autolib", "run-installed.cmake")
+	validate := func(relocate bool) (string, error) {
+		driverArgs := slices.Clone(args)
+		if relocate {
+			importer := ciImporterExecutable(o.Context.OS + "-" + o.Context.Arch)
+			driverArgs = append(driverArgs, "-DRELOCATE_IMPORTER="+importer)
+		}
+		command := ciExternalCommand(ctx, o.CMakeCommand, append(driverArgs, "-P", driver)...)
+		command.Env = ciItemEnvironment(o.Environment)
+		output, err := command.CombinedOutput()
+		if err != nil {
+			return roots.evidence, fmt.Errorf("real consumer validation failed: %w\n%s", err, strings.TrimSpace(string(output)))
+		}
+		runRoot, err := validationRunFromOutput(output)
+		if err != nil {
+			return roots.evidence, err
+		}
+		install := roots.install
+		if relocate {
+			install = filepath.Join(runRoot, "install")
+		}
+		packageRoots := make([]string, 0, len(o.Modules))
+		for _, module := range o.Modules {
+			parts := strings.SplitN(module, "@", 2)
+			packageRoots = append(packageRoots, filepath.Join(install, parts[0], parts[1]))
+		}
+		switch o.Context.OS {
+		case "windows":
+			err = verifyWindowsPackageInputs(runRoot, packageRoots)
+		case "darwin":
+			err = verifyDarwinPackageInputs(runRoot, packageRoots, environment.Production.Darwin.DeploymentTarget)
+		default:
+			err = verifyLinuxABIEvidence(runRoot, packageRoots, environment.Production.Linux.GlibcMax)
+		}
+		return runRoot, err
+	}
+	runRoot, err := validate(false)
+	if err != nil || !videoio {
+		return runRoot, err
+	}
+	return validate(true)
 }
 
 func validateCIConsumerModules(modules []string) error {

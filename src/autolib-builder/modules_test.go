@@ -195,7 +195,7 @@ func TestRealModuleDeclarations(t *testing.T) {
 			check(ft.ConfigDir, "lib/cmake/freetype")
 			check(ft.PkgconfigDir, "lib/pkgconfig")
 			check(cv.Version, "4.14.0")
-			check(cv.Depends, []string{"freetype@2.13.2", "harfbuzz@8.5.0", "zlib@1.3.1"})
+			check(cv.Depends, []string{"freetype@2.13.2", "harfbuzz@8.5.0", "zlib@1.3.1", "ffmpeg@8.1.3"})
 			check(cv.PackageName, "OpenCV")
 			config, sentinel := "lib/cmake/opencv4", "lib/cmake/opencv4/OpenCVConfig.cmake"
 			if slot.system == "Windows" {
@@ -225,6 +225,8 @@ BUILD_opencv_signal WITH_GSTREAMER WITH_PROTOBUF`) {
 			for _, key := range []string{"BUILD_opencv_world", "BUILD_opencv_freetype", "OPENCV_ENABLE_NONFREE", "WITH_FFMPEG"} {
 				check(cv.Cache[key], true)
 			}
+			check(cv.Cache["OPENCV_FFMPEG_USE_FIND_PACKAGE"], "FFMPEG")
+			check(cv.Cache["OPENCV_FFMPEG_SKIP_DOWNLOAD"], true)
 			for _, key := range []string{"WITH_KLEIDICV", "WITH_FASTCV", "BUILD_LIST", "BUILD_opencv_calib3d", "BUILD_opencv_features2d", "BUILD_opencv_flann", "BUILD_opencv_ximgproc", "BUILD_opencv_video"} {
 				if _, ok := cv.Cache[key]; ok {
 					t.Error("unexpected override", key)

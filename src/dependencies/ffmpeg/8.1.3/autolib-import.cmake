@@ -7,6 +7,7 @@ if(TARGET autolib::ffmpeg)
     return()
 endif()
 
-find_package(FFMPEG CONFIG REQUIRED PATHS "${CMAKE_CURRENT_LIST_DIR}/lib/cmake/FFMPEG" NO_DEFAULT_PATH)
+set(FFMPEG_DIR "${CMAKE_CURRENT_LIST_DIR}/lib/cmake/FFMPEG")
+find_package(FFMPEG CONFIG REQUIRED PATHS "${FFMPEG_DIR}" NO_DEFAULT_PATH)
 add_library(autolib::ffmpeg INTERFACE IMPORTED GLOBAL)
 target_link_libraries(autolib::ffmpeg INTERFACE ${FFMPEG_TARGETS})

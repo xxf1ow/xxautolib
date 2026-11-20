@@ -56,7 +56,7 @@ PYBIND11_MODULE(autolib_binding, module)
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
-#include <libavutil/version.h>
+#include <libavutil/avutil.h>
 #include <libswresample/swresample.h>
 #include <libswscale/swscale.h>
 }

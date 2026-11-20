@@ -1,0 +1,45 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -622,6 +622,16 @@
+ endif()
+ 
+ include(cmake/OpenCVInstallLayout.cmake)
++if(UNIX AND WITH_FFMPEG AND OPENCV_FFMPEG_USE_FIND_PACKAGE STREQUAL "FFMPEG" AND FFMPEG_DIR)
++  get_filename_component(_autolib_ffmpeg_libdir "${FFMPEG_DIR}/../.." ABSOLUTE)
++  file(RELATIVE_PATH _autolib_ffmpeg_rpath
++    "${CMAKE_INSTALL_PREFIX}/${OPENCV_LIB_INSTALL_PATH}" "${_autolib_ffmpeg_libdir}")
++  if(APPLE)
++    list(APPEND CMAKE_INSTALL_RPATH "@loader_path/${_autolib_ffmpeg_rpath}")
++  else()
++    list(APPEND CMAKE_INSTALL_RPATH "$ORIGIN/${_autolib_ffmpeg_rpath}")
++  endif()
++endif()
+ 
+ # ----------------------------------------------------------------------------
+ #  Path for build/platform -specific headers
+--- a/modules/videoio/cmake/detect_ffmpeg.cmake
++++ b/modules/videoio/cmake/detect_ffmpeg.cmake
+@@ -6,7 +6,10 @@
+   if(OPENCV_FFMPEG_USE_FIND_PACKAGE STREQUAL "1" OR OPENCV_FFMPEG_USE_FIND_PACKAGE STREQUAL "ON")
+     set(OPENCV_FFMPEG_USE_FIND_PACKAGE "FFMPEG")
+   endif()
+-  find_package(${OPENCV_FFMPEG_USE_FIND_PACKAGE}) # Required components: AVCODEC AVFORMAT AVUTIL SWSCALE
++  if(NOT FFMPEG_DIR)
++    message(FATAL_ERROR "OpenCV requires the repository FFmpeg Config (FFMPEG_DIR)")
++  endif()
++  find_package(FFMPEG CONFIG REQUIRED PATHS "${FFMPEG_DIR}" NO_DEFAULT_PATH)
+   if(FFMPEG_FOUND OR FFmpeg_FOUND)
+     set(HAVE_FFMPEG TRUE)
+   endif()
+--- a/modules/videoio/cmake/init.cmake
++++ b/modules/videoio/cmake/init.cmake
+@@ -9,5 +9,9 @@
+ endmacro()
+ 
+ add_backend("ffmpeg" WITH_FFMPEG)
++if(WITH_FFMPEG AND OPENCV_FFMPEG_USE_FIND_PACKAGE AND NOT HAVE_FFMPEG)
++  message(FATAL_ERROR "OpenCV could not build with the repository FFmpeg:
++${TRY_OUT}")
++endif()
+ add_backend("gstreamer" WITH_GSTREAMER)
+ add_backend("v4l" WITH_V4L)
