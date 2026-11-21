@@ -1,18 +1,3 @@
---- a/CMakeLists.txt
-+++ b/CMakeLists.txt
-@@ -622,6 +622,12 @@
- endif()
- 
- include(cmake/OpenCVInstallLayout.cmake)
-+if(UNIX AND NOT APPLE AND WITH_FFMPEG AND OPENCV_FFMPEG_USE_FIND_PACKAGE STREQUAL "FFMPEG" AND FFMPEG_DIR)
-+  get_filename_component(_autolib_ffmpeg_libdir "${FFMPEG_DIR}/../.." ABSOLUTE)
-+  file(RELATIVE_PATH _autolib_ffmpeg_rpath
-+    "${CMAKE_INSTALL_PREFIX}/${OPENCV_LIB_INSTALL_PATH}" "${_autolib_ffmpeg_libdir}")
-+  list(APPEND CMAKE_INSTALL_RPATH "$ORIGIN/${_autolib_ffmpeg_rpath}")
-+endif()
- 
- # ----------------------------------------------------------------------------
- #  Path for build/platform -specific headers
 --- a/modules/videoio/cmake/detect_ffmpeg.cmake
 +++ b/modules/videoio/cmake/detect_ffmpeg.cmake
 @@ -6,7 +6,10 @@

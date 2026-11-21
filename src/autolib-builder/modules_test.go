@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -111,6 +112,14 @@ func TestRealModuleDeclarations(t *testing.T) {
 				t.Fatal(got)
 			}
 			platform, _ := buildPlatform(slot[0], slot[1])
+			for _, module := range description.Modules {
+				if module.Name == "opencv" {
+					hasLinuxPatch := slices.Contains(module.InputFiles, "src/dependencies/opencv/4.14.0/linux-ffmpeg-rpath.patch")
+					if hasLinuxPatch != (slot[0] == "Linux") {
+						t.Fatalf("Linux OpenCV RPATH patch selection on %s: %v", platform, module.InputFiles)
+					}
+				}
+			}
 			for _, ref := range refs {
 				module := byRef[ref.String()]
 				supported := false

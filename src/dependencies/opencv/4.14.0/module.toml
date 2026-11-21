@@ -22,7 +22,13 @@ file = "freetype-pkgconfig.patch"  # freetype2/harfbuzz 经 pkg-config 探测；
 resource = "opencv_contrib"        # 在 contrib 上完成补丁后，主库才能配置，避免 freetype 因依赖未检出而被禁用。
 
 [[patches]]
-file = "require-packaged-ffmpeg.patch" # 绑定包内 SDK，并为 Linux 设置可搬迁的 FFmpeg 搜索路径。
+file = "require-packaged-ffmpeg.patch" # 绑定包内 SDK，缺少后端时停止配置。
+
+[[platforms.linux-x86_64.patches]]
+file = "linux-ffmpeg-rpath.patch" # 通过相对运行路径加载同一安装根下的 FFmpeg。
+
+[[platforms.linux-aarch64.patches]]
+file = "linux-ffmpeg-rpath.patch"
 
 [[platforms.darwin-aarch64.patches]]
 file = "darwin-rpath.patch" # 防止 OpenCV 将构建时的绝对库目录写入 Mach-O。

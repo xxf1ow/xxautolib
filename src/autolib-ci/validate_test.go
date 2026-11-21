@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -106,6 +107,44 @@ func TestCIConsumerSelection(t *testing.T) {
 		if (err == nil) != test.valid {
 			t.Errorf("validateCIConsumerModules(%v) error=%v, want valid=%v", test.modules, err, test.valid)
 		}
+	}
+}
+
+func TestCIOpenCVMediaSelection(t *testing.T) {
+	configPath := filepath.Join("..", "..", ".github", "ci-tools.json")
+	config, err := loadCIEnvironment(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	production, err := ciProductionForPlatform("darwin-aarch64", config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmake, err := exec.LookPath("cmake")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name    string
+		root    string
+		modules []string
+		want    string
+	}{
+		{"upgraded packages", "opencv@5.0", []string{"ffmpeg@9.0", "opencv@5.0"}, "invalid videoio MPEG-TS fixture size"},
+		{"no FFmpeg dependency", "opencv@5.0", []string{"opencv@5.0"}, "regular consumer reached"},
+		{"OpenCV is a dependency", "visp@3.7.0", []string{"ffmpeg@9.0", "opencv@5.0", "visp@3.7.0"}, "regular consumer reached"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			o := ciValidationPathFixture(t)
+			o.CMakeCommand, o.Context = cmake, production
+			o.Modules, o.RootPackages = tc.modules, []string{tc.root}
+			writeCIFixture(t, o.SourceRoot, ".github/ci-tools.json", mustReadText(t, configPath))
+			writeCIFixture(t, o.SourceRoot, "tests/autolib/fixtures/rtsp-h264.ts", "")
+			writeCIFixture(t, o.SourceRoot, "tests/autolib/run-installed.cmake", `message(FATAL_ERROR "regular consumer reached")`)
+			if _, err := validateCIRelease(context.Background(), o); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("expected %q, got %v", tc.want, err)
+			}
+		})
 	}
 }
 

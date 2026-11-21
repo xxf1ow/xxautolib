@@ -81,15 +81,6 @@ endforeach()
 run_logged(configure ${configure} "-DROOT_PACKAGES=${ROOT_PACKAGES}")
 run_logged(build "${CMAKE_COMMAND}" --build "${run}/build" --config Release --verbose)
 include("${run}/build/prepared-state.cmake")
-if(CMAKE_HOST_APPLE AND AUTOLIB_TEST_RTSP_URL)
-    run_logged(videoio-macho /usr/bin/otool -l
-        "${run}/build/opencv_videoio_smoke"
-        "${AUTOLIB_PACKAGE_DIR_opencv}/lib/libopencv_world.dylib"
-        "${AUTOLIB_PACKAGE_DIR_opencv}/lib/libopencv_img_hash.dylib"
-        "${AUTOLIB_PACKAGE_DIR_ffmpeg}/lib/libavcodec.dylib")
-    set(ENV{DYLD_PRINT_SEARCHING} 1)
-    set(ENV{DYLD_PRINT_LIBRARIES} 1)
-endif()
 if(CMAKE_HOST_WIN32)
     if(AUTOLIB_RUNTIME_DIRS)
         set(ENV{PATH} "${AUTOLIB_RUNTIME_DIRS};$ENV{PATH}")

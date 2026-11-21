@@ -88,7 +88,8 @@ func validateCIRelease(ctx context.Context, o ciValidationOptions) (string, erro
 	for _, name := range slices.Sorted(maps.Keys(o.Context.CMakeDefaults)) {
 		args = append(args, "-D"+name+"="+o.Context.CMakeDefaults[name])
 	}
-	videoio := slices.Contains(o.RootPackages, "opencv@4.14.0") && slices.Contains(o.Modules, "ffmpeg@8.1.3")
+	videoio := slices.ContainsFunc(o.RootPackages, func(ref string) bool { return strings.HasPrefix(ref, "opencv@") }) &&
+		slices.ContainsFunc(o.Modules, func(ref string) bool { return strings.HasPrefix(ref, "ffmpeg@") })
 	if videoio {
 		url, stop, err := startVideoIOFixture(ctx, o, roots.evidence)
 		if err != nil {
