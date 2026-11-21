@@ -283,6 +283,10 @@ def install(config, env, meson):
     run(*meson, "install", "-C", config.work / "meson", "--no-rebuild", env=env)
     ports = config.work / "ports" / triplet(config)
     prefix = config.prefix
+    # 上游的 GDB 自动加载入口使用生产机的绝对安装路径。
+    gdb_autoload = prefix / "share/gdb/auto-load"
+    if gdb_autoload.is_dir():
+        shutil.rmtree(gdb_autoload)
     licenses = prefix / "share/licenses"
     for item in (ports / "share").glob("*/copyright"):
         dest = licenses / item.parent.name
