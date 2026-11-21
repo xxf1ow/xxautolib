@@ -28,7 +28,7 @@ Status: implemented
 
 Darwin 使用 Apple Clang。执行环境通过 `xcrun` 取得当前开发工具目录中的 `clang`、`clang++` 及 macOS SDK，显式选择编译器并核对实际 C/C++ 编译器身份为 `AppleClang`；不通过 PATH 偶然选择 Homebrew LLVM 或 GCC，不为逐包失败切换编译器。记录实际工具版本、SDK 和相关配置，不承诺不同机器的 Apple Clang 补丁版本一致。
 
-普通配置通过 cache 参数在首次 `project()` 前设置 `CMAKE_OSX_ARCHITECTURES=arm64`、`CMAKE_OSX_DEPLOYMENT_TARGET=15.0`。公共生成入口将这些已定义的值传入实际 CMake 子项目；显式选择的 SDK 和编译器也必须在子配置中保持一致。消费验证使用相同目标参数，不只固定生产根的参数。Darwin 拒绝非 ARM64 或多架构配置；本机架构自动识别调整见[提案](../../proposed/bug-fix/2026-11-20-darwin-automatic-architecture.md)。
+普通配置通过 cache 参数在首次 `project()` 前设置 `CMAKE_OSX_ARCHITECTURES=arm64`、`CMAKE_OSX_DEPLOYMENT_TARGET=15.0`。公共生成入口将这些已定义的值传入实际 CMake 子项目；显式选择的 SDK 和编译器也必须在子配置中保持一致。消费验证使用相同目标参数，不只固定生产根的参数。Darwin 拒绝非 ARM64 或多架构配置；本机架构自动识别调整见[后续决定](../bug-fix/2026-11-20-darwin-automatic-architecture.md)。
 
 这些目标参数沿用普通 CMake 的显式输入，不增加环境专用的配置解析器。配方与本轮固定目标冲突时明确失败，公共默认值的其他合并优先级保持不变；不把根传入的 arm64 当成可被模块改写的普通兜底值。
 

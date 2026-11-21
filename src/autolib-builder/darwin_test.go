@@ -66,6 +66,7 @@ func TestDarwinEntryCompiler(t *testing.T) {
 	}
 	f := newEntryFixture(t)
 	defaults := darwinTestDefaults(f)
+	delete(defaults, "CMAKE_OSX_ARCHITECTURES")
 	putFile(t, filepath.Join(f.root, "src/autolib.cmake"), readFile(t, "../autolib.cmake"))
 	repo := f.repository("probe", map[string]string{
 		"CMakeLists.txt": `cmake_minimum_required(VERSION 3.20)
@@ -98,6 +99,9 @@ install(TARGETS probe ARCHIVE DESTINATION lib)
 			if !found {
 				t.Errorf("%s lacks %s=%s", root, k, v)
 			}
+		}
+		if !strings.Contains(readFile(t, filepath.Join(root, "CMakeCache.txt")), "CMAKE_OSX_ARCHITECTURES:STRING=arm64") {
+			t.Errorf("%s did not infer arm64 architecture", root)
 		}
 		t.Logf("verified root/child parameters: %s", root)
 	}

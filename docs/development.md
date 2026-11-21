@@ -25,7 +25,7 @@ Darwin ARM64（Apple Silicon），使用固定 CMake 3.31.12、GNU Make 4.4.1：
 ```sh
 cmake -S . -B build -G "Unix Makefiles" \
   -DBUILD_LIST=queue@45db9a8b4431,lz4@1.10.0 -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
+  -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
   "-DCMAKE_C_COMPILER=$(xcrun --find clang)" \
   "-DCMAKE_CXX_COMPILER=$(xcrun --find clang++)" \
   "-DCMAKE_OSX_SYSROOT=$(xcrun --sdk macosx --show-sdk-path)" \
@@ -33,7 +33,7 @@ cmake -S . -B build -G "Unix Makefiles" \
 cmake --build build --verbose -- -j2 --jobserver-style=fifo
 ```
 
-Darwin 根和子项目固定以上五项 Apple 参数，拒绝配方冲突；其他平台和默认值保持下述优先级。
+Darwin 根从本机自动识别目标架构，并拒绝非 ARM64 或多架构目标。根和子项目固定部署目标、编译器、SDK 与 Make；配方不得覆盖这些值。
 
 引擎为 CMake 子项目提供 policy 下限 `3.5`、PIC `ON`、C++ 标准 `17` 的兜底值，通过原生 `CMAKE_ARGS` 传入，不向父级 cache 写默认值；不依赖 preset、IDE 设置或环境变量。根 configure 的 `-D` 或 toolchain 中已定义的值可覆盖兜底值，模块显式 cache 优先于父级值；修改公共值后重新 configure/build。已有 cache 条目保留为父级输入，不自动删除。policy 下限不降低上游较高声明，旧声明被提高后的兼容性仍须实际验证。IDE 可沿用已有编译器和配置。
 
