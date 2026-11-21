@@ -1,0 +1,21 @@
+--- a/cmake/OpenCVInstallLayout.cmake
++++ b/cmake/OpenCVInstallLayout.cmake
+@@ -99,9 +99,16 @@
+ if(APPLE_FRAMEWORK AND BUILD_SHARED_LIBS)
+   ocv_update(CMAKE_INSTALL_RPATH "@executable_path/Frameworks;@loader_path/Frameworks;@executable_path/../${OPENCV_3P_LIB_INSTALL_PATH}")
+ else()
+-  ocv_update(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/${OPENCV_LIB_INSTALL_PATH}")
++  set(CMAKE_INSTALL_RPATH "@loader_path")
+ endif()
+-set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
++set(CMAKE_INSTALL_RPATH_USE_LINK_PATH FALSE)
++
++if(WITH_FFMPEG AND OPENCV_FFMPEG_USE_FIND_PACKAGE STREQUAL "FFMPEG" AND FFMPEG_DIR)
++  get_filename_component(_autolib_ffmpeg_libdir "${FFMPEG_DIR}/../.." ABSOLUTE)
++  file(RELATIVE_PATH _autolib_ffmpeg_rpath
++    "${CMAKE_INSTALL_PREFIX}/${OPENCV_LIB_INSTALL_PATH}" "${_autolib_ffmpeg_libdir}")
++  list(APPEND CMAKE_INSTALL_RPATH "@loader_path/${_autolib_ffmpeg_rpath}")
++endif()
+ 
+ if(INSTALL_TO_MANGLED_PATHS)
+   foreach(v

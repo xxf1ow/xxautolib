@@ -1,6 +1,6 @@
 # 开发
 
-先准备 Git、CMake（3.20+）和 C/C++ 编译器，通过根入口构建安装。Go SDK 和固定模块自动准备；FLANN、HarfBuzz 消费和 OpenCV 构建需要 pkg-config，FLANN 使用 OpenMP，FFmpeg 按机器环境探测。builder 和普通 Go 测试不需要 Python 或 uv；发布及其整链夹具需要 Python 3.12，技能校验器自行准备环境。
+构建需要 Git、CMake（3.20+）和 C/C++ 编译器。FLANN 使用 OpenMP，FLANN/HarfBuzz 消费和 OpenCV 构建需要 pkg-config。OpenCV 自动依赖 `ffmpeg@8.1.3`。FFmpeg 在 Unix 使用 `Unix Makefiles` 和 GNU Make。Windows 从 MSVC x64 开发环境启动，`FFMPEG_MSYS2_ROOT` 指向含 Bash/Make 的 MSYS2。builder、Go 测试无需 Python/uv。发布及整链夹具需要 Python 3.12，技能校验器自备环境。
 
 ## 准备与配置
 
@@ -81,6 +81,8 @@ Git 主来源复用 `git/<包名>/<版本>/`，资源复用 `git/_resources/<包
 
 [手动流水线](../.github/workflows/build-platform.yml)使用当前仓库的普通分支与事件提交，支持fork，拒绝tag。默认四个平台，也可单选；平台、工具与ABI基准见[架构](architecture.md#包与版本)。模块空字符串只准备工具，严格等于`all`才发现全部合资格版本，也可填写逗号分隔的精确引用或裸名；纯空白和变形的`all`拒绝。过滤不算失败；配方错误只阻断相关依赖者，无关项继续。
 
+只允许重建一个目标库时，在 `modules` 选择一个精确版本并开启 `require_cached_dependencies`。每个所选平台的依赖必须命中本次缓存快照。任一依赖缺少有效缓存时，准备作业报出平台和包名，平台构建停止。
+
 共享准备生成缓存快照，各平台`run --cache`显式读取。每项恢复或构建、消费验证后立即入库；失败运行中的成功成品仍可复用，汇总保持整体失败。GitHub 归档位于当前源码仓库的`autolib-cache` Release，共享准备和平台使用`contents: write`；完整记录位于现有 Gitee 仓库的独立同名分支。构建缓存步骤还需 `GITEE_REPOSITORY` 和 `GITEE_TOKEN`，目标仓库及默认分支须已有合法消费身份；仅共享准备允许初始化缺失的缓存分支。令牌仅交付对应缓存操作，普通构建和验证子进程不继承。容量、精确替换和无关文件保护见[缓存设计](agent-notes/implemented/architecture/2026-11-09-release-cache-and-independent-gitee-sync.md#release-成品缓存)，存储依赖见[Gitee 记录设计](agent-notes/implemented/architecture/2026-11-10-gitee-build-cache-records.md)。运行互斥不按分支拆组，队列最多等待100个运行。
 
 同版本输入变化沿依赖链失效，latest单独变化不重建库。命中归档恢复到新安装根，不复用旧安装；CI 仅将已恢复并验证的精确依赖传入 `AUTOLIB_RESTORED_PACKAGES`，其构建目标只读校验冻结安装，不要求上游源码。普通本地复用仍执行原来源比对；Artifacts只保存计划、结果和诊断。零有效库仍验证工具与入口。验证命令及边界见[测试指南](testing.md#ci-验证)。
@@ -99,7 +101,9 @@ Git 主来源复用 `git/<包名>/<版本>/`，资源复用 `git/_resources/<包
 
 允许本机编译和定向验证；产物、编译缓存及临时文件均放在仓库 `build/` 下的新隔离目录，并行度最多4线程。Go仅使用仓库管理并校验的固定SDK，不使用系统Go；隔离方式见[测试指南](testing.md#执行)。
 
-用户永久授权向可信局域网设备 `lxx@192.168.0.109` 的 `/home/lxx/xxautolib` 传输任务源码，同类传输不重复询问；仍须工具审批、逐文件摘要核对并保留已有数据，不覆盖未知差异或清空目标目录，不传项目 `.git/`、凭据、SDK、缓存或宿主产物。第三方库迁移的编译安装、修复及增量续跑按用户确认执行；版本化交付可编译轻量夹具、执行定向测试并写自有日志。此授权不含其他目标、push、发布或触发 CI；push 由用户执行，CI 另按授权验收。
+用户永久授权向可信局域网设备 `lxx@192.168.0.109` 的 `/home/lxx/xxautolib` 传输任务源码，同类传输不重复询问。仍须工具审批、逐文件摘要核对并保留已有数据，不覆盖未知差异或清空目标目录，不传项目 `.git/`、凭据、SDK、缓存或宿主产物。第三方库迁移的编译安装、修复及增量续跑按用户确认执行。版本化交付可编译轻量夹具、执行定向测试并写自有日志。
+
+助手可以直接推送当前任务的开发分支。主分支 `master` 由用户手动推送。CI、发布及其他远端写入按任务的明确授权执行。
 
 [本任务的原生验证授权](agent-notes/implemented/architecture/2026-11-05-darwin-aarch64-native-build-and-ci.md#工作目录验证环境与授权)允许在新的任务隔离目录准备固定工具，编译必要的宿主工具、轻量原生输入及 queue/lz4，完成对应消费和打包；不覆盖既有安装、来源和缓存。[统一配方第一阶段](agent-notes/implemented/architecture/2026-11-06-module-recipe-contract-and-macos-validation.md)另授权同一隔离根的两版 Eigen 真实安装与直接/搬迁消费；全包调查不属于第一阶段。第二阶段按[已确认的同步范围](agent-notes/implemented/architecture/2026-11-06-module-recipe-contract-and-macos-validation.md#原平台基线与-macos-同步范围)推进，允许必要宿主工具与定向检查；包的正式验收使用 macos-15，原平台配方冻结。
 

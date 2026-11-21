@@ -11,7 +11,47 @@ import (
 	"strings"
 )
 
-type ciCachePrepareOptions struct{ Repository, SourceRoot, PlanFile, RunIdentityFile, Output string }
+type ciCachePrepareOptions struct {
+	Repository, SourceRoot, PlanFile, RunIdentityFile, Output string
+	RequireCachedDependencies                                 bool
+}
+
+func requireCICachedDependencies(plan ciPlan, snapshot ciCacheSnapshot) error {
+	for _, platform := range plan.Platforms {
+		if len(plan.RequestedModules) != 1 || len(platform.Roots) != 1 || platform.Roots[0] != plan.RequestedModules[0] {
+			return fmt.Errorf("%s: cached dependencies require one exact root package", platform.ID)
+		}
+		root := platform.Roots[0]
+		modules := make(map[string]describedModule, len(platform.Description.Modules))
+		for _, module := range platform.Description.Modules {
+			modules[moduleIdentity(module)] = module
+		}
+		closure, err := ciModuleClosure(root, modules)
+		if err != nil {
+			return fmt.Errorf("%s: %w", platform.ID, err)
+		}
+		if len(closure) != len(modules) {
+			return fmt.Errorf("%s: plan contains packages outside %s", platform.ID, root)
+		}
+		for _, ref := range closure[:len(closure)-1] {
+			module := modules[ref]
+			key := ciModuleCacheKey(module)
+			name := key.archiveName()
+			record, ok := snapshot.Records[name]
+			if !ok {
+				return fmt.Errorf("%s: %s requires a cached %s", platform.ID, root, ref)
+			}
+			deps := make(map[string]string, len(module.Depends))
+			for _, dep := range module.Depends {
+				deps[dep] = snapshot.Inputs.Fingerprints[ciModuleCacheKey(modules[dep]).archiveName()]
+			}
+			if err := validateCICacheRecord(record, snapshot.Repository, key, snapshot.Inputs.Fingerprints[name], deps, snapshot.Assets); err != nil {
+				return fmt.Errorf("%s: %s requires a valid cache for %s: %w", platform.ID, root, ref, err)
+			}
+		}
+	}
+	return nil
+}
 
 func preflightCICacheCapacity(assets []ciCacheAsset, plannedNames []string) error {
 	existing := map[string]bool{}
@@ -122,6 +162,11 @@ func prepareCICacheWithClient(ctx context.Context, o ciCachePrepareOptions, c *c
 		return err
 	}
 	s.Inputs = inputs
+	if o.RequireCachedDependencies {
+		if err := requireCICachedDependencies(plan, s); err != nil {
+			return err
+		}
+	}
 	return writeCIJSON(o.Output, s)
 }
 
@@ -129,6 +174,7 @@ func runCICachePrepare(args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("cache-prepare", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	var o ciCachePrepareOptions
+	flags.BoolVar(&o.RequireCachedDependencies, "require-cached-dependencies", false, "require one exact root and a valid cache for every dependency")
 	for _, field := range []struct {
 		key   string
 		value *string

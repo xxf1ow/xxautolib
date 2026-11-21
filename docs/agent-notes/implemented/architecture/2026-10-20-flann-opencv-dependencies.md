@@ -14,6 +14,8 @@ Status: implemented
 
 固定版本依赖、资源字段及参数冲突规则见[统一模块配方字段与 macOS 全包验收](../../implemented/architecture/2026-11-06-module-recipe-contract-and-macos-validation.md)；本文继续拥有依赖接线、库功能基线及既有验证理由。
 
+OpenCV 的 FFmpeg 后端使用[独立 FFmpeg 配方](2026-11-20-ffmpeg-opencv-videoio.md)。
+
 ### 范围与参考基线
 
 参考仓库为 `D:/Work/AutoLibBuilder`，只读使用 `src/dependencies/flann.cmake`、`harfbuzz.cmake`、`opencv.cmake` 和 `src/build-system/tp_setup.cmake`、`tp_depends.cmake`。参考本体不修改；迁移只作纯数据定义、公共引擎接口及本节明确版本与选项变化所需的适配。先完成构建安装基线，不顺手优化参考逻辑，不重构根 CMake 骨架。

@@ -42,6 +42,55 @@ $cmakeCommand = Join-Path $cmakeDir 'bin/cmake.exe'
 $cmakeVersion = & $cmakeCommand --version | Select-Object -First 1
 if ($cmakeVersion -ne "cmake version $($configDocument.cmake.version)") { throw "CMake version does not match configuration: $cmakeVersion" }
 
+if (@($platformPlan[0].description.modules | Where-Object name -eq 'ffmpeg').Count -gt 0) {
+    $msysRoot = Join-Path $env:SystemDrive 'msys64'
+    $bash = Join-Path $msysRoot 'usr/bin/bash.exe'
+    $make = Join-Path $msysRoot 'usr/bin/make.exe'
+    if (-not (Test-Path -LiteralPath $bash)) { throw 'FFmpeg requires the MSYS2 Bash from the Windows CI image.' }
+    if (-not (Test-Path -LiteralPath $make)) {
+        & $bash -lc 'pacman -Sy --needed --noconfirm make' 2>&1 | ForEach-Object { [Console]::Error.WriteLine($_) }
+        if ($LASTEXITCODE -ne 0) { throw 'MSYS2 GNU Make installation failed.' }
+    }
+    if (-not (Test-Path -LiteralPath $make)) { throw 'MSYS2 did not provide GNU Make.' }
+
+    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+    $vsRoot = & $vswhere -latest -version '[17.0,18.0)' -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+    if ($LASTEXITCODE -ne 0 -or -not $vsRoot) { throw 'FFmpeg requires Visual Studio 2022 C++ tools.' }
+    $vsDevCmd = Join-Path $vsRoot 'Common7/Tools/VsDevCmd.bat'
+    $bootstrap = Join-Path $tools 'ffmpeg-msvc.cmd'
+    Set-Content -LiteralPath $bootstrap -Encoding Ascii -Value @(
+        '@echo off'
+        ('call "{0}" -no_logo -arch=x64 -host_arch=x64' -f $vsDevCmd)
+        'if errorlevel 1 exit /b %errorlevel%'
+        'set'
+    )
+    Push-Location -LiteralPath $tools
+    try {
+        $compilerEnvironment = & cmd.exe /d /c ffmpeg-msvc.cmd
+        if ($LASTEXITCODE -ne 0) { throw 'Could not initialize MSVC x64 for FFmpeg.' }
+    } finally {
+        Pop-Location
+    }
+    $values = @{}
+    foreach ($line in $compilerEnvironment) {
+        if ($line -match '^(INCLUDE|LIB|LIBPATH|PATH)=(.+)$') { $values[$Matches[1]] = $Matches[2] }
+    }
+    foreach ($key in @('INCLUDE', 'LIB', 'LIBPATH', 'PATH')) {
+        if (-not $values[$key]) { throw "MSVC environment did not set $key." }
+    }
+    if ($env:GITHUB_ENV) {
+        Add-Content -LiteralPath $env:GITHUB_ENV -Value "FFMPEG_MSYS2_ROOT=$msysRoot"
+        foreach ($key in @('INCLUDE', 'LIB', 'LIBPATH')) {
+            Add-Content -LiteralPath $env:GITHUB_ENV -Value "$key=$($values[$key])"
+        }
+    }
+    if ($env:GITHUB_PATH) {
+        $nativeTools = @($values['PATH'] -split ';' | Where-Object { $_ -and $_ -notin ($env:PATH -split ';') })
+        [array]::Reverse($nativeTools)
+        foreach ($directory in $nativeTools) { Add-Content -LiteralPath $env:GITHUB_PATH -Value $directory }
+    }
+}
+
 $goSdkScript = Join-Path $repoRoot 'src/autolib-builder/go-sdk.cmake'
 & $cmakeCommand -P $goSdkScript -- build -mod=readonly -trimpath -o (Join-Path $WorkRoot 'autolib-ci.exe') ./src/autolib-ci 2>&1 | ForEach-Object { [Console]::Error.WriteLine($_) }
 if ($LASTEXITCODE -ne 0) { throw "Private Go SDK CI tool preparation failed: $LASTEXITCODE" }

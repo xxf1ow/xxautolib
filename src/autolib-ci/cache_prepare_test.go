@@ -97,3 +97,60 @@ func TestCICachePrepare(t *testing.T) {
 		t.Fatal("duplicate platform writers accepted")
 	}
 }
+
+func TestCICachePrepareRequiresCachedDependencies(t *testing.T) {
+	for _, tt := range []struct {
+		name, want string
+	}{
+		{"only dependencies cached", ""},
+		{"missing record", "b@1"},
+		{"missing archive", "b@1"},
+		{"stale fingerprint", "b@1"},
+		{"stale dependency fingerprint", "a@1"},
+		{"no root", "exact root"},
+		{"multiple roots", "exact root"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			const root = "opencv@4.14.0"
+			b, assets := cacheRecordFixture()
+			a := b
+			a.Key.Name, a.Archive.ID = "a", 43
+			a.Archive.Name = a.Key.archiveName()
+			a.DependencyFingerprints = map[string]string{"b@1": b.Fingerprint}
+			assets = append(assets, ciCacheAsset{ID: a.Archive.ID, Name: a.Archive.Name, State: "uploaded", Size: a.Archive.Size})
+			plan := ciPlan{RequestedModules: []string{root}, Platforms: []ciPlatformPlan{{
+				ID: "linux-x86_64", Roots: []string{root}, Description: moduleDescription{Modules: []describedModule{
+					{Name: "opencv", Version: "4.14.0", PackagePlatform: "linux-x86_64", Depends: []string{"a@1"}},
+					{Name: "a", Version: "1", PackagePlatform: "linux-x86_64", Depends: []string{"b@1"}},
+					{Name: "b", Version: "1", PackagePlatform: "linux-x86_64"},
+				}},
+			}}}
+			snapshot := ciCacheSnapshot{Repository: b.Origin.Repository, Assets: assets,
+				Records: map[string]ciCacheRecord{a.Archive.Name: a, b.Archive.Name: b},
+				Inputs:  ciFingerprintReport{Fingerprints: map[string]string{a.Archive.Name: a.Fingerprint, b.Archive.Name: b.Fingerprint}},
+			}
+			switch tt.name {
+			case "missing record":
+				delete(snapshot.Records, b.Archive.Name)
+			case "missing archive":
+				snapshot.Assets = assets[1:]
+			case "stale fingerprint":
+				snapshot.Inputs.Fingerprints[b.Archive.Name] = strings.Repeat("b", 64)
+			case "stale dependency fingerprint":
+				a.DependencyFingerprints["b@1"] = strings.Repeat("b", 64)
+			case "no root":
+				plan.Platforms[0].Roots = nil
+			case "multiple roots":
+				plan.Platforms[0].Roots = []string{root, "a@1"}
+			}
+			err := requireCICachedDependencies(plan, snapshot)
+			if tt.want == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), tt.want) || !strings.Contains(err.Error(), "linux-x86_64") {
+				t.Fatalf("expected platform and %q in error, got %v", tt.want, err)
+			}
+		})
+	}
+}

@@ -14,7 +14,14 @@ func TestCICacheWorkflow(t *testing.T) {
 		}
 	}
 	plan := workflowSection(t, document, "  plan:")
+	inputs := workflowSection(t, document, "      require_cached_dependencies:")
+	if workflowField(t, inputs, "type") != "boolean" || workflowField(t, inputs, "default") != "false" {
+		t.Fatal("strict dependency restore must be opt-in")
+	}
 	prepare := workflowSection(t, plan, "      - name: Prepare persistent cache")
+	if !strings.Contains(prepare, "REQUIRE_CACHED_DEPENDENCIES: ${{ inputs.require_cached_dependencies }}") || !strings.Contains(prepare, `--require-cached-dependencies="$REQUIRE_CACHED_DEPENDENCIES"`) {
+		t.Fatal("cache preparation does not receive the strict dependency option")
+	}
 	for _, text := range []string{"GITHUB_TOKEN: ${{ github.token }}", "GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}", "GITEE_REPOSITORY: ${{ vars.GITEE_REPOSITORY }}", " cache-prepare ", "--repository \"$GITHUB_REPOSITORY\"", "--plan build/ci-input/plan.json", "--run-identity build/ci-input/run.json", "--output build/ci-input/cache.json"} {
 		if !strings.Contains(prepare, text) {
 			t.Fatalf("missing shared cache preparation: %s", text)

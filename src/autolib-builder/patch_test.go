@@ -56,6 +56,8 @@ install(CODE [[file(APPEND "` + log + `" "install\n")]])
 			t.Fatalf("%s not invalidated: %s", phase, after)
 		}
 	}
+	// 让新增步骤晚于已有 stamp，即使 Make 只比较整秒时间戳。
+	time.Sleep(time.Until(time.Now().Truncate(time.Second).Add(time.Second)))
 	rewrite := putFile(t, filepath.Join(f.root, "rewrite.cmake"), "file(WRITE \"${FILE}\" \"int value(void) { return 3; }\\n\")\n")
 	m.Steps = append(m.Steps, stepDefinition{Name: "rewrite", Dependees: []string{"patch"}, Dependers: []string{"configure"}, Depends: []string{filepath.ToSlash(rewrite)}, Commands: [][]string{{f.context.CMakeCommand, "-DFILE=<SOURCE_DIR>/value.c", "-P", filepath.ToSlash(rewrite)}}})
 	f.project([]*moduleDefinition{m}, "")
