@@ -229,24 +229,36 @@ def relocate_linux(prefix, ffmpeg):
 
 def relocate_darwin(prefix, ffmpeg):
     library_dir = prefix / "lib"
-    pending = runtime_binaries(prefix, "*.dylib")
+    pending = [(path, path) for path in runtime_binaries(prefix, "*.dylib")]
     visited = set()
     while pending:
-        binary = pending.pop()
+        binary, origin = pending.pop()
         if binary in visited or not binary.is_file():
             continue
         visited.add(binary)
         loads = run("otool", "-L", binary, capture=True).splitlines()[1:]
+        rpaths = re.findall(r"cmd LC_RPATH\s+cmdsize \d+\s+path (.+?) \(offset \d+\)",
+                           run("otool", "-l", origin, capture=True))
         edits = []
         if binary.suffix == ".dylib":
             edits += ["-id", f"@rpath/{binary.name}"]
             loads = loads[1:]
         for line in loads:
             name = line.strip().split(" (", 1)[0]
-            if name.startswith(("/usr/lib/", "/System/Library/", "@loader_path/")):
+            if name.startswith(("/usr/lib/", "/System/Library/")):
                 continue
             original = Path(name)
             candidates = (library_dir / original.name, ffmpeg / "lib" / original.name)
+            if name.startswith("@loader_path/"):
+                relative = name[len("@loader_path/"):]
+                installed = (binary.parent / relative).resolve()
+                if installed.is_file() and (prefix in installed.parents or ffmpeg in installed.parents):
+                    continue
+                original = origin.parent / relative
+            if name.startswith("@rpath/"):
+                name_in_rpath = name[len("@rpath/"):]
+                original_paths = [Path(path.replace("@loader_path", str(origin.parent))) / name_in_rpath for path in rpaths]
+                original = next((path for path in original_paths if path.is_file()), origin.parent / name_in_rpath)
             bundled = next((path for path in candidates if path.is_file()), None)
             if bundled is None:
                 if not original.is_absolute() or not original.is_file():
@@ -254,10 +266,9 @@ def relocate_darwin(prefix, ffmpeg):
                 bundled = library_dir / original.name
                 shutil.copy2(original, bundled)
                 bundled.chmod(0o755)
-                pending.append(bundled)
+                pending.append((bundled, original))
             edits += ["-change", name, f"@loader_path/{os.path.relpath(bundled, binary.parent)}"]
-        commands = run("otool", "-l", binary, capture=True)
-        for rpath in re.findall(r"cmd LC_RPATH\s+cmdsize \d+\s+path (.+?) \(offset \d+\)", commands):
+        for rpath in rpaths:
             if Path(rpath).is_absolute():
                 edits += ["-delete_rpath", rpath]
         if edits:
