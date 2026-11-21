@@ -7,7 +7,7 @@ set(ffmpeg_options
     "--prefix=${CMAKE_INSTALL_PREFIX}"
     --enable-shared --disable-static --disable-autodetect
     --enable-network --enable-demuxer=rtsp
-    --disable-avdevice --disable-avfilter --disable-programs --disable-doc --disable-debug)
+    --disable-avdevice --enable-avfilter --disable-programs --disable-doc --disable-debug)
 if(WIN32)
     find_program(ffmpeg_shell NAMES bash PATHS "$ENV{FFMPEG_MSYS2_ROOT}/usr/bin" REQUIRED NO_DEFAULT_PATH)
     find_program(ffmpeg_make NAMES make PATHS "$ENV{FFMPEG_MSYS2_ROOT}/usr/bin" REQUIRED NO_DEFAULT_PATH)

@@ -11,14 +11,15 @@ message(STATUS "Installing FFmpeg")
 execute_process(COMMAND "${CMAKE_COMMAND}" -E time ${ffmpeg_environment}
     "@ffmpeg_make@" install WORKING_DIRECTORY "@ffmpeg_build@" COMMAND_ERROR_IS_FATAL ANY)
 
+set(ffmpeg_components avcodec avfilter avformat avutil swscale swresample)
 if(WIN32)
-    foreach(component IN ITEMS avcodec avformat avutil swscale swresample)
+    foreach(component IN LISTS ffmpeg_components)
         file(RENAME "${CMAKE_INSTALL_PREFIX}/bin/${component}.lib" "${CMAKE_INSTALL_PREFIX}/lib/${component}.lib")
     endforeach()
 endif()
 
 # 这些文件随包搬迁，查找路径从 .pc 所在目录计算。
-foreach(component IN ITEMS avcodec avformat avutil swscale swresample)
+foreach(component IN LISTS ffmpeg_components)
     set(pc_file "${CMAKE_INSTALL_PREFIX}/lib/pkgconfig/lib${component}.pc")
     file(READ "${pc_file}" contents)
     string(REGEX REPLACE "(^|\n)prefix=[^\n]*" "\\1prefix=\${pcfiledir}/../.." contents "${contents}")
