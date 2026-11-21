@@ -324,7 +324,8 @@ def copy_homebrew_notices(licenses, providers):
     for keg in sorted(kegs):
         dest = licenses / "homebrew" / keg.parent.name / keg.name
         dest.mkdir(parents=True, exist_ok=True)
-        for pattern in ("COPYING*", "COPYRIGHT*", "LICENSE*", "LICENCE*", "NOTICE*", "LEGAL*", "sbom.spdx.json", ".brew/*.rb"):
+        for pattern in ("COPYING*", "COPYRIGHT*", "LICENSE*", "LICENCE*", "LGPL-*.txt", "NOTICE*", "LEGAL*",
+                        "sbom.spdx.json", ".brew/*.rb"):
             for source in keg.glob(pattern):
                 if source.is_file():
                     shutil.copyfile(source, dest / source.name)

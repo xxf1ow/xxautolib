@@ -120,6 +120,11 @@ func TestGStreamerArchiveConsumption(t *testing.T) {
 		"gstreamer-rtp-1.0", "gstreamer-rtsp-1.0", "gstreamer-rtsp-server-1.0", "gstreamer-net-1.0"}
 	if production.OS == "darwin" {
 		modules = append(modules, "gstreamer-gl-1.0")
+		licensePath := filepath.Join(install, "gstreamer", "1.28.9", "share", "licenses", "homebrew", "glib", "*", "LGPL-2.1-or-later.txt")
+		copies, err := filepath.Glob(licensePath)
+		if err != nil || len(copies) == 0 {
+			t.Fatalf("archived Homebrew GLib license missing: %v", err)
+		}
 	}
 	if production.OS == "windows" {
 		for _, file := range []string{"include/gio-win32-2.0/gio/gwin32inputstream.h", "lib/libz.lib"} {
