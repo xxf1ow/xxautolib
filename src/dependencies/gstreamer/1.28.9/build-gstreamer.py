@@ -238,9 +238,16 @@ def relocate_darwin(prefix, ffmpeg):
         if binary in visited or not binary.is_file():
             continue
         visited.add(binary)
+        # 部分 Homebrew 运行库同时携带 x86_64，Darwin 发布身份是单一 ARM64。
+        with binary.open("rb") as contents:
+            universal = contents.read(4) in (b"\xca\xfe\xba\xbe", b"\xca\xfe\xba\xbf")
+        if universal:
+            arm64 = binary.with_suffix(".arm64")
+            run("lipo", "-thin", "arm64", binary, "-output", arm64)
+            arm64.replace(binary)
         loads = run("otool", "-L", binary, capture=True).splitlines()[1:]
         rpaths = re.findall(r"cmd LC_RPATH\s+cmdsize \d+\s+path (.+?) \(offset \d+\)",
-                           run("otool", "-l", origin, capture=True))
+                           run("otool", "-arch", "arm64", "-l", origin, capture=True))
         edits = []
         if binary.suffix == ".dylib":
             edits += ["-id", f"@rpath/{binary.name}"]
@@ -275,6 +282,7 @@ def relocate_darwin(prefix, ffmpeg):
                 edits += ["-delete_rpath", rpath]
         if edits:
             run("install_name_tool", *edits, binary)
+        if edits or universal:
             run("codesign", "--force", "--sign", "-", binary)
 
 
