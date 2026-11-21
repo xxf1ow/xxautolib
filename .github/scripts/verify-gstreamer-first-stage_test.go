@@ -111,6 +111,20 @@ func TestGStreamerArchiveConsumption(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(install, "autolib.cmake"), entry, 0644); err != nil {
 		t.Fatal(err)
 	}
+	pcDir := filepath.Join(install, "gstreamer", "1.28.9", "lib", "pkgconfig")
+	pcEnv := append(os.Environ(), "PKG_CONFIG_PATH="+pcDir)
+	if production.OS != "linux" {
+		pcEnv = append(pcEnv, "PKG_CONFIG_LIBDIR="+pcDir)
+	}
+	for _, module := range []string{"gstreamer-1.0", "gstreamer-base-1.0", "gstreamer-app-1.0", "gstreamer-video-1.0"} {
+		pc := exec.Command("pkg-config", "--print-errors", "--cflags", "--libs", module)
+		pc.Env = pcEnv
+		flags, err := pc.CombinedOutput()
+		if err != nil || strings.Contains(string(flags), "/opt/homebrew/") || strings.Contains(string(flags), "verify-install") {
+			t.Fatalf("archived pkg-config interface for %s: %v\n%s", module, err, flags)
+		}
+		t.Logf("%s: %s", module, strings.TrimSpace(string(flags)))
+	}
 	producer := filepath.Join(root, "build", "verify-install")
 	if _, err := os.Stat(producer); err == nil {
 		hidden := producer + ".hidden"

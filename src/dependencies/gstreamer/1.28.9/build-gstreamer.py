@@ -209,8 +209,22 @@ def copy_glib_development(config, pkgconf, env):
             copy_runtime(libdir, config.prefix / "lib", f"lib{name}*.dylib")
     for name in GLIB_COMPONENTS:
         source = pkg_path(pkgconf, env, name, "pcfiledir") / f"{name}.pc"
-        # Homebrew 瓶装元数据可为只读，安装副本随后需要修正前缀。
-        shutil.copyfile(source, config.prefix / "lib/pkgconfig" / source.name)
+        (config.prefix / "lib/pkgconfig" / source.name).write_text(shared_glib_metadata(source.read_text(), name))
+
+
+def shared_glib_metadata(content, name):
+    # 这里只交付共享库。GLib 的私有静态依赖和构建机 gettext 路径不属于公开接口。
+    library = "gmodule-2.0" if name == "gmodule-no-export-2.0" else name
+    fields = []
+    for line in content.splitlines():
+        if line.startswith(("Requires.private:", "Libs.private:")):
+            continue
+        if line.startswith("Libs:"):
+            line = f"Libs: -L${{libdir}} -l{library}"
+        if line.startswith("Cflags:"):
+            line = re.sub(r"-I(?:/[^\s]+|[A-Za-z]:/[^\s]+)(?:\s+|$)", "", line).rstrip()
+        fields.append(line)
+    return "\n".join(fields) + "\n"
 
 
 def runtime_binaries(prefix, pattern):
