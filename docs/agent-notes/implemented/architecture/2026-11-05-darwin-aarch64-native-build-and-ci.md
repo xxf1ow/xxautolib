@@ -28,9 +28,9 @@ Status: implemented
 
 Darwin 使用 Apple Clang。执行环境通过 `xcrun` 取得当前开发工具目录中的 `clang`、`clang++` 及 macOS SDK，显式选择编译器并核对实际 C/C++ 编译器身份为 `AppleClang`；不通过 PATH 偶然选择 Homebrew LLVM 或 GCC，不为逐包失败切换编译器。记录实际工具版本、SDK 和相关配置，不承诺不同机器的 Apple Clang 补丁版本一致。
 
-普通配置通过 cache 参数在首次 `project()` 前设置 `CMAKE_OSX_ARCHITECTURES=arm64`、`CMAKE_OSX_DEPLOYMENT_TARGET=15.0`。公共生成入口将这些已定义的值传入实际 CMake 子项目；显式选择的 SDK 和编译器也必须在子配置中保持一致。消费验证使用相同目标参数，不只固定生产根的参数。Darwin 本次拒绝非 ARM64 或多架构配置，不静默选择其中一个架构；配方也不能把本轮目标改成 Intel 或更高部署目标后仍算通过。
+Darwin 根入口在首次 `project()` 前读取本机架构，并在 Apple Silicon 上将 `CMAKE_OSX_ARCHITECTURES=arm64` 写入 cache，再传给子项目。调用方显式设置 `CMAKE_OSX_DEPLOYMENT_TARGET=15.0`；显式选择的 SDK 和编译器也必须在子配置中保持一致。独立消费者未设置架构时使用 CMake 的目标系统处理器。Darwin 拒绝非 ARM64 或多架构配置；自动识别规则见[后续决定](../bug-fix/2026-11-20-darwin-automatic-architecture.md)。
 
-这些目标参数沿用普通 CMake 的显式输入，不增加环境专用的配置解析器。配方与本轮固定目标冲突时明确失败，公共默认值的其他合并优先级保持不变；不把根传入的 arm64 当成可被模块改写的普通兜底值。
+deployment target、SDK 与编译器沿用普通 CMake 输入，不增加环境专用的配置解析器。根入口初始化的 ARM64 目标不能被配方改写；配方与固定目标冲突时明确失败，公共默认值的其他合并优先级保持不变。
 
 CI 使用 `Unix Makefiles` 和仓库已固定的 GNU Make 4.4.1，同一平台父子构建共享顶层并行预算与 FIFO jobserver。macOS 预算通过原生 CPU 查询取得，最少为 1；不调用 Linux 的 `nproc`。已有 jobserver 探针复用执行及判定逻辑，只适配实际不兼容的宿主命令，例如 macOS `date` 不提供 GNU 纳秒输出。首次真实原生验证检查父子 Make 接线，不能把顶层出现 `-j` 视为预算生效的充分证据。
 

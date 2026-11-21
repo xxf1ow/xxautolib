@@ -128,6 +128,10 @@ pkgconfig_dir = "lib/pkgconfig"
 [platforms.linux-aarch64]
 pkgconfig_dir = "lib/pkgconfig"
 
+# Export OpenMP through its CMake target so consumers resolve the local runtime.
+[[platforms.linux-aarch64.patches]]
+file = "linux-openmp.patch"
+
 # 保持 OpenMP 能力；Config 传播包内头文件、编译参数与运行库。
 [[platforms.darwin-aarch64.patches]]
 file = "darwin-openmp.patch"

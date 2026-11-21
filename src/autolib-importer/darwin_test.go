@@ -13,7 +13,7 @@ func nativeLoopCMakeArgs(t *testing.T) []string {
 	if runtime.GOOS != "darwin" {
 		return nil
 	}
-	return []string{"-DCMAKE_OSX_ARCHITECTURES=arm64", "-DCMAKE_OSX_DEPLOYMENT_TARGET=15.0",
+	return []string{"-DCMAKE_OSX_DEPLOYMENT_TARGET=15.0",
 		"-DCMAKE_C_COMPILER=" + strings.TrimSpace(loopCommand(t, "xcrun", "--find", "clang")),
 		"-DCMAKE_CXX_COMPILER=" + strings.TrimSpace(loopCommand(t, "xcrun", "--find", "clang++")),
 		"-DCMAKE_OSX_SYSROOT=" + strings.TrimSpace(loopCommand(t, "xcrun", "--sdk", "macosx", "--show-sdk-path")),
@@ -29,7 +29,7 @@ func TestDarwinEntryIdentity(t *testing.T) {
 	marker := filepath.Join(f.root, "adapter-ran")
 	body := identityHeader(packageIdentity{"demo", "1.0", "darwin", "aarch64"}) + "file(WRITE [==[" + filepath.ToSlash(marker) + "]==] ran)\nadd_library(autolib::demo INTERFACE IMPORTED GLOBAL)\n"
 	putTestFile(t, path, body)
-	if out, err := f.configure("-DCMAKE_SYSTEM_NAME=Darwin", "-DCMAKE_SYSTEM_PROCESSOR=arm64", "-DCMAKE_OSX_ARCHITECTURES=arm64"); err != nil {
+	if out, err := f.configure("-DCMAKE_SYSTEM_NAME=Darwin", "-DCMAKE_SYSTEM_PROCESSOR=arm64"); err != nil {
 		t.Fatalf("Darwin entry: %v\n%s", err, out)
 	}
 	if readTestFile(t, marker) != "ran" {
@@ -40,7 +40,7 @@ func TestDarwinEntryIdentity(t *testing.T) {
 			t.Fatal(err)
 		}
 		putTestFile(t, path, header+"file(WRITE [==["+filepath.ToSlash(marker)+"]==] ran)\n")
-		if out, err := f.configure("-DCMAKE_SYSTEM_NAME=Darwin", "-DCMAKE_SYSTEM_PROCESSOR=arm64", "-DCMAKE_OSX_ARCHITECTURES=arm64"); err == nil {
+		if out, err := f.configure("-DCMAKE_SYSTEM_NAME=Darwin", "-DCMAKE_SYSTEM_PROCESSOR=arm64"); err == nil {
 			t.Fatal("invalid cached identity accepted", out)
 		}
 		if _, err := os.Stat(marker); !os.IsNotExist(err) {
@@ -52,5 +52,9 @@ func TestDarwinEntryIdentity(t *testing.T) {
 		if out, err := f.configure("-DCMAKE_SYSTEM_NAME=Darwin", "-DCMAKE_SYSTEM_PROCESSOR=arm64", "-DCMAKE_OSX_ARCHITECTURES="+arch); err == nil {
 			t.Fatal("unsupported target accepted", out)
 		}
+	}
+	putTestFile(t, path, body)
+	if out, err := f.configure("-DCMAKE_SYSTEM_NAME=Darwin", "-DCMAKE_SYSTEM_PROCESSOR=x86_64"); err == nil {
+		t.Fatal("unsupported native target accepted", out)
 	}
 }

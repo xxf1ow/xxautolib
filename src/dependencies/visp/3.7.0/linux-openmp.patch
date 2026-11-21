@@ -1,0 +1,32 @@
+--- a/cmake/VISPGenerateConfig.cmake
++++ b/cmake/VISPGenerateConfig.cmake
+@@ -86,2 +86,22 @@
+ # Export the library
++find_package(OpenMP REQUIRED COMPONENTS CXX)
++foreach(m IN LISTS VISP_MODULES_BUILD)
++  if(TARGET ${m})
++    get_target_property(_visp_links ${m} INTERFACE_LINK_LIBRARIES)
++    if(_visp_links)
++      set(_visp_openmp_link FALSE)
++      foreach(_visp_openmp_library IN LISTS OpenMP_CXX_LIBRARIES)
++        list(FIND _visp_links "${_visp_openmp_library}" _visp_openmp_index)
++        if(NOT _visp_openmp_index EQUAL -1)
++          list(REMOVE_ITEM _visp_links "${_visp_openmp_library}")
++          set(_visp_openmp_link TRUE)
++        endif()
++      endforeach()
++      if(_visp_openmp_link)
++        list(APPEND _visp_links OpenMP::OpenMP_CXX)
++        set_property(TARGET ${m} PROPERTY INTERFACE_LINK_LIBRARIES "${_visp_links}")
++      endif()
++    endif()
++  endif()
++endforeach()
+ export(EXPORT VISPModules FILE "${PROJECT_BINARY_DIR}/VISPModules.cmake")
+--- a/cmake/templates/VISPConfig.cmake.in
++++ b/cmake/templates/VISPConfig.cmake.in
+@@ -151,2 +151,4 @@
+ # Tells the user project ViSP library name
++# Resolve OpenMP on the consuming machine before loading exported targets.
++find_package(OpenMP REQUIRED COMPONENTS CXX)
+ set(VISP_LIBRARIES ${VISP_LIBS})
