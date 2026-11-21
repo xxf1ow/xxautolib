@@ -61,14 +61,16 @@ jobs:
         with:
           name: stage-one-${{ matrix.platform }}
           path: build/verify-release/
-      - name: Retain configure diagnostics
-        if: failure()
+      - name: Retain build and consumption evidence
+        if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: recipe-diagnostics-${{ matrix.platform }}
+          name: recipe-evidence-${{ matrix.platform }}
           path: |
             build/verify/ep/gstreamer/1.28.9/bin/meson/meson-logs/*.txt
-            build/verify-evidence/
+            build/verify-evidence/**/*.log
+            build/verify-evidence/**/abi-requirements.txt
+            build/verify-install/gstreamer/1.28.9/share/gstreamer-1.0/plugins.txt
 
   darwin:
     runs-on: macos-15
@@ -105,14 +107,16 @@ jobs:
         with:
           name: stage-one-darwin-aarch64
           path: build/verify-release/
-      - name: Retain configure diagnostics
-        if: failure()
+      - name: Retain build and consumption evidence
+        if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: recipe-diagnostics-darwin-aarch64
+          name: recipe-evidence-darwin-aarch64
           path: |
             build/verify/ep/gstreamer/1.28.9/bin/meson/meson-logs/*.txt
-            build/verify-evidence/
+            build/verify-evidence/**/*.log
+            build/verify-evidence/**/macho-evidence.txt
+            build/verify-install/gstreamer/1.28.9/share/gstreamer-1.0/plugins.txt
 
   windows:
     runs-on: windows-2022
@@ -154,14 +158,16 @@ jobs:
         with:
           name: stage-one-windows-x86_64
           path: build/verify-release/
-      - name: Retain configure diagnostics
-        if: failure()
+      - name: Retain build and consumption evidence
+        if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: recipe-diagnostics-windows-x86_64
+          name: recipe-evidence-windows-x86_64
           path: |
             build/verify/ep/gstreamer/1.28.9/bin/meson/meson-logs/*.txt
-            build/verify-evidence/
+            build/verify-evidence/**/*.log
+            build/verify-evidence/**/link-inputs-Release.txt
+            build/verify-install/gstreamer/1.28.9/share/gstreamer-1.0/plugins.txt
 
   linux-archive:
     needs: linux

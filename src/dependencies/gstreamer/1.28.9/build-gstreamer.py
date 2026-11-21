@@ -171,7 +171,10 @@ def configure(config, env, meson):
         options += ["--vsenv", "-Dgst-plugins-bad:mediafoundation=enabled", "-Dgst-plugins-bad:d3d11=enabled",
                     "-Dgst-plugins-bad:nvcodec=disabled"]
     elif config.sdk:
-        options += ["-Dgst-plugins-base:gl=enabled", "-Dgst-plugins-bad:applemedia=enabled"]
+        # 只选择原生 Cocoa OpenGL。Vulkan SDK 头文件不在可搬迁包中。
+        options += ["-Dgst-plugins-base:gl=enabled", "-Dgst-plugins-base:gl_platform=cgl",
+                    "-Dgst-plugins-base:gl_winsys=cocoa", "-Dgst-plugins-bad:applemedia=enabled",
+                    "-Dgst-plugins-bad:vulkan=disabled"]
     else:
         nvcodec = "disabled" if config.binutils else "enabled"
         options.append(f"-Dgst-plugins-bad:nvcodec={nvcodec}")
@@ -201,20 +204,25 @@ def copy_glib_development(config, pkgconf, env):
         suffix = "glib-2.0" if variable == "includedir" else "glib-2.0/include"
         shutil.copytree(root / suffix, config.prefix / relative, dirs_exist_ok=True)
     libdir = pkg_path(pkgconf, env, "glib-2.0", "libdir")
+    libraries = ("glib-2.0", "gobject-2.0", "gio-2.0", "gmodule-2.0", "gthread-2.0")
     if os.name == "nt":
-        for name in ("glib-2.0", "gobject-2.0"):
+        for name in libraries:
             shutil.copy2(libdir / f"{name}.lib", config.prefix / "lib")
     else:
-        for name in ("glib-2.0", "gobject-2.0", "gio-2.0", "gmodule-2.0", "gthread-2.0"):
+        for name in libraries:
             copy_runtime(libdir, config.prefix / "lib", f"lib{name}*.dylib")
-    for name in GLIB_COMPONENTS:
+        gio_unix = pkg_path(pkgconf, env, "gio-unix-2.0", "includedir") / "gio-unix-2.0"
+        shutil.copytree(gio_unix, config.prefix / "include/gio-unix-2.0", dirs_exist_ok=True)
+    modules = GLIB_COMPONENTS if os.name == "nt" else (*GLIB_COMPONENTS, "gio-unix-2.0")
+    for name in modules:
         source = pkg_path(pkgconf, env, name, "pcfiledir") / f"{name}.pc"
         (config.prefix / "lib/pkgconfig" / source.name).write_text(shared_glib_metadata(source.read_text(), name))
+    return libdir
 
 
 def shared_glib_metadata(content, name):
     # 这里只交付共享库。GLib 的私有静态依赖和构建机 gettext 路径不属于公开接口。
-    library = "gmodule-2.0" if name == "gmodule-no-export-2.0" else name
+    library = {"gmodule-no-export-2.0": "gmodule-2.0", "gio-unix-2.0": "gio-2.0"}.get(name, name)
     fields = []
     for line in content.splitlines():
         if line.startswith(("Requires.private:", "Libs.private:")):
@@ -228,8 +236,8 @@ def shared_glib_metadata(content, name):
 
 
 def runtime_binaries(prefix, pattern):
-    return sorted(path for path in [*prefix.glob(f"lib/**/{pattern}"), *prefix.glob("bin/gst-*"),
-                                    *prefix.glob("libexec/gstreamer-1.0/gst-plugin-scanner")] if not path.is_symlink())
+    candidates = [*prefix.glob(f"lib/**/{pattern}"), *prefix.glob("bin/*"), *prefix.glob("libexec/**/*")]
+    return sorted(path for path in candidates if path.is_file() and not path.is_symlink())
 
 
 def relocate_linux(prefix, ffmpeg):
@@ -247,6 +255,7 @@ def relocate_darwin(prefix, ffmpeg):
     library_dir = prefix / "lib"
     pending = [(path, path) for path in runtime_binaries(prefix, "*.dylib")]
     visited = set()
+    providers = set()
     while pending:
         binary, origin = pending.pop()
         if binary in visited or not binary.is_file():
@@ -254,7 +263,10 @@ def relocate_darwin(prefix, ffmpeg):
         visited.add(binary)
         # 部分 Homebrew 运行库同时携带 x86_64，Darwin 发布身份是单一 ARM64。
         with binary.open("rb") as contents:
-            universal = contents.read(4) in (b"\xca\xfe\xba\xbe", b"\xca\xfe\xba\xbf")
+            magic = contents.read(4)
+        universal = magic in (b"\xca\xfe\xba\xbe", b"\xca\xfe\xba\xbf")
+        if not universal and magic != b"\xcf\xfa\xed\xfe":
+            continue
         if universal:
             arm64 = binary.with_suffix(".arm64")
             run("lipo", "-thin", "arm64", binary, "-output", arm64)
@@ -289,6 +301,7 @@ def relocate_darwin(prefix, ffmpeg):
                 bundled = library_dir / original.name
                 shutil.copy2(original, bundled)
                 bundled.chmod(0o755)
+                providers.add(original.resolve())
                 pending.append((bundled, original))
             edits += ["-change", name, f"@loader_path/{os.path.relpath(bundled, binary.parent)}"]
         for rpath in rpaths:
@@ -298,6 +311,20 @@ def relocate_darwin(prefix, ffmpeg):
             run("install_name_tool", *edits, binary)
         if edits or universal:
             run("codesign", "--force", "--sign", "-", binary)
+    return providers
+
+
+def copy_homebrew_notices(licenses, providers):
+    kegs = {parent for origin in providers for parent in origin.parents if (parent / "INSTALL_RECEIPT.json").is_file()}
+    for keg in sorted(kegs):
+        dest = licenses / "homebrew" / keg.parent.name / keg.name
+        dest.mkdir(parents=True, exist_ok=True)
+        for pattern in ("COPYING*", "COPYRIGHT*", "LICENSE*", "LICENCE*", "NOTICE*", "LEGAL*", "sbom.spdx.json", ".brew/*.rb"):
+            for source in keg.glob(pattern):
+                if source.is_file():
+                    shutil.copyfile(source, dest / source.name)
+        source = f"https://formulae.brew.sh/formula/{keg.parent.name} {keg.name}\n"
+        (dest / "source.txt").write_text(source)
 
 
 def install(config, env, meson):
@@ -310,10 +337,11 @@ def install(config, env, meson):
     if gdb_autoload.is_dir():
         shutil.rmtree(gdb_autoload)
     licenses = prefix / "share/licenses"
-    for item in (ports / "share").glob("*/copyright"):
-        dest = licenses / item.parent.name
-        dest.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(item, dest)
+    for pattern in ("*/copyright", "*/vcpkg.spdx.json"):
+        for item in (ports / "share").glob(pattern):
+            dest = licenses / item.parent.name
+            dest.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(item, dest)
     for directory in (config.orc, config.source / "subprojects/gstreamer", config.source / "subprojects/gst-plugins-base",
                       config.source / "subprojects/gst-plugins-good", config.source / "subprojects/gst-plugins-bad",
                       config.source / "subprojects/gst-plugins-ugly", config.source / "subprojects/gst-libav",
@@ -323,12 +351,18 @@ def install(config, env, meson):
         for item in directory.glob("COPYING*"):
             shutil.copy2(item, dest)
     if os.name == "nt" or config.sdk:
-        copy_glib_development(config, pkgconf, env)
+        glib_libdir = copy_glib_development(config, pkgconf, env)
+    for header in ("zlib.h", "zconf.h"):
+        shutil.copyfile(ports / "include" / header, prefix / "include" / header)
+    shutil.copyfile(ports / "lib/pkgconfig/zlib.pc", prefix / "lib/pkgconfig/zlib.pc")
     if os.name == "nt":
         copy_runtime(ports / "bin", prefix / "bin", "*.dll")
+        for library in (ports / "lib").glob("*zlib*.lib"):
+            shutil.copy2(library, prefix / "lib")
     elif config.sdk:
         copy_runtime(ports / "lib", prefix / "lib", "*.dylib")
-        relocate_darwin(prefix, config.ffmpeg)
+        providers = relocate_darwin(prefix, config.ffmpeg)
+        copy_homebrew_notices(licenses, {*providers, glib_libdir.resolve()})
     else:
         copy_runtime(ports / "lib", prefix / "lib", "*.so*")
         relocate_linux(prefix, config.ffmpeg)

@@ -116,7 +116,12 @@ func TestGStreamerArchiveConsumption(t *testing.T) {
 	if production.OS != "linux" {
 		pcEnv = append(pcEnv, "PKG_CONFIG_LIBDIR="+pcDir)
 	}
-	for _, module := range []string{"gstreamer-1.0", "gstreamer-base-1.0", "gstreamer-app-1.0", "gstreamer-video-1.0"} {
+	modules := []string{"gstreamer-1.0", "gstreamer-base-1.0", "gstreamer-app-1.0", "gstreamer-video-1.0",
+		"gstreamer-rtp-1.0", "gstreamer-rtsp-1.0", "gstreamer-rtsp-server-1.0", "gstreamer-net-1.0"}
+	if production.OS == "darwin" {
+		modules = append(modules, "gstreamer-gl-1.0")
+	}
+	for _, module := range modules {
 		pc := exec.Command("pkg-config", "--print-errors", "--cflags", "--libs", module)
 		pc.Env = pcEnv
 		flags, err := pc.CombinedOutput()
@@ -124,6 +129,12 @@ func TestGStreamerArchiveConsumption(t *testing.T) {
 			t.Fatalf("archived pkg-config interface for %s: %v\n%s", module, err, flags)
 		}
 		t.Logf("%s: %s", module, strings.TrimSpace(string(flags)))
+	}
+	if production.OS != "windows" {
+		orcc := exec.Command(filepath.Join(install, "gstreamer", "1.28.9", "bin", "orcc"), "--version")
+		if result, err := orcc.CombinedOutput(); err != nil {
+			t.Fatalf("archived Orc compiler: %v\n%s", err, result)
+		}
 	}
 	producer := filepath.Join(root, "build", "verify-install")
 	if _, err := os.Stat(producer); err == nil {
