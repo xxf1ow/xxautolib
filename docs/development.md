@@ -1,6 +1,6 @@
 # 开发
 
-构建需要 Git、CMake（3.20+）和 C/C++ 编译器。FLANN 使用 OpenMP，FLANN/HarfBuzz 消费和 OpenCV 构建需要 pkg-config。OpenCV 自动依赖 `ffmpeg@8.1.3`。FFmpeg 在 Unix 使用 `Unix Makefiles` 和 GNU Make。Windows 从 MSVC x64 开发环境启动，`FFMPEG_MSYS2_ROOT` 指向含 Bash/Make 的 MSYS2。builder、Go 测试无需 Python/uv。发布及整链夹具需要 Python 3.12，技能校验器自备环境。
+构建需要 Git、CMake（3.20+）和 C/C++ 编译器。FLANN 使用 OpenMP，FLANN/HarfBuzz 消费和 OpenCV 构建需要 pkg-config。OpenCV、[GStreamer](agent-notes/proposed/architecture/2026-11-21-gstreamer-1.28.9-delivery.md#构建输入与运行库) 自动依赖 `ffmpeg@8.1.3`。FFmpeg 在 Unix 使用 `Unix Makefiles` 和 GNU Make。Windows 从 MSVC x64 开发环境启动，`FFMPEG_MSYS2_ROOT` 指向含 Bash/Make 的 MSYS2。builder、Go 测试无需 Python/uv。发布及整链夹具需要 Python 3.12，技能校验器自备环境。
 
 ## 准备与配置
 

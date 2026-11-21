@@ -1,0 +1,17 @@
+diff --git a/source/CMakeLists.txt b/source/CMakeLists.txt
+--- a/source/CMakeLists.txt
++++ b/source/CMakeLists.txt
+@@ -114,10 +114,10 @@
+     # Neon I8MM is mandatory from Armv8.6.
+     set(AARCH64_NEON_I8MM_FLAG "-march=armv8.2-a+dotprod+i8mm")
+     set(AARCH64_SVE_FLAG "-march=armv8.2-a+dotprod+i8mm+sve")
+-    # SVE2 is only available from Armv9.0, and armv9-a implies +dotprod and +sve.
+-    set(AARCH64_SVE2_FLAG "-march=armv9-a+i8mm+sve2")
++    # GCC 10 spells out the extensions enabled by the Armv9-A target.
++    set(AARCH64_SVE2_FLAG "-march=armv8.5-a+dotprod+i8mm+sve2")
+     # SVE2 BitPerm implies +dotprod, +sve, and +sve2.
+-    set(AARCH64_SVE2_BITPERM_FLAG "-march=armv9-a+i8mm+sve2-bitperm")
++    set(AARCH64_SVE2_BITPERM_FLAG "-march=armv8.5-a+dotprod+i8mm+sve2-bitperm")
+ elseif(RISCV64MATCH GREATER "-1")
+     message(STATUS "Detected RISCV64 target processor")
+     set(RISCV64 1)
