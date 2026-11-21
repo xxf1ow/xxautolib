@@ -362,8 +362,7 @@ def install(config, env, meson):
     shutil.copyfile(ports / "lib/pkgconfig/zlib.pc", prefix / "lib/pkgconfig/zlib.pc")
     if os.name == "nt":
         copy_runtime(ports / "bin", prefix / "bin", "*.dll")
-        for library in (ports / "lib").glob("*zlib*.lib"):
-            shutil.copy2(library, prefix / "lib")
+        shutil.copy2(ports / "lib/libz.lib", prefix / "lib")
     elif config.sdk:
         copy_runtime(ports / "lib", prefix / "lib", "*.dylib")
         providers = relocate_darwin(prefix, config.ffmpeg)

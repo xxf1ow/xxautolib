@@ -122,9 +122,11 @@ func TestGStreamerArchiveConsumption(t *testing.T) {
 		modules = append(modules, "gstreamer-gl-1.0")
 	}
 	if production.OS == "windows" {
-		header := filepath.Join(install, "gstreamer", "1.28.9", "include", "gio-win32-2.0", "gio", "gwin32inputstream.h")
-		if _, err := os.Stat(header); err != nil {
-			t.Fatalf("archived GIO Windows headers: %v", err)
+		for _, file := range []string{"include/gio-win32-2.0/gio/gwin32inputstream.h", "lib/libz.lib"} {
+			path := filepath.Join(install, "gstreamer", "1.28.9", file)
+			if _, err := os.Stat(path); err != nil {
+				t.Fatalf("archived Windows development file %s: %v", file, err)
+			}
 		}
 	}
 	for _, module := range modules {
