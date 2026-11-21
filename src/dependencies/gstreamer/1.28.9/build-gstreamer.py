@@ -208,7 +208,8 @@ def copy_glib_development(config, pkgconf, env):
             copy_runtime(libdir, config.prefix / "lib", f"lib{name}*.dylib")
     for name in GLIB_COMPONENTS:
         source = pkg_path(pkgconf, env, name, "pcfiledir") / f"{name}.pc"
-        shutil.copy2(source, config.prefix / "lib/pkgconfig")
+        # Homebrew 瓶装元数据可为只读，安装副本随后需要修正前缀。
+        shutil.copyfile(source, config.prefix / "lib/pkgconfig" / source.name)
 
 
 def runtime_binaries(prefix, pattern):
