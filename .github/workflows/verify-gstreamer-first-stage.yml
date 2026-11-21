@@ -57,10 +57,10 @@ jobs:
           cp .github/scripts/verify-gstreamer-first-stage_test.go src/autolib-ci/
           "$CMAKE_EXE" -P src/autolib-builder/go-sdk.cmake -- test -mod=readonly -p=1 -parallel=1 ./src/autolib-ci -run '^Test(GStreamerFirstStageNative|CIGStreamerMediaSelection|VideoIOFixture)$' -count=1 -v
       - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
         with:
           name: stage-one-${{ matrix.platform }}
           path: build/verify-release/
-          if-no-files-found: error
       - name: Retain configure diagnostics
         if: failure()
         uses: actions/upload-artifact@v7
@@ -101,10 +101,10 @@ jobs:
           cp .github/scripts/verify-gstreamer-first-stage_test.go src/autolib-ci/
           "$CMAKE_EXE" -P src/autolib-builder/go-sdk.cmake -- test -mod=readonly -p=1 -parallel=1 ./src/autolib-ci -run '^TestGStreamer(FirstStageNative|ArchiveConsumption)$' -count=1 -v
       - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
         with:
           name: stage-one-darwin-aarch64
           path: build/verify-release/
-          if-no-files-found: error
       - name: Retain configure diagnostics
         if: failure()
         uses: actions/upload-artifact@v7
@@ -150,10 +150,10 @@ jobs:
           & $env:CMAKE_EXE -P src/autolib-builder/go-sdk.cmake -- test -mod=readonly -p=1 -parallel=1 ./src/autolib-ci -run '^TestGStreamer(FirstStageNative|ArchiveConsumption)$' -count=1 -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
         with:
           name: stage-one-windows-x86_64
           path: build/verify-release/
-          if-no-files-found: error
       - name: Retain configure diagnostics
         if: failure()
         uses: actions/upload-artifact@v7

@@ -19,7 +19,7 @@ func TestVideoIOFixture(t *testing.T) {
 	}
 	if config := videoIOServerConfig(rtsp, udp, rtmp); !strings.Contains(config, "rtmpAddress: "+rtmp+"\n") ||
 		!strings.Contains(config, "gstreamer-rtsp:\n    source: publisher\n") ||
-		!strings.Contains(config, "gstreamer-rtmp:\n    source: publisher\n") {
+		!strings.Contains(config, "gstreamer-rtmp/stream:\n    source: publisher\n") {
 		t.Fatalf("GStreamer fixture does not expose separate publish paths:\n%s", config)
 	}
 	for _, status := range []int{200, 404} {

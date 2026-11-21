@@ -52,9 +52,6 @@ func TestGStreamerFirstStageNative(t *testing.T) {
 			t.Log(path)
 		})
 	}
-	if t.Failed() {
-		return
-	}
 	builder := filepath.Join(root, "build", "verify", "tools", "autolib-builder")
 	if production.OS == "windows" {
 		builder += ".exe"

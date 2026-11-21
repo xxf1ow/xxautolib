@@ -14,6 +14,7 @@ import (
 )
 
 const videoIOServerRelease = "https://github.com/bluenviron/mediamtx/releases/download/v1.15.6/"
+const gstreamerRTMPPath = "gstreamer-rtmp/stream"
 
 func videoIOAsset(platform string) (string, string) {
 	switch platform {
@@ -149,7 +150,7 @@ func startVideoIOFixture(ctx context.Context, o ciValidationOptions, evidence st
 		if err == nil {
 			var rtmpURL string
 			if gstreamer {
-				rtmpURL = "rtmp://" + rtmpAddress + "/gstreamer-rtmp"
+				rtmpURL = "rtmp://" + rtmpAddress + "/" + gstreamerRTMPPath
 			}
 			return "rtsp://" + address + "/videoio", rtmpURL, cleanup, nil
 		}
@@ -171,7 +172,7 @@ func videoIOServerConfig(rtsp, udp, rtmp string) string {
 	}
 	config += fmt.Sprintf("paths:\n  videoio:\n    source: udp+mpegts://%s\n", udp)
 	if rtmp != "" {
-		config += "  gstreamer-rtsp:\n    source: publisher\n  gstreamer-rtmp:\n    source: publisher\n"
+		config += "  gstreamer-rtsp:\n    source: publisher\n  " + gstreamerRTMPPath + ":\n    source: publisher\n"
 	}
 	return config
 }
