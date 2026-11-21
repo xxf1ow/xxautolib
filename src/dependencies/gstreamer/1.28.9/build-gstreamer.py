@@ -174,6 +174,8 @@ def configure(config, env, meson):
     else:
         nvcodec = "disabled" if config.binutils else "enabled"
         options.append(f"-Dgst-plugins-bad:nvcodec={nvcodec}")
+        # tensordecoders 使用 GLib 2.72 的 g_alloca0，Focal 提供 GLib 2.64。
+        options.append("-Dgst-plugins-bad:tensordecoders=disabled")
     build = config.work / "meson"
     if (build / "build.ninja").exists():
         options.append("--reconfigure")
