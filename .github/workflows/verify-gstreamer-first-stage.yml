@@ -73,7 +73,7 @@ jobs:
         run: |
           export AUTOLIB_INSTALL_ROOT="$PWD/build/verify-install"
           "$CMAKE_EXE" -S . -B build/verify -G 'Unix Makefiles' -DBUILD_LIST=gstreamer@1.28.9 -DCMAKE_MAKE_PROGRAM="$MAKE_EXE" \
-            -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 -DCMAKE_OSX_SYSROOT="$(xcrun --show-sdk-path)" \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 -DCMAKE_OSX_SYSROOT="$(xcrun --sdk macosx --show-sdk-path)" \
             -DCMAKE_C_COMPILER="$CC" -DCMAKE_CXX_COMPILER="$CXX"
           "$CMAKE_EXE" --build build/verify --parallel 4 -- --jobserver-style=fifo
           "$AUTOLIB_INSTALL_ROOT/gstreamer/1.28.9/bin/gst-inspect-1.0" --version
@@ -104,7 +104,7 @@ jobs:
         shell: pwsh
         run: |
           $env:AUTOLIB_INSTALL_ROOT = Join-Path $env:GITHUB_WORKSPACE 'build/verify-install'
-          & $env:CMAKE_EXE -S . -B build/verify -G 'Visual Studio 17 2022' -A x64 -T v143 -DBUILD_LIST=gstreamer@1.28.9 -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL
+          & $env:CMAKE_EXE -S . -B build/verify -G 'Visual Studio 17 2022' -A x64 -T v143 '-DBUILD_LIST=gstreamer@1.28.9' -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & $env:CMAKE_EXE --build build/verify --config Release --parallel 4
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
