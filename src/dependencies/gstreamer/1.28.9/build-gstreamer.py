@@ -208,13 +208,14 @@ def copy_glib_development(config, pkgconf, env):
     if os.name == "nt":
         for name in libraries:
             shutil.copy2(libdir / f"{name}.lib", config.prefix / "lib")
+        gio_module, gio_headers = "gio-windows-2.0", "gio-win32-2.0"
     else:
         for name in libraries:
             copy_runtime(libdir, config.prefix / "lib", f"lib{name}*.dylib")
-        gio_unix = pkg_path(pkgconf, env, "gio-unix-2.0", "includedir") / "gio-unix-2.0"
-        shutil.copytree(gio_unix, config.prefix / "include/gio-unix-2.0", dirs_exist_ok=True)
-    modules = GLIB_COMPONENTS if os.name == "nt" else (*GLIB_COMPONENTS, "gio-unix-2.0")
-    for name in modules:
+        gio_module = gio_headers = "gio-unix-2.0"
+    gio_include = pkg_path(pkgconf, env, gio_module, "includedir") / gio_headers
+    shutil.copytree(gio_include, config.prefix / "include" / gio_headers, dirs_exist_ok=True)
+    for name in (*GLIB_COMPONENTS, gio_module):
         source = pkg_path(pkgconf, env, name, "pcfiledir") / f"{name}.pc"
         (config.prefix / "lib/pkgconfig" / source.name).write_text(shared_glib_metadata(source.read_text(), name))
     return libdir
@@ -222,7 +223,11 @@ def copy_glib_development(config, pkgconf, env):
 
 def shared_glib_metadata(content, name):
     # 这里只交付共享库。GLib 的私有静态依赖和构建机 gettext 路径不属于公开接口。
-    library = {"gmodule-no-export-2.0": "gmodule-2.0", "gio-unix-2.0": "gio-2.0"}.get(name, name)
+    library = {
+        "gmodule-no-export-2.0": "gmodule-2.0",
+        "gio-unix-2.0": "gio-2.0",
+        "gio-windows-2.0": "gio-2.0",
+    }.get(name, name)
     fields = []
     for line in content.splitlines():
         if line.startswith(("Requires.private:", "Libs.private:")):

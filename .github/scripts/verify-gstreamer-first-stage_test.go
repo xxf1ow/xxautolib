@@ -121,6 +121,12 @@ func TestGStreamerArchiveConsumption(t *testing.T) {
 	if production.OS == "darwin" {
 		modules = append(modules, "gstreamer-gl-1.0")
 	}
+	if production.OS == "windows" {
+		header := filepath.Join(install, "gstreamer", "1.28.9", "include", "gio-win32-2.0", "gio", "gwin32inputstream.h")
+		if _, err := os.Stat(header); err != nil {
+			t.Fatalf("archived GIO Windows headers: %v", err)
+		}
+	}
 	for _, module := range modules {
 		pc := exec.Command("pkg-config", "--print-errors", "--cflags", "--libs", module)
 		pc.Env = pcEnv
