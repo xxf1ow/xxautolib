@@ -168,7 +168,8 @@ def configure(config, env, meson):
     }.items():
         options.extend(f"-Dgst-plugins-{module}:{plugin}=enabled" for plugin in plugins)
     if os.name == "nt":
-        options += ["--vsenv", "-Dgst-plugins-bad:mediafoundation=enabled", "-Dgst-plugins-bad:d3d11=enabled"]
+        options += ["--vsenv", "-Dgst-plugins-bad:mediafoundation=enabled", "-Dgst-plugins-bad:d3d11=enabled",
+                    "-Dgst-plugins-bad:nvcodec=disabled"]
     elif config.sdk:
         options += ["-Dgst-plugins-base:gl=enabled", "-Dgst-plugins-bad:applemedia=enabled"]
     else:
