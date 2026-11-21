@@ -52,48 +52,58 @@ func describeVideoIOStream(ctx context.Context, address string) error {
 	return nil
 }
 
-func startVideoIOFixture(ctx context.Context, o ciValidationOptions, evidence string) (string, func(), error) {
+func startVideoIOFixture(ctx context.Context, o ciValidationOptions, evidence string, gstreamer bool) (string, string, func(), error) {
 	dir, err := os.MkdirTemp(evidence, "videoio-")
 	if err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
 	// 夹具由 testsrc2 生成（64x48、10 fps、4 秒），使用 libx264 ultrafast/zerolatency、GOP 10、yuv420p。
 	fixture, err := os.ReadFile(filepath.Join(o.SourceRoot, "tests", "autolib", "fixtures", "rtsp-h264.ts"))
 	if err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
 	if len(fixture) == 0 || len(fixture)%188 != 0 {
-		return "", nil, fmt.Errorf("invalid videoio MPEG-TS fixture size %d", len(fixture))
+		return "", "", nil, fmt.Errorf("invalid videoio MPEG-TS fixture size %d", len(fixture))
 	}
 	executable, err := unpackVideoIOServer(ctx, o, dir)
 	if err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
 	tcp, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
 	address := tcp.Addr().String()
+	var rtmpAddress string
+	if gstreamer {
+		rtmp, err := net.Listen("tcp4", "127.0.0.1:0")
+		if err != nil {
+			tcp.Close()
+			return "", "", nil, err
+		}
+		rtmpAddress = rtmp.Addr().String()
+		rtmp.Close()
+	}
 	tcp.Close()
 	listen, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
 	if err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
 	udpAddress := listen.LocalAddr().(*net.UDPAddr)
 	listen.Close()
-	config := fmt.Sprintf("rtspAddress: %s\nrtspTransports: [tcp]\nrtmp: no\nhls: no\nwebrtc: no\nsrt: no\npaths:\n  videoio:\n    source: udp+mpegts://%s\n", address, udpAddress)
+	config := videoIOServerConfig(address, udpAddress.String(), rtmpAddress)
 	configPath := filepath.Join(dir, "mediamtx.yml")
 	if err := os.WriteFile(configPath, []byte(config), 0600); err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
 	sender, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
 	if err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
 	log, err := os.Create(filepath.Join(dir, "mediamtx.log"))
 	if err != nil {
 		sender.Close()
-		return "", nil, err
+		return "", "", nil, err
 	}
 	fixtureCtx, cancel := context.WithCancel(ctx)
 	server := ciExternalCommand(fixtureCtx, executable, configPath)
@@ -103,7 +113,7 @@ func startVideoIOFixture(ctx context.Context, o ciValidationOptions, evidence st
 		cancel()
 		log.Close()
 		sender.Close()
-		return "", nil, err
+		return "", "", nil, err
 	}
 	done := make(chan struct{})
 	go func() {
@@ -137,15 +147,33 @@ func startVideoIOFixture(ctx context.Context, o ciValidationOptions, evidence st
 	for {
 		err = describeVideoIOStream(readyCtx, address)
 		if err == nil {
-			return "rtsp://" + address + "/videoio", cleanup, nil
+			var rtmpURL string
+			if gstreamer {
+				rtmpURL = "rtmp://" + rtmpAddress + "/gstreamer-rtmp"
+			}
+			return "rtsp://" + address + "/videoio", rtmpURL, cleanup, nil
 		}
 		select {
 		case <-readyCtx.Done():
 			cleanup()
-			return "", nil, fmt.Errorf("RTSP fixture not ready: %v (see %s)", err, log.Name())
+			return "", "", nil, fmt.Errorf("RTSP fixture not ready: %v (see %s)", err, log.Name())
 		case <-retry.C:
 		}
 	}
+}
+
+func videoIOServerConfig(rtsp, udp, rtmp string) string {
+	config := fmt.Sprintf("rtspAddress: %s\nrtspTransports: [tcp]\nhls: no\nwebrtc: no\nsrt: no\n", rtsp)
+	if rtmp == "" {
+		config += "rtmp: no\n"
+	} else {
+		config += fmt.Sprintf("rtmp: yes\nrtmpAddress: %s\n", rtmp)
+	}
+	config += fmt.Sprintf("paths:\n  videoio:\n    source: udp+mpegts://%s\n", udp)
+	if rtmp != "" {
+		config += "  gstreamer-rtsp:\n    source: publisher\n  gstreamer-rtmp:\n    source: publisher\n"
+	}
+	return config
 }
 
 func unpackVideoIOServer(ctx context.Context, o ciValidationOptions, dir string) (string, error) {

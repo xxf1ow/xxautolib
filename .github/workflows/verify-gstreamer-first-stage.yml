@@ -7,6 +7,11 @@ on:
 permissions:
   contents: read
 
+env:
+  RECIPE_ROOTS: gstreamer@1.28.9,opencv@4.14.0,visp@3.7.0
+  GOMAXPROCS: '4'
+  CMAKE_BUILD_PARALLEL_LEVEL: '4'
+
 jobs:
   linux:
     strategy:
@@ -17,7 +22,7 @@ jobs:
           - {platform: linux-aarch64, runner: ubuntu-24.04-arm}
     runs-on: ${{ matrix.runner }}
     container: ubuntu:20.04@sha256:8feb4d8ca5354def3d8fce243717141ce31e2c428701f6682bd2fafe15388214
-    timeout-minutes: 30
+    timeout-minutes: 60
     env:
       PLATFORM: ${{ matrix.platform }}
       DEBIAN_FRONTEND: noninteractive
@@ -40,23 +45,36 @@ jobs:
         shell: bash
         run: |
           export AUTOLIB_INSTALL_ROOT="$PWD/build/verify-install"
-          "$CMAKE_EXE" -S . -B build/verify -G 'Unix Makefiles' -DBUILD_LIST=gstreamer@1.28.9 -DCMAKE_MAKE_PROGRAM="$MAKE_EXE"
+          "$CMAKE_EXE" -S . -B build/verify -G 'Unix Makefiles' "-DBUILD_LIST=$RECIPE_ROOTS" -DCMAKE_MAKE_PROGRAM="$MAKE_EXE"
           "$CMAKE_EXE" --build build/verify --parallel 4 -- --jobserver-style=fifo
           LD_LIBRARY_PATH= "$AUTOLIB_INSTALL_ROOT/gstreamer/1.28.9/bin/gst-inspect-1.0" --version
       - name: Run focused consumer driver fixtures
         if: matrix.platform == 'linux-x86_64'
         run: |
           GOMAXPROCS=4 "$CMAKE_EXE" -P src/autolib-builder/go-sdk.cmake -- test -mod=readonly -p=1 -parallel=1 ./src/autolib-importer -run 'Test(InstalledValidationDriver|GitHubValidationDriver)$' -count=1
+      - name: Run native consumption and create temporary archives
+        run: |
+          cp .github/scripts/verify-gstreamer-first-stage_test.go src/autolib-ci/
+          "$CMAKE_EXE" -P src/autolib-builder/go-sdk.cmake -- test -mod=readonly -p=1 -parallel=1 ./src/autolib-ci -run '^Test(GStreamerFirstStageNative|CIGStreamerMediaSelection|VideoIOFixture)$' -count=1 -v
+      - uses: actions/upload-artifact@v7
+        with:
+          name: stage-one-${{ matrix.platform }}
+          path: build/verify-release/
+          if-no-files-found: error
       - name: Retain configure diagnostics
         if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: recipe-diagnostics-${{ matrix.platform }}
-          path: build/verify/ep/gstreamer/1.28.9/bin/meson/meson-logs/*.txt
+          path: |
+            build/verify/ep/gstreamer/1.28.9/bin/meson/meson-logs/*.txt
+            build/verify-evidence/
 
   darwin:
     runs-on: macos-15
-    timeout-minutes: 25
+    timeout-minutes: 60
+    env:
+      PLATFORM: darwin-aarch64
     steps:
       - uses: actions/checkout@v7
         with:
@@ -66,27 +84,41 @@ jobs:
           mkdir -p build
           echo '{"platforms":[{"id":"darwin-aarch64","roots":["gstreamer@1.28.9"]}]}' > build/plan.json
           bash .github/scripts/prepare-darwin.sh --config .github/ci-tools.json --plan build/plan.json --platform darwin-aarch64 --work-root build/verify-tools > build/environment.json
-          brew install autoconf automake bison flex glib libtool ninja pkgconf
+          brew install autoconf automake bison flex glib libomp libtool ninja pkgconf
+          echo "CMAKE_PREFIX_PATH=$(brew --prefix libomp)" >> "$GITHUB_ENV"
           echo "CMAKE_EXE=$(jq -er '.cmake_command' build/environment.json)" >> "$GITHUB_ENV"
           echo "MAKE_EXE=$(jq -er '.make_program' build/environment.json)" >> "$GITHUB_ENV"
       - name: Build from the root entry point
         run: |
           export AUTOLIB_INSTALL_ROOT="$PWD/build/verify-install"
-          "$CMAKE_EXE" -S . -B build/verify -G 'Unix Makefiles' -DBUILD_LIST=gstreamer@1.28.9 -DCMAKE_MAKE_PROGRAM="$MAKE_EXE" \
+          "$CMAKE_EXE" -S . -B build/verify -G 'Unix Makefiles' "-DBUILD_LIST=$RECIPE_ROOTS" -DCMAKE_MAKE_PROGRAM="$MAKE_EXE" \
             -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 -DCMAKE_OSX_SYSROOT="$(xcrun --sdk macosx --show-sdk-path)" \
             -DCMAKE_C_COMPILER="$CC" -DCMAKE_CXX_COMPILER="$CXX"
           "$CMAKE_EXE" --build build/verify --parallel 4 -- --jobserver-style=fifo
           "$AUTOLIB_INSTALL_ROOT/gstreamer/1.28.9/bin/gst-inspect-1.0" --version
+      - name: Run native consumption and create temporary archives
+        run: |
+          cp .github/scripts/verify-gstreamer-first-stage_test.go src/autolib-ci/
+          "$CMAKE_EXE" -P src/autolib-builder/go-sdk.cmake -- test -mod=readonly -p=1 -parallel=1 ./src/autolib-ci -run '^TestGStreamer(FirstStageNative|ArchiveConsumption)$' -count=1 -v
+      - uses: actions/upload-artifact@v7
+        with:
+          name: stage-one-darwin-aarch64
+          path: build/verify-release/
+          if-no-files-found: error
       - name: Retain configure diagnostics
         if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: recipe-diagnostics-darwin-aarch64
-          path: build/verify/ep/gstreamer/1.28.9/bin/meson/meson-logs/*.txt
+          path: |
+            build/verify/ep/gstreamer/1.28.9/bin/meson/meson-logs/*.txt
+            build/verify-evidence/
 
   windows:
     runs-on: windows-2022
-    timeout-minutes: 70
+    timeout-minutes: 120
+    env:
+      PLATFORM: windows-x86_64
     steps:
       - uses: actions/checkout@v7
         with:
@@ -98,22 +130,84 @@ jobs:
           '{"platforms":[{"id":"windows-x86_64","roots":["gstreamer@1.28.9"],"description":{"modules":[{"name":"ffmpeg"}]}}]}' | Set-Content build/plan.json
           $settings = ./.github/scripts/prepare-windows.ps1 -Config .github/ci-tools.json -Plan build/plan.json -Platform windows-x86_64 -WorkRoot build/verify-tools | ConvertFrom-Json
           "CMAKE_EXE=$($settings.cmake_command)" >> $env:GITHUB_ENV
-          choco install winflexbison3 ninja --no-progress -y
+          choco install winflexbison3 ninja pkgconfiglite --no-progress -y
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Build from the root entry point
         shell: pwsh
         run: |
           $env:AUTOLIB_INSTALL_ROOT = Join-Path $env:GITHUB_WORKSPACE 'build/verify-install'
-          & $env:CMAKE_EXE -S . -B build/verify -G 'Visual Studio 17 2022' -A x64 -T v143 '-DBUILD_LIST=gstreamer@1.28.9' -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL
+          & $env:CMAKE_EXE -S . -B build/verify -G 'Visual Studio 17 2022' -A x64 -T v143 "-DBUILD_LIST=$env:RECIPE_ROOTS" -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & $env:CMAKE_EXE --build build/verify --config Release --parallel 4
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $env:PATH = "$env:AUTOLIB_INSTALL_ROOT/ffmpeg/8.1.3/bin;$env:PATH"
           & "$env:AUTOLIB_INSTALL_ROOT/gstreamer/1.28.9/bin/gst-inspect-1.0.exe" --version
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Run native consumption and create temporary archives
+        shell: pwsh
+        run: |
+          Copy-Item .github/scripts/verify-gstreamer-first-stage_test.go src/autolib-ci/
+          & $env:CMAKE_EXE -P src/autolib-builder/go-sdk.cmake -- test -mod=readonly -p=1 -parallel=1 ./src/autolib-ci -run '^TestGStreamer(FirstStageNative|ArchiveConsumption)$' -count=1 -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v7
+        with:
+          name: stage-one-windows-x86_64
+          path: build/verify-release/
+          if-no-files-found: error
       - name: Retain configure diagnostics
         if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: recipe-diagnostics-windows-x86_64
-          path: build/verify/ep/gstreamer/1.28.9/bin/meson/meson-logs/*.txt
+          path: |
+            build/verify/ep/gstreamer/1.28.9/bin/meson/meson-logs/*.txt
+            build/verify-evidence/
+
+  linux-archive:
+    needs: linux
+    strategy:
+      fail-fast: false
+      matrix:
+        release: ['20.04', '22.04']
+        target:
+          - {platform: linux-x86_64, runner: ubuntu-24.04}
+          - {platform: linux-aarch64, runner: ubuntu-24.04-arm}
+    runs-on: ${{ matrix.target.runner }}
+    container: ubuntu:${{ matrix.release }}
+    timeout-minutes: 15
+    env:
+      PLATFORM: ${{ matrix.target.platform }}
+      DEBIAN_FRONTEND: noninteractive
+      LC_ALL: C.UTF-8
+    steps:
+      - name: Prepare consumer toolchain
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates curl git jq make pkg-config libglib2.0-dev
+          if [ '${{ matrix.release }}' = '20.04' ]; then
+            apt-get install -y --no-install-recommends gcc-10 g++-10
+            printf 'CC=gcc-10\nCXX=g++-10\n' >> "$GITHUB_ENV"
+          else
+            apt-get install -y --no-install-recommends gcc g++
+          fi
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: stage-one-${{ matrix.target.platform }}
+          path: build/verify-release
+      - name: Link and run the archived packages
+        shell: bash
+        run: |
+          jq -er --arg platform "$PLATFORM" '.cmake.assets[] | select(.platform==$platform) | [.url,.filename,.sha256] | @tsv' .github/ci-tools.json | \
+            { read -r url filename sha; curl -fsSL --retry 2 "$url" -o "build/$filename"; echo "$sha  build/$filename" | sha256sum -c; tar -xzf "build/$filename" -C build; }
+          export CMAKE_EXE
+          CMAKE_EXE=$(realpath build/cmake-*/bin/cmake)
+          cp .github/scripts/verify-gstreamer-first-stage_test.go src/autolib-ci/
+          "$CMAKE_EXE" -P src/autolib-builder/go-sdk.cmake -- test -mod=readonly -p=1 -parallel=1 ./src/autolib-ci -run '^TestGStreamerArchiveConsumption$' -count=1 -v
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: archive-evidence-${{ matrix.target.platform }}-${{ matrix.release }}
+          path: build/verify-evidence/

@@ -148,6 +148,27 @@ func TestCIOpenCVMediaSelection(t *testing.T) {
 	}
 }
 
+func TestCIGStreamerMediaSelection(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		roots       []string
+		modules     []string
+		opencv, gst bool
+	}{
+		{"GStreamer root", []string{"gstreamer@1.28.9"}, []string{"ffmpeg@8.1.3", "gstreamer@1.28.9"}, false, true},
+		{"OpenCV root", []string{"opencv@4.14.0"}, []string{"ffmpeg@8.1.3", "opencv@4.14.0"}, true, false},
+		{"both roots", []string{"gstreamer@1.28.9", "opencv@4.14.0"}, []string{"ffmpeg@8.1.3", "gstreamer@1.28.9", "opencv@4.14.0"}, true, true},
+		{"dependency only", []string{"visp@3.7.0"}, []string{"ffmpeg@8.1.3", "gstreamer@1.28.9", "visp@3.7.0"}, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			opencv, gstreamer := ciMediaRoots(ciValidationOptions{RootPackages: tc.roots, Modules: tc.modules})
+			if opencv != tc.opencv || gstreamer != tc.gst {
+				t.Fatalf("media roots: OpenCV=%v GStreamer=%v, want %v %v", opencv, gstreamer, tc.opencv, tc.gst)
+			}
+		})
+	}
+}
+
 func TestCIABIGate(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(root, 0755); err != nil {

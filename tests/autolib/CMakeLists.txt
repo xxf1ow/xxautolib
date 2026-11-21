@@ -7,7 +7,7 @@ if(NOT MODULES)
     set(MODULES queue lz4 flann)
 endif()
 set(module_names "")
-set(smoke_modules queue lz4 flann eigen ffmpeg freetype harfbuzz libusb nlohmann opencv librealsense
+set(smoke_modules queue lz4 flann eigen ffmpeg freetype gstreamer harfbuzz libusb nlohmann opencv librealsense
     asio clipper2 cpp-httplib expected gtest libzmq nativefiledialog-extended oneTBB portaudio pybind11 sdl3 spdlog taskflow yaml-cpp zlib
     boost websocketpp imgui pcl visp)
 foreach(ref IN LISTS MODULES)
@@ -94,6 +94,18 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND ffmpeg IN_LIST module_names)
     add_executable(ffmpeg_indirect_smoke ffmpeg-indirect.cpp)
     target_link_libraries(ffmpeg_indirect_smoke PRIVATE FFMPEG::avcodec)
     add_test(NAME ffmpeg_indirect_smoke COMMAND ffmpeg_indirect_smoke)
+endif()
+if(gstreamer IN_LIST module_names)
+    add_executable(gstreamer_media_smoke gstreamer-media.cpp)
+    target_link_libraries(gstreamer_media_smoke PRIVATE autolib::gstreamer)
+    set(gstreamer_rtsp_url "")
+    if(AUTOLIB_TEST_RTMP_URL)
+        string(REGEX REPLACE "/videoio$" "/gstreamer-rtsp" gstreamer_rtsp_url "${AUTOLIB_TEST_RTSP_URL}")
+    endif()
+    add_test(NAME gstreamer_media_smoke COMMAND gstreamer_media_smoke
+        "${AUTOLIB_PACKAGE_DIR_gstreamer}" "${CMAKE_BINARY_DIR}/gstreamer media"
+        "${gstreamer_rtsp_url}" "${AUTOLIB_TEST_RTMP_URL}")
+    set_tests_properties(gstreamer_media_smoke PROPERTIES TIMEOUT 60)
 endif()
 if(AUTOLIB_TEST_RTSP_URL AND opencv IN_LIST module_names)
     add_executable(opencv_videoio_smoke opencv-videoio.cpp)
