@@ -20,3 +20,5 @@ Windows 从启动应用的父进程把 `<gst>/bin` 和 `<ffmpeg>/bin` 加到 `PA
 Linux 使用 `<gst>/bin/gst-run /path/to/app` 启动应用，或用同一入口运行包内工具。启动器和包内 scanner 会把两份包的库目录放在动态库搜索路径前端。Jetson 在 `GST_PLUGIN_PATH_1_0` 登记明确的 JetPack 插件目录，并为该部署指定独立 registry。
 
 macOS 和 Windows 随包提供 GLib/GIO 头文件、共享库及链接元数据。需要 `glib-compile-resources` 等工具的项目从各自的 GLib 开发环境获取。
+
+Windows 的含空格安装路径使用 `pkgconf 3.0.7` 验证。使用 `pkgconf 3.0.3` 查询这类路径时，工具会重复转义空格。CMake 项目可以直接使用 `autolib::gstreamer`。
