@@ -225,7 +225,7 @@ def copy_glib_development(config, pkgconf, env):
 
 
 def shared_glib_metadata(content, name):
-    # 这里只交付共享库。GLib 的私有静态依赖和构建机 gettext 路径不属于公开接口。
+    # GLib 工具和私有静态依赖不随 GStreamer 交付。
     library = {
         "gmodule-no-export-2.0": "gmodule-2.0",
         "gio-unix-2.0": "gio-2.0",
@@ -234,6 +234,8 @@ def shared_glib_metadata(content, name):
     fields = []
     for line in content.splitlines():
         if line.startswith(("Requires.private:", "Libs.private:")):
+            continue
+        if re.match(r"^\w+=\$\{(?:bindir\}/|prefix\}/tools/glib/)", line):
             continue
         if line.startswith("Libs:"):
             line = f"Libs: -L${{libdir}} -l{library}"
@@ -400,8 +402,8 @@ def install(config, env, meson):
     pc_prefix = 'prefix="${pcfiledir}/../.."' if linux else "prefix=${pcfiledir}/../.."
     for path in (prefix / "lib/pkgconfig").glob("*.pc"):
         content = re.sub(r"^prefix=.*$", lambda _: pc_prefix, path.read_text(), flags=re.MULTILINE)
-        if linux and path.name == "zlib.pc":
-            # Linux 前缀已引用，zlib 的路径参数不能再重复引用。
+        if path.name == "zlib.pc":
+            # 路径的空格由前缀引号或 pkgconf 转义，zlib 参数再加引号会重复转义。
             content = re.sub(r'"(-I\$\{includedir\}|-L\$\{(?:libdir|sharedlibdir)\})"', r"\1", content)
         path.write_text(content)
     plugins = sorted(path.name for path in (prefix / "lib/gstreamer-1.0").glob("*") if path.suffix in (".so", ".dylib", ".dll"))

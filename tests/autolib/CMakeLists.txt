@@ -110,6 +110,14 @@ if(gstreamer IN_LIST module_names)
         "${AUTOLIB_PACKAGE_DIR_gstreamer}" "${CMAKE_BINARY_DIR}/gstreamer media"
         "${gstreamer_rtsp_url}" "${AUTOLIB_TEST_RTMP_URL}" "${AUTOLIB_TEST_HTTP_URL}")
     set_tests_properties(gstreamer_media_smoke PROPERTIES TIMEOUT 60)
+    if(UNIX)
+        enable_language(C)
+        find_package(PkgConfig REQUIRED)
+        add_test(NAME gstreamer_sdk_smoke COMMAND "${CMAKE_COMMAND}"
+            "-DCC=${CMAKE_C_COMPILER}" "-DPKG_CONFIG=${PKG_CONFIG_EXECUTABLE}"
+            "-DGSTREAMER=${AUTOLIB_PACKAGE_DIR_gstreamer}" "-DOUTPUT=${CMAKE_BINARY_DIR}/gstreamer-zlib"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/gstreamer-sdk.cmake")
+    endif()
 endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND gstreamer IN_LIST module_names AND ffmpeg IN_LIST module_names)
     find_package(PkgConfig REQUIRED)

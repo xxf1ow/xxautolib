@@ -10,10 +10,8 @@
 #include <libavutil/avutil.h>
 #include <libavutil/version.h>
 #include <orc/orc.h>
-#include <zlib.h>
 
 #include <stdio.h>
-#include <string.h>
 
 int main(void)
 {
@@ -21,7 +19,6 @@ int main(void)
     GstVideoInfo info;
     gst_video_info_init(&info);
     if (!gst_app_src_get_type() || !gst_rtsp_server_get_type() || !orc_version_string() ||
-        strcmp(zlibVersion(), ZLIB_VERSION) != 0 ||
         avcodec_version() != LIBAVCODEC_VERSION_INT || avformat_version() != LIBAVFORMAT_VERSION_INT ||
         avutil_version() != LIBAVUTIL_VERSION_INT || avfilter_version() != LIBAVFILTER_VERSION_INT ||
         !avfilter_get_by_name("buffer")) {
