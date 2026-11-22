@@ -42,6 +42,12 @@ else()
     if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
         set(launcher "${GSTREAMER}/bin/gst-run")
         list(APPEND link_flags -ldl)
+    elseif(CMAKE_HOST_APPLE AND SDKROOT)
+        if(NOT IS_ABSOLUTE "${SDKROOT}")
+            execute_process(COMMAND xcrun --sdk "${SDKROOT}" --show-sdk-path
+                OUTPUT_VARIABLE SDKROOT OUTPUT_STRIP_TRAILING_WHITESPACE COMMAND_ERROR_IS_FATAL ANY)
+        endif()
+        list(APPEND link_flags -isysroot "${SDKROOT}")
     endif()
     execute_process(COMMAND "${CC}" "${CMAKE_CURRENT_LIST_DIR}/gstreamer-zlib.c" -o "${OUTPUT}"
         ${flags} ${link_flags} COMMAND_ERROR_IS_FATAL ANY)

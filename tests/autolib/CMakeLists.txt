@@ -115,6 +115,7 @@ if(gstreamer IN_LIST module_names)
         find_package(PkgConfig REQUIRED)
         add_test(NAME gstreamer_sdk_smoke COMMAND "${CMAKE_COMMAND}"
             "-DCC=${CMAKE_C_COMPILER}" "-DPKG_CONFIG=${PKG_CONFIG_EXECUTABLE}"
+            "-DSDKROOT=${CMAKE_OSX_SYSROOT}"
             "-DGSTREAMER=${AUTOLIB_PACKAGE_DIR_gstreamer}" "-DOUTPUT=${CMAKE_BINARY_DIR}/gstreamer-zlib"
             -P "${CMAKE_CURRENT_SOURCE_DIR}/gstreamer-sdk.cmake")
     endif()
