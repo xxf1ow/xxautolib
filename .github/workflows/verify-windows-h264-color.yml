@@ -1,0 +1,58 @@
+name: Check Windows H264 color caps
+
+on:
+  push:
+    branches: [feat/gstreamer-1.28.9]
+    paths: [.github/workflows/verify-windows-h264-color.yml]
+
+permissions:
+  actions: read
+
+jobs:
+  windows-color-caps:
+    runs-on: windows-2022
+    timeout-minutes: 8
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: stage-one-windows-x86_64
+          run-id: 44978697881
+          github-token: ${{ github.token }}
+          path: bundle
+      - name: Verify and consume the existing GStreamer archive
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $archive = (Resolve-Path bundle).Path
+          $install = (New-Item -ItemType Directory packages).FullName
+          Push-Location $install
+          foreach ($name in @('gstreamer-1.28.9-windows-x86_64.tar.zst', 'ffmpeg-8.1.3-windows-x86_64.tar.zst')) {
+              $file = Join-Path $archive $name
+              $digest = (Get-FileHash -Path $file -Algorithm SHA256).Hash.ToLowerInvariant()
+              Write-Output "$name SHA256 $digest"
+              if ($digest -ne (Get-Content -Raw "$file.sha256").Trim()) { throw "SHA256 mismatch for $name" }
+              & cmake -E tar xf $file
+              if ($LASTEXITCODE -ne 0) { throw "Could not extract $name" }
+          }
+          Pop-Location
+          $gst = Join-Path $install 'gstreamer/1.28.9'
+          $ffmpeg = Join-Path $install 'ffmpeg/8.1.3'
+          $env:PATH = "$gst/bin;$ffmpeg/bin;$env:PATH"
+          $env:GST_PLUGIN_PATH_1_0 = ''
+          $env:GST_PLUGIN_SYSTEM_PATH_1_0 = "$gst/lib/gstreamer-1.0"
+          $env:GST_PLUGIN_SCANNER_1_0 = "$gst/libexec/gstreamer-1.0/gst-plugin-scanner.exe"
+          $env:GST_REGISTRY_1_0 = Join-Path $pwd 'windows-color-registry.bin'
+          $video = Join-Path $pwd 'limited-partial-vui.h264'
+          # Four synthetic gray frames with explicit limited range, matrix 6 and unspecified primaries and transfer.
+          [IO.File]::WriteAllBytes($video, [Convert]::FromBase64String('AAAAAWdCwA3cFB+wFqBAQMgAAAMACAAAAwHkeKFcAAAAAWjOD8gAAAFliIQ6JigMnJycnJycnJycnJycnJycnJycnXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXgAAAWUDKIhDomKAycnJycnJycnJycnJycnJycnJyddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddeAAAAFlAZIiEOiYoDJycnJycnJycnJycnJycnJycnJ111111111111111111111111111111111111111111111111111111111111111111111111111111114AAAAAWdCwA3cFB+wFqBAQMgAAAMACAAAAwHkeKFcAAAAAWjOD8gAAAFliIICKJigAEZOTk5OTk5OTk5OTk5OTk5OTk5OuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuvAAABZQMoiCAiiYoABGTk5OTk5OTk5OTk5OTk5OTk5OTrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrwAAABZQGSIggIomKAARk5OTk5OTk5OTk5OTk5OTk5OTk666666666666666666666666666666666666666666666666666666666666666666666666666666668AAAAAWdCwA3cFB+wFqBAQMgAAAMACAAAAwHkeKFcAAAAAWjOD8gAAAFliIQIomKAARk5OTk5OTk5OTk5OTk5OTk5OTk666666666666666666666666666666666666666666666666666666666666666666666666666666668AAABZQMoiECKJigAEZOTk5OTk5OTk5OTk5OTk5OTk5OuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuvAAAABZQGSIhAiiYoABGTk5OTk5OTk5OTk5OTk5OTk5OTrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrwAAAAAWdCwA3cFB+wFqBAQMgAAAMACAAAAwHkeKFcAAAAAWjOD8gAAAFliIICKJigAEZOTk5OTk5OTk5OTk5OTk5OTk5OuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuvAAABZQMoiCAiiYoABGTk5OTk5OTk5OTk5OTk5OTk5OTrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrwAAABZQGSIggIomKAARk5OTk5OTk5OTk5OTk5OTk5OTk666666666666666666666666666666666666666666666666666666666666666666666666666666668'))
+          Get-FileHash -Path $video -Algorithm SHA256
+          $launch = Join-Path $gst 'bin/gst-launch-1.0.exe'
+          & $launch -v filesrc "location=$video" '!' h264parse name=parser '!' avdec_h264 name=decoder '!' identity name=decoded silent=false '!' fakesink sync=false 2>&1 |
+              Out-File -FilePath caps.log -Encoding utf8
+          if ($LASTEXITCODE -ne 0) { Get-Content caps.log; throw 'GStreamer pipeline failed' }
+          $caps = Select-String -Path caps.log -Pattern '(parser|decoder)\.GstPad:src: caps = '
+          if ($caps.Count -lt 2) { Get-Content caps.log; throw 'Parser or decoder caps missing' }
+          $caps | ForEach-Object { $_.Line }
+          $frames = @(Select-String -Path caps.log -SimpleMatch 'last-message = chain ').Count
+          if ($frames -ne 4) { throw "Expected four decoded frames, got $frames" }
+          Write-Output "Decoded $frames frames"
