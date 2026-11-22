@@ -81,30 +81,21 @@ jobs:
           run-id: 45005093568
           github-token: ${{ github.token }}
           path: build/verify-release
-      - name: Prepare pinned Windows pkgconf without rebuilding GStreamer
+      - name: Prepare Windows pkgconf used for SDK consumption
         shell: pwsh
         run: |
-          $built = New-Item -ItemType Directory build/pkgconf-native
-          $archive = Join-Path $built.FullName 'vcpkg.tar.gz'
-          curl.exe -fLSs --retry 2 -o $archive 'https://codeload.github.com/microsoft/vcpkg/tar.gz/9967a8eb5f4f5cd7be2b6717d31ddb7ff84c4751'
-          if ($LASTEXITCODE -ne 0 -or (Get-FileHash $archive -Algorithm SHA256).Hash -ne 'c770a86306dcf57a151e2bac2ff3ee62d3c18f3340524a986aec56005b1ac53b') {
-            throw 'Could not verify the pinned vcpkg source'
+          $directory = (New-Item -ItemType Directory build/pkgconf-native).FullName
+          $archive = Join-Path $directory 'pkgconf.tar.zst'
+          curl.exe -fLSs --retry 2 -o $archive 'https://mirror.msys2.org/mingw/mingw64/mingw-w64-x86_64-pkgconf-1~3.0.7-1-any.pkg.tar.zst'
+          if ($LASTEXITCODE -ne 0 -or (Get-FileHash $archive -Algorithm SHA512).Hash -ne '27a88825f334d8fe2477f193eaa30785f3b79aa03e07f5793611fe29c9b7dc552338216a4a1f24d2801a467dd453295c077fa07a9c6b83b882afd6bb3928ddec') {
+            throw 'Could not verify the pinned Windows pkgconf archive'
           }
-          Push-Location $built
-          try {
-            & $env:CMAKE_EXE -E tar xf $archive
-            if ($LASTEXITCODE -ne 0) { throw 'Could not extract vcpkg' }
-            Set-Location vcpkg-9967a8eb5f4f5cd7be2b6717d31ddb7ff84c4751
-            & ./bootstrap-vcpkg.bat -disableMetrics
-            if ($LASTEXITCODE -ne 0) { throw 'Could not bootstrap vcpkg' }
-            & ./vcpkg.exe install pkgconf:x64-windows "--x-install-root=$($built.FullName)/ports"
-            if ($LASTEXITCODE -ne 0) { throw 'Could not build pkgconf' }
-          } finally {
-            Pop-Location
-          }
-          $pkgconf = Join-Path $built.FullName 'ports/x64-windows/tools/pkgconf/pkgconf.exe'
+          & $env:CMAKE_EXE -E chdir $directory $env:CMAKE_EXE -E tar xf $archive
+          if ($LASTEXITCODE -ne 0) { throw 'Could not extract pkgconf' }
+          $pkgconf = Join-Path $directory 'mingw64/bin/pkgconf.exe'
           "SDK_PKGCONF=$pkgconf" >> $env:GITHUB_ENV
           & $pkgconf --version
+          if ($LASTEXITCODE -ne 0) { throw 'Could not run pkgconf' }
       - name: Run consumption from the rebuilt archive
         shell: pwsh
         run: |
