@@ -1,0 +1,19 @@
+--- a/subprojects/gst-plugins-bad/ext/curl/gstcurlhttpsrc.c
++++ b/subprojects/gst-plugins-bad/ext/curl/gstcurlhttpsrc.c
+@@ -1934,7 +1934,13 @@ gst_curl_http_src_curl_multi_loop (gpointer thread_data)
+     curl_multi_fdset (context->multi_handle, &fdread, &fdwrite, &fdexcep,
+         &maxfd);
+-
+-    rc = select (maxfd + 1, &fdread, &fdwrite, &fdexcep, &timeout);
+-
++
++    if (maxfd == -1) {
++      /* Winsock rejects select() when libcurl has no sockets yet. */
++      g_usleep ((gulong) timeout.tv_sec * G_USEC_PER_SEC + timeout.tv_usec);
++      rc = 0;
++    } else {
++      rc = select (maxfd + 1, &fdread, &fdwrite, &fdexcep, &timeout);
++    }
++
+     switch (rc) {
+       case -1:

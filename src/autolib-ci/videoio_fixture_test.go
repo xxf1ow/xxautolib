@@ -11,6 +11,17 @@ import (
 )
 
 func TestVideoIOFixture(t *testing.T) {
+	const rtsp = "127.0.0.1:8554"
+	const udp = "127.0.0.1:8054"
+	const rtmp = "127.0.0.1:1935"
+	if config := videoIOServerConfig(rtsp, udp, ""); !strings.Contains(config, "rtmp: no\n") || strings.Contains(config, "source: publisher") {
+		t.Fatalf("OpenCV fixture changed its publisher policy:\n%s", config)
+	}
+	if config := videoIOServerConfig(rtsp, udp, rtmp); !strings.Contains(config, "rtmpAddress: "+rtmp+"\n") ||
+		!strings.Contains(config, "gstreamer-rtsp:\n    source: publisher\n") ||
+		!strings.Contains(config, "gstreamer-rtmp/stream:\n    source: publisher\n") {
+		t.Fatalf("GStreamer fixture does not expose separate publish paths:\n%s", config)
+	}
 	for _, status := range []int{200, 404} {
 		t.Run(fmt.Sprint(status), func(t *testing.T) {
 			listener, err := net.Listen("tcp4", "127.0.0.1:0")

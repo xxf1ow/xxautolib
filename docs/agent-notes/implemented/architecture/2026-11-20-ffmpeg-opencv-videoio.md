@@ -8,9 +8,9 @@ OpenCV 4.14.0 的 FFmpeg 后端依赖构建机环境。Linux 和 macOS 的发布
 
 ## 决定
 
-[FFmpeg 配方](../../../../src/dependencies/ffmpeg/8.1.3/module.toml)固定官方 8.1.3 源码及摘要。8.1.3 属于 OpenCV 4.14.0 可消费的 8.x 稳定系列，保留 OpenCV 所用的 `AVCodec` 字段。配方调用上游 `configure` 和 GNU Make，交付 `avcodec`、`avformat`、`avutil`、`swscale`、`swresample` 的共享库、头文件和可搬迁的查找文件。Windows 另交付导入库。
+[FFmpeg 配方](../../../../src/dependencies/ffmpeg/8.1.3/module.toml)固定官方 8.1.3 源码及摘要。8.1.3 属于 OpenCV 4.14.0 可消费的 8.x 稳定系列，保留 OpenCV 所用的 `AVCodec` 字段。配方调用上游 `configure` 和 GNU Make，交付 `avcodec`、`avfilter`、`avformat`、`avutil`、`swscale`、`swresample` 的共享库、头文件和可搬迁的 pkg-config 文件。Windows 另交付导入库。`libavfilter.pc` 供 gst-libav 联编，`FFMPEGConfig.cmake` 保留 OpenCV 使用的 CMake 链接接口。 [GStreamer 交付设计](../../proposed/architecture/2026-11-21-gstreamer-1.28.9-delivery.md)
 
-四个平台使用内置编解码与默认 LGPL 配置，关闭自动探测外部依赖，省去 CLI、`avdevice`、`avfilter`、文档和调试信息。保留 H.264、HEVC 解码，MPEG-4 Part 2、MJPEG 编码，以及本地文件和 RTSP 所需的 TCP、UDP、RTP。H.264 编码超出验收范围。
+四个平台使用内置编解码与默认 LGPL 配置，关闭自动探测外部依赖，省去 CLI、`avdevice`、文档和调试信息。保留 H.264、HEVC 解码，MPEG-4 Part 2、MJPEG 编码，以及本地文件和 RTSP 所需的 TCP、UDP、RTP。H.264 编码超出验收范围。
 
 [OpenCV 配方](../../../../src/dependencies/opencv/4.14.0/module.toml)声明精确依赖 `ffmpeg@8.1.3`，仅从该安装前缀探测 FFmpeg，关闭上游 Windows 包装器下载。FFmpeg 探测或链接失败会中止 OpenCV 配置。Linux 和 macOS 的 OpenCV 通过相对运行路径查找 FFmpeg。macOS 专属补丁关闭 CMake 从链接目录生成安装 RPATH 的行为，因为 OpenCV dylib 会优先采用遗留的绝对目录。
 

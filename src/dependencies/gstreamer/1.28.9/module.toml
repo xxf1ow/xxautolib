@@ -1,0 +1,63 @@
+# GStreamer：构建项目内可搬迁的媒体开发库、工具和插件。
+type = "cmake"
+package_platforms = ["linux-x86_64", "linux-aarch64", "windows-x86_64", "darwin-aarch64"]
+depends = ["ffmpeg@8.1.3"]
+pkgconfig_dir = "lib/pkgconfig"
+
+[system_dependencies]
+apt = ["autoconf", "automake", "bison", "curl", "flex", "libglib2.0-dev", "libtool", "nasm", "ninja-build", "patchelf", "pkg-config", "python3", "unzip", "xz-utils", "zip"]
+choco = ["winflexbison3", "ninja"]
+brew = ["autoconf", "automake", "bison", "flex", "glib", "libtool", "ninja", "pkgconf"]
+
+[source]
+URL = ["https://codeload.github.com/GStreamer/gstreamer/tar.gz/refs/tags/1.28.9"]
+URL_HASH = "SHA256=0fdecabb02f170b78251f7b9f1b5092073f52e70ba06c92df53fe36745041db6"
+DOWNLOAD_NAME = "gstreamer-1.28.9.tar.gz"
+
+[resources.meson]
+URL = ["https://files.pythonhosted.org/packages/source/m/meson/meson-1.10.2.tar.gz"]
+URL_HASH = "SHA256=7890287d911dd4ee1ebd0efb61ed0321bfcd87c725df923a837cf90c6508f96b"
+DOWNLOAD_NAME = "meson-1.10.2.tar.gz"
+
+[resources.orc]
+URL = ["https://gstreamer.freedesktop.org/src/orc/orc-0.4.41.tar.xz"]
+URL_HASH = "SHA256=cb1bfd4f655289cd39bc04642d597be9de5427623f0861c1fc19c08d98467fa2"
+DOWNLOAD_NAME = "orc-0.4.41.tar.xz"
+
+[resources.vcpkg]
+URL = ["https://codeload.github.com/microsoft/vcpkg/tar.gz/9967a8eb5f4f5cd7be2b6717d31ddb7ff84c4751"]
+URL_HASH = "SHA256=c770a86306dcf57a151e2bac2ff3ee62d3c18f3340524a986aec56005b1ac53b"
+DOWNLOAD_NAME = "vcpkg-9967a8eb5f4f.tar.gz"
+
+[platforms.linux-aarch64.resources.binutils]
+# Focal 的 as 2.34 不支持 x265 所需的 SVE2 汇编目标。
+URL = ["https://ftp.gnu.org/gnu/binutils/binutils-2.42.tar.xz"]
+URL_HASH = "SHA256=f6e4d41fd5fc778b06b7891457b3620da5ecea1006c6a4a41ae998109f85a800"
+DOWNLOAD_NAME = "binutils-2.42.tar.xz"
+
+[cmake.cache]
+GSTREAMER_MESON_SOURCE = "<RESOURCE_SOURCE_DIR:meson>"
+GSTREAMER_ORC_SOURCE = "<RESOURCE_SOURCE_DIR:orc>"
+GSTREAMER_VCPKG_SOURCE = "<RESOURCE_SOURCE_DIR:vcpkg>"
+
+[platforms.linux-aarch64.cmake.cache]
+GSTREAMER_BINUTILS_SOURCE = "<RESOURCE_SOURCE_DIR:binutils>"
+
+[[platforms.windows-x86_64.patches]]
+file = "curl-windows-empty-fdset.patch" # Winsock 无法用空 socket 集合等待 libcurl 的初始定时器。
+
+[[steps]]
+name = "prepare-gstreamer-build"
+DEPENDEES = ["patch"]
+DEPENDERS = ["configure"]
+WORKING_DIRECTORY = "."
+DEPENDS = ["CMakeLists.txt", "build-gstreamer.py"]
+COMMAND = [["cmake", "-E", "copy_if_different", "CMakeLists.txt", "build-gstreamer.py", "<SOURCE_DIR>"]]
+
+[[platforms.linux-aarch64.steps]]
+name = "prepare-gstreamer-x265-overlay"
+DEPENDEES = ["patch"]
+DEPENDERS = ["configure"]
+WORKING_DIRECTORY = "."
+DEPENDS = ["x265-focal-sve2.diff"]
+COMMAND = [["cmake", "-E", "copy_if_different", "x265-focal-sve2.diff", "<SOURCE_DIR>"]]

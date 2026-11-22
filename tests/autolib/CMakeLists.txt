@@ -7,7 +7,7 @@ if(NOT MODULES)
     set(MODULES queue lz4 flann)
 endif()
 set(module_names "")
-set(smoke_modules queue lz4 flann eigen ffmpeg freetype harfbuzz libusb nlohmann opencv librealsense
+set(smoke_modules queue lz4 flann eigen ffmpeg freetype gstreamer harfbuzz libusb nlohmann opencv librealsense
     asio clipper2 cpp-httplib expected gtest libzmq nativefiledialog-extended oneTBB portaudio pybind11 sdl3 spdlog taskflow yaml-cpp zlib
     boost websocketpp imgui pcl visp)
 foreach(ref IN LISTS MODULES)
@@ -81,10 +81,54 @@ if(ffmpeg IN_LIST module_names OR flann IN_LIST module_names OR opencv IN_LIST m
     target_link_libraries(autolib_smoke PRIVATE ${CMAKE_DL_LIBS})
 endif()
 add_test(NAME local_binary_smoke COMMAND autolib_smoke)
+if(ffmpeg IN_LIST module_names)
+    enable_language(C)
+    find_library(ffmpeg_avfilter_library NAMES avfilter
+        PATHS "${AUTOLIB_PACKAGE_DIR_ffmpeg}/lib" NO_DEFAULT_PATH REQUIRED)
+    add_executable(ffmpeg_avfilter_smoke ffmpeg-avfilter.c)
+    target_include_directories(ffmpeg_avfilter_smoke PRIVATE "${AUTOLIB_PACKAGE_DIR_ffmpeg}/include")
+    target_link_libraries(ffmpeg_avfilter_smoke PRIVATE "${ffmpeg_avfilter_library}")
+    add_test(NAME ffmpeg_avfilter_smoke COMMAND ffmpeg_avfilter_smoke)
+endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND ffmpeg IN_LIST module_names)
     add_executable(ffmpeg_indirect_smoke ffmpeg-indirect.cpp)
     target_link_libraries(ffmpeg_indirect_smoke PRIVATE FFMPEG::avcodec)
     add_test(NAME ffmpeg_indirect_smoke COMMAND ffmpeg_indirect_smoke)
+endif()
+if(gstreamer IN_LIST module_names)
+    add_executable(gstreamer_media_smoke gstreamer-media.cpp)
+    target_link_libraries(gstreamer_media_smoke PRIVATE autolib::gstreamer)
+    set(gstreamer_rtsp_url "")
+    if(AUTOLIB_TEST_RTMP_URL)
+        string(REGEX REPLACE "/videoio$" "/gstreamer-rtsp" gstreamer_rtsp_url "${AUTOLIB_TEST_RTSP_URL}")
+    endif()
+    set(gstreamer_media_command "$<TARGET_FILE:gstreamer_media_smoke>")
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        list(PREPEND gstreamer_media_command "${AUTOLIB_PACKAGE_DIR_gstreamer}/bin/gst-run")
+    endif()
+    add_test(NAME gstreamer_media_smoke COMMAND ${gstreamer_media_command}
+        "${AUTOLIB_PACKAGE_DIR_gstreamer}" "${CMAKE_BINARY_DIR}/gstreamer media"
+        "${gstreamer_rtsp_url}" "${AUTOLIB_TEST_RTMP_URL}" "${AUTOLIB_TEST_HTTP_URL}")
+    set_tests_properties(gstreamer_media_smoke PROPERTIES TIMEOUT 60)
+    if(UNIX)
+        enable_language(C)
+        find_package(PkgConfig REQUIRED)
+        add_test(NAME gstreamer_sdk_smoke COMMAND "${CMAKE_COMMAND}"
+            "-DCC=${CMAKE_C_COMPILER}" "-DPKG_CONFIG=${PKG_CONFIG_EXECUTABLE}"
+            "-DSDKROOT=${CMAKE_OSX_SYSROOT}"
+            "-DGSTREAMER=${AUTOLIB_PACKAGE_DIR_gstreamer}" "-DOUTPUT=${CMAKE_BINARY_DIR}/gstreamer-zlib"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/gstreamer-sdk.cmake")
+    endif()
+endif()
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND gstreamer IN_LIST module_names AND ffmpeg IN_LIST module_names)
+    find_package(PkgConfig REQUIRED)
+    add_test(NAME media_pkgconfig_smoke COMMAND "${CMAKE_COMMAND}"
+        "-DCC=${CMAKE_C_COMPILER}" "-DPKG_CONFIG=${PKG_CONFIG_EXECUTABLE}"
+        "-DGSTREAMER=${AUTOLIB_PACKAGE_DIR_gstreamer}" "-DFFMPEG=${AUTOLIB_PACKAGE_DIR_ffmpeg}"
+        "-DOUTPUT=${CMAKE_BINARY_DIR}/media-pkgconfig"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/media-pkgconfig.cmake")
+    set_tests_properties(media_pkgconfig_smoke PROPERTIES ENVIRONMENT
+        "GST_PLUGIN_PATH_1_0=;GST_PLUGIN_SYSTEM_PATH_1_0=;GST_REGISTRY_1_0=${CMAKE_BINARY_DIR}/media-pkgconfig-registry.bin")
 endif()
 if(AUTOLIB_TEST_RTSP_URL AND opencv IN_LIST module_names)
     add_executable(opencv_videoio_smoke opencv-videoio.cpp)

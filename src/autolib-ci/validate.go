@@ -52,6 +52,13 @@ func verifyCIEntry(source, install string) (ciEntryResult, error) {
 	return ciEntryResult{File: "autolib.cmake", SHA256: fmt.Sprintf("%x", sha256.Sum256(installed)), Verified: true}, nil
 }
 
+func ciMediaRoots(o ciValidationOptions) (opencv, gstreamer bool) {
+	hasFFmpeg := slices.ContainsFunc(o.Modules, func(ref string) bool { return strings.HasPrefix(ref, "ffmpeg@") })
+	opencv = hasFFmpeg && slices.ContainsFunc(o.RootPackages, func(ref string) bool { return strings.HasPrefix(ref, "opencv@") })
+	gstreamer = slices.ContainsFunc(o.RootPackages, func(ref string) bool { return strings.HasPrefix(ref, "gstreamer@") })
+	return opencv, gstreamer
+}
+
 func validateCIRelease(ctx context.Context, o ciValidationOptions) (string, error) {
 	if err := validateCIConsumerModules(o.Modules); err != nil {
 		return "", err
@@ -88,15 +95,25 @@ func validateCIRelease(ctx context.Context, o ciValidationOptions) (string, erro
 	for _, name := range slices.Sorted(maps.Keys(o.Context.CMakeDefaults)) {
 		args = append(args, "-D"+name+"="+o.Context.CMakeDefaults[name])
 	}
-	videoio := slices.ContainsFunc(o.RootPackages, func(ref string) bool { return strings.HasPrefix(ref, "opencv@") }) &&
-		slices.ContainsFunc(o.Modules, func(ref string) bool { return strings.HasPrefix(ref, "ffmpeg@") })
-	if videoio {
-		url, stop, err := startVideoIOFixture(ctx, o, roots.evidence)
+	opencv, gstreamer := ciMediaRoots(o)
+	if opencv || gstreamer {
+		rtsp, rtmp, stop, err := startVideoIOFixture(ctx, o, roots.evidence, gstreamer)
 		if err != nil {
 			return roots.evidence, err
 		}
 		defer stop()
-		args = append(args, "-DAUTOLIB_TEST_RTSP_URL="+url)
+		args = append(args, "-DAUTOLIB_TEST_RTSP_URL="+rtsp)
+		if gstreamer {
+			args = append(args, "-DAUTOLIB_TEST_RTMP_URL="+rtmp)
+		}
+	}
+	if gstreamer && o.Context.OS == "windows" {
+		url, stop, err := startHTTPVideoFixture(roots.source)
+		if err != nil {
+			return roots.evidence, fmt.Errorf("start HTTP video fixture: %w", err)
+		}
+		defer stop()
+		args = append(args, "-DAUTOLIB_TEST_HTTP_URL="+url)
 	}
 	driver := filepath.Join(roots.source, "tests", "autolib", "run-installed.cmake")
 	validate := func(relocate bool) (string, error) {
@@ -135,7 +152,7 @@ func validateCIRelease(ctx context.Context, o ciValidationOptions) (string, erro
 		return runRoot, err
 	}
 	runRoot, err := validate(false)
-	if err != nil || !videoio {
+	if err != nil || !(opencv || gstreamer) {
 		return runRoot, err
 	}
 	return validate(true)

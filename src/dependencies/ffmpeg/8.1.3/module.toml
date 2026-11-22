@@ -1,4 +1,4 @@
-# FFmpeg：供 OpenCV 视频后端使用，从固定源码构建共享开发库。
+# FFmpeg：从固定源码构建 OpenCV 和 gst-libav 所用的共享开发库。
 type = "cmake"
 package_platforms = ["windows-x86_64", "linux-x86_64", "linux-aarch64", "darwin-aarch64"]
 package_name = "FFMPEG"
