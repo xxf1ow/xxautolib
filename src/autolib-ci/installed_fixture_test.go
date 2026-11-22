@@ -71,7 +71,7 @@ func transportInputFixture(t *testing.T) installedFixture {
 	root := t.TempDir()
 	identity := transportIdentity(t, root)
 	platform := runtime.GOOS + "-" + map[string]string{"amd64": "x86_64", "arm64": "aarch64"}[runtime.GOARCH]
-	work := filepath.Join(root, "build", "ci", "123-1", platform)
+	work := ciRunWorkRoot(root, identity, platform)
 	f := installedFixture{identity: identity, options: ciRunOptions{Repository: ciGitHubRepository, SourceRoot: root, Platform: platform, WorkRoot: work, PlanFile: filepath.Join(root, "plan.json"), RunIdentityFile: filepath.Join(root, "run.json")}}
 	f.plan = ciPlan{Publishers: map[string]string{"queue@1": platform}, Platforms: []ciPlatformPlan{{ID: platform, Roots: []string{"queue@1"}, Description: moduleDescription{Roots: []string{"queue@1"}, Modules: []describedModule{{Name: "queue", Version: "1", Target: "fixture-queue", Depends: []string{}, PackagePlatform: "any-any"}}}, Layers: [][]string{{"queue@1"}}}}}
 	result := map[string]any{"run": identity, "platform": platform, "packages": []any{map[string]any{"slot": map[string]string{"name": "queue", "version": "1", "os": "any", "arch": "any"}, "built": true, "verified": true, "status": "stored"}}, "roots": []any{map[string]any{"root": "queue@1", "verified": true}}, "importer": map[string]any{"file": ciImporterExecutable(platform), "verified": true, "status": "stored"}, "complete": true, "processed": true, "error": ""}
@@ -228,7 +228,7 @@ int main() {
 	if err != nil {
 		t.Fatal(err)
 	}
-	work := filepath.Join(root, "build", "ci", "123-1", platform)
+	work := ciRunWorkRoot(root, identity, platform)
 	f := installedFixture{plan: plan, identity: identity, options: ciRunOptions{Repository: ciGitHubRepository, SourceRoot: root, PlanFile: filepath.Join(root, "plan.json"), RunIdentityFile: filepath.Join(root, "run.json"), Platform: platform, WorkRoot: work, ImporterFile: filepath.Join(work, "install", ciImporterExecutable(platform)), CMakeCommand: cmakeCommand, MakeProgram: makeProgram, Budget: 2}}
 	if err := writeCIJSON(f.options.PlanFile, plan); err != nil {
 		t.Fatal(err)

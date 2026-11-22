@@ -325,7 +325,7 @@ func TestCIFingerprintCacheCoordination(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"src/autolib-ci/cache_git.go", "src/autolib-ci/cache_github.go", ".github/workflows/build-platform.yml"} {
+	for _, name := range []string{"src/autolib-ci/cache_git.go", "src/autolib-ci/cache_github.go", "src/autolib-ci/run_identity.go", ".github/workflows/build-platform.yml"} {
 		writeCIFixture(t, root, name, "cache coordinator changes")
 	}
 	after, err := computeCIFingerprints(root, plan)

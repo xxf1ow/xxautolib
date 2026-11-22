@@ -43,7 +43,7 @@ func TestCIConfigureKeepsSelectionOutOfLogNames(t *testing.T) {
 
 func TestCIRunDoesNotRequireUnusedBuilder(t *testing.T) {
 	f := transportInputFixture(t)
-	work := filepath.Join(f.options.SourceRoot, "build", "ci", "123-1", "windows-x86_64")
+	work := filepath.Join(f.options.SourceRoot, "build", "w", "123-1")
 	var stdout, stderr bytes.Buffer
 	code := runCIRun([]string{"--repository", ciGitHubRepository, "--source-root", f.options.SourceRoot, "--plan", f.options.PlanFile,
 		"--cache", "unused-cache.json", "--run-identity", f.options.RunIdentityFile, "--platform", "windows-x86_64",
@@ -51,6 +51,17 @@ func TestCIRunDoesNotRequireUnusedBuilder(t *testing.T) {
 		"--importer-file", "unused", "--cmake-command", "unused"}, &stdout, &stderr)
 	if code != 1 || !strings.Contains(stderr.String(), "selected") || strings.Contains(stderr.String(), "builder") {
 		t.Fatalf("run did not reach the platform selection check without an extra builder: code=%d stderr=%s", code, &stderr)
+	}
+}
+
+func TestCIRunRejectsAnotherWindowsAttemptRoot(t *testing.T) {
+	f := transportInputFixture(t)
+	f.options.Platform = "windows-x86_64"
+	f.options.WorkRoot = filepath.Join(f.options.SourceRoot, "build", "w", "123-2")
+	_, _, _, _, _, err := loadCIWork(context.Background(), f.options)
+	want := filepath.Join("build", "w", "123-1")
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("mismatched attempt work root: %v", err)
 	}
 }
 

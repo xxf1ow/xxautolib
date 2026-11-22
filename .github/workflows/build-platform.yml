@@ -261,7 +261,8 @@ jobs:
       run:
         shell: pwsh
     env:
-      WORK_ROOT: ${{ github.workspace }}/build/ci/${{ github.run_id }}-${{ github.run_attempt }}/windows-x86_64
+      # libiconv 的 libtool 重链接会把构建路径和安装路径拼在一起。
+      WORK_ROOT: ${{ github.workspace }}/build/w/${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@v7
         with:

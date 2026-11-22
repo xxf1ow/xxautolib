@@ -40,6 +40,14 @@ func validateCIRunIdentity(ctx context.Context, sourceRoot, repository string, r
 	return nil
 }
 
+func ciRunWorkRoot(source string, run ciRunIdentity, platform string) string {
+	attempt := run.RunID + "-" + run.Attempt
+	if platform == "windows-x86_64" {
+		return filepath.Join(source, "build", "w", attempt)
+	}
+	return filepath.Join(source, "build", "ci", attempt, platform)
+}
+
 func loadCIWork(ctx context.Context, o ciRunOptions) (ciPlan, ciRunIdentity, *ciPlatformPlan, string, string, error) {
 	var plan ciPlan
 	var run ciRunIdentity
@@ -76,7 +84,7 @@ func loadCIWork(ctx context.Context, o ciRunOptions) (ciPlan, ciRunIdentity, *ci
 	if err != nil {
 		return fail(err)
 	}
-	expected := filepath.Join(source, "build", "ci", run.RunID+"-"+run.Attempt, o.Platform)
+	expected := ciRunWorkRoot(source, run, o.Platform)
 	if work != expected {
 		return fail(fmt.Errorf("CI work root must be %s", expected))
 	}
