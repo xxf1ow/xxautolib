@@ -138,6 +138,10 @@ func TestRealModuleDeclarations(t *testing.T) {
 					if overlay != (platform == "linux-aarch64") {
 						t.Fatalf("GStreamer x265 overlay selection on %s: %v", platform, module.InputFiles)
 					}
+					curlPatch := slices.Contains(module.InputFiles, recipe+"curl-windows-empty-fdset.patch")
+					if curlPatch != (platform == "windows-x86_64") {
+						t.Fatalf("GStreamer curl patch selection on %s: %v", platform, module.InputFiles)
+					}
 				}
 			}
 			for _, ref := range refs {
