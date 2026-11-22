@@ -27,17 +27,6 @@ func TestGStreamerFirstStageNative(t *testing.T) {
 	install := filepath.Join(root, "build", "verify-install")
 	ffmpeg := "ffmpeg@8.1.3"
 	gstreamer := "gstreamer@1.28.9"
-	evidence := filepath.Join(root, "build", "verify-evidence", gstreamer)
-	o := ciValidationOptions{
-		SourceRoot: root, InstallRoot: install, BuildRoot: filepath.Join(root, "build", "verify-evidence"),
-		CMakeCommand: cmake, MakeProgram: os.Getenv("MAKE_EXE"), EvidenceDirectory: evidence,
-		Modules: []string{ffmpeg, gstreamer}, RootPackages: []string{gstreamer}, Context: production,
-	}
-	path, err := validateCIRelease(context.Background(), o)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Log(path)
 	builder := filepath.Join(root, "build", "verify", "tools", "autolib-builder")
 	if production.OS == "windows" {
 		builder += ".exe"
@@ -60,6 +49,17 @@ func TestGStreamerFirstStageNative(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(output, "autolib.cmake"), entry, 0644); err != nil {
 		t.Fatal(err)
 	}
+	evidence := filepath.Join(root, "build", "verify-evidence", gstreamer)
+	o := ciValidationOptions{
+		SourceRoot: root, InstallRoot: install, BuildRoot: filepath.Join(root, "build", "verify-evidence"),
+		CMakeCommand: cmake, MakeProgram: os.Getenv("MAKE_EXE"), EvidenceDirectory: evidence,
+		Modules: []string{ffmpeg, gstreamer}, RootPackages: []string{gstreamer}, Context: production,
+	}
+	path, err := validateCIRelease(context.Background(), o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Log(path)
 }
 
 func TestGStreamerArchiveConsumption(t *testing.T) {

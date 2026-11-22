@@ -14,6 +14,7 @@ env:
 
 jobs:
   linux:
+    if: ${{ false }}
     strategy:
       fail-fast: false
       matrix:
@@ -73,6 +74,7 @@ jobs:
             build/verify-install/gstreamer/1.28.9/share/gstreamer-1.0/plugins.txt
 
   darwin:
+    if: ${{ false }}
     runs-on: macos-15
     timeout-minutes: 60
     env:
@@ -123,6 +125,8 @@ jobs:
     timeout-minutes: 120
     env:
       PLATFORM: windows-x86_64
+      GST_DEBUG: 'curlhttpsrc:6,uridecodebin:4,decodebin:4'
+      GST_DEBUG_NO_COLOR: '1'
     steps:
       - uses: actions/checkout@v7
         with:

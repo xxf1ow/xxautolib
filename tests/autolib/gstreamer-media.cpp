@@ -92,6 +92,21 @@ bool read_frames(const std::string& input, int expected, GstClockTime timeout)
         const std::unique_ptr<GstSample, decltype(&gst_sample_unref)> sample(gst_app_sink_try_pull_sample(GST_APP_SINK(sink.get()), timeout), gst_sample_unref);
         if (!sample || gst_buffer_get_size(gst_sample_get_buffer(sample.get())) == 0) {
             std::cerr << "No decoded video at frame " << frame << '\n';
+            const std::unique_ptr<GstBus, decltype(&gst_object_unref)> bus(
+                gst_element_get_bus(pipeline.get()), gst_object_unref);
+            const std::unique_ptr<GstMessage, decltype(&gst_message_unref)> message(
+                gst_bus_pop_filtered(bus.get(), GST_MESSAGE_ERROR), gst_message_unref);
+            if (message) {
+                GError* error = nullptr;
+                char* debug = nullptr;
+                gst_message_parse_error(message.get(), &error, &debug);
+                std::cerr << error->message << '\n';
+                if (debug) {
+                    std::cerr << debug << '\n';
+                }
+                g_error_free(error);
+                g_free(debug);
+            }
             return false;
         }
     }
