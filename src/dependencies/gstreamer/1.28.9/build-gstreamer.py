@@ -90,9 +90,9 @@ def install_ports(config, env):
     if config.sdk:
         values.append(f"set(VCPKG_OSX_DEPLOYMENT_TARGET {config.deployment})")
     (triplets / f"{port_triplet}.cmake").write_text("\n".join(values) + "\n")
-    ports = [f"{name}:{port_triplet}" for name in ("x264[asm]", "x265", "librtmp")]
+    ports = [f"{name}:{port_triplet}" for name in ("x264[asm]", "x265", "librtmp", "libjpeg-turbo")]
     if windows:
-        ports += [f"glib:{port_triplet}", "pkgconf:x64-windows"]
+        ports += [f"glib:{port_triplet}", f"curl[ssl]:{port_triplet}", "pkgconf:x64-windows"]
     options = [f"--overlay-triplets={triplets}", f"--x-install-root={config.work / 'ports'}"]
     if config.binutils:
         overlay = config.work / "overlay/x265"
@@ -148,7 +148,10 @@ def configure(config, env, meson):
     install_ports(config, env)
     pkgconf = meson_environment(config, env)
     require_pkg_prefix(pkgconf, env, config.ffmpeg, FFMPEG_COMPONENTS)
-    require_pkg_prefix(pkgconf, env, config.work / "ports" / triplet(config), ("x264", "x265", "librtmp"))
+    port_modules = ("x264", "x265", "librtmp", "libjpeg")
+    if os.name == "nt":
+        port_modules += ("libcurl",)
+    require_pkg_prefix(pkgconf, env, config.work / "ports" / triplet(config), port_modules)
     shutil.copytree(config.orc, config.source / "subprojects/orc", dirs_exist_ok=True)
     options = [
         "--prefix", config.prefix, "--libdir", "lib", "--libexecdir", "libexec", "--buildtype", "release",
@@ -162,14 +165,14 @@ def configure(config, env, meson):
     ]
     for module, plugins in {
         "base": ("app", "playback", "typefind", "videoconvertscale", "videotestsrc"),
-        "good": ("autodetect", "flv", "isomp4", "matroska", "rtp", "rtpmanager", "rtsp"),
+        "good": ("autodetect", "flv", "isomp4", "jpeg", "matroska", "rtp", "rtpmanager", "rtsp"),
         "bad": ("videoparsers", "rtmp", "x265"),
         "ugly": ("x264",),
     }.items():
         options.extend(f"-Dgst-plugins-{module}:{plugin}=enabled" for plugin in plugins)
     if os.name == "nt":
         options += ["--vsenv", "-Dgst-plugins-bad:mediafoundation=enabled", "-Dgst-plugins-bad:d3d11=enabled",
-                    "-Dgst-plugins-bad:nvcodec=disabled"]
+                    "-Dgst-plugins-bad:nvcodec=disabled", "-Dgst-plugins-bad:curl=enabled"]
     elif config.sdk:
         # 只选择原生 Cocoa OpenGL。Vulkan SDK 头文件不在可搬迁包中。
         options += ["-Dgst-plugins-base:gl=enabled", "-Dgst-plugins-base:gl_platform=cgl",
@@ -254,6 +257,27 @@ def relocate_linux(prefix, ffmpeg):
                 continue
         rpaths = [f"$ORIGIN/{os.path.relpath(root, binary.parent)}" for root in (prefix / "lib", ffmpeg / "lib")]
         run("patchelf", "--set-rpath", ":".join(rpaths), binary)
+
+
+def install_linux_launchers(prefix, ffmpeg):
+    ffmpeg_lib = shlex.quote(os.path.relpath(ffmpeg / "lib", prefix))
+    launcher = prefix / "bin/gst-run"
+    launcher.write_text(f"""#!/bin/sh
+set -eu
+prefix=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
+export LD_LIBRARY_PATH="$prefix/lib:$prefix"/{ffmpeg_lib}${{LD_LIBRARY_PATH:+":$LD_LIBRARY_PATH"}}
+exec "$@"
+""")
+    launcher.chmod(0o755)
+    # 设备插件的共享库查找也需要覆盖系统默认顺序。RUNPATH 只作用于直接依赖。
+    scanner = prefix / "libexec/gstreamer-1.0/gst-plugin-scanner"
+    scanner.replace(scanner.with_name("gst-plugin-scanner.bin"))
+    scanner.write_text("""#!/bin/sh
+set -eu
+directory=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+exec "$directory/../../bin/gst-run" "$directory/gst-plugin-scanner.bin" "$@"
+""")
+    scanner.chmod(0o755)
 
 
 def relocate_darwin(prefix, ffmpeg):
@@ -371,6 +395,7 @@ def install(config, env, meson):
     else:
         copy_runtime(ports / "lib", prefix / "lib", "*.so*")
         relocate_linux(prefix, config.ffmpeg)
+        install_linux_launchers(prefix, config.ffmpeg)
     for path in (prefix / "lib/pkgconfig").glob("*.pc"):
         content = re.sub(r"^prefix=.*$", lambda _: "prefix=${pcfiledir}/../..", path.read_text(), flags=re.MULTILINE)
         path.write_text(content)

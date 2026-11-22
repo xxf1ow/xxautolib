@@ -107,6 +107,14 @@ func validateCIRelease(ctx context.Context, o ciValidationOptions) (string, erro
 			args = append(args, "-DAUTOLIB_TEST_RTMP_URL="+rtmp)
 		}
 	}
+	if gstreamer && o.Context.OS == "windows" {
+		url, stop, err := startHTTPVideoFixture(roots.source)
+		if err != nil {
+			return roots.evidence, fmt.Errorf("start HTTP video fixture: %w", err)
+		}
+		defer stop()
+		args = append(args, "-DAUTOLIB_TEST_HTTP_URL="+url)
+	}
 	driver := filepath.Join(roots.source, "tests", "autolib", "run-installed.cmake")
 	validate := func(relocate bool) (string, error) {
 		driverArgs := slices.Clone(args)

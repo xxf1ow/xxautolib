@@ -102,9 +102,13 @@ if(gstreamer IN_LIST module_names)
     if(AUTOLIB_TEST_RTMP_URL)
         string(REGEX REPLACE "/videoio$" "/gstreamer-rtsp" gstreamer_rtsp_url "${AUTOLIB_TEST_RTSP_URL}")
     endif()
-    add_test(NAME gstreamer_media_smoke COMMAND gstreamer_media_smoke
+    set(gstreamer_media_command "$<TARGET_FILE:gstreamer_media_smoke>")
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        list(PREPEND gstreamer_media_command "${AUTOLIB_PACKAGE_DIR_gstreamer}/bin/gst-run")
+    endif()
+    add_test(NAME gstreamer_media_smoke COMMAND ${gstreamer_media_command}
         "${AUTOLIB_PACKAGE_DIR_gstreamer}" "${CMAKE_BINARY_DIR}/gstreamer media"
-        "${gstreamer_rtsp_url}" "${AUTOLIB_TEST_RTMP_URL}")
+        "${gstreamer_rtsp_url}" "${AUTOLIB_TEST_RTMP_URL}" "${AUTOLIB_TEST_HTTP_URL}")
     set_tests_properties(gstreamer_media_smoke PROPERTIES TIMEOUT 60)
 endif()
 if(AUTOLIB_TEST_RTSP_URL AND opencv IN_LIST module_names)

@@ -13,3 +13,5 @@
 | `PATH`（Windows） | 在原路径前加入 `<gst>/bin` 和 `<ffmpeg>/bin` |
 
 命令行工具和项目启动器沿用同一组进程设置。包内 `gst-inspect-1.0` 可核对插件版本和 `Filename`。 [GStreamer 运行环境](https://gstreamer.freedesktop.org/documentation/gstreamer/running.html)
+
+Linux 使用 `<gst>/bin/gst-run /path/to/app` 启动应用，或用同一入口运行包内工具。启动器和包内 scanner 会把两份包的库目录放在动态库搜索路径前端。Jetson 在 `GST_PLUGIN_PATH_1_0` 登记明确的 JetPack 插件目录，并为该部署指定独立 registry。

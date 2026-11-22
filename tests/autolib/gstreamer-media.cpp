@@ -118,8 +118,8 @@ bool loopback(const std::string& publisher, const std::string& reader)
 
 int main(int argc, char** argv)
 {
-    if (argc != 5) {
-        std::cerr << "Expected package and output paths plus RTSP and RTMP URLs\n";
+    if (argc != 6) {
+        std::cerr << "Expected package and output paths plus RTSP, RTMP and HTTP URLs\n";
         return 1;
     }
     const fs::path package = fs::canonical(argv[1]);
@@ -150,7 +150,7 @@ int main(int argc, char** argv)
     }
     const char* factories[] = {"appsrc", "appsink", "h264parse", "h265parse", "x264enc", "x265enc", "avdec_h264", "avdec_h265",
                                "qtdemux", "matroskademux", "matroskamux", "flvmux", "rtmpsrc", "rtmpsink", "rtspsrc", "rtspclientsink",
-                               "rtph264pay", "rtph264depay", "rtph265pay", "rtph265depay"};
+                               "rtph264pay", "rtph264depay", "rtph265pay", "rtph265depay", "jpegenc", "jpegdec"};
     for (const char* factory : factories) {
         if (!require_factory(factory, plugins)) {
             return 1;
@@ -163,7 +163,7 @@ int main(int argc, char** argv)
         }
     }
 #elif defined(_WIN32)
-    for (const char* factory : {"mfvideosrc", "d3d11screencapturesrc", "d3d11convert", "d3d11download", "autovideosink"}) {
+    for (const char* factory : {"mfvideosrc", "d3d11screencapturesrc", "d3d11convert", "d3d11download", "autovideosink", "curlhttpsrc"}) {
         if (!require_factory(factory, plugins)) {
             return 1;
         }
@@ -175,6 +175,14 @@ int main(int argc, char** argv)
         return 1;
     }
 #endif
+    if (!read_frames("videotestsrc num-buffers=6 ! video/x-raw,format=I420,width=128,height=128 ! jpegenc ! jpegdec ! video/x-raw",
+                     6, 2 * GST_SECOND)) {
+        return 1;
+    }
+    const std::string http = argv[5];
+    if (!http.empty() && !read_frames("uridecodebin uri=" + quoted(http) + " ! video/x-raw", 1, 8 * GST_SECOND)) {
+        return 1;
+    }
     const auto h264 = output / "h264.mkv";
     const auto h265 = output / "h265.mkv";
     if (!write_video(h264, "x264enc", "h264parse") || !write_video(h265, "x265enc", "h265parse") ||

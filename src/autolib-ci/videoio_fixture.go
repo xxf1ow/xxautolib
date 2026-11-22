@@ -16,6 +16,25 @@ import (
 const videoIOServerRelease = "https://github.com/bluenviron/mediamtx/releases/download/v1.15.6/"
 const gstreamerRTMPPath = "gstreamer-rtmp/stream"
 
+func startHTTPVideoFixture(sourceRoot string) (string, func(), error) {
+	video := filepath.Join(sourceRoot, "tests", "autolib", "fixtures", "rtsp-h264.ts")
+	if _, err := os.Stat(video); err != nil {
+		return "", nil, err
+	}
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		return "", nil, err
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /video.ts", func(response http.ResponseWriter, request *http.Request) {
+		response.Header().Set("Content-Type", "video/mp2t")
+		http.ServeFile(response, request, video)
+	})
+	server := &http.Server{Handler: mux}
+	go server.Serve(listener)
+	return "http://" + listener.Addr().String() + "/video.ts", func() { server.Close() }, nil
+}
+
 func videoIOAsset(platform string) (string, string) {
 	switch platform {
 	case "linux-x86_64":
