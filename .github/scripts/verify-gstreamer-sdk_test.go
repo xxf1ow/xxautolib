@@ -98,8 +98,7 @@ func TestGStreamerArchiveConsumption(t *testing.T) {
 		t.Fatal(err)
 	}
 	if production.OS == "windows" {
-		pkgconf := filepath.Join(root, "build", "verify", "ep", "gstreamer", "1.28.9", "bin", "ports",
-			"x64-windows", "tools", "pkgconf", "pkgconf.exe")
+		pkgconf := os.Getenv("SDK_PKGCONF")
 		cc, err := exec.LookPath("cl.exe")
 		if err != nil {
 			t.Fatal(err)

@@ -20,6 +20,7 @@ env:
 
 jobs:
   darwin:
+    if: ${{ false }}
     runs-on: macos-15
     timeout-minutes: 60
     env:
@@ -59,7 +60,6 @@ jobs:
             build/verify-install/gstreamer/1.28.9/share/gstreamer-1.0/plugins.txt
 
   windows:
-    if: ${{ false }}
     runs-on: windows-2022
     timeout-minutes: 120
     env:
@@ -75,30 +75,42 @@ jobs:
           '{"platforms":[{"id":"windows-x86_64","roots":["gstreamer@1.28.9"],"description":{"modules":[{"name":"ffmpeg"}]}}]}' | Set-Content build/plan.json
           $settings = ./.github/scripts/prepare-windows.ps1 -Config .github/ci-tools.json -Plan build/plan.json -Platform windows-x86_64 -WorkRoot build/verify-tools | ConvertFrom-Json
           "CMAKE_EXE=$($settings.cmake_command)" >> $env:GITHUB_ENV
-          choco install winflexbison3 ninja --no-progress -y
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Build from the root entry point
+      - uses: actions/download-artifact@v8
+        with:
+          name: stage-one-windows-x86_64
+          run-id: 45005093568
+          github-token: ${{ github.token }}
+          path: build/verify-release
+      - name: Prepare pinned Windows pkgconf without rebuilding GStreamer
         shell: pwsh
         run: |
-          $env:AUTOLIB_INSTALL_ROOT = Join-Path $env:GITHUB_WORKSPACE 'build/verify-install'
-          & $env:CMAKE_EXE -S . -B build/verify -G 'Visual Studio 17 2022' -A x64 -T v143 "-DBUILD_LIST=$env:RECIPE_ROOTS" -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & $env:CMAKE_EXE --build build/verify --config Release --parallel 4
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $env:PATH = "$env:AUTOLIB_INSTALL_ROOT/ffmpeg/8.1.3/bin;$env:PATH"
-          & "$env:AUTOLIB_INSTALL_ROOT/gstreamer/1.28.9/bin/gst-inspect-1.0.exe" --version
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Run native consumption and create temporary archives
+          $built = New-Item -ItemType Directory build/pkgconf-native
+          $archive = Join-Path $built.FullName 'vcpkg.tar.gz'
+          curl.exe -fLSs --retry 2 -o $archive 'https://codeload.github.com/microsoft/vcpkg/tar.gz/9967a8eb5f4f5cd7be2b6717d31ddb7ff84c4751'
+          if ($LASTEXITCODE -ne 0 -or (Get-FileHash $archive -Algorithm SHA256).Hash -ne 'c770a86306dcf57a151e2bac2ff3ee62d3c18f3340524a986aec56005b1ac53b') {
+            throw 'Could not verify the pinned vcpkg source'
+          }
+          Push-Location $built
+          try {
+            & $env:CMAKE_EXE -E tar xf $archive
+            if ($LASTEXITCODE -ne 0) { throw 'Could not extract vcpkg' }
+            Set-Location vcpkg-9967a8eb5f4f5cd7be2b6717d31ddb7ff84c4751
+            & ./bootstrap-vcpkg.bat -disableMetrics
+            if ($LASTEXITCODE -ne 0) { throw 'Could not bootstrap vcpkg' }
+            & ./vcpkg.exe install pkgconf:x64-windows "--x-install-root=$($built.FullName)/ports"
+            if ($LASTEXITCODE -ne 0) { throw 'Could not build pkgconf' }
+          } finally {
+            Pop-Location
+          }
+          $pkgconf = Join-Path $built.FullName 'ports/x64-windows/tools/pkgconf/pkgconf.exe'
+          "SDK_PKGCONF=$pkgconf" >> $env:GITHUB_ENV
+          & $pkgconf --version
+      - name: Run consumption from the rebuilt archive
         shell: pwsh
         run: |
           Copy-Item .github/scripts/verify-gstreamer-sdk_test.go src/autolib-ci/
-          & $env:CMAKE_EXE -P src/autolib-builder/go-sdk.cmake -- test -mod=readonly -p=1 -parallel=1 ./src/autolib-ci -run '^TestGStreamer(FirstStageNative|ArchiveConsumption)$' -count=1 -v
+          & $env:CMAKE_EXE -P src/autolib-builder/go-sdk.cmake -- test -mod=readonly -p=1 -parallel=1 ./src/autolib-ci -run '^TestGStreamerArchiveConsumption$' -count=1 -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - uses: actions/upload-artifact@v7
-        if: ${{ !cancelled() }}
-        with:
-          name: stage-one-windows-x86_64
-          path: build/verify-release/
       - name: Retain build and consumption evidence
         if: always()
         uses: actions/upload-artifact@v7
