@@ -19,10 +19,15 @@ if(WIN32)
 endif()
 
 # 这些文件随包搬迁，查找路径从 .pc 所在目录计算。
+set(pc_prefix "\${pcfiledir}/../..")
+if("@CMAKE_SYSTEM_NAME@" STREQUAL "Linux")
+    # pkg-config 0.29 需要引号来保留 pcfiledir 展开后的空格。
+    set(pc_prefix "\"${pc_prefix}\"")
+endif()
 foreach(component IN LISTS ffmpeg_components)
     set(pc_file "${CMAKE_INSTALL_PREFIX}/lib/pkgconfig/lib${component}.pc")
     file(READ "${pc_file}" contents)
-    string(REGEX REPLACE "(^|\n)prefix=[^\n]*" "\\1prefix=\${pcfiledir}/../.." contents "${contents}")
+    string(REGEX REPLACE "(^|\n)prefix=[^\n]*" "\\1prefix=${pc_prefix}" contents "${contents}")
     string(REGEX REPLACE "(^|\n)libdir=[^\n]*" "\\1libdir=\${prefix}/lib" contents "${contents}")
     string(REGEX REPLACE "(^|\n)includedir=[^\n]*" "\\1includedir=\${prefix}/include" contents "${contents}")
     file(WRITE "${pc_file}" "${contents}")

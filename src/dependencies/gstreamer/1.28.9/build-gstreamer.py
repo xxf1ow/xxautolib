@@ -396,8 +396,13 @@ def install(config, env, meson):
         copy_runtime(ports / "lib", prefix / "lib", "*.so*")
         relocate_linux(prefix, config.ffmpeg)
         install_linux_launchers(prefix, config.ffmpeg)
+    linux = sys.platform == "linux"
+    pc_prefix = 'prefix="${pcfiledir}/../.."' if linux else "prefix=${pcfiledir}/../.."
     for path in (prefix / "lib/pkgconfig").glob("*.pc"):
-        content = re.sub(r"^prefix=.*$", lambda _: "prefix=${pcfiledir}/../..", path.read_text(), flags=re.MULTILINE)
+        content = re.sub(r"^prefix=.*$", lambda _: pc_prefix, path.read_text(), flags=re.MULTILINE)
+        if linux and path.name == "zlib.pc":
+            # Linux 前缀已引用，zlib 的路径参数不能再重复引用。
+            content = re.sub(r'"(-I\$\{includedir\}|-L\$\{(?:libdir|sharedlibdir)\})"', r"\1", content)
         path.write_text(content)
     plugins = sorted(path.name for path in (prefix / "lib/gstreamer-1.0").glob("*") if path.suffix in (".so", ".dylib", ".dll"))
     (prefix / "share/gstreamer-1.0/plugins.txt").write_text("\n".join(plugins) + "\n")

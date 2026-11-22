@@ -51,7 +51,8 @@ endfunction()
 
 set(consumer "${run}/consumer")
 file(MAKE_DIRECTORY "${consumer}")
-foreach(file IN ITEMS CMakeLists.txt smoke.cpp ffmpeg-avfilter.c ffmpeg-indirect.cpp gstreamer-media.cpp opencv-videoio.cpp)
+foreach(file IN ITEMS CMakeLists.txt smoke.cpp ffmpeg-avfilter.c ffmpeg-indirect.cpp gstreamer-media.cpp
+    media-pkgconfig.c media-pkgconfig.cmake opencv-videoio.cpp)
     if(EXISTS "${SOURCE_ROOT}/tests/autolib/${file}")
         configure_file("${SOURCE_ROOT}/tests/autolib/${file}" "${consumer}/${file}" COPYONLY)
     endif()

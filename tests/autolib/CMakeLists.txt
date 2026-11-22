@@ -111,6 +111,16 @@ if(gstreamer IN_LIST module_names)
         "${gstreamer_rtsp_url}" "${AUTOLIB_TEST_RTMP_URL}" "${AUTOLIB_TEST_HTTP_URL}")
     set_tests_properties(gstreamer_media_smoke PROPERTIES TIMEOUT 60)
 endif()
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND gstreamer IN_LIST module_names AND ffmpeg IN_LIST module_names)
+    find_package(PkgConfig REQUIRED)
+    add_test(NAME media_pkgconfig_smoke COMMAND "${CMAKE_COMMAND}"
+        "-DCC=${CMAKE_C_COMPILER}" "-DPKG_CONFIG=${PKG_CONFIG_EXECUTABLE}"
+        "-DGSTREAMER=${AUTOLIB_PACKAGE_DIR_gstreamer}" "-DFFMPEG=${AUTOLIB_PACKAGE_DIR_ffmpeg}"
+        "-DOUTPUT=${CMAKE_BINARY_DIR}/media-pkgconfig"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/media-pkgconfig.cmake")
+    set_tests_properties(media_pkgconfig_smoke PROPERTIES ENVIRONMENT
+        "GST_PLUGIN_PATH_1_0=;GST_PLUGIN_SYSTEM_PATH_1_0=;GST_REGISTRY_1_0=${CMAKE_BINARY_DIR}/media-pkgconfig-registry.bin")
+endif()
 if(AUTOLIB_TEST_RTSP_URL AND opencv IN_LIST module_names)
     add_executable(opencv_videoio_smoke opencv-videoio.cpp)
     target_link_libraries(opencv_videoio_smoke PRIVATE autolib::opencv ${CMAKE_DL_LIBS})
