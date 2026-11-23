@@ -1,5 +1,8 @@
+#include <gst/allocators/gstphysmemory.h>
 #include <gst/app/gstappsink.h>
 #include <gst/gst.h>
+#include <gst/rtsp-server/rtsp-server.h>
+#include <gst/sdp/gstsdpmessage.h>
 
 #include <chrono>
 #include <filesystem>
@@ -156,6 +159,12 @@ int main(int argc, char** argv)
     g_setenv("GST_PLUGIN_SCANNER_1_0", scanner.string().c_str(), TRUE);
     g_setenv("GST_REGISTRY_1_0", registry.string().c_str(), TRUE);
     gst_init(nullptr, nullptr);
+
+    if (GST_TYPE_PHYS_MEMORY_ALLOCATOR == G_TYPE_INVALID || GST_TYPE_RTSP_SERVER == G_TYPE_INVALID ||
+        GST_TYPE_SDP_MESSAGE == G_TYPE_INVALID) {
+        std::cerr << "Could not load the GStreamer Allocators, RTSP Server and SDP SDK types\n";
+        return 1;
+    }
 
     guint major, minor, micro, nano;
     gst_version(&major, &minor, &micro, &nano);
