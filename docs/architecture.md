@@ -18,7 +18,7 @@
 
 根 [CMakeLists.txt](../CMakeLists.txt) 和[构建入口](../src/autolib-builder/index.cmake)调用[共享工具准备](../src/autolib-builder/prepare-tools.cmake)，准备固定 Go SDK、builder、宿主 importer 和原样安装入口，再由 CMake/ExternalProject 执行构建。CI 零库模式通过同一工具准备的脚本入口执行，不调用模块生成器。模块声明、资源、补丁、依赖接线和安装机制归 builder；它也拥有安装副本的路径修正及归档机制，不认识托管平台或发布凭据。
 
-`autolib-importer` 负责包选择、精确依赖遍历、HTTPS 下载、安全解包、校验和缓存准备，不复制独立安装来源或执行路径修正。单文件 [autolib.cmake](../src/autolib.cmake) 负责宿主 importer 引导、按需 FetchContent Git 快照及仓库检查、结果身份与闭包校验及包就绪后的 target 加载。adapter 使用已准备的依赖公共目标，不自行推断 sibling 版本目录、重新选择依赖或下载编译。
+`autolib-importer` 负责包选择、精确依赖遍历、HTTPS 下载、安全解包、校验和缓存准备，不复制独立安装来源或执行路径修正。单文件 [autolib.cmake](../src/autolib.cmake) 检查活动C/C++工具链的[消费基线](agent-notes/implemented/architecture/2026-11-22-consumer-toolchain-baselines.md)，负责宿主importer引导、按需获取并检查Git快照、验证结果身份与闭包及加载target。adapter 使用已准备的依赖公共目标，不自行推断 sibling 版本目录、重新选择依赖或下载编译。
 
 `autolib-ci` 通过 builder 取得精确根及闭包，分别保留有效、资格过滤和配方失败的根。每项按依赖顺序恢复或构建，经本平台独立消费验证后立即打包入库；两个 Eigen 版本使用独立消费者。某项失败只阻断其依赖者，无关项继续。结果区分入库、复用、非 publisher 本地就绪和失败；全部处理完毕与全部成功分别记录，最终汇总保留整体失败。
 

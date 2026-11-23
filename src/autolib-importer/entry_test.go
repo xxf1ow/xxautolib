@@ -388,6 +388,8 @@ func TestCMakeConsumerVisibility(t *testing.T) {
 			if runtime.GOOS == "windows" {
 				f.generator = "Visual Studio 17 2022"
 				extra = []string{"-DCMAKE_SYSTEM_NAME=Windows", "-DCMAKE_SYSTEM_PROCESSOR=AMD64"}
+			} else if runtime.GOOS == "darwin" {
+				extra = []string{"-DCMAKE_SYSTEM_NAME=Darwin", "-DCMAKE_SYSTEM_PROCESSOR=arm64", "-DCMAKE_OSX_DEPLOYMENT_TARGET=15.0"}
 			}
 			putTestFile(t, filepath.Join(f.source, "empty.cpp"), "int value() { return 1; }\n")
 			putTestFile(t, filepath.Join(f.source, "CMakeLists.txt"), `cmake_minimum_required(VERSION 3.20)
