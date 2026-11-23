@@ -93,6 +93,10 @@ TEST(AutolibPackage, AssertionRuns) { EXPECT_EQ(6 * 7, 42); }
 #ifdef AUTOLIB_TEST_PORTAUDIO
 #include <portaudio.h>
 #endif
+#ifdef AUTOLIB_TEST_RUCKIG
+#include <cmath>
+#include <ruckig/ruckig.hpp>
+#endif
 #ifdef AUTOLIB_TEST_SDL3
 #include <SDL3/SDL.h>
 #endif
@@ -181,7 +185,8 @@ bool check_runtime(const char *name, const void *address, const char *expected_r
     const auto root = std::filesystem::canonical(expected_root, error);
     if (error)
         return false;
-    std::cout << "runtime_" << name << '=' << actual_path.generic_u8string() << '\n';
+    const auto utf8_path = actual_path.generic_u8string();
+    std::cout << "runtime_" << name << '=' << std::string(utf8_path.begin(), utf8_path.end()) << '\n';
     const auto relative = actual_path.lexically_relative(root);
     return !relative.empty() && !relative.is_absolute() && *relative.begin() != "..";
 }
@@ -347,6 +352,27 @@ int main()
     if (host_count < 0 || Pa_Terminate() != paNoError)
         return 33;
     std::cout << "portaudio_host_apis=" << host_count << '\n';
+#endif
+#ifdef AUTOLIB_TEST_RUCKIG
+    {
+        ruckig::InputParameter<1> input;
+        input.target_position = {1.0};
+        input.max_velocity = {1.0};
+        input.max_acceleration = {2.0};
+        input.max_jerk = {4.0};
+
+        ruckig::Ruckig<1> generator;
+        ruckig::Trajectory<1> trajectory;
+        if (generator.calculate(input, trajectory) != ruckig::Result::Working)
+            return 49;
+        const auto duration = trajectory.get_duration();
+        if (!std::isfinite(duration) || duration <= 0.0)
+            return 49;
+        double position = 0.0;
+        trajectory.at_time(duration, position);
+        if (!(std::abs(position - 1.0) < 1e-9))
+            return 49;
+    }
 #endif
 #ifdef AUTOLIB_TEST_SDL3
     SDL_Surface *surface = SDL_CreateSurface(2, 2, SDL_PIXELFORMAT_RGBA32);

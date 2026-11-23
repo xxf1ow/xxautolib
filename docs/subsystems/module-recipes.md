@@ -66,6 +66,8 @@ Git 与归档字段互斥。主来源和资源在目标覆盖时整项替换，�
 
 `BUILD_SHARED_LIBS` 及库专用构建形态开关由配方和平台覆盖决定；未声明时采用上游默认。根入口不自动传递父项目的 BUILD_SHARED_LIBS。
 
+新增源码构建模块时，小库优先交付静态库，OpenCV、FFmpeg、GStreamer 这类大型库优先交付动态库。
+
 入口拥有安装前缀、Release 配置、运行库、生成器及 platform/toolset/instance、Make、C/C++ 编译器和 Native 目标。配方禁止填写 `CMAKE_INSTALL_PREFIX`、`CMAKE_BUILD_TYPE`、`CMAKE_MSVC_RUNTIME_LIBRARY`、`CMAKE_GENERATOR` 及其 PLATFORM/TOOLSET/INSTANCE、`CMAKE_MAKE_PROGRAM`、`CMAKE_C_COMPILER`、`CMAKE_CXX_COMPILER`，也不能通过 toolchain、sysroot、系统身份或编译器目标切换目标。Darwin 还禁止配方填写三个 `CMAKE_OSX_ARCHITECTURES`、`CMAKE_OSX_DEPLOYMENT_TARGET`、`CMAKE_OSX_SYSROOT`。同值重复也报错。
 
 直接依赖前缀加入 CMAKE_PREFIX_PATH，并保留配方路径。依赖自身的 config_dir 和 package_name 决定注入的 `<Package>_DIR`；使用方有效 cache 声明同名键即报错，不禁止其他 `_DIR`。使用方自身的 config_dir 描述安装输出，与此检查无冲突。依赖 pkgconfig_dir 加入子进程 PKG_CONFIG_PATH，项目 include 包装保留配方的 include 执行。

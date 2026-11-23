@@ -1,0 +1,19 @@
+# Ruckig：带加加速度约束的实时轨迹生成库，安装用于本地计算的 C++ 静态库。
+type = "cmake"
+package_platforms = ['windows-x86_64','linux-x86_64','linux-aarch64','darwin-aarch64']
+sentinel = "lib/cmake/ruckig/ruckig-config.cmake"
+config_dir = "lib/cmake/ruckig"
+
+[source]
+GIT_REPOSITORY = "https://github.com/pantor/ruckig.git"
+GIT_TAG = "a8db97a4e9c55e5160a3855f739fa3b270df8e4c" # 固定 v0.19.4 对应提交，升级时核对库的构建开关和 CMake 导出布局。
+
+[cmake.cache]
+BUILD_SHARED_LIBS = false  # 交付静态库，使用方无需部署 Ruckig 动态库。
+BUILD_CLOUD_CLIENT = false # 仅提供本地轨迹计算，省去云客户端及其捆绑的 HTTP 和 JSON 依赖。
+# 示例和测试程序不属于库的安装产物。
+BUILD_EXAMPLES = false
+BUILD_TESTS = false
+
+[[patches]]
+file = "install-license.patch" # 二进制归档随库交付上游 MIT 许可证和版权声明。

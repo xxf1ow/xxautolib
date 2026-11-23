@@ -8,7 +8,7 @@ if(NOT MODULES)
 endif()
 set(module_names "")
 set(smoke_modules queue lz4 flann eigen ffmpeg freetype gstreamer harfbuzz libusb nlohmann opencv librealsense
-    asio clipper2 cpp-httplib expected gtest libzmq nativefiledialog-extended oneTBB portaudio pybind11 sdl3 spdlog taskflow yaml-cpp zlib
+    asio clipper2 cpp-httplib expected gtest libzmq nativefiledialog-extended oneTBB portaudio pybind11 ruckig sdl3 spdlog taskflow yaml-cpp zlib
     boost websocketpp imgui pcl visp)
 foreach(ref IN LISTS MODULES)
     if(NOT ref MATCHES "^([A-Za-z0-9][A-Za-z0-9_.+\\-]*)(@([A-Za-z0-9][A-Za-z0-9_.+\\-]*))?$")

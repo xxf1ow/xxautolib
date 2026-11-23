@@ -84,8 +84,8 @@ func TestRealModuleDeclarations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(refs) != 35 {
-		t.Fatalf("want 35 recipe versions, got %d", len(refs))
+	if len(refs) != 36 {
+		t.Fatalf("want 36 recipe versions, got %d", len(refs))
 	}
 	for _, slot := range [][2]string{{"Windows", "x86_64"}, {"Linux", "x86_64"}, {"Linux", "aarch64"}, {"Darwin", "aarch64"}} {
 		t.Run("all-versions/"+slot[0]+"/"+slot[1], func(t *testing.T) {
@@ -93,10 +93,10 @@ func TestRealModuleDeclarations(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(description.RequestedRoots) != 35 {
+			if len(description.RequestedRoots) != 36 {
 				t.Fatal(description.RequestedRoots)
 			}
-			if len(description.Roots) != 35 || len(description.FilteredRoots) != 0 {
+			if len(description.Roots) != 36 || len(description.FilteredRoots) != 0 {
 				t.Fatalf("roots=%v filtered=%v", description.Roots, description.FilteredRoots)
 			}
 			byRef := map[string]*moduleDefinition{}
@@ -307,7 +307,7 @@ func TestVersionedRealDeclarations(t *testing.T) {
 		"imgui": "065f9e02695c", "librealsense": "2.58.1", "libusb": "1.0.27", "libzmq": "4.3.5", "lz4": "1.10.0",
 		"nativefiledialog-extended": "3cd252a8f7ca", "nlohmann": "3.12.0", "oneTBB": "628c90df6867", "onnxruntime": "1.24.4", "opencv": "4.14.0",
 		"pcl": "pcl-1.15.1", "portaudio": "v190700_20210406", "pybind11": "2.13.6", "queue": "45db9a8b4431",
-		"sdl3": "3.2.30", "spdlog": "1.17.0", "taskflow": "83f90a279aaa", "visp": "3.7.0", "websocketpp": "4dfe1be74e68", "yaml-cpp": "2decf96e915d", "zlib": "1.3.1",
+		"ruckig": "0.19.4", "sdl3": "3.2.30", "spdlog": "1.17.0", "taskflow": "83f90a279aaa", "visp": "3.7.0", "websocketpp": "4dfe1be74e68", "yaml-cpp": "2decf96e915d", "zlib": "1.3.1",
 	}
 	for _, slot := range []struct{ system, arch string }{{"Windows", "x86_64"}, {"Linux", "x86_64"}, {"Linux", "aarch64"}} {
 		t.Run(slot.system+"/"+slot.arch, func(t *testing.T) {
@@ -315,8 +315,8 @@ func TestVersionedRealDeclarations(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(modules) != 35 {
-				t.Fatalf("want 35 versions, got %d", len(modules))
+			if len(modules) != 36 {
+				t.Fatalf("want 36 versions, got %d", len(modules))
 			}
 			byRef := map[string]*moduleDefinition{}
 			for _, m := range modules {

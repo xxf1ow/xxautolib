@@ -1,0 +1,8 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -168,4 +168,5 @@
+ install(FILES
+   "${CMAKE_CURRENT_SOURCE_DIR}/package.xml"
++  "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
+   DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/${PROJECT_NAME}
+ )
