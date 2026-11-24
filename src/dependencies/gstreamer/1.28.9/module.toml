@@ -43,6 +43,9 @@ GSTREAMER_VCPKG_SOURCE = "<RESOURCE_SOURCE_DIR:vcpkg>"
 [platforms.linux-aarch64.cmake.cache]
 GSTREAMER_BINUTILS_SOURCE = "<RESOURCE_SOURCE_DIR:binutils>"
 
+[[patches]]
+file = "h264parse-video-full-range.patch" # H.264 VUI 可独立声明量化范围。
+
 [[platforms.windows-x86_64.patches]]
 file = "curl-windows-empty-fdset.patch" # Winsock 无法用空 socket 集合等待 libcurl 的初始定时器。
 
