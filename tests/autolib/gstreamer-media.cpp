@@ -173,7 +173,7 @@ int main(int argc, char** argv)
         return 1;
     }
     const char* factories[] = {"appsrc", "appsink", "h264parse", "h265parse", "x264enc", "x265enc", "avdec_h264", "avdec_h265",
-                               "qtdemux", "matroskademux", "matroskamux", "flvmux", "rtmpsrc", "rtmpsink", "rtspsrc", "rtspclientsink",
+                               "qtdemux", "matroskademux", "matroskamux", "flvmux", "rtmp2src", "rtmp2sink", "rtspsrc", "rtspclientsink",
                                "rtph264pay", "rtph264depay", "rtph265pay", "rtph265depay", "jpegenc", "jpegdec"};
     for (const char* factory : factories) {
         if (!require_factory(factory, plugins)) {
@@ -219,8 +219,8 @@ int main(int argc, char** argv)
                                   "rtspsrc latency=0 protocols=tcp location=" + quoted(rtsp) + " ! rtph264depay ! h264parse ! avdec_h264")) {
         return 1;
     }
-    if (!rtmp.empty() && !loopback("flvmux streamable=true ! rtmpsink sync=false location=" + quoted(rtmp),
-                                  "rtmpsrc location=" + quoted(rtmp) + " ! flvdemux ! h264parse ! avdec_h264")) {
+    if (!rtmp.empty() && !loopback("flvmux streamable=true ! rtmp2sink sync=false location=" + quoted(rtmp),
+                                  "rtmp2src location=" + quoted(rtmp) + " ! flvdemux ! h264parse ! avdec_h264")) {
         return 1;
     }
     return 0;

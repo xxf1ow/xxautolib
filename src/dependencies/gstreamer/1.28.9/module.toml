@@ -5,9 +5,9 @@ depends = ["ffmpeg@8.1.3"]
 pkgconfig_dir = "lib/pkgconfig"
 
 [system_dependencies]
-apt = ["autoconf", "automake", "bison", "curl", "flex", "libglib2.0-dev", "libtool", "nasm", "ninja-build", "patchelf", "pkg-config", "python3", "unzip", "xz-utils", "zip"]
-choco = ["winflexbison3", "ninja"]
-brew = ["autoconf", "automake", "bison", "flex", "glib", "libtool", "ninja", "pkgconf"]
+apt = ["autoconf", "automake", "bison", "curl", "flex", "libglib2.0-dev", "libsoup2.4-dev", "libtool", "nasm", "ninja-build", "patchelf", "pkg-config", "python3", "rustc", "unzip", "xz-utils", "zip"]
+choco = ["winflexbison3", "ninja", "rust-ms"]
+brew = ["autoconf", "automake", "bison", "flex", "glib", "libsoup", "libtool", "ninja", "pkgconf", "rust"]
 
 [source]
 URL = ["https://codeload.github.com/GStreamer/gstreamer/tar.gz/refs/tags/1.28.9"]
@@ -48,6 +48,9 @@ file = "h264parse-video-full-range.patch" # H.264 VUI 可独立声明量化范�
 
 [[platforms.windows-x86_64.patches]]
 file = "curl-windows-empty-fdset.patch" # Winsock 无法用空 socket 集合等待 libcurl 的初始定时器。
+
+[[platforms.darwin-aarch64.patches]]
+file = "darwin-link-libsoup.patch" # 搬迁时通过 Mach-O 链接记录定位并收集 libsoup。
 
 [[steps]]
 name = "prepare-gstreamer-build"

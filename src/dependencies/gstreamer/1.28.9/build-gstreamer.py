@@ -90,9 +90,10 @@ def install_ports(config, env):
     if config.sdk:
         values.append(f"set(VCPKG_OSX_DEPLOYMENT_TARGET {config.deployment})")
     (triplets / f"{port_triplet}.cmake").write_text("\n".join(values) + "\n")
-    ports = [f"{name}:{port_triplet}" for name in ("x264[asm]", "x265", "librtmp", "libjpeg-turbo")]
+    ports = [f"{name}:{port_triplet}" for name in ("x264[asm]", "x265", "libjpeg-turbo", "libxml2", "openssl", "zlib")]
     if windows:
-        ports += [f"glib:{port_triplet}", f"curl[ssl]:{port_triplet}", "pkgconf:x64-windows"]
+        ports += [f"{name}:{port_triplet}" for name in ("glib", "curl[ssl]", "directx-headers", "libsoup")]
+        ports.append("pkgconf:x64-windows")
     options = [f"--overlay-triplets={triplets}", f"--x-install-root={config.work / 'ports'}"]
     if config.binutils:
         overlay = config.work / "overlay/x265"
@@ -133,7 +134,8 @@ def meson_environment(config, env):
     ports = config.work / "ports" / triplet(config)
     prefixes = [config.ffmpeg / "lib/pkgconfig", ports / "lib/pkgconfig", ports / "share/pkgconfig"]
     if config.sdk:
-        prefixes.append(Path(run("brew", "--prefix", "glib", capture=True)) / "lib/pkgconfig")
+        for formula in ("glib", "libsoup"):
+            prefixes.append(Path(run("brew", "--prefix", formula, capture=True)) / "lib/pkgconfig")
     prepend_path(env, "PKG_CONFIG_PATH", *prefixes)
     if os.name == "nt":
         pkgconf = config.work / "ports/x64-windows/tools/pkgconf/pkgconf.exe"
@@ -148,9 +150,9 @@ def configure(config, env, meson):
     install_ports(config, env)
     pkgconf = meson_environment(config, env)
     require_pkg_prefix(pkgconf, env, config.ffmpeg, FFMPEG_COMPONENTS)
-    port_modules = ("x264", "x265", "librtmp", "libjpeg")
+    port_modules = ("x264", "x265", "libjpeg", "libxml-2.0", "openssl", "zlib")
     if os.name == "nt":
-        port_modules += ("libcurl",)
+        port_modules += ("libcurl", "libsoup-3.0")
     require_pkg_prefix(pkgconf, env, config.work / "ports" / triplet(config), port_modules)
     shutil.copytree(config.orc, config.source / "subprojects/orc", dirs_exist_ok=True)
     options = [
@@ -160,29 +162,40 @@ def configure(config, env, meson):
         "-Dorc-source=subproject", "-Dorc:default_library=shared", "-Dgst-full=disabled",
         "-Dbase=enabled", "-Dgood=enabled", "-Dbad=enabled", "-Dugly=enabled", "-Dlibav=enabled", "-Drtsp_server=enabled",
         "-Ddevtools=disabled", "-Dges=disabled", "-Dgst-examples=disabled", "-Dpython=disabled",
-        "-Dlibnice=disabled", "-Dtls=disabled", "-Dgstreamer:tools=enabled", "-Dgstreamer:check=enabled",
-        "-Dgstreamer:ptp-helper=disabled", "-Dgst-plugins-bad:cuda-nvmm=disabled",
+        "-Dlibnice=disabled", "-Dtls=disabled", "-Dwebrtc=disabled", "-Dgst-plugins-bad:webrtcdsp=disabled",
+        "-Dgstreamer:tools=enabled", "-Dgstreamer:check=enabled",
+        "-Dgstreamer:ptp-helper=enabled", "-Dgstreamer:ptp-helper-permissions=none",
+        "-Dgst-plugins-bad:cuda-nvmm=disabled", "-Dgst-plugins-bad:vulkan=disabled",
+        "-Dgst-plugins-good:hls-crypto=openssl",
     ]
-    for module, plugins in {
-        "base": ("app", "playback", "typefind", "videoconvertscale", "videotestsrc"),
-        "good": ("autodetect", "flv", "isomp4", "jpeg", "matroska", "rtp", "rtpmanager", "rtsp"),
-        "bad": ("videoparsers", "rtmp", "x265"),
+    enabled = {
+        "base": ("app", "audiomixer", "compositor", "playback", "rawparse", "typefind", "videoconvertscale", "videotestsrc"),
+        "good": ("adaptivedemux2", "autodetect", "flv", "isomp4", "jpeg", "matroska", "rtp", "rtpmanager", "rtsp"),
+        "bad": ("rtmp2", "videoparsers", "x265"),
         "ugly": ("x264",),
-    }.items():
-        options.extend(f"-Dgst-plugins-{module}:{plugin}=enabled" for plugin in plugins)
+    }
+    disabled = {
+        "base": ("adder",),
+        "good": ("videomixer",),
+        "bad": ("amfcodec", "analyticsoverlay", "dash", "decklink", "faceoverlay", "hip", "hls", "librfb",
+                "onnx", "opencv", "pcapparse", "qsv", "rawparse", "rtmp", "smoothstreaming", "tensordecoders",
+                "tflite", "tflite-edgetpu", "tflite-vsi", "wasapi"),
+    }
+    for value, modules in (("enabled", enabled), ("disabled", disabled)):
+        for module, plugins in modules.items():
+            options.extend(f"-Dgst-plugins-{module}:{plugin}={value}" for plugin in plugins)
+    nvcodec = "disabled" if config.sdk else "enabled"
+    options.append(f"-Dgst-plugins-bad:nvcodec={nvcodec}")
     if os.name == "nt":
         options += ["--vsenv", "-Dgst-plugins-bad:mediafoundation=enabled", "-Dgst-plugins-bad:d3d11=enabled",
-                    "-Dgst-plugins-bad:nvcodec=disabled", "-Dgst-plugins-bad:curl=enabled"]
+                    "-Dgst-plugins-bad:d3d12=enabled", "-Dgst-plugins-bad:curl=enabled", "-Dgst-plugins-bad:wasapi2=enabled",
+                    "-Dgst-plugins-good:soup-version=3", "-Dgst-plugins-good:soup=disabled"]
     elif config.sdk:
-        # 只选择原生 Cocoa OpenGL。Vulkan SDK 头文件不在可搬迁包中。
         options += ["-Dgst-plugins-base:gl=enabled", "-Dgst-plugins-base:gl_platform=cgl",
                     "-Dgst-plugins-base:gl_winsys=cocoa", "-Dgst-plugins-bad:applemedia=enabled",
-                    "-Dgst-plugins-bad:vulkan=disabled"]
+                    "-Dgst-plugins-good:soup-version=3"]
     else:
-        nvcodec = "disabled" if config.binutils else "enabled"
-        options.append(f"-Dgst-plugins-bad:nvcodec={nvcodec}")
-        # tensordecoders 使用 GLib 2.72 的 g_alloca0，Focal 提供 GLib 2.64。
-        options.append("-Dgst-plugins-bad:tensordecoders=disabled")
+        options += ["-Dgst-plugins-good:soup-lookup-dep=true", "-Dgst-plugins-good:soup-version=2"]
     build = config.work / "meson"
     if (build / "build.ninja").exists():
         options.append("--reconfigure")
@@ -359,11 +372,48 @@ def copy_homebrew_notices(licenses, providers):
         (dest / "source.txt").write_text(source)
 
 
+def check_package_features(prefix, platform):
+    library_prefix, suffix = {
+        "windows": ("gst", ".dll"),
+        "linux": ("libgst", ".so"),
+        "darwin": ("libgst", ".dylib"),
+    }[platform]
+    required = ["adaptivedemux2", "audiomixer", "compositor", "rawparse", "rtmp2"]
+    disabled = ["adder", "amfcodec", "analyticsoverlay", "dash", "decklink", "faceoverlay", "hip", "hls",
+                "legacyrawparse", "onnx", "opencv", "pcapparse", "qsv", "rfbsrc", "rtmp", "smoothstreaming",
+                "tensordecoders", "tflite", "videomixer", "vulkan", "wasapi", "webrtc", "webrtcdsp"]
+    if platform == "darwin":
+        disabled.append("nvcodec")
+    else:
+        required.append("nvcodec")
+    if platform == "windows":
+        required.extend(("d3d12", "wasapi2"))
+    plugins = Path("lib/gstreamer-1.0")
+    required_files = [plugins / f"{library_prefix}{name}{suffix}" for name in required]
+    if platform != "darwin":
+        required_files.extend((Path("include/gstreamer-1.0/gst/cuda/gstcuda.h"),
+                               Path("lib/pkgconfig/gstreamer-cuda-1.0.pc")))
+    if platform == "windows":
+        required_files.extend((Path("bin/gstcuda-1.0-0.dll"), Path("lib/gstcuda-1.0.lib")))
+    elif platform == "linux":
+        required_files.append(Path("lib/libgstcuda-1.0.so.0"))
+    helper = "gst-ptp-helper.exe" if platform == "windows" else "gst-ptp-helper"
+    required_files.append(Path("libexec/gstreamer-1.0") / helper)
+    missing = [path.as_posix() for path in required_files if not (prefix / path).is_file()]
+    unexpected = [f"{library_prefix}{name}{suffix}" for name in disabled
+                  if (prefix / plugins / f"{library_prefix}{name}{suffix}").is_file()]
+    if missing or unexpected:
+        raise RuntimeError(f"GStreamer package feature check failed for {prefix}. "
+                           f"Missing files: {', '.join(missing) or 'none'}. "
+                           f"Disabled plugins present: {', '.join(unexpected) or 'none'}.")
+
+
 def install(config, env, meson):
     pkgconf = meson_environment(config, env)
     run(*meson, "install", "-C", config.work / "meson", "--no-rebuild", env=env)
     ports = config.work / "ports" / triplet(config)
     prefix = config.prefix
+    check_package_features(prefix, "windows" if os.name == "nt" else sys.platform)
     # 上游的 GDB 自动加载入口使用生产机的绝对安装路径。
     gdb_autoload = prefix / "share/gdb/auto-load"
     if gdb_autoload.is_dir():

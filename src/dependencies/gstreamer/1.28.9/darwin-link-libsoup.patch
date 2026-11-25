@@ -1,0 +1,34 @@
+--- a/subprojects/gst-plugins-good/ext/meson.build
++++ b/subprojects/gst-plugins-good/ext/meson.build
+@@ -17,7 +17,8 @@
+ soup_ver_opt = get_option('soup-version')
+ 
+ default_library = get_option('default_library')
+-soup_linked_target = host_system == 'windows' or default_library != 'shared'
++soup_link_directly = host_system == 'windows' or (host_system == 'darwin' and subsystem == 'macos')
++soup_linked_target = soup_link_directly or default_library != 'shared'
+ soup_lookup_dep = get_option('soup-lookup-dep') or soup_linked_target
+ soup_dlopen_target_deps = []
+ soup_dlopen_target_kwargs = {}
+--- a/subprojects/gst-plugins-good/ext/adaptivedemux2/meson.build
++++ b/subprojects/gst-plugins-good/ext/adaptivedemux2/meson.build
+@@ -146,7 +146,7 @@
+ adaptive_args = [gst_plugins_good_args, soup_loader_args, hls_cargs,
+     '-DGST_ISOFF_API=G_GNUC_INTERNAL']
+ 
+-if host_system == 'windows'
++if soup_link_directly
+   assert(soup_linked_target)
+   adaptivedemux2 = library('gstadaptivedemux2',
+     c_args: [adaptive_args, soup_linked_target_args],
+--- a/subprojects/gst-plugins-good/ext/soup/meson.build
++++ b/subprojects/gst-plugins-good/ext/soup/meson.build
+@@ -54,7 +54,7 @@
+ soup_library_deps = [gst_dep, gstbase_dep, gsttag_dep, gmodule_dep, gio_dep, libdl_dep]
+ soup_library_c_args = gst_plugins_good_args
+ 
+-if host_system == 'windows'
++if soup_link_directly
+   assert(soup_linked_target)
+   gstsouphttpsrc = library('gstsoup',
+     c_args : soup_library_c_args + soup_linked_target_args,
